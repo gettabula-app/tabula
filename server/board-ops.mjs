@@ -8,7 +8,7 @@ import { generateNKeysBetween } from 'fractional-indexing';
 import {
   DEFAULT_KANBAN_LANES, KANBAN, LABEL_COLORS, LABEL_DEFAULT_COLOR, LIMITS as KANBAN_LIMITS, OWNER_NAME_MAX, STAGES, TEMPLATE_STRIPPED,
   cleanLabelName, cleanLaneName, cleanOwnerName, codePointLength, isLaneStage, isWipLimit, labelNameTaken, layoutAll,
-  layoutContainer, planInsert, ranksBetween, sortedChildren, validLabel, validLabelColor, wipCheck,
+  layoutContainer, planInsert, ranksBetween, sortedChildren, validLabel, validLabelColor, wipCheck, isSafeHttpUrl,
 } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
@@ -50,7 +50,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'group', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -79,8 +79,8 @@ const CANCEL_TAG = 0xe007f;
 const isEmojiModifier = (cp) => cp >= 0x1f3fb && cp <= 0x1f3ff;
 const isExtendedPictographic = (ch) => /\p{Extended_Pictographic}/u.test(ch);
 const isHidden = (cp) =>
-  (cp >= 0x200b && cp <= 0x200c) || cp === 0x200e || cp === 0x200f || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
-  (cp >= 0x2060 && cp <= 0x2064) || (cp >= 0x2066 && cp <= 0x2069) || cp === 0xfeff;
+  cp === 0x061c || (cp >= 0x200b && cp <= 0x200c) || cp === 0x200e || cp === 0x200f || cp === 0x2028 || cp === 0x2029 || (cp >= 0x202a && cp <= 0x202e) ||
+  (cp >= 0x2060 && cp <= 0x206f) || cp === 0xfeff;
 const isInvisible = (cp) => isControl(cp) || isTag(cp) || isHidden(cp);
 
 /** Indices of tag characters that belong to complete subdivision-flag sequences. */
@@ -256,7 +256,7 @@ export function readAll(doc) {
 }
 
 function rotatedBounds(o) {
-  const angle = o.type === 'container' || o.type === 'lane' || o.type === 'card' ? 0 : Number(o.rotation) || 0;
+  const angle = o.type === 'container' || o.type === 'lane' || o.type === 'card' || o.type === 'tracker' ? 0 : Number(o.rotation) || 0;
   if (!angle) return { x: o.x, y: o.y, w: o.w, h: o.h };
   const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
   const co = Math.cos(angle), si = Math.sin(angle);
@@ -354,6 +354,8 @@ function endOut(end) {
 }
 
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const TRACKER_FIELD_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const TRACKER_VIEWS = ['inbox', 'my', 'all', 'board', 'projects'];
 
 const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster']);
 /** A stored proposedBy as MCP and the AI read show it: `{ feature, name }`, the name cleaned and cut like other names. */
@@ -382,7 +384,7 @@ export function summarise(o, textMax, detail = false) {
     if (detail) addDetail(out, o);
     return out;
   }
-  const out = { id: id64(o.id), type: str40(o.type), x: r2(o.x), y: r2(o.y), w: r2(o.w), h: r2(o.h), rotation: r2(((Number(o.rotation) || 0) * 180) / Math.PI) };
+  const out = { id: id64(o.id), type: str40(o.type), x: r2(o.x), y: r2(o.y), w: r2(o.w), h: r2(o.h), rotation: o.type === 'tracker' ? 0 : r2(((Number(o.rotation) || 0) * 180) / Math.PI) };
   if (typeof o.kind === 'string') out.kind = str40(o.kind);
   if (typeof o.text === 'string' && o.text) {
     const text = cleanForModel(o.text, textMax);
@@ -391,6 +393,11 @@ export function summarise(o, textMax, detail = false) {
   }
   if (typeof o.name === 'string' && o.name) out.name = cleanForModel(o.name, 200).text;
   if (o.type === 'group' && Number.isInteger(o.members) && o.members >= 0) out.members = o.members;
+  if (o.type === 'tracker') {
+    if (typeof o.trackerId === 'string' && TRACKER_FIELD_RE.test(o.trackerId)) out.trackerId = o.trackerId;
+    if (typeof o.view === 'string' && TRACKER_VIEWS.includes(o.view)) out.view = o.view;
+    if (typeof o.focusKey === 'string' && TRACKER_FIELD_RE.test(o.focusKey)) out.focusKey = o.focusKey;
+  }
   if (o.type === 'image') {
     // A picture is metadata only: its type, its natural size and the description its author gave it. Never its bytes, its
     // hash or any URL to it (docs/images.md, MCP and the other AI tools); what is in it is not read.
@@ -458,7 +465,7 @@ function decodeCursor(cursor) {
   throw invalid('cursor', 'The cursor is not valid. Start again without one.');
 }
 
-const keyOf = (o) => [o.type === 'frame' ? 0 : 1, zOf(o), o.id];
+const keyOf = (o) => [o.type === 'frame' || o.type === 'tracker' ? 0 : 1, zOf(o), o.id];
 const cmpKey = (a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0);
 
 const touches = (o, b) => !(o.x > b.x + b.w || o.x + o.w < b.x || o.y > b.y + b.h || o.y + o.h < b.y);
@@ -1029,6 +1036,10 @@ export function planDeleteKanbanLane(doc, kanbanId, laneId, moveCardsTo, { now =
   const state = kanbanState(doc, kanban);
   const id = idString(laneId, 'laneId');
   const lane = laneIdInState(state, id);
+  const ext = state.container.ext;
+  if (ext?.provider === 'tabula' && ext.map && Object.hasOwn(ext.map, id)) {
+    throw invalid('laneId', "Map this lane's tickets elsewhere or unlink the kanban first");
+  }
   if (state.container.locked === true) throw conflict('This kanban is locked. Unlock it to change its lanes.', 'kanbanId');
   if (lane.locked === true) throw conflict('This lane is locked. Unlock it to delete it.', 'laneId');
   let target;
@@ -1163,6 +1174,19 @@ const CREATE_KEYS = {
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
 };
 
+export const SERVER_TRACKER_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
+
+/** Board planners cannot make linked ticket changes; the tracker transition and patch routes own those fields. */
+export function assertLinkedCardEdit(card, field, path = field) {
+  if (card?.extProvider !== 'tabula' || typeof card.trackerId !== 'string' || !card.trackerId
+    || typeof card.extKey !== 'string' || !card.extKey) return;
+  if (field === 'text' || field === 'title' || field === 'laneId' || field === 'stage'
+    || field === 'owner' || field === 'ownerId' || field === 'ownerName' || field === 'ownerKind'
+    || field === 'due' || field === 'labels') {
+    throw invalid(path, 'Linked card: use transition_ticket / update_ticket');
+  }
+}
+
 /**
  * Validates a whole create batch against the document and returns what to write. Throws OpsError; writes nothing.
  * @param {{ createdBy: string, now?: number }} who
@@ -1189,6 +1213,10 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
   const entries = list.map((item, i) => {
     const path = `objects[${i}]`;
     if (!isRecord(item)) throw invalid(path, 'Must be an object');
+    for (const key of Object.keys(item)) {
+      if (SERVER_TRACKER_FIELDS.has(key)) throw invalid(at(path, key), 'Tracker link fields are server-written');
+    }
+    if (item.type === 'tracker') throw invalid(at(path, 'type'), 'Tracker frames can only be created by the app');
     const type = choice(item.type, Object.keys(CREATE_KEYS), at(path, 'type'));
     record(item, path, CREATE_KEYS[type]);
     const id = freshId();
@@ -1361,6 +1389,7 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
 
     const fields = Object.keys(patch).filter((k) => k !== 'id');
     for (const key of fields) {
+      if (SERVER_TRACKER_FIELDS.has(key)) throw invalid(at(path, key.slice(0, 40)), 'Tracker link fields are server-written');
       if (!KNOWN_UPDATE_FIELDS.has(key)) throw invalid(at(path, key.slice(0, 40)), 'Unknown field');
     }
     if (current.type === 'card') throw invalid(at(path, 'id'), 'Use update_kanban_card to change a kanban card');
@@ -1644,6 +1673,206 @@ export function planUseTemplate(doc, content, { createdBy, now = Date.now(), at 
     },
     audit: { count: ops.length, ids: ops.map((op) => op.id) },
   };
+}
+
+const TRACKER_CATEGORIES = new Set(['backlog', 'unstarted', 'started', 'completed', 'canceled']);
+const TRACKER_PRIORITIES = new Set(['none', 'urgent', 'high', 'medium', 'low']);
+const TRACKER_KEY = /^[A-Za-z]{2,5}-[1-9][0-9]{0,18}$/i;
+const TRACKER_STATE_KEY = /^[A-Za-z0-9_-]{1,64}$/;
+
+function trackerMap(doc, containerId, raw) {
+  if (!isRecord(raw)) throw invalid('map', 'Must be a lane-to-state object');
+  const entries = Object.entries(raw);
+  if (entries.length > KANBAN_LIMITS.lanes) throw invalid('map', `A kanban can map at most ${KANBAN_LIMITS.lanes} lanes`);
+  const objects = objectsOf(doc);
+  const states = new Set();
+  const map = Object.create(null);
+  for (const [laneId, stateKey] of entries) {
+    if (!ID_RE.test(laneId) || objects.get(laneId)?.get('type') !== 'lane' || objects.get(laneId)?.get('parent') !== containerId) {
+      throw invalid(`map.${laneId.slice(0, 40)}`, 'Must identify a lane in the linked kanban');
+    }
+    if (typeof stateKey !== 'string' || !TRACKER_STATE_KEY.test(stateKey)) throw invalid(`map.${laneId}`, 'Must identify a tracker state key');
+    if (states.has(stateKey)) throw invalid(`map.${laneId}`, 'A tracker state can map to only one lane');
+    states.add(stateKey);
+    map[laneId] = stateKey;
+  }
+  return map;
+}
+
+function trackerProjectionFields(raw) {
+  if (!isRecord(raw)) throw invalid('projection', 'Must be an object');
+  const ticketId = idString(raw.ticketId, 'projection.ticketId');
+  if (typeof raw.ticketKey !== 'string' || !TRACKER_KEY.test(raw.ticketKey)) throw invalid('projection.ticketKey', 'Must be a tracker ticket key');
+  const title = text(raw.title, 'projection.title', 1, 200).replace(/[\r\n]+/gu, ' ').replace(/\s+/gu, ' ').trim();
+  if (!isRecord(raw.state)) throw invalid('projection.state', 'Must be a tracker state');
+  const state = {
+    id: idString(raw.state.id, 'projection.state.id'),
+    key: typeof raw.state.key === 'string' && TRACKER_STATE_KEY.test(raw.state.key) ? raw.state.key : null,
+    name: text(raw.state.name, 'projection.state.name', 1, 80),
+    category: typeof raw.state.category === 'string' && TRACKER_CATEGORIES.has(raw.state.category) ? raw.state.category : null,
+  };
+  if (!state.key) throw invalid('projection.state.key', 'Must identify a tracker state key');
+  if (!state.category) throw invalid('projection.state.category', 'Must identify a tracker state category');
+  let assignee = null;
+  if (raw.assignee !== null && raw.assignee !== undefined) {
+    if (!isRecord(raw.assignee)) throw invalid('projection.assignee', 'Must be a member or null');
+    assignee = {
+      userId: idString(raw.assignee.userId, 'projection.assignee.userId'),
+      name: text(raw.assignee.name, 'projection.assignee.name', 1, 80),
+    };
+  }
+  const labelRows = listOf(raw.labels, 'projection.labels', 0, 20).map((label, index) => {
+    const path = `projection.labels[${index}]`;
+    if (!isRecord(label)) throw invalid(path, 'Must be a label');
+    const color = label.color == null ? null : validLabelColor(label.color);
+    if (label.color != null && color === null) throw invalid(`${path}.color`, 'Must be a safe label colour');
+    return {
+      id: idString(label.id, `${path}.id`),
+      name: text(label.name, `${path}.name`, 1, KANBAN_LIMITS.labelName),
+      color,
+    };
+  });
+  const priority = typeof raw.priority === 'string' && TRACKER_PRIORITIES.has(raw.priority) ? raw.priority : null;
+  if (!priority) throw invalid('projection.priority', 'Must be a tracker priority');
+  const due = raw.due;
+  if (due !== null && (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(due)
+    || !Number.isFinite(Date.parse(`${due}T00:00:00.000Z`)) || new Date(`${due}T00:00:00.000Z`).toISOString().slice(0, 10) !== due)) {
+    throw invalid('projection.due', 'Must be a calendar date or null');
+  }
+  const projectionSeq = integer(raw.projectionSeq, 'projection.projectionSeq', 0, Number.MAX_SAFE_INTEGER);
+  return { ticketId, ticketKey: raw.ticketKey.toUpperCase(), title, state, assignee, labels: labelRows, priority, due, projectionSeq };
+}
+
+function addSet(ops, object, key, value) {
+  if (sameValue(object?.[key], value)) return false;
+  ops.push({ op: 'set', id: object.id, key, value });
+  return true;
+}
+
+/** Server-only planner for the linked-container mapping copy; public object planners refuse these fields. * @param {any} doc
+ * @param {any} [input]
+ */
+export function planTrackerContainerLink(doc, { containerId, trackerId, map, now = Date.now() } = {}) {
+  const id = idString(containerId, 'containerId');
+  const tracker = idString(trackerId, 'trackerId');
+  const { get } = snapshot(doc);
+  const container = get(id);
+  if (container?.type !== 'container' || container.layout !== 'kanban') throw notFound('Kanban not found', 'containerId');
+  const mapping = trackerMap(doc, id, map);
+  const ext = { provider: 'tabula', tracker, map: mapping };
+  const ops = [];
+  if (!sameValue(container.ext, ext)) {
+    ops.push({ op: 'set', id, key: 'ext', value: ext });
+    ops.push({ op: 'set', id, key: 'updatedAt', value: now });
+  }
+  return { ops, result: { containerId: id, linked: true }, audit: { count: ops.length ? 1 : 0, ids: ops.length ? [id] : [] } };
+}
+
+/**
+ * Server-only SQL projection planner. It writes ticket fields, the container's lane map, and (when mapped) the card's
+ * lane placement. SQL remains canonical; ordinary board lane moves never call this planner.
+ * @param {any} doc
+ * @param {any} [input]
+ */
+export function planTrackerProjection(doc, {
+  containerId, cardId, trackerId, map, extUrl, projection, targetLaneId = null, now = Date.now(),
+} = {}) {
+  const id = idString(containerId, 'containerId');
+  const cardKey = idString(cardId, 'cardId');
+  const tracker = idString(trackerId, 'trackerId');
+  if (!isSafeHttpUrl(extUrl)) throw invalid('extUrl', 'Must be a safe derived tracker URL');
+  const fields = trackerProjectionFields(projection);
+  const containerPlan = planTrackerContainerLink(doc, { containerId: id, trackerId: tracker, map, now });
+  const { map: objects, get } = snapshot(doc);
+  const card = get(cardKey);
+  const lane = card?.type === 'card' ? get(card.parent) : null;
+  if (card?.type !== 'card' || lane?.type !== 'lane' || lane.parent !== id) {
+    throw notFound('Card is not in this kanban', 'cardId');
+  }
+  const ops = [...containerPlan.ops];
+  const output = {
+    extProvider: 'tabula',
+    extKey: fields.ticketKey,
+    extUrl,
+    trackerId: tracker,
+    tracker: fields,
+  };
+  output.trackerUnmappedState = targetLaneId === null || targetLaneId === undefined;
+  const text = typeof card.text === 'string' ? card.text : '';
+  const lineBreak = text.search(/\r\n|\n|\r/u);
+  const projectedText = `${fields.title}${lineBreak < 0 ? '' : text.slice(lineBreak)}`;
+  if (projectedText !== text) addSet(ops, card, 'text', projectedText);
+
+  if (targetLaneId !== null && targetLaneId !== undefined) {
+    const targetId = idString(targetLaneId, 'targetLaneId');
+    const target = get(targetId);
+    if (target?.type !== 'lane' || target.parent !== id) throw invalid('targetLaneId', 'Must identify a lane in this kanban');
+    if (targetId !== card.parent) {
+      const siblings = [...objects.values()]
+        .filter((object) => object.type === 'card' && object.parent === targetId && object.id !== cardKey);
+      const insertion = planInsert(siblings, targetId, siblings.length, 1);
+      for (const repair of insertion.repairs) {
+        const sibling = get(repair.id);
+        if (!sibling) continue;
+        addSet(ops, sibling, 'parent', targetId);
+        addSet(ops, sibling, 'rank', repair.rank);
+        addSet(ops, sibling, 'updatedAt', now);
+      }
+      addSet(ops, card, 'parent', targetId);
+      addSet(ops, card, 'rank', insertion.ranks[0]);
+    }
+  }
+  let changed = false;
+  for (const [key, value] of Object.entries(output)) changed = addSet(ops, card, key, value) || changed;
+  if (changed || ops.length > containerPlan.ops.length) addSet(ops, card, 'updatedAt', now);
+  return {
+    ops,
+    result: { containerId: id, cardId: cardKey, ticketId: fields.ticketId, projectionSeq: fields.projectionSeq },
+    audit: { count: 1, ids: [cardKey] },
+  };
+}
+
+/** Server-only unlink planner. Clears projection identity while leaving the card's ordinary fields and placement intact. * @param {any} doc
+ * @param {any} [input]
+ */
+export function planRemoveTrackerProjection(doc, {
+  containerId, cardIds = [], now = Date.now(), removeContainer = true, requireSameKanban = true,
+} = {}) {
+  const id = idString(containerId, 'containerId');
+  const ids = listOf(cardIds, 'cardIds', 0, KANBAN_LIMITS.cards);
+  const { get } = snapshot(doc);
+  const container = get(id);
+  const ops = [];
+  const touched = new Set();
+  if (removeContainer && container?.type === 'container' && container.ext !== undefined) {
+    ops.push({ op: 'unset', id, key: 'ext' });
+    ops.push({ op: 'set', id, key: 'updatedAt', value: now });
+    touched.add(id);
+  }
+  for (let index = 0; index < ids.length; index++) {
+    const cardId = idString(ids[index], `cardIds[${index}]`);
+    const card = get(cardId);
+    if (card?.type !== 'card') continue;
+    const lane = get(card.parent);
+    if (requireSameKanban && (lane?.type !== 'lane' || lane.parent !== id)) continue;
+    let changed = false;
+    const provider = typeof card.extProvider === 'string' ? card.extProvider : card.ext?.provider;
+    const foreignProvider = typeof provider === 'string' && provider !== 'tabula';
+    const fields = foreignProvider
+      ? ['trackerId', 'tracker', 'trackerUnmappedState']
+      : ['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState'];
+    for (const field of fields) {
+      if (card[field] !== undefined) {
+        ops.push({ op: 'unset', id: cardId, key: field });
+        changed = true;
+      }
+    }
+    if (changed) {
+      ops.push({ op: 'set', id: cardId, key: 'updatedAt', value: now });
+      touched.add(cardId);
+    }
+  }
+  return { ops, result: { containerId: id, unlinked: [...touched].filter((value) => value !== id).length }, audit: { count: touched.size, ids: [...touched] } };
 }
 
 /** Applies a plan. Call it inside the room's transaction; it never validates, planning already did. */

@@ -745,6 +745,8 @@ describe('loadConfig', () => {
       ai: { provider: 'anthropic', model: 'claude-opus-5-5', baseUrl: null, proxyUrl: null },
       // images on a board: 10 MB a file, 50 MB a board without accounts, no instance cap
       assets: { maxBytes: 10 * 1024 * 1024, boardQuota: 50 * 1024 * 1024, totalQuota: 0 },
+      // the tracker (tickets) is off unless TABULA_TRACKER=on
+      tracker: false,
     });
   });
 

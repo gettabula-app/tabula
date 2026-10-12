@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { startVote } from '../src/ui/flowbar';
 import { control, installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
 
 const mocks = vi.hoisted(() => ({
@@ -26,6 +27,7 @@ vi.mock('../src/auth', () => ({
   chatAvailable: () => false,
   imagesAvailable: () => false,
   onAuth: () => () => undefined,
+  registerAuthChatReset: () => undefined,
   setSignedIn: vi.fn<(...args: unknown[]) => void>(),
   setSignedOut: vi.fn<(...args: unknown[]) => void>(),
   signOut: vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined),
@@ -63,11 +65,28 @@ describe('demo board UI', () => {
         onToggle: (fn: () => void) => { listeners.push(fn); },
       };
     });
-    mocks.library.mockImplementation(() => ({
-      tab: null,
-      open: vi.fn<(...args: unknown[]) => void>(),
-      onChange: vi.fn<(...args: unknown[]) => void>(),
-    }));
+    let libraryTab: string | null = null;
+    let libraryDrawer: FakeElement | null = null;
+    const libraryListeners: ((tab: string | null) => void)[] = [];
+    const openLibrary = vi.fn<(tab: string | null) => void>((tab) => {
+      libraryTab = tab;
+      if (libraryDrawer) {
+        libraryDrawer.dataset.tab = tab ?? '';
+        libraryDrawer.classList.toggle('show', !!tab);
+      }
+      libraryListeners.forEach((fn) => fn(tab));
+    });
+    mocks.library.mockImplementation((_app, parent) => {
+      libraryDrawer = browser!.document.createElement('aside') as FakeElement;
+      libraryDrawer.className = 'drawer tray';
+      (parent as FakeElement).appendChild(libraryDrawer);
+      return {
+        get tab() { return libraryTab; },
+        open: openLibrary,
+        onChange: vi.fn<(fn: (tab: string | null) => void) => void>((fn) => { libraryListeners.push(fn); }),
+      };
+    });
+    const currentDrawer = () => libraryDrawer as unknown as FakeElement;
 
     const listeners = new Map<string, (() => void)[]>();
     const obj = { id: 'sample-lane', type: 'lane' };
@@ -120,7 +139,14 @@ describe('demo board UI', () => {
       expect(row).not.toBeNull();
       expect(textOf(row)).toContain('Available in a workspace');
     }
-    const layerButton = menu!.querySelectorAll('button').find((button) => textOf(button).startsWith('Layers'));
+    const voteItem = menu!.querySelectorAll('button').find((button) => textOf(button).startsWith('Try dot voting'));
+    expect(voteItem).toBeDefined();
+    expect(startVote).not.toHaveBeenCalled(); // the demo opens without a session; the visitor starts one
+    voteItem!.click();
+    expect(startVote).toHaveBeenCalledWith(app, { kind: 'stickies' });
+    menuButton.click();
+    const reopened = browser.document.body.querySelector('.menu') as FakeElement | null;
+    const layerButton = reopened!.querySelectorAll('button').find((button) => textOf(button).startsWith('Layers'));
     expect(layerButton).toBeDefined();
     layerButton!.click();
 
@@ -135,5 +161,15 @@ describe('demo board UI', () => {
     expect(root.querySelector('.aibar-fab')).toBeNull();
     expect(root.querySelector('.ailive')).toBeNull();
     expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((url) => url.includes('/api/ai/config'))).toEqual([]);
+
+    const templatesButton = control(root, 'Templates and team exercises');
+    templatesButton.click();
+    const drawer = currentDrawer();
+    expect(drawer.classList.contains('show')).toBe(true);
+    expect(drawer.dataset.tab).toBe('templates');
+    const closeEscapeDrawer = Reflect.get(app, 'closeEscapeDrawer') as (() => boolean) | null;
+    expect(closeEscapeDrawer?.()).toBe(true);
+    expect(drawer.classList.contains('show')).toBe(false);
+    expect(browser.document.activeElement).toBe(templatesButton);
   });
 });

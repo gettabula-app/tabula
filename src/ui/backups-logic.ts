@@ -1,9 +1,13 @@
-import type { BackupEngineStatus, BackupPreview, BackupSummary, RestoreRecord } from '../api';
+import type { BackupEngineStatus, BackupPreview, BackupSummary, RestoreRecord, TrackerCheckState, TrackerDrillRecord, TrackerReadinessGate, TrackerReadinessOverall } from '../api';
 
 /** Pure rules and text for the Backups tab and the restoring screen: no DOM, so they can be unit tested (docs/backups.md, "In the app"). */
 
 /** What the owner types to confirm a whole restore (the server sends the same word in a preview). */
 export const CONFIRM_WORD = 'RESTORE';
+/** The word the owner types before moving the tracker counters forward by an epoch. */
+export const EPOCH_CONFIRM_WORD = 'JUMP';
+export const EPOCH_WARNING_COPY = 'This moves every tracker counter forward by 1,000. It can leave a gap in the sequence and should only be used when the counter floor cannot be recovered.';
+export const ATTESTATION_DISCLAIMER = 'These records are statements by the owner; the server cannot verify them.';
 /** The server lists at most this many backups. */
 export const LIST_CAP = 200;
 
@@ -122,6 +126,10 @@ const ENTRIES: Record<string, Entry> = {
     reason: 'too many tries in a short time',
     sentence: ({ retryAfter }) => `Too many tries in a short time. Try again in ${waitLabel(typeof retryAfter === 'number' ? retryAfter : null)}.`,
   },
+  tracker_restoring: text('tracker writes are paused for a restore', 'Tracker writes are paused while a restore is being checked. Try again when it is complete.'),
+  key_epoch_confirmation_mismatch: text('the confirmation did not match', `The confirmation did not match. Type ${EPOCH_CONFIRM_WORD} exactly, in capital letters.`),
+  drill_record_invalid: text('the drill record was not valid', 'The restore drill record was not valid. Check its JSON and measured values, then try again.'),
+  cutover_record_invalid: text('the cutover record was not valid', 'The cutover record was not valid. Use a date that is not in the future and tick the box, then try again.'),
   restore_in_progress: text('another restore was running', 'A restore is already running. Wait until it is done, then try again.'),
   board_not_in_backup: text('the board is not in the backup', 'That board is not in this backup, or it has no saved content there.'),
   read_only: text('the workspace is read-only', 'This workspace is read-only, so a copy cannot be added right now. Check billing to make it writable again.'),
@@ -175,6 +183,127 @@ export function errorReason(code: string | null | undefined): string {
 /** Every code that has a sentence of its own. */
 export const ERROR_CODES: readonly string[] = Object.keys(ENTRIES);
 
+// ---------------------------------------------------------------- tracker readiness
+
+const TRACKER_CHECK_LABELS: Readonly<Record<string, string>> = {
+  offsite_enabled: 'Offsite backup',
+  latest_backup_fresh: 'Latest backup freshness',
+  schedule_meets_rpo: 'Backup schedule',
+  backup_decrypts: 'Backup decryption',
+  tracker_data_clean: 'Tracker data checks',
+  counters_floor_ok: 'Counter floor',
+  links_consistent: 'Tracker links',
+  search_ok: 'Ticket search index',
+  slice8_secrets: 'Integration secrets',
+  restore_drill_recent: 'Recent restore drill',
+  retention_30d: '30-day retention',
+  import_verified: 'Import verification',
+};
+
+/** A stable, human-readable name for each readiness check; unknown ids stay visible as received. */
+export function trackerCheckLabel(id: string, serverLabel?: string): string {
+  return TRACKER_CHECK_LABELS[id] ?? (serverLabel || id);
+}
+
+/** Readiness is always a word as well as an icon in the panel. */
+export function readinessOverallLabel(overall: TrackerReadinessOverall): string {
+  if (overall === 'go') return 'Ready';
+  if (overall === 'no_go') return 'Not ready';
+  return 'Not known yet';
+}
+
+const FLOOR_LABEL: Record<TrackerReadinessGate['floor'], string> = { pending: 'pending', known: 'known' };
+
+/** One gate sentence. A gate closed for more than ten minutes carries an explicit warning. */
+export function gateBannerSentence(gate: TrackerReadinessGate, now: number): string {
+  const floor = FLOOR_LABEL[gate.floor];
+  if (!gate.closed) return `Tracker writes are open. The counter floor is ${floor}.`;
+  const since = Number.isFinite(gate.since) ? gate.since : null;
+  const at = since === null ? 'an unknown time' : formatUtc(since);
+  const longClosed = since !== null && now - since > 10 * 60_000;
+  return `Tracker writes have been closed since ${at}. The counter floor is ${floor}.${longClosed ? ' The gate has been closed for more than 10 minutes.' : ''}`;
+}
+
+/** One plain sentence explaining a check state, even when its badge is read without colour. */
+export function checkStateSentence(state: TrackerCheckState): string {
+  switch (state) {
+    case 'pass': return 'This check passed.';
+    case 'fail': return 'This check failed.';
+    case 'unknown': return 'The server could not determine this check.';
+    case 'na': return 'This check does not apply.';
+  }
+}
+
+/** A drill box id is a short lowercase token; the server is the authority on the closed list. */
+const DRILL_BOX_ID = /^[a-z][a-z0-9_.-]{0,63}$/;
+const MAX_DRILL_BOXES = 64;
+
+const MAX_DRILL_SECONDS = 31_536_000;
+const MAX_DRILL_SCHEMA = 1_000_000;
+const DRILL_RECORD_KEYS = ['at', 'kind', 'schema', 'restoreSeconds', 'dataLossSeconds', 'boxes', 'overall'];
+
+export type DrillRecordValidation = { record: TrackerDrillRecord } | { reason: string };
+
+const hasExactKeys = (value: Record<string, unknown>, keys: readonly string[]) =>
+  keys.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => keys.includes(key));
+
+const validDrillAt = (value: unknown): value is number | string => {
+  if (typeof value === 'number') return Number.isFinite(value) && value >= 0 && Number.isFinite(new Date(value).getTime());
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) && Number.isFinite(Date.parse(value));
+};
+
+const validDrillSeconds = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= MAX_DRILL_SECONDS;
+
+/** Validates exactly the JSON shape printed by the restore drill and returns a safe copy for the POST. */
+export function validateDrillRecord(json: string): DrillRecordValidation {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return { reason: 'Paste valid JSON.' };
+  }
+  if (!isRecord(parsed) || !hasExactKeys(parsed, DRILL_RECORD_KEYS)) {
+    return { reason: 'The record must contain only the required drill fields.' };
+  }
+  if (!validDrillAt(parsed.at)) return { reason: 'The record needs a valid at time.' };
+  if (parsed.kind !== 'production' && parsed.kind !== 'local') return { reason: 'The drill kind must be production or local.' };
+  if (typeof parsed.schema !== 'number' || !Number.isSafeInteger(parsed.schema) || parsed.schema < 0 || parsed.schema > MAX_DRILL_SCHEMA) {
+    return { reason: 'The schema must be a bounded non-negative integer.' };
+  }
+  if (!validDrillSeconds(parsed.restoreSeconds) || !validDrillSeconds(parsed.dataLossSeconds)) {
+    return { reason: 'Restore and data-loss seconds must be bounded non-negative numbers.' };
+  }
+  if (!Array.isArray(parsed.boxes) || parsed.boxes.length === 0 || parsed.boxes.length > MAX_DRILL_BOXES) {
+    return { reason: 'The record needs one or more valid drill boxes.' };
+  }
+  const boxIds = new Set<string>();
+  const boxes: TrackerDrillRecord['boxes'] = [];
+  for (const value of parsed.boxes) {
+    if (!isRecord(value) || !hasExactKeys(value, ['id', 'result'])) return { reason: 'Each drill box needs only an id and result.' };
+    if (typeof value.id !== 'string' || !DRILL_BOX_ID.test(value.id) || boxIds.has(value.id)) {
+      return { reason: 'A drill box id is not valid or is repeated.' };
+    }
+    if (typeof value.result !== 'string' || value.result.trim() === '' || value.result.length > 160) {
+      return { reason: 'A drill box result is not valid.' };
+    }
+    boxIds.add(value.id);
+    boxes.push({ id: value.id, result: value.result });
+  }
+  if (parsed.overall !== 'pass' && parsed.overall !== 'fail') return { reason: 'The overall result must be pass or fail.' };
+  return {
+    record: {
+      at: parsed.at,
+      kind: parsed.kind,
+      schema: parsed.schema,
+      restoreSeconds: parsed.restoreSeconds,
+      dataLossSeconds: parsed.dataLossSeconds,
+      boxes,
+      overall: parsed.overall,
+    },
+  };
+}
+
 // ---------------------------------------------------------------- the list
 
 /** The Notes column: when the backup is protected from pruning, or why it cannot be used. Empty when there is nothing to say. */
@@ -225,6 +354,7 @@ export function statusRows(status: BackupEngineStatus, now: number): StatusRow[]
     value: status.running ? 'Running now' : status.nextRunAt !== null ? when(status.nextRunAt, now) : 'Not scheduled',
   });
   rows.push({ label: 'How often', value: intervalLabel(status.intervalMinutes) });
+  rows.push({ label: 'Target', value: status.target === 'dir' ? 'Directory' : 'S3 bucket' });
   rows.push({ label: 'Key', value: shortKey(status.keyId) });
   const copies = status.manifests ?? 0;
   rows.push({ label: 'Stored', value: `${formatSize(status.bytesStored)} · ${unit(copies, 'backup')} · ${unit(status.objects ?? 0, 'file')}` });
@@ -242,6 +372,14 @@ export function lastRestoreSentence(last: RestoreRecord | null | undefined): str
     return last.kind === 'board' ? `A board was restored as a copy from ${from}${at}.` : `The whole workspace was restored from ${from}${at}.`;
   }
   return `Restoring ${what} from ${from} failed${at}: ${errorReason(last.error)}.`;
+}
+
+/** A line about boards whose tracker links could not be synced after the last whole restore, or null when none failed. */
+export function boardsFailedSentence(last: RestoreRecord | null | undefined): string | null {
+  const count = last?.result === 'done' ? last.tracker?.boardsFailed : undefined;
+  if (typeof count !== 'number' || !Number.isFinite(count) || count < 1) return null;
+  const boards = count === 1 ? '1 board' : `${count} boards`;
+  return `${boards} could not be synced with the tracker after the restore. ${count === 1 ? 'Its' : 'Their'} cards may not match the tickets they link to.`;
 }
 
 // ---------------------------------------------------------------- the screens

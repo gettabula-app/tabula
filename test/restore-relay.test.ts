@@ -46,6 +46,53 @@ async function prepare() {
 }
 
 describe('the relay restoring a workspace', () => {
+  it('aborts before maintenance when a final room save fails, keeping later edits available for retry', async () => {
+    const s = await prepare();
+    const relay = await launch(s.dir, { ...backupEnv(h!.fake.url), SAVE_DEBOUNCE_MS: '30000', SAVE_RETRY_MS: '200' });
+    const c = client(relay, s.dir);
+    const cookie = await c.signIn('owner@example.com');
+    const editor = c.connect('b1', cookie);
+    const watcher = c.connect('b1', cookie);
+    await until(() => editor.provider.synced && watcher.provider.synced);
+    const blocker = path.join(s.dir, 'b1.yjs.tmp');
+    fs.rmSync(blocker, { force: true });
+    fs.mkdirSync(blocker);
+    // The safety backup precedes staging. One retried download leaves time for an edit that only the final save can keep.
+    let staging = false;
+    h!.fake.rules.push({ method: 'GET', times: 1, status: 503, key: {
+      test(key: string) {
+        if (!key.includes('/objects/') || !relay.out().includes('the live data is backed up')) return false;
+        staging = true;
+        return true;
+      },
+    } as RegExp });
+    const restoring = c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: s.manifest, confirm: CONFIRM });
+    // The safety backup (which now takes the snapshot barrier) comes first; 8 s was too short on a loaded CI runner. A real hang still fails, with the relay's output.
+    await until(() => staging, 45_000).catch((err) => {
+      throw new Error(`${err.message}: the restore never reached staging. Relay output: ${relay.out().slice(-1500)}`);
+    });
+    editor.doc.getMap('objects').set('last-edit', 'after the safety backup');
+    await until(() => watcher.doc.getMap('objects').get('last-edit') === 'after the safety backup');
+    const res = await restoring;
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({ error: 'restore_failed' });
+    expect(relay.proc.exitCode).toBeNull();
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
+    expect(editor.closes).toEqual([]);
+    expect(fs.readdirSync(s.dir).some((f) => f.startsWith('.pre-restore-'))).toBe(false);
+    fs.rmdirSync(blocker);
+    await until(() => {
+      const saved = new Y.Doc();
+      try {
+        Y.applyUpdate(saved, fs.readFileSync(path.join(s.dir, 'b1.yjs')));
+        return saved.getMap('objects').get('last-edit') === 'after the safety backup';
+      } finally {
+        saved.destroy();
+      }
+    }, 30_000); // the failed save is retried every SAVE_RETRY_MS (5 s by default), so the unblocked save can take that long
+    expect((await raw<{ value: string }>(s.dir, "SELECT value FROM settings WHERE key = 'fixture'"))[0].value).toBe('B');
+  }, 60_000);
+
   it('shuts everything down for the swap, leaves with 75, and starts again on the restored data', async () => {
     const s = await prepare();
     // the disk is given, never read: how long the old data is kept must not depend on the machine the test runs on
@@ -56,9 +103,11 @@ describe('the relay restoring a workspace', () => {
 
     // someone is editing a board: the room has changes that are not on disk yet
     const editor = c.connect('b1', cookie);
+    const observer = c.connect('b1', cookie);
     await until(() => editor.provider.wsconnected && editor.provider.synced);
+    await until(() => observer.provider.wsconnected && observer.provider.synced);
     editor.doc.getMap('objects').set('live-edit', 'typed while the restore starts');
-    await sleep(100);
+    await until(() => observer.doc.getMap('objects').get('live-edit') === 'typed while the restore starts');
     const watcher = c.connect('b2', cookie);
     await until(() => watcher.provider.wsconnected && watcher.provider.synced);
 
@@ -71,8 +120,9 @@ describe('the relay restoring a workspace', () => {
     expect(res.body).toEqual({ ok: true, restarting: true, keepOldFor: '7 days' });
 
     // the window between the response and the exit: maintenance mode
-    await until(() => editor.closes.length > 0 && watcher.closes.length > 0);
+    await until(() => editor.closes.length > 0 && observer.closes.length > 0 && watcher.closes.length > 0);
     expect(editor.closes).toContain(4503);
+    expect(observer.closes).toContain(4503);
     expect(watcher.closes).toContain(4503);
     const late = c.listen('b1', cookie);
     await until(() => late.length > 0);
@@ -155,9 +205,9 @@ describe('the relay restoring a workspace', () => {
     const cookie = await c.signIn('owner@example.com');
     const res = await c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: s.manifest, confirm: 'no' });
     expect(res.status).toBe(400);
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
     await sleep(200);
     expect(relay.proc.exitCode).toBeNull();
-    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
   }, 30_000);
 });
 

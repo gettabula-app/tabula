@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,10 +12,58 @@ import {
 import { LOCAL, Store } from '../src/store';
 import type { BaseObj, Obj } from '../src/types';
 import { SCHEMA_VERSION } from '../src/types';
+import { restoreSuccessToast, withTrackerRestoreWindow } from '../src/ui/history';
 import { CSRF_HEADER, csrfOk } from '../server/auth.mjs';
 import { HistoryError, LIMITS, createHistory, pruneIds } from '../server/history.mjs';
 
 // docs/history.md. First the pure client logic, then the server module with an injected clock.
+
+describe('history restore toast', () => {
+  it.each([
+    ['MacIntel', 'Version restored. Press ⌘Z to undo.'],
+    ['Win32', 'Version restored. Press Ctrl+Z to undo.'],
+  ])('formats the undo hint for %s', (platform, expected) => {
+    expect(restoreSuccessToast(platform)).toBe(expected);
+  });
+});
+
+describe('tracker restore window', () => {
+  it('opens before applying and closes after the restore', async () => {
+    const calls: string[] = [];
+    const client = {
+      beginTrackerRestoreWindow: async (id: string) => { calls.push(`POST ${id}`); return { expiresAt: 10 }; },
+      endTrackerRestoreWindow: async (id: string) => { calls.push(`DELETE ${id}`); },
+    };
+    const result = await withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); return 'restored'; }, 0);
+    expect(result).toBe('restored');
+    expect(calls).toEqual(['POST board-1', 'apply', 'DELETE board-1']);
+  });
+
+  it('proceeds after a POST conflict or network failure and still tries cleanup', async () => {
+    const calls: string[] = [];
+    const client = {
+      beginTrackerRestoreWindow: async () => { calls.push('POST'); throw new Error('409 conflict'); },
+      endTrackerRestoreWindow: async () => { calls.push('DELETE'); throw new Error('network'); },
+    };
+    await expect(withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); return 1; }, 0)).resolves.toBe(1);
+    expect(calls).toEqual(['POST', 'apply', 'DELETE']);
+  });
+
+  it('closes in a finally when applying throws and skips both calls when disabled', async () => {
+    const calls: string[] = [];
+    const client = {
+      beginTrackerRestoreWindow: async () => { calls.push('POST'); return { expiresAt: 10 }; },
+      endTrackerRestoreWindow: async () => { calls.push('DELETE'); },
+    };
+    await expect(withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); throw new Error('apply failed'); }, 0))
+      .rejects.toThrow('apply failed');
+    expect(calls).toEqual(['POST', 'apply', 'DELETE']);
+    calls.length = 0;
+    await withTrackerRestoreWindow('board-1', false, client, () => { calls.push('apply'); }, 0);
+    expect(calls).toEqual(['apply']);
+  });
+});
+
 
 const box = (id: string, extra: Partial<BaseObj> = {}): BaseObj => ({
   id, type: 'shape', kind: 'rect', x: 0, y: 0, w: 100, h: 60, rotation: 0, z: 'a0', updatedAt: 1, ...extra,
@@ -365,12 +413,19 @@ describe('the API client', () => {
 
   it('lists, saves, names, deletes and begins a restore on the board’s version routes', async () => {
     const version = { id: 'v1', createdAt: 1, kind: 'named', label: 'x', by: null, byName: null, objects: 1, bytes: 1, from: null };
-    const { api, calls } = client((c) => (c.init.method === 'DELETE' ? new Response(null, { status: 204 }) : json(c.url.endsWith('versions') && c.init.method === 'GET' ? { versions: [version] } : c.url.endsWith('begin-restore') ? { preRestore: null } : version)));
+    const { api, calls } = client((c) => (c.init.method === 'DELETE' ? new Response(null, { status: 204 }) : json(
+      c.url.endsWith('versions') && c.init.method === 'GET' ? { versions: [version] }
+        : c.url.endsWith('begin-restore') ? { preRestore: null }
+          : c.url.endsWith('restore-window') ? { expiresAt: 100 }
+            : version,
+    )));
     expect((await api.versions('b 1')).versions).toHaveLength(1);
     await api.saveVersion('b1', 'Kick-off', 'Ana');
     await api.nameVersion('b1', 'v1', 'Final');
     await api.deleteVersion('b1', 'v1');
     expect(await api.beginRestore('b1', 'v1')).toEqual({ preRestore: null });
+    expect(await api.beginTrackerRestoreWindow('b1')).toEqual({ expiresAt: 100 });
+    await api.endTrackerRestoreWindow('b1');
 
     expect(calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
       'GET /api/boards/b%201/versions',
@@ -378,6 +433,8 @@ describe('the API client', () => {
       'PATCH /api/boards/b1/versions/v1',
       'DELETE /api/boards/b1/versions/v1',
       'POST /api/boards/b1/versions/v1/begin-restore',
+      'POST /api/tracker/boards/b1/restore-window',
+      'DELETE /api/tracker/boards/b1/restore-window',
     ]);
     expect(JSON.parse(calls[1].init.body as string)).toEqual({ label: 'Kick-off', by: 'Ana' });
     // only the state-changing calls carry the CSRF header
@@ -622,6 +679,30 @@ describe('named versions and restores', () => {
     expect(again.created).toBe(true);
     expect(s.list()).toHaveLength(2);
     expect(s.files()).toHaveLength(2);
+  });
+
+  it('keeps a labelled automatic version before a server edit, without duplicating a version of the same content', () => {
+    const s = serverSetup();
+    const r = s.room();
+    s.add(r, 0, 5);
+    s.save(r);
+    const first = s.history.actions.snapshotBefore('board1', ana, { label: 'Before attaching TAB-1' });
+    expect(first).toMatchObject({ kind: 'auto', label: 'Before attaching TAB-1' });
+    expect(s.list()).toHaveLength(1);
+    // the board moved on (an unsaved edit the live state already has): a second version holds that content
+    s.add(r, 5, 2);
+    s.states.set('board1', Y.encodeStateAsUpdate(r.doc));
+    const second = s.history.actions.snapshotBefore('board1', ana, { label: 'Before attaching TAB-2' });
+    expect(second).toMatchObject({ kind: 'auto', label: 'Before attaching TAB-2', by: ana.id });
+    expect(s.list()).toHaveLength(2);
+    expect(s.objectCountOf('board1', second!.id)).toBe(7);
+    expect(s.objectCountOf('board1', first!.id)).toBe(5);
+    // a named version of the same content is left as it is
+    s.history.actions.create('board1', bo, { label: 'Keep' });
+    const again = s.history.actions.snapshotBefore('board1', ana, { label: 'Before attaching TAB-3' });
+    expect(again).toMatchObject({ kind: 'named', label: 'Keep' });
+    expect(s.list()).toHaveLength(2);
+    expect(s.history.actions.snapshotBefore('empty-board', ana, { label: 'Before attaching TAB-4' })).toBeNull();
   });
 
   it('saves a named version of the room as it is now, from the live room or the file', () => {
@@ -934,5 +1015,24 @@ describe('retention', () => {
     fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify({ v: 1, versions: [good, { id: '../../x', createdAt: 1, kind: 'auto', hash: 'h' }, { id: 'A'.repeat(16), createdAt: 'x', kind: 'auto', hash: 'h' }, null, { ...good, id: 'B'.repeat(16), kind: 'weird' }] }));
     const after = createHistory({ dataDir: s.dir, boardState: () => null, now: () => s.clock.now, log: () => {}, sweepMs: 0 });
     expect(after.actions.list('board1').versions.map((v: Version) => v.id)).toEqual([good.id]);
+  });
+
+  it('waits a grace period after applying before it closes the window', async () => {
+    vi.useFakeTimers();
+    try {
+      const calls: string[] = [];
+      const client = {
+        beginTrackerRestoreWindow: async () => { calls.push('POST'); return { expiresAt: 10 }; },
+        endTrackerRestoreWindow: async () => { calls.push('DELETE'); },
+      };
+      const done = withTrackerRestoreWindow('board-1', true, client, () => { calls.push('apply'); }, 1500);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(calls).toEqual(['POST', 'apply']);
+      await vi.advanceTimersByTimeAsync(600);
+      await done;
+      expect(calls).toEqual(['POST', 'apply', 'DELETE']);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

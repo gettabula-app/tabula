@@ -1,3 +1,4 @@
+import { migrationSql } from '../server/schema.mjs';
 import fs from 'node:fs';
 import { CLEAN_SVG, HOSTILE_SVG } from './svg-payloads';
 import os from 'node:os';
@@ -54,9 +55,11 @@ describe('constants that mirror the client', () => {
     const uml = /export type UmlType =([^;]+);/.exec(types)![1];
     const names = [...base.matchAll(/'([^']+)'/g), ...uml.matchAll(/'([^']+)'/g)].map((m) => m[1]);
     // a template never holds an image: its assets belong to the board it came from (docs/images.md, Templates)
-    expect([...TEMPLATE_OBJ_TYPES].sort()).toEqual(names.filter((n) => n !== 'image').sort());
+    expect([...TEMPLATE_OBJ_TYPES].sort()).toEqual(names.filter((n) => n !== 'image' && n !== 'tracker').sort());
     expect(names).toContain('image');
     expect(OBJ_TYPES).toContain('image');
+    expect(names).toContain('tracker');
+    expect(OBJ_TYPES).toContain('tracker');
   });
 
   it('lists the same relations as UmlRelation, and the step modes of StepMode but poll', () => {
@@ -138,6 +141,44 @@ describe('content that is accepted', () => {
     expect(validateTemplateContent(content(many)).objectCount).toBe(SERVER_MAX_OBJECTS);
   });
 
+  it('checks group depth without rescanning the full object list for each parent', () => {
+    const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
+    const groupCount = 2;
+    const objects: Record<string, unknown>[] = [
+      ...frames,
+      ...Array.from({ length: groupCount }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' })),
+    ];
+    let idReads = 0;
+    // The validator copies inputs with list.map; instrument the copied ids so find, filter, and loops all count.
+    const mapObjects = objects.map.bind(objects);
+    Object.defineProperty(objects, 'map', {
+      value: (callback: (value: Record<string, unknown>, index: number, array: Record<string, unknown>[]) => unknown, thisArg?: unknown) => {
+        const mapped = mapObjects(callback, thisArg) as unknown[];
+        for (const value of mapped) {
+          if (!value || typeof value !== 'object' || !Object.hasOwn(value, 'id')) continue;
+          let id = (value as { id: unknown }).id;
+          Object.defineProperty(value, 'id', {
+            configurable: true,
+            enumerable: true,
+            get() {
+              idReads++;
+              return id;
+            },
+            set(next: unknown) {
+              id = next;
+            },
+          });
+        }
+        return mapped;
+      },
+    });
+
+    expect(validateTemplateContent(content(objects)).objectCount).toBe(frames.length + groupCount);
+    expect(idReads).toBeGreaterThan(objects.length);
+    // A scan for each parent step in this 1,500-frame chain reads millions of ids. Count reads, not one array method.
+    expect(idReads).toBeLessThanOrEqual(objects.length * 5);
+  });
+
   it('accepts the colours the board writes', () => {
     for (const fill of ['#FFE16B', '#fff', '#11223344', 'none', 'transparent', 'var(--canvas-ink, #18212B)']) {
       expect(at(fill, problem(content([sticky('s1', { fill, textColor: fill, stroke: fill })])))).toEqual(at(fill, null));
@@ -180,6 +221,9 @@ describe('content that is refused', () => {
     expect(problem(content([sticky('a', { type: 'script' })]))).toMatch('unknown type');
     expect(problem(content([sticky('a', { type: undefined })]))).toMatch('unknown type');
     expect(problem(content([sticky('a', { type: '__proto__' })]))).toMatch('unknown type');
+    expect(problem(content([{
+      id: 'tracker', type: 'tracker', x: 0, y: 0, w: 1280, h: 800, rotation: 0, z: '1', trackerId: 'workspace', view: 'inbox',
+    }]))).toMatch('Templates cannot contain tracker frames');
     expect(problem(content(['text']))).toMatch('not an object');
   });
 
@@ -349,7 +393,7 @@ describe('templates in the directory', () => {
     dirs.push(dir);
     const file = path.join(dir, 'directory.sqlite');
     const old = new DatabaseSync(file);
-    for (const migration of MIGRATIONS.slice(0, 5)) old.exec(migration);
+    for (const migration of MIGRATIONS.slice(0, 5)) old.exec(migrationSql(migration));
     old.exec('PRAGMA user_version = 5');
     old.prepare("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'a@example.com', 'Ana', 'member', 0, 1)").run();
     old.close();

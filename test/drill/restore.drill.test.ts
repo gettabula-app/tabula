@@ -52,7 +52,12 @@ let controlUrl = '';
 const measured: Record<string, unknown> = {};
 function note(key: string, value: unknown) {
   measured[key] = value;
-  if (process.env.DRILL_REPORT_FILE) fs.writeFileSync(process.env.DRILL_REPORT_FILE, JSON.stringify(measured, null, 2));
+  const file = process.env.DRILL_REPORT_FILE;
+  if (!file) return;
+  // both drill files report into one file: merge what the other one wrote
+  let other: Record<string, unknown> = {};
+  try { other = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { /* nothing yet */ }
+  fs.writeFileSync(file, JSON.stringify({ ...other, ...measured }, null, 2));
 }
 
 beforeAll(async () => {
@@ -475,6 +480,7 @@ describe('local restore drill (runbook section 8)', () => {
     const res = await c.api(cookie, 'POST', '/api/admin/backups/restore', { manifest: list.backups[0].name, confirm: CONFIRM });
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('unknown_key');
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
     await sleep(300);
     expect(relay.proc.exitCode).toBeNull();
     expect(liveFiles(dir)).toEqual(before);
@@ -499,6 +505,7 @@ describe('local restore drill (runbook section 8)', () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe('tamper');
     expect(res.body.message).toMatch(/\w+/);
+    expect((await c.api(cookie, 'GET', '/api/me')).status).toBe(200);
     await sleep(300);
     expect(relay.proc.exitCode).toBeNull();
     expect(liveFiles(dir)).toEqual(before);

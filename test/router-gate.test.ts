@@ -9,7 +9,8 @@ const templates: Route = { name: 'templates' };
 const signin: Route = { name: 'signin' };
 const templateEdit = (id: string): Route => ({ name: 'template-edit', id });
 const board = (id: string): Route => ({ name: 'board', id });
-const verify = (token: string): Route => ({ name: 'verify', token });
+const verify = (token: string, oauthRequest?: string): Route => ({ name: 'verify', token, ...(oauthRequest ? { oauthRequest } : {}) });
+const oauthConsent = (request: string): Route => ({ name: 'oauth-consent', request });
 const invite = (token: string): Route => ({ name: 'invite', token });
 const join = (code = ''): Route => ({ name: 'join', code });
 const admin = (tab: AdminTab): Route => ({ name: 'admin', tab });
@@ -20,6 +21,8 @@ describe('parseRoute', () => {
     ['#', home],
     ['#/', home],
     ['#/b/abc123', board('abc123')],
+    ['#/b/abc123?tracker=tracker_1&t=TAB-123', home],
+    ['#/b/abc123?tracker=tracker_1&t=TAB-000', home],
     ['#/b/A_b-9', board('A_b-9')],
     ['#/b/' + 'a'.repeat(64), board('a'.repeat(64))],
     ['#/b/' + 'a'.repeat(65), home],
@@ -33,6 +36,15 @@ describe('parseRoute', () => {
     ['#/templates?x=1', home],
     ['#/template', home],
     ['#/t/abc123/edit', templateEdit('abc123')],
+    ['#/t/TAB-123', home],
+    ['#/t/tab-123', home],
+    ['#/t/inbox', home],
+    ['#/t/my', home],
+    ['#/t/all', home],
+    ['#/t/board', home],
+    ['#/t/projects', home],
+    ['#/t/projects/project-1', home],
+    ['#/t/views/view_2', home],
     ['#/t/A_b-9/edit', templateEdit('A_b-9')],
     ['#/t/' + 'a'.repeat(64) + '/edit', templateEdit('a'.repeat(64))],
     ['#/t/' + 'a'.repeat(65) + '/edit', home],
@@ -68,9 +80,17 @@ describe('parseRoute', () => {
     ['#/signin/verify?token=abc', verify('abc')],
     ['#/signin/verify?token=a%2Bb', verify('a+b')],
     ['#/signin/verify?x=1&token=abc_-9', verify('abc_-9')],
+    ['#/signin/verify?token=abc&oauthRequest=env_123-xy', verify('abc', 'env_123-xy')],
+    ['#/signin/verify?token=abc&oauthRequest=bad%21', verify('abc')],
+    ['#/signin/verify?token=abc&oauthRequest=one&oauthRequest=two', verify('abc')],
     ['#/signin/verify?token=', signin],
     ['#/signin/verify?other=1', signin],
     ['#/signin/verify', signin],
+    ['#/oauth/consent?request=env_123-xy', oauthConsent('env_123-xy')],
+    ['#/oauth/consent?request=bad%21', oauthConsent('')],
+    ['#/oauth/consent?request=one&request=two', oauthConsent('')],
+    ['#/oauth/consent', oauthConsent('')],
+    ['#/oauth/consent?request=' + 'a'.repeat(8193), oauthConsent('')],
     ['#/invite/tok_en-1', invite('tok_en-1')],
     ['#/join', join()],
     ['#/join?c=ABCD2345', join('ABCD2345')],
@@ -94,6 +114,7 @@ describe('resolveRoute', () => {
     ['#/chat', home],
     ['#/chat/team/t1', home],
     ['#/b/abc', board('abc')],
+    ['#/t/inbox', home],
     ['#/templates', templates],
     ['#/t/abc/edit', templateEdit('abc')],
     ['#/', home],
@@ -108,8 +129,10 @@ describe('resolveRoute', () => {
     ['signed-in', '#/admin/audit', admin('audit')],
     ['offline', '#/admin/members', admin('members')],
     ['signed-in', '#/signin/verify?token=abc', verify('abc')],
+    ['signed-out', '#/oauth/consent?request=env_123-xy', oauthConsent('env_123-xy')],
     ['signed-out', '#/invite/abc', invite('abc')],
     ['offline', '#/b/abc', board('abc')],
+    ['signed-in', '#/t/inbox', home],
     ['signed-in', '#/chat', { name: 'chat' }],
     ['offline', '#/chat/team/t1', { name: 'chat', kind: 'team', ref: 't1' }],
     ['signed-in', '#/templates', templates],
@@ -125,6 +148,22 @@ describe('resolveRoute', () => {
   it('reads a direct /join path and its query code', () => {
     expect(resolveRoute('', 'signed-out', '/join', '?c=ABCD2345')).toEqual(join('ABCD2345'));
   });
+
+  it('accepts the clean tracker path form', () => {
+    expect(resolveRoute('', 'signed-in', '/t/TAB-123')).toEqual({ name: 'tracker', target: { kind: 'ticket', key: 'TAB-123' } });
+  });
+
+  it.each<[string, string, Route]>([
+    ['/t/inbox', '', { name: 'tracker', target: { kind: 'view', view: 'inbox' } }],
+    ['/t/my', '', { name: 'tracker', target: { kind: 'view', view: 'my' } }],
+    ['/t/board', '', { name: 'tracker', target: { kind: 'view', view: 'board' } }],
+    ['/t/all', '', { name: 'tracker', target: { kind: 'view', view: 'all' } }],
+    ['/t/projects/project-1', '', { name: 'tracker', target: { kind: 'view', view: 'projects', id: 'project-1' } }],
+    ['/t/views/view_2', '', { name: 'tracker', target: { kind: 'view', view: 'views', id: 'view_2' } }],
+    ['/b/abc123', '?tracker=tracker_1&t=TAB-123', { name: 'board', id: 'abc123', trackerPosition: { trackerId: 'tracker_1', key: 'TAB-123' } }],
+  ])('resolves path route %s%s', (pathname, search, route) => {
+    expect(resolveRoute('', 'signed-in', pathname, search)).toEqual(route);
+  });
 });
 
 describe('needsSignIn', () => {
@@ -133,8 +172,10 @@ describe('needsSignIn', () => {
     ['templates', templates],
     ['template-edit', templateEdit('abc')],
     ['board', board('abc')],
+    ['tracker', { name: 'tracker', target: { kind: 'view', view: 'all' } }],
     ['signin', signin],
     ['verify', verify('abc')],
+    ['oauth-consent', oauthConsent('env_123-xy')],
     ['invite', invite('abc')],
     ['join', join('ABCD2345')],
     ['admin', admin('members')],
@@ -146,7 +187,7 @@ describe('needsSignIn', () => {
     guest: [],
     offline: [],
     'signed-in': [],
-    'signed-out': ['home', 'templates', 'template-edit', 'board', 'admin', 'chat'],
+    'signed-out': ['home', 'templates', 'template-edit', 'board', 'tracker', 'admin', 'chat'],
   };
 
   it.each(Object.entries(gated).flatMap(([mode, names]) =>
@@ -165,6 +206,7 @@ describe('returnHash', () => {
     ['', null],
     ['#/templates', null],
     ['#/t/abc/edit', null],
+    ['#/t/TAB-123', null],
     ['#/signin', null],
     ['#/signin/verify?token=abc', null],
     ['#/invite/abc', null],

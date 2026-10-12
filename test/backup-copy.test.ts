@@ -99,6 +99,7 @@ describe('the copy of a database', () => {
     h.directory!.setSetting(STATUS_KEY, JSON.stringify({ lastSuccessAt: 1 }));
     h.directory!.audit(null, 'backup.run', { files: 1 });
     h.directory!.audit(null, 'backup.failed', { error: 'x' });
+    h.directory!.audit(null, 'backup.tracker_findings', { findings: [{ code: 'fts_missing', count: 1 }] });
     pad(1);
     const dir = scratchDir();
     const chat = path.join(dir, 'chat.sqlite');
@@ -178,7 +179,9 @@ describe('the copy of a database', () => {
   });
 
   it('keeps the application\'s own thread free while a database of about 20 MB is copied', async () => {
-    h = await harness({ accounts: true });
+    // The snapshot barrier abandons a copy that outlasts its hold limit (5 s by default); a slow Windows runner copies 40 MB in
+    // about that time. This test is about the main thread staying free, not about the hold, so it gets the largest limit.
+    h = await harness({ accounts: true, env: { TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS: '60' } });
     pad(40);
     expect(fs.statSync(h.file('directory.sqlite')).size).toBeGreaterThan(39 * 1024 * 1024);
     const copying = { from: 0, to: 0 };
@@ -194,6 +197,7 @@ describe('the copy of a database', () => {
     const timer = setInterval(() => ticks.push(performance.now()), 10);
     const result = await engine.runNow();
     clearInterval(timer);
+    if (!result.ok) throw new Error(`the run failed: ${JSON.stringify(result)}`);
     expect(result).toMatchObject({ ok: true, changed: true });
     const length = copying.to - copying.from;
     const during = ticks.filter((t) => t >= copying.from && t <= copying.to);
@@ -303,7 +307,6 @@ describe('a copy that fails or is stopped', () => {
     expect(workers).toHaveLength(1);
     // A thread that was left to finish would copy the database and say so; this one is gone before it can.
     await workers[0].exited;
-    await sleep(50);
     expect(workers[0].answers).toBe(0);
     expect(temps()).toEqual([]);
     expect(h.fake.keys(/manifests/)).toEqual([]);
@@ -328,7 +331,6 @@ describe('a copy that fails or is stopped', () => {
     expect(await run).toMatchObject({ ok: false, aborted: true });
     await seen[0].exited;
     await until(() => temps().length === 0);
-    await sleep(50);
     expect(seen[0].answers).toBe(0);
     expect(temps()).toEqual([]);
     expect(h.fake.keys(/manifests/)).toEqual([]);

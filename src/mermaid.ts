@@ -58,7 +58,8 @@ function parseFlowchart(lines: string[], direction: 'TB' | 'LR'): Parsed {
   };
   const EDGE = /\s*(<?(?:-->|---|-\.->|-\.-|==>|===|--[^->|]+-->|--o|--x)>?)\s*(?:\|([^|]*)\|)?\s*/;
   for (const line of lines) {
-    if (/^(subgraph|end$|style|classDef|class |click|linkStyle|direction)/.test(line)) continue;
+    // a keyword is a whole word: `style1 --> B` is an edge from a node called style1, not a style line
+    if (/^(?:(?:subgraph|end)(?:\s|$)|(?:style|classDef|class|click|linkStyle|direction)\s)/.test(line)) continue;
     const parts = line.split(EDGE);
     if (parts.length === 1) {
       ensure(line);
@@ -190,7 +191,8 @@ function parseSequence(lines: string[]): Parsed {
   for (const line of lines) {
     const p = line.match(/^(participant|actor)\s+(\S+)(?:\s+as\s+(.+))?$/);
     if (p) { ensure(p[2], p[3], p[1] === 'actor'); continue; }
-    const m = line.match(/^(\S+?)\s*(-->>|->>|-->|->|-\)|--\)|-x|--x)\s*(\S+?)\s*:\s*(.*)$/);
+    // `A->>+B` and `B-->>-A` also switch B's activation bar; the + or - is not part of the name
+    const m = line.match(/^(\S+?)\s*(-->>|->>|-->|->|-\)|--\)|-x|--x)\s*[+-]?(\S+?)\s*:\s*(.*)$/);
     if (m) {
       const a = ensure(m[1]), b = ensure(m[3]);
       const rel: UmlRelation = m[2].startsWith('--') ? 'reply' : m[2].includes(')') ? 'async' : 'message';

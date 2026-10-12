@@ -97,6 +97,24 @@ describe('the snapshot write barrier', () => {
   });
 });
 
+describe('stopping a snapshot', () => {
+  it('releases the writers at once when the outer signal aborts, even if the copy ignores its abort signal', async () => {
+    const barrier = createSnapshotBarrier({ maxHoldMs: 60_000 });
+    const stop = new AbortController();
+    const order: string[] = [];
+    const snapshot = barrier.withSnapshot({ signal: stop.signal, capture: () => new Promise(() => {}) }).catch((err) => order.push(`snapshot:${err.name}`));
+    await Promise.resolve();
+    expect(barrier.active).toBe(true);
+    const writer = barrier.runWriter(() => order.push('write'));
+    expect(order).toEqual([]);
+    stop.abort();
+    await snapshot;
+    await writer;
+    expect(barrier.active).toBe(false);
+    expect(order).toContain('write');
+  });
+});
+
 describe('the test-only capture delay', () => {
   it('is zero when unset', () => {
     expect(testCaptureDelayMs({})).toBe(0);

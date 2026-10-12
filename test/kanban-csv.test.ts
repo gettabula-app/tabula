@@ -115,6 +115,21 @@ describe('the card rows', () => {
     expect(text).toContain('"Second, with ""quotes"""');
   });
 
+  it('leaves the time empty when a card holds one no date can show, instead of failing the export', () => {
+    const s = board();
+    const rows = cardRows({
+      get: (id) => {
+        const o = s.store.get(id) as BaseObj | undefined;
+        return id === s.a ? ({ ...o, updatedAt: 1e16 } as BaseObj) : o;
+      },
+      containerLayout: (id) => s.store.containerLayout(id),
+      labels: listLabels(s.store),
+      commentCount: () => 0,
+    }, [s.k1]);
+    expect(rows[0][13]).toBe('');
+    expect(rows[1][13]).toBe('2026-10-09T12:00:00.000Z');
+  });
+
   it('exports a valid link and leaves owner_kind empty when no owner fields exist', () => {
     const s = board();
     s.store.transact(() => s.store.update(s.b, { link: 'https://example.com/a,b', ownerKind: 'agent' }));

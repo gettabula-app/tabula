@@ -1,13 +1,13 @@
 import './tokens.css';
 import { rovingRadios } from './focus-scope';
-import { ApiError, api, type AccessScope, type AccessToken, type AdminAccessToken, type CreatedAccessToken, type Me, type ServerBoard } from '../api';
+import { ApiError, api, type AccessScope, type AccessToken, type AdminAccessToken, type AdminGrant, type ConnectedGrant, type CreatedAccessToken, type Me, type ServerBoard } from '../api';
 import { cloudErrorMessage } from '../cloud-logic';
 import { revokeVerdict } from './admin-logic';
 import { dialog, fmtAgo, toast } from './common';
 import { h } from './dom';
 import {
-  EXPIRY_DAYS, MAX_BOARDS, SCOPE_OPTIONS, boardsLabel, boardsSummary, clientSnippets, draftProblem, emptyDraft, expiryLabel,
-  lastUsedLabel, scopeLabel, toRequest, type Draft,
+  CONNECTED_APP_TEXT, EXPIRY_DAYS, MAX_BOARDS, SCOPE_OPTIONS, boardsLabel, boardsSummary, clientSnippets, draftProblem, emptyDraft, expiryLabel,
+  grantBoardsText, grantExpiryText, grantScopeLabel, lastUsedLabel, mergeAdminAccessRows, scopeLabel, toRequest, type AdminAccessRow, type Draft,
 } from './tokens-logic';
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
@@ -82,6 +82,7 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
   const toTop = () => box.querySelector('.modal-body')?.scrollTo(0, 0);
 
   let tokens: AccessToken[] = [];
+  let grants: ConnectedGrant[] = [];
   let boards: ServerBoard[] = [];
   const titles = new Map<string, string>();
   const alive = () => body.isConnected;
@@ -95,15 +96,21 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
 
   const load = () => {
     body.replaceChildren(intro, h('p', { class: 'tokens-state', role: 'status' }, 'Loading…'));
-    void Promise.all([api.accessTokens(), api.boards().catch(() => [] as ServerBoard[])]).then(
-      ([list, mine]) => {
+    void Promise.all([
+      api.accessTokens(),
+      api.boards().catch(() => [] as ServerBoard[]),
+      me.mcpOauth ? api.myGrants() : Promise.resolve([] as ConnectedGrant[]),
+    ]).then(
+      ([list, mine, connected]) => {
         if (!alive()) return;
         tokens = list;
+        grants = connected;
         boards = mine;
         titles.clear();
         for (const b of mine) titles.set(b.id, b.title || 'Untitled board');
         showList();
         toTop();
+        restoreGrantFocus();
       },
       (e: unknown) => {
         if (alive()) showError(e, load);
@@ -123,8 +130,31 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
 
   const revokeAll = async () => {
     try {
-      const { revoked } = await api.revokeAllAccessTokens();
-      toast(revoked === 1 ? '1 token revoked' : `${revoked} tokens revoked`);
+      const { revoked, grants: disconnected = 0 } = await api.revokeAllAccessTokens();
+      const tokenResult = revoked === 1 ? '1 token revoked' : `${revoked} tokens revoked`;
+      toast(disconnected > 0 ? CONNECTED_APP_TEXT.revokeAllDone(tokenResult, disconnected) : tokenResult);
+      load();
+    } catch (e) {
+      toast(describe(e));
+    }
+  };
+
+  // After the list re-renders, keyboard focus goes to the Disconnect button now at the same place (or the last one), or to the section heading.
+  let focusGrantAt: number | null = null;
+  const restoreGrantFocus = () => {
+    if (focusGrantAt === null) return;
+    const at = focusGrantAt;
+    focusGrantAt = null;
+    const buttons = body.querySelectorAll<HTMLElement>('.tokens-grant-row button');
+    const target = buttons[Math.min(at, buttons.length - 1)] ?? body.querySelector<HTMLElement>('.tokens-section-title');
+    target?.focus();
+  };
+
+  const disconnect = async (grant: ConnectedGrant) => {
+    try {
+      await api.disconnectGrant(grant.id);
+      toast(CONNECTED_APP_TEXT.doneOne);
+      focusGrantAt = Math.max(0, grants.findIndex((g) => g.id === grant.id));
       load();
     } catch (e) {
       toast(describe(e));
@@ -143,14 +173,36 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
     armed('Revoke', 'Click again to revoke', () => revoke(t)));
 
   function showList() {
-    body.replaceChildren(
+    const actions = [h('button', { class: 'btn primary', onclick: showForm }, 'New token')];
+    if (tokens.length || (me.mcpOauth && grants.length)) {
+      actions.push(armed('Revoke all', grants.length ? CONNECTED_APP_TEXT.revokeAllWithApps : 'Click again to revoke all', revokeAll));
+    }
+    const sections: HTMLElement[] = [
       intro,
-      h('div', { class: 'btn-row' },
-        h('button', { class: 'btn primary', onclick: showForm }, 'New token'),
-        tokens.length ? armed('Revoke all', 'Click again to revoke all', revokeAll) : null),
+      h('div', { class: 'btn-row' }, actions),
       tokens.length
         ? h('div', { class: 'tokens-list' }, tokens.map(row))
-        : h('p', { class: 'tokens-state' }, 'No tokens yet.'));
+        : h('p', { class: 'tokens-state' }, 'No tokens yet.'),
+    ];
+    if (me.mcpOauth) sections.push(connectedApps());
+    body.replaceChildren(...sections);
+  }
+
+  function connectedApps(): HTMLElement {
+    return h('section', { class: 'tokens-connected' },
+      h('h3', { class: 'tokens-section-title', tabindex: '-1' }, CONNECTED_APP_TEXT.section),
+      grants.length
+        ? h('div', { class: 'tokens-list' }, grants.map((grant) => h('div', { class: 'tokens-row tokens-grant-row' },
+            h('div', { class: 'tokens-who' },
+              h('div', null, h('span', { class: 'tokens-name' }, grant.clientName), h('span', { class: 'tokens-badge' }, grantScopeLabel(grant.scope))),
+              h('div', { class: 'tokens-meta' }, [grant.redirectHost, grantBoardsText(grant.boardCount)].join(' · ')),
+              h('div', { class: 'tokens-meta' }, [
+                `${CONNECTED_APP_TEXT.created} ${fmtAgo(grant.createdAt)}`,
+                lastUsedLabel(grant, fmtAgo),
+                grantExpiryText(grant.expiresAt, Date.now()),
+              ].join(' · '))),
+            armed(CONNECTED_APP_TEXT.disconnect, CONNECTED_APP_TEXT.confirmDisconnect, () => disconnect(grant)))))
+        : h('p', { class: 'tokens-state' }, CONNECTED_APP_TEXT.empty));
   }
 
   function showForm() {
@@ -285,40 +337,86 @@ export interface AdminKit {
 /** The body of the admin dashboard's Access tokens tab: every active token, with a revoke button each. */
 export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
   let tokens: AdminAccessToken[] = [];
+  let grants: AdminGrant[] = [];
   let reload: () => void = () => {};
-  const box = h('div', { class: 'admin-box', style: '--cols: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1fr) auto' });
+  const box = h('div', { class: 'admin-box', tabindex: '-1', style: '--cols: minmax(0, 0.95fr) minmax(0, 1.15fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 0.9fr) minmax(0, 0.9fr) auto' });
+  const appActions = h('div', { class: 'admin-token-actions' });
   const actor = { id: me.user.id, role: me.user.role };
 
   const paint = () => {
-    if (!tokens.length) {
-      box.replaceChildren(kit.emptyLine('No active access tokens.'));
-      return;
-    }
-    box.replaceChildren(kit.head(['Person', 'Token', 'Boards', 'Used', '']), ...tokens.map(row));
+    const rows = mergeAdminAccessRows(tokens, grants);
+    if (!rows.length) box.replaceChildren(kit.emptyLine(me.mcpOauth ? CONNECTED_APP_TEXT.noAccess : 'No active access tokens.'));
+    else box.replaceChildren(
+      kit.head([
+        CONNECTED_APP_TEXT.personColumn, CONNECTED_APP_TEXT.typeColumn, CONNECTED_APP_TEXT.accessColumn,
+        CONNECTED_APP_TEXT.boardsColumn, CONNECTED_APP_TEXT.lastUsedColumn, CONNECTED_APP_TEXT.expiryColumn, CONNECTED_APP_TEXT.actionColumn,
+      ]),
+      ...rows.map(row),
+    );
+    appActions.replaceChildren();
+    if (me.mcpOauth && grants.length) appActions.appendChild(
+      kit.armable(CONNECTED_APP_TEXT.revokeAllApps, CONNECTED_APP_TEXT.confirmRevokeAllApps, async () => {
+          if (await kit.change(() => api.adminRevokeAllGrants(), CONNECTED_APP_TEXT.adminDoneAll)) {
+            grants = [];
+            paint();
+          }
+        }),
+    );
+  };
+
+  // After a row goes, focus the neighbour row's button (or the last one), or the table itself when it was the only row.
+  const focusRowAt = (at: number) => {
+    const buttons = box.querySelectorAll<HTMLElement>('.admin-row button');
+    (buttons[Math.min(at, buttons.length - 1)] ?? box).focus();
   };
 
   const revoke = async (t: AdminAccessToken) => {
+    const at = mergeAdminAccessRows(tokens, grants).findIndex((r) => r.kind === 'token' && r.token.id === t.id);
     if (await kit.change(() => api.adminRevokeAccessToken(t.id), `Revoked ${t.name}`)) {
       tokens = tokens.filter((x) => x.id !== t.id);
       paint();
+      focusRowAt(Math.max(0, at));
     }
   };
 
-  const row = (t: AdminAccessToken): HTMLElement => {
-    const verdict = revokeVerdict(actor, { id: t.userId, role: t.userRole, disabled: false });
+  const disconnect = async (grant: AdminGrant) => {
+    const at = mergeAdminAccessRows(tokens, grants).findIndex((r) => r.kind === 'grant' && r.grant.id === grant.id);
+    if (await kit.change(() => api.adminDisconnectGrant(grant.id), CONNECTED_APP_TEXT.adminDoneOne)) {
+      grants = grants.filter((x) => x.id !== grant.id);
+      paint();
+      focusRowAt(Math.max(0, at));
+    }
+  };
+
+  const row = (access: AdminAccessRow): HTMLElement => {
+    const person = access.kind === 'token'
+      ? { userId: access.token.userId, userRole: access.token.userRole, userName: access.token.userName, email: access.token.email }
+      : { userId: access.grant.userId, userRole: access.grant.userRole, userName: access.grant.userName, email: access.grant.email };
+    const verdict = revokeVerdict(actor, { id: person.userId, role: person.userRole, disabled: false });
+    const client = access.kind === 'grant' ? access.grant : null;
+    const token = access.kind === 'token' ? access.token : null;
+    const name = client?.clientName ?? token?.name ?? '';
+    const accessLabel = client ? grantScopeLabel(client.scope) : scopeLabel(token!.scope);
+    const boardText = client ? grantBoardsText(client.boardCount) : boardsSummary(token!.boardIds);
+    const usedText = lastUsedLabel(client ?? token!, fmtAgo);
+    const expiresText = client ? grantExpiryText(client.expiresAt, Date.now()) : expiryLabel(token!.expiresAt, Date.now());
+    const button = client
+      ? kit.armable(CONNECTED_APP_TEXT.disconnect, CONNECTED_APP_TEXT.confirmDisconnect, () => disconnect(client), { disabled: !verdict.allowed, title: verdict.reason })
+      : kit.armable('Revoke', 'Click again to revoke', () => revoke(token!), { disabled: !verdict.allowed, title: verdict.reason });
     return h('div', { class: 'admin-row' },
       h('div', { class: 'admin-who' },
-        h('div', null, h('span', { class: 'admin-name' }, t.userName || t.email)),
-        h('div', { class: 'muted small' }, t.email)),
+        h('div', null, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.personColumn}: `), h('span', { class: 'admin-name' }, person.userName || person.email)),
+        h('div', { class: 'muted small' }, person.email)),
       h('div', { class: 'admin-who' },
-        h('div', null, h('span', { class: 'admin-name' }, t.name), h('span', { class: 'admin-badge' }, scopeLabel(t.scope))),
-        h('div', { class: 'muted small' }, `…${t.hint}`)),
-      h('div', { class: 'admin-cell muted small' }, boardsSummary(t.boardIds)),
-      h('div', { class: 'admin-cell muted small' },
-        h('div', null, lastUsedLabel(t, fmtAgo)),
-        h('div', null, expiryLabel(t.expiresAt, Date.now()))),
+        h('div', null, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.typeColumn}: `), h('span', { class: 'admin-badge' }, access.typeLabel)),
+        h('div', { class: 'muted small admin-wrap' }, name),
+        h('div', { class: 'muted small admin-wrap' }, client ? client.redirectHost : `…${token!.hint}`)),
+      h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.accessColumn}: `), accessLabel),
+      h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.boardsColumn}: `), boardText),
+      h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.lastUsedColumn}: `), usedText),
+      h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.expiryColumn}: `), expiresText),
       h('div', { class: 'btn-row admin-actions' },
-        kit.armable('Revoke', 'Click again to revoke', () => revoke(t), { disabled: !verdict.allowed, title: verdict.reason })));
+        button));
   };
 
   const create = h('button', {
@@ -327,13 +425,18 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       openTokensDialog(me, reload);
     },
   }, 'Create a token');
-  reload = kit.loadList(box, () => api.adminAccessTokens(), (list) => {
-    tokens = list;
+  reload = kit.loadList(box, async () => {
+    if (!me.mcpOauth) return { tokens: await api.adminAccessTokens(), grants: [] as AdminGrant[] };
+    const [tokenList, grantList] = await Promise.all([api.adminAccessTokens(), api.adminGrants()]);
+    return { tokens: tokenList, grants: grantList };
+  }, (list) => {
+    tokens = list.tokens;
+    grants = list.grants;
     paint();
   });
   return h('div', { class: 'admin-token-panel' },
     h('div', { class: 'admin-token-create' },
       h('p', { class: 'muted admin-note' }, 'Connect AI tools like Claude Code to this workspace over MCP.'),
-      create),
+      h('div', { class: 'btn-row' }, create, appActions)),
     box);
 }

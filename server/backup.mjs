@@ -1,6 +1,5 @@
-// Off-site backups (docs/backups.md). When TABULA_BACKUP_* is set the relay copies the data directory to an
-// S3-compatible bucket on a schedule. Everything is encrypted on the instance before it leaves it: the provider only
-// ever sees ciphertext and opaque names.
+// Off-site backups (docs/backups.md). When TABULA_BACKUP_* is set the relay copies the data directory to its configured
+// target on a schedule. Everything is encrypted on the instance before it leaves it: storage only sees ciphertext and opaque names.
 //
 //   <prefix>/objects/<objectId>              one file, content addressed (objectId = HMAC-SHA256(nameKey, plaintext))
 //   <prefix>/manifests/<UTC timestamp>.json.enc   the list of files of one backup; written last, so a half done run is invisible
@@ -16,9 +15,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
+import { BackupError } from './backup-error.mjs';
 import { COPY_JOB, copyDatabase } from './backup-copy-worker.mjs';
+import { createDirClient } from './backup-dir-client.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createSnapshotBarrier, testCaptureDelayMs } from './snapshot-barrier.mjs';
+import { CHECK_JOB } from './tracker/backup-check-worker.mjs';
+import { sanitizeTrackerBlock } from './tracker/backup-check.mjs';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -56,6 +59,8 @@ const SETTLE_MAX_WAIT_MS = 10 * MINUTE_MS;
 const SETTLE_RETRY_CAP_MS = 30 * MINUTE_MS;
 const STATUS_KEY = 'backup.status';
 const COPY_WORKER_URL = new URL('./backup-copy-worker.mjs', import.meta.url);
+const CHECK_WORKER_URL = new URL('./tracker/backup-check-worker.mjs', import.meta.url);
+const CHECK_TIMEOUT_MS = 60_000;
 /** What a deep verify may find wrong with an object: the codes of readObject that mean the stored bytes are not the object. Anything else (the network, the provider) is not damage. */
 const DAMAGE_CODES = new Set(['not_found', 'tamper', 'content_mismatch', 'bad_format', 'unknown_key', 'too_large']);
 /** The settings row that keeps manifests safe from pruning (restore.mjs writes it): a JSON object, manifest name to expiry in ms. */
@@ -90,22 +95,7 @@ const VERSION = (() => {
   }
 })();
 
-/**
- * A backup operation failed. `code` is stable and meant for tests and callers:
- * bad_format, unknown_key, tamper (GCM cannot tell a flipped bit from a swapped object), content_mismatch,
- * invalid_manifest, invalid_path, not_found, s3 (with `status` and `s3Code`), network, timeout, too_large,
- * readback, inconsistent, aborted. The message never holds a secret, header or URL.
- */
-export class BackupError extends Error {
-  constructor(code, message, extra = {}) {
-    super(message);
-    this.name = 'BackupError';
-    this.code = code;
-    if (extra.status !== undefined) this.status = extra.status;
-    if (extra.s3Code) this.s3Code = extra.s3Code;
-    if (extra.retryable) Object.defineProperty(this, 'retryable', { value: true });
-  }
-}
+export { BackupError } from './backup-error.mjs';
 
 const aborted = () => new BackupError('aborted', 'The backup was stopped');
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -143,11 +133,13 @@ function keySpellings(raw, bytes) {
 
 /**
  * @typedef {object} BackupConfig
- * @property {string} endpoint origin of the S3 endpoint, for example https://fly.storage.tigris.dev
- * @property {string} bucket
+ * @property {'s3' | 'dir'} target
+ * @property {string | undefined} endpoint origin of the S3 endpoint, for example https://fly.storage.tigris.dev
+ * @property {string | undefined} bucket
+ * @property {string | null | undefined} dir local export directory; null uses `<dataDir>/backup-export`
  * @property {string} prefix
- * @property {string} region
- * @property {boolean} pathStyle
+ * @property {string | undefined} region
+ * @property {boolean | undefined} pathStyle
  * @property {number} intervalMinutes
  * @property {number} settleSeconds quiet time after the last change before a backup is taken; 0 turns settle backups off
  * @property {number} shutdownSeconds how long a graceful shutdown may spend on a final backup; 0 turns it off
@@ -156,50 +148,70 @@ function keySpellings(raw, bytes) {
  * @property {number} verifyMaxMb the most sealed megabytes one deep verify reads
  * @property {number} keepHourlyHours
  * @property {number} keepDailyDays
- * @property {string} accessKey not enumerable
- * @property {string} secretKey not enumerable
+ * @property {string | null} pullTokenSha256 bearer token SHA-256 for the directory export route, not enumerable
+ * @property {string | undefined} accessKey not enumerable
+ * @property {string | undefined} secretKey not enumerable
  * @property {Buffer} key the master key, not enumerable
  * @property {Buffer[]} previousKeys keys that can still be read, not enumerable
  * @property {string[]} secrets every spelling of a secret, for the scrubber, not enumerable
  */
 
 /**
- * Reads TABULA_BACKUP_* (the old MIRA_ spelling too). Returns null when backups are off (none of the five required
- * variables is set). Some but not all of them, or any invalid value, throws an error that names the variable and never
- * the value. The secrets sit on non-enumerable properties, so the config cannot be printed or serialised by accident.
+ * Reads TABULA_BACKUP_* (the old MIRA_ spelling too). Returns null when backups are off. Some but not all required
+ * destination variables, or any invalid value, throws an error that names the variable and never the value. The secrets
+ * sit on non-enumerable properties, so the config cannot be printed or serialised by accident.
  * @param {Record<string, string | undefined>} [rawEnv]
  * @param {(message: string) => void} [warn]
  * @returns {BackupConfig | null}
  */
 export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
   const env = withLegacyEnv(rawEnv, warn);
-  const missing = REQUIRED.filter((name) => !backupVar(env, name));
-  if (missing.length === REQUIRED.length) return null;
+  const target = backupVar(env, 'TARGET') || 's3';
+  if (target !== 's3' && target !== 'dir') throw new Error('TABULA_BACKUP_TARGET must be s3 or dir');
+  const rawPullTokenSha256 = backupVar(env, 'PULL_TOKEN_SHA256');
+  let pullTokenSha256 = null;
+  if (rawPullTokenSha256) {
+    if (!HEX_KEY_RE.test(rawPullTokenSha256)) throw new Error('TABULA_BACKUP_PULL_TOKEN_SHA256 must be 64 hexadecimal characters');
+    if (target !== 'dir') throw new Error('TABULA_BACKUP_PULL_TOKEN_SHA256 requires TABULA_BACKUP_TARGET=dir');
+    pullTokenSha256 = rawPullTokenSha256.toLowerCase();
+  }
+  const rawDir = backupVar(env, 'DIR');
+  if (target === 'dir' && rawDir && !path.isAbsolute(rawDir)) throw new Error('TABULA_BACKUP_DIR must be an absolute path');
+  const required = target === 'dir' ? ['KEY'] : REQUIRED;
+  const missing = required.filter((name) => !backupVar(env, name));
+  if (missing.length === required.length) return null;
   if (missing.length) {
-    throw new Error(`${REQUIRED.map(fullName).join(', ')} must be set together (missing ${missing.map(fullName).join(', ')})`);
+    throw new Error(`${required.map(fullName).join(', ')} must be set together (missing ${missing.map(fullName).join(', ')})`);
   }
 
   let url;
-  try {
-    url = new URL(backupVar(env, 'S3_ENDPOINT'));
-  } catch {
-    throw new Error('TABULA_BACKUP_S3_ENDPOINT is not a valid URL');
-  }
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname))) {
-    throw new Error('TABULA_BACKUP_S3_ENDPOINT must be an https:// URL (http:// is only allowed for localhost)');
-  }
-  if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
-    throw new Error('TABULA_BACKUP_S3_ENDPOINT must be a bare address without credentials, a path, a query or a fragment');
-  }
+  let bucket;
+  let accessKey;
+  let secretKey;
+  let region;
+  let pathStyle;
+  if (target === 's3') {
+    try {
+      url = new URL(backupVar(env, 'S3_ENDPOINT'));
+    } catch {
+      throw new Error('TABULA_BACKUP_S3_ENDPOINT is not a valid URL');
+    }
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname))) {
+      throw new Error('TABULA_BACKUP_S3_ENDPOINT must be an https:// URL (http:// is only allowed for localhost)');
+    }
+    if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) {
+      throw new Error('TABULA_BACKUP_S3_ENDPOINT must be a bare address without credentials, a path, a query or a fragment');
+    }
 
-  const bucket = backupVar(env, 'BUCKET');
-  if (!BUCKET_RE.test(bucket) || bucket.includes('..')) {
-    throw new Error('TABULA_BACKUP_BUCKET must be 3 to 63 lowercase letters, digits, dots or hyphens');
+    bucket = backupVar(env, 'BUCKET');
+    if (!BUCKET_RE.test(bucket) || bucket.includes('..')) {
+      throw new Error('TABULA_BACKUP_BUCKET must be 3 to 63 lowercase letters, digits, dots or hyphens');
+    }
+    accessKey = backupVar(env, 'ACCESS_KEY');
+    secretKey = backupVar(env, 'SECRET_KEY');
+    if (!CREDENTIAL_RE.test(accessKey)) throw new Error('TABULA_BACKUP_ACCESS_KEY must be printable characters without spaces');
+    if (!CREDENTIAL_RE.test(secretKey)) throw new Error('TABULA_BACKUP_SECRET_KEY must be printable characters without spaces');
   }
-  const accessKey = backupVar(env, 'ACCESS_KEY');
-  const secretKey = backupVar(env, 'SECRET_KEY');
-  if (!CREDENTIAL_RE.test(accessKey)) throw new Error('TABULA_BACKUP_ACCESS_KEY must be printable characters without spaces');
-  if (!CREDENTIAL_RE.test(secretKey)) throw new Error('TABULA_BACKUP_SECRET_KEY must be printable characters without spaces');
 
   const rawKey = backupVar(env, 'KEY');
   const key = decodeKey(rawKey);
@@ -222,16 +234,19 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
   if (prefix.length > 200 || !PREFIX_RE.test(prefix)) {
     throw new Error('TABULA_BACKUP_PREFIX must be letters, digits, . - _ and / between them, up to 200 characters');
   }
-  const region = backupVar(env, 'REGION') || 'auto';
-  if (!REGION_RE.test(region)) throw new Error('TABULA_BACKUP_REGION must be letters, digits and hyphens');
-  const style = backupVar(env, 'PATH_STYLE') || 'on';
-  if (style !== 'on' && style !== 'off') throw new Error('TABULA_BACKUP_PATH_STYLE must be on or off');
-  const pathStyle = style === 'on';
-  if (!pathStyle && (LOCAL_HOSTS.has(url.hostname) || /^[\d.]+$/.test(url.hostname) || url.hostname.startsWith('['))) {
-    throw new Error('TABULA_BACKUP_PATH_STYLE=off needs a DNS name in TABULA_BACKUP_S3_ENDPOINT, not an IP address or localhost');
+  if (target === 's3') {
+    region = backupVar(env, 'REGION') || 'auto';
+    if (!REGION_RE.test(region)) throw new Error('TABULA_BACKUP_REGION must be letters, digits and hyphens');
+    const style = backupVar(env, 'PATH_STYLE') || 'on';
+    if (style !== 'on' && style !== 'off') throw new Error('TABULA_BACKUP_PATH_STYLE must be on or off');
+    pathStyle = style === 'on';
+    if (!pathStyle && (LOCAL_HOSTS.has(url.hostname) || /^[\d.]+$/.test(url.hostname) || url.hostname.startsWith('['))) {
+      throw new Error('TABULA_BACKUP_PATH_STYLE=off needs a DNS name in TABULA_BACKUP_S3_ENDPOINT, not an IP address or localhost');
+    }
   }
 
-  const intervalMinutes = wholeNumber(env, 'INTERVAL_MINUTES', 60, 5, 10_080);
+  const trackerEnabled = (env.TABULA_TRACKER ?? '').trim() === 'on';
+  const intervalMinutes = wholeNumber(env, 'INTERVAL_MINUTES', trackerEnabled ? 15 : 60, 5, 10_080);
   const settleSeconds = wholeNumber(env, 'SETTLE_SECONDS', DEFAULT_SETTLE_SECONDS, 0, 3_600);
   const shutdownSeconds = wholeNumber(env, 'SHUTDOWN_SECONDS', DEFAULT_SHUTDOWN_SECONDS, 0, 25);
   const snapshotMaxHoldSeconds = wholeNumber(env, 'SNAPSHOT_MAX_HOLD_SECONDS', DEFAULT_SNAPSHOT_MAX_HOLD_SECONDS, 1, 60);
@@ -241,8 +256,10 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
   const keepDailyDays = wholeNumber(env, 'KEEP_DAILY_DAYS', 30, 0, 3_650);
 
   const config = {
-    endpoint: `${url.protocol}//${url.host}`,
+    target,
+    endpoint: url ? `${url.protocol}//${url.host}` : undefined,
     bucket,
+    dir: target === 'dir' ? rawDir || null : undefined,
     prefix,
     region,
     pathStyle,
@@ -260,7 +277,8 @@ export function loadBackupConfig(rawEnv = process.env, warn = console.warn) {
     secretKey: { value: secretKey },
     key: { value: key },
     previousKeys: { value: previousKeys },
-    secrets: { value: [accessKey, secretKey, ...spellings] },
+    pullTokenSha256: { value: pullTokenSha256 },
+    secrets: { value: [...(target === 's3' ? [accessKey, secretKey] : []), ...spellings, ...(pullTokenSha256 ? [pullTokenSha256, pullTokenSha256.toUpperCase()] : [])] },
   });
   return config;
 }
@@ -827,7 +845,7 @@ export function createS3Client({
 
 // ---------------------------------------------------------------- manifests
 
-function parseManifest(bytes, keys, name) {
+export function parseManifest(bytes, keys, name) {
   const bad = (what) => new BackupError('invalid_manifest', `The backup manifest is not valid (${what})`);
   let data;
   try {
@@ -850,6 +868,8 @@ function parseManifest(bytes, keys, name) {
     ) throw bad('snapshot barrier');
     snapshotBarrier = { completed: true, snapshotSeq: barrier.snapshotSeq, startedAt: barrier.startedAt, endedAt: barrier.endedAt };
   }
+  // Advisory: a malformed block parses to null and the rest of the manifest is accepted.
+  const tracker = data.tracker === undefined ? null : sanitizeTrackerBlock(data.tracker);
   const paths = new Set();
   let total = 0;
   const files = data.files.map((entry) => {
@@ -869,6 +889,7 @@ function parseManifest(bytes, keys, name) {
     createdAt: data.createdAt,
     appVersion: typeof data.appVersion === 'string' ? data.appVersion : null,
     ...(snapshotBarrier ? { snapshotBarrier } : {}),
+    tracker,
     files,
     totals: { files: files.length, bytes: total },
   };
@@ -878,6 +899,8 @@ function parseManifest(bytes, keys, name) {
 
 const EMPTY_STATUS = Object.freeze({
   lastSuccessAt: null,
+  snapshotEndedAt: null,
+  tracker: null,
   lastRunAt: null,
   lastError: null,
   lastFailureAt: null,
@@ -911,12 +934,28 @@ const timeOrNull = (v) => (Number.isFinite(v) && v >= 0 ? v : null);
 const countOr0 = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : 0);
 const shareOr0 = (v) => (Number.isFinite(v) && v >= 0 && v <= 1 ? v : 0);
 
+function trackerStatusOrNull(value) {
+  if (!isObject(value) || !Number.isSafeInteger(value.checkedAt) || value.checkedAt < 0
+    || !Number.isSafeInteger(value.tickets) || value.tickets < 0
+    || !Number.isSafeInteger(value.events) || value.events < 0
+    || !Array.isArray(value.findings) || value.findings.length > 20) return null;
+  const findings = [];
+  for (const finding of value.findings) {
+    if (!isObject(finding) || typeof finding.code !== 'string' || !/^[a-z_]{1,40}$/.test(finding.code)
+      || !Number.isSafeInteger(finding.count) || finding.count < 0) return null;
+    findings.push({ code: finding.code, count: finding.count });
+  }
+  return { checkedAt: value.checkedAt, tickets: value.tickets, events: value.events, findings };
+}
+
 function readStatus(directory, scrub) {
   const status = { ...EMPTY_STATUS };
   try {
     const stored = JSON.parse(directory?.getSetting(STATUS_KEY) ?? 'null');
     if (!isObject(stored)) return status;
     status.lastSuccessAt = timeOrNull(stored.lastSuccessAt);
+    status.snapshotEndedAt = timeOrNull(stored.snapshotEndedAt);
+    status.tracker = trackerStatusOrNull(stored.tracker);
     status.lastRunAt = timeOrNull(stored.lastRunAt);
     status.lastFailureAt = timeOrNull(stored.lastFailureAt);
     status.lastError = typeof stored.lastError === 'string' ? scrub(stored.lastError).slice(0, ERROR_MAX) : null;
@@ -1114,7 +1153,11 @@ export function createBackup({
     requestTimeoutMs,
     backoffMs,
   };
-  const s3 = createS3Client({ ...s3Options, signal: stop.signal });
+  const backupDir = config.dir ?? path.resolve(dataDir, 'backup-export');
+  const createClient = (signal) => config.target === 'dir'
+    ? createDirClient({ dir: backupDir, signal })
+    : createS3Client({ ...s3Options, signal });
+  const s3 = createClient(stop.signal);
   /** The deep verify in progress, if any: it runs outside a run and gives way to any run, a shutdown and stop(). */
   let deepCtl = null;
   let deepPromise = null;
@@ -1209,7 +1252,7 @@ export function createBackup({
    * of the plaintext, which must be the id. A different expected hash can be passed to check against a manifest, and
    * `maxSealedBytes` to refuse an object that is larger than the manifest says (too_large) without reading it.
    * @param {string} objectId
-   * @param {{ expectedPlaintextHmac?: string, maxSealedBytes?: number, client?: ReturnType<typeof createS3Client> }} [options]
+   * @param {{ expectedPlaintextHmac?: string, maxSealedBytes?: number, client?: ReturnType<typeof createS3Client> | ReturnType<typeof createDirClient> }} [options]
    */
   async function readObject(objectId, { expectedPlaintextHmac, maxSealedBytes, client = s3 } = {}) {
     if (typeof objectId !== 'string' || !OBJECT_ID_RE.test(objectId)) throw new BackupError('not_found', 'Not a backup object id');
@@ -1417,6 +1460,7 @@ export function createBackup({
     try {
       say('snapshot barrier started');
       const snapshot = await snapshotBarrier.withSnapshot({
+        signal: stop.signal,
         prepare: prepareSnapshot,
         capture: async ({ signal }) => {
           const combinedSignal = AbortSignal.any([signal, stop.signal]);
@@ -1462,6 +1506,38 @@ export function createBackup({
     }
   }
 
+  /** The tracker check of the snapshot copy, in a one-shot worker thread (it can take hundreds of ms on a big tracker). Never throws. */
+  async function inspectSnapshotTracker(snapshot) {
+    const failed = { present: true, summary: null, findings: [{ code: 'check_failed', count: 1 }] };
+    if (!snapshot.files.some((file) => file.path === 'directory.sqlite')) return { present: false, summary: null, findings: [] };
+    let worker;
+    try {
+      worker = new Worker(CHECK_WORKER_URL, {
+        workerData: { job: CHECK_JOB, file: path.join(snapshot.root, 'directory.sqlite'), at: snapshot.startedAt },
+        env: {},
+        execArgv: ['--disable-warning=ExperimentalWarning'],
+      });
+    } catch {
+      return failed;
+    }
+    return await new Promise((resolve) => {
+      let timer = null;
+      const done = (value) => {
+        clearTimeout(timer);
+        stop.signal.removeEventListener('abort', onAbort);
+        worker.terminate().catch(() => {});
+        resolve(value);
+      };
+      const onAbort = () => done(failed);
+      timer = setTimeout(() => done(failed), CHECK_TIMEOUT_MS);
+      timer.unref?.();
+      stop.signal.addEventListener('abort', onAbort, { once: true });
+      worker.once('message', (message) => done(message?.result && typeof message.result === 'object' ? message.result : failed));
+      worker.once('error', () => done(failed));
+      worker.once('exit', () => done(failed));
+    });
+  }
+
   // ------------------------------------------------------------ one run
 
   /** The objects the deep verify found damaged that are not put right yet; a count from an earlier process, whose ids are gone, stays until a rotation is complete. */
@@ -1500,6 +1576,7 @@ export function createBackup({
     let repaired = 0;
     const snapshot = await stageSnapshot(counters);
     try {
+      const trackerCheck = await inspectSnapshotTracker(snapshot);
       for (const file of snapshot.files) {
         if (stop.signal.aborted) throw aborted();
         const data = await readCapped(path.join(snapshot.root, ...file.path.split('/')), file.path, stop.signal);
@@ -1526,6 +1603,11 @@ export function createBackup({
         previous.keyId === keys.keyId &&
         previous.files.length === entries.length &&
         previous.files.every((f, i) => f.path === entries[i].path && f.objectId === entries[i].objectId);
+      // What is written passes through the same sanitiser the parser uses, so it always round-trips.
+      const trackerBlock = trackerCheck.present ? sanitizeTrackerBlock({ checkedAt: snapshot.startedAt, summary: trackerCheck.summary, findings: trackerCheck.findings }) : null;
+      const previousFindingCodes = new Set((state.tracker?.findings ?? []).map((finding) => finding.code));
+      const trackerNewFindings = unchanged ? [] : (trackerBlock?.findings ?? [])
+        .filter((finding) => !previousFindingCodes.has(finding.code));
 
     // Every object is checked before a manifest names it, so a bad upload never leaves a manifest behind.
       for (const [objectId, sealedLength] of uploaded) {
@@ -1552,6 +1634,7 @@ export function createBackup({
           createdAt: new Date(startedAt).toISOString(),
           appVersion: VERSION,
           snapshotBarrier: { completed: true, snapshotSeq, startedAt: snapshot.startedAt, endedAt: snapshot.endedAt },
+          ...(trackerBlock ? { tracker: trackerBlock } : {}),
           files: entries,
           totals: { files: entries.length, bytes: entries.reduce((sum, e) => sum + e.size, 0) },
         };
@@ -1574,7 +1657,15 @@ export function createBackup({
       return {
         objects: unique,
         changed: !unchanged,
+        trackerStatus: !unchanged && manifest?.tracker ? {
+          checkedAt: manifest.tracker.checkedAt,
+          tickets: manifest.tracker.summary?.tickets ?? 0,
+          events: manifest.tracker.summary?.events ?? 0,
+          findings: manifest.tracker.findings,
+        } : (!unchanged ? null : undefined),
+        trackerNewFindings,
         manifestName,
+        snapshotEndedAt: Number.isFinite(manifest?.snapshotBarrier?.endedAt) ? manifest.snapshotBarrier.endedAt : null,
         files: manifest.files.length,
         uploaded: uploaded.size,
         repaired,
@@ -1714,6 +1805,8 @@ export function createBackup({
       ...state,
       lastRunAt: startedAt,
       lastSuccessAt: finishedAt,
+      snapshotEndedAt: timeOrNull(summary.snapshotEndedAt),
+      ...(summary.changed ? { tracker: trackerStatusOrNull(summary.trackerStatus) } : {}),
       lastError: null,
       consecutiveFailures: 0,
       lastManifest: summary.manifestName,
@@ -1747,6 +1840,9 @@ export function createBackup({
         objectsDeleted: pruned.objectsDeleted,
       });
     }
+    if (summary.changed && summary.trackerNewFindings?.length) {
+      auditRow('backup.tracker_findings', { findings: summary.trackerNewFindings });
+    }
     say(
       summary.changed
         ? `ok: ${summary.files} files, ${summary.uploaded} uploaded, manifest ${summary.manifestName}`
@@ -1764,7 +1860,7 @@ export function createBackup({
    * @param {AbortController} ctl
    */
   async function deepVerify(objects, ctl) {
-    const client = createS3Client({ ...s3Options, signal: AbortSignal.any([stop.signal, ctl.signal]) });
+    const client = createClient(AbortSignal.any([stop.signal, ctl.signal]));
     const cut = () => ctl.signal.aborted || finishing || stop.signal.aborted;
     const ids = [...objects.keys()].sort();
     const total = ids.length;
@@ -2083,6 +2179,7 @@ export function createBackup({
       for (const name of INTERNAL_STATUS) delete shown[name];
       return {
         enabled: true,
+        target: config.target ?? 's3',
         running,
         keyId: keys.keyId,
         intervalMinutes: config.intervalMinutes,

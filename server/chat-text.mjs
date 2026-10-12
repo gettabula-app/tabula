@@ -23,8 +23,10 @@ export function normaliseText(value) {
   if (typeof value !== 'string') return '';
   const unified = value.replace(/\r\n?/g, '\n').normalize('NFC');
   // NFC first, then strip: composing never makes an invisible character, and stripping cannot undo the composition.
-  const lines = stripInvisible(unified).split('\n').map((line) => line.replace(/\s+$/u, ''));
-  return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').replace(/^\n+/, '').replace(/\s+$/u, '');
+  // trimEnd() strips the same characters as /\s+$/, in linear time: the regular expression starts again at every space
+  // of a long run that does not reach the end, which a message of a few thousand spaces turns into seconds of CPU.
+  const lines = stripInvisible(unified).split('\n').map((line) => line.trimEnd());
+  return lines.join('\n').replace(/\n{4,}/g, '\n\n\n').replace(/^\n+/, '').trimEnd();
 }
 
 /** Length in characters as a person counts them (code points), so an emoji is one, not two. */

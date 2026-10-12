@@ -11,6 +11,7 @@ export const CLEAN_SVG = [
   '<image href="data:image/png;base64,iVBORw0KGgo=" width="4" height="4"/>',
   '<filter id="f"><feGaussianBlur stdDeviation="2"/></filter><g filter="url(#f)"><path d="M0 0"/></g>',
   '<text x="1" y="2">a &amp; b</text>',
+  '<title>A &amp; B</title><desc>A plain icon</desc><use href="#a"/>',
   '<path style="fill:#fff;stroke:url(#a)" d="M0 0"/>',
   '',
 ];
@@ -39,6 +40,7 @@ export const HOSTILE_SVG: [string, string][] = [
   ['an external xlink use', '<use xlink:href="http://evil.example/x.svg#a"/>'],
   ['a relative use', '<use href="other.svg#a"/>'],
   ['an src attribute', '<image src="https://evil.example/x.png"/>'],
+  ['an HTML image srcset inside a description', '<desc><image srcset="https://evil.example/pixel.png"/></desc>'],
   ['an iframe', '<iframe src="https://evil.example"></iframe>'],
   ['an embed', '<embed src="x"/>'],
   ['an object', '<object data="x"></object>'],
@@ -51,6 +53,8 @@ export const HOSTILE_SVG: [string, string][] = [
   ['a namespaced script', '<svg:script>alert(1)</svg:script>'],
   ['an external url() in a paint', '<path fill="url(https://evil.example/x.svg#a)" d="M0 0"/>'],
   ['an external url() in a style', '<path style="fill:url(//evil.example/x)" d="M0 0"/>'],
+  ['an unclosed external url() in a paint', '<path fill="url(https://evil.example/x.svg#a" d="M0 0"/>'],
+  ['an unclosed external url() in a style', '<path style="fill:url(//evil.example/x" d="M0 0"/>'],
   ['a url() hidden by a css escape', '<path style="fill:\\75rl(//evil.example/x)" d="M0 0"/>'],
   ['a style import', '<path style="@import url(#a)" d="M0 0"/>'],
   ['an image-set in a mask', `<g mask='image-set("//evil.example/t.png" 1x)'><path d="M0 0"/></g>`],
@@ -74,5 +78,11 @@ export const HOSTILE_SVG: [string, string][] = [
   ['a null byte', '<path d="M0 0"/>\u0000'],
   ['a line separator', '<text>a b</text>'],
   ['an attribute that breaks out', '<path d="M0 0" fill="red"><script>x</script>"/>'],
+  // a browser skips only ASCII whitespace before a value: after any other space the value is unquoted and the handler is real
+  ['a handler hidden by a no-break space', '<path title=\u00a0"x onclick=alert(1) y" d="M0 0"/>'],
+  ['a handler hidden by an em space', '<path title=\u2003"x onclick=alert(1) y" d="M0 0"/>'],
+  ['a handler hidden by a byte order mark', '<path title=\ufeff"x onclick=alert(1) y" d="M0 0"/>'],
+  ['a handler hidden by an ideographic space', '<path title=\u3000"x onclick=alert(1) y" d="M0 0"/>'],
+  ['an animation handler hidden by a no-break space', '<animate attributeName="x" dur="1s" to=\u00a0"1 onbegin=alert(1) y"/>'],
   ['a longer-than-allowed body', `<path d="${'M0 0'.repeat(MAX_SVG_BODY)}"/>`],
 ];

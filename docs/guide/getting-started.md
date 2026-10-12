@@ -21,7 +21,8 @@ To start with a ready-made layout instead, choose **Start from a template**. See
 ## The screen
 
 - **Top left.** The **All boards** button (house icon) returns to the Boards page. Next to it are the board name and the sync status. A **View only** or **Can comment** badge appears here when you cannot edit the board.
-- **Top right.** The people on the board (round avatars), the comments button, **Share**, and the **Menu** button (three dots).
+- **Top right.** The people on the board (round avatars in one row, as many as fit; a **+N** badge counts the rest), the comments button, **Share**, and the **Menu** button (three dots).
+- **On a phone** (a screen up to 480 px wide) both bars share one row. On the left are the house, a shortened board name and the sync dot. On the right are a people chip (hidden while you are alone; with others it shows up to two avatars and a count, and tapping it lists everyone), the comments button with its unread badge, **Share** as an icon, and the **Menu** button. On a screen narrower than 380 px, **Chat** moves into the **Menu**, and a small dot on the **Menu** button tells you that chat has unread messages.
 - **Left toolbar.** The tools, listed below.
 - **Bottom right.** Zoom out, the zoom level, zoom in, **Fit board**, and a minimap toggle.
 - **Bottom.** The session bar for facilitated sessions. See [Sessions and focus requests](sessions.md).
@@ -50,7 +51,7 @@ The **Menu** button at the top right holds board-level actions: **User guide** (
 
 - **Pan.** Hold `Space` and drag, use the **Hand** tool, drag with the middle or right mouse button, or scroll. On a trackpad, two fingers pan.
 - **Zoom.** Hold `Ctrl` (`Cmd` on Mac) and scroll, or pinch on a trackpad or touch screen. The buttons at the bottom right zoom in steps. Click the percentage to return to 100%.
-- **Fit.** **Fit board** (`Shift+1`) shows everything on the board. `Shift+2` fits your selection.
+- **Fit.** **Fit board** (`Shift+1`) shows everything on the board. `Shift+2` fits your selection. When you open a board on a phone, the first view already fits the board between the tool bar and the right edge, once its content has loaded; if you move or zoom first, it leaves your view alone.
 - **Minimap.** The map button at the bottom right shows a small overview. Click or drag in it to jump.
 - **Go to a person.** Click someone's avatar at the top right to jump to where they are working.
 

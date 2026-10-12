@@ -6,7 +6,7 @@ import { lowDetail, type FilterChip } from './ui/kanban-logic';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
-import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
+import { SVG_DEFS, objectMarkup, placeholderZoom, type MarkupCtx } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
 import { USER_COLORS, WIRE } from './palette';
@@ -135,6 +135,22 @@ function sizeMarkup(raw: SizeMark, px: (v: number) => number): string {
 }
 
 export const MIN_ZOOM = 0.02;
+/** Up to this width the first view uses the phone fit. */
+export const PHONE_MAX_WIDTH = 600;
+export const PHONE_FIT_MARGIN = 16;
+/** Right edge of the tool rail: 12 px from the left edge plus its 56 px. */
+export const RAIL_RIGHT_EDGE = 68;
+
+export interface FitInsets { top: number; right: number; bottom: number; left: number }
+
+/** The camera that shows `r` inside the window minus the chrome insets and `pad` on every side, no closer than maxZoom. */
+export function fitCamera(size: { w: number; h: number }, i: FitInsets, r: Rect, pad: number, maxZoom: number): Camera {
+  const aw = Math.max(80, size.w - i.left - i.right - pad * 2);
+  const ah = Math.max(80, size.h - i.top - i.bottom - pad * 2);
+  const zoom = Math.min(maxZoom, Math.max(MIN_ZOOM, Math.min(aw / Math.max(r.w, 1), ah / Math.max(r.h, 1))));
+  const cx = i.left + pad + aw / 2, cy = i.top + pad + ah / 2;
+  return { zoom, x: r.x + r.w / 2 - cx / zoom, y: r.y + r.h / 2 - cy / zoom };
+}
 export const MAX_ZOOM = 32;
 
 /** Handles for a single selected object, in world coordinates. */
@@ -158,7 +174,7 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
   // a text: the sides change the wrap width, the corners scale the type (src/text-resize.ts); its height follows its lines
   if (o.type === 'text') hs = all.filter((h) => h.id === 'e' || h.id === 'w' || h.id.length === 2);
   if (o.type === 'uml-initial' || o.type === 'uml-final') hs = all.filter((h) => h.id.length === 2);
-  if (o.type !== 'frame' && o.type !== 'uml-lifeline' && o.type !== 'uml-package') {
+  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package') {
     hs = [...hs, { id: 'rot', p: L(o.w / 2, -24 / zoom) }];
   }
   return hs;
@@ -401,11 +417,19 @@ export class Renderer {
 
   setCamera(c: Partial<Camera>) {
     const low = lowDetail(this.cam.zoom);
+    const step = placeholderZoom(this.cam.zoom);
     this.cam = { ...this.cam, ...c };
     this.cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.cam.zoom));
     // a kanban draws differently below zoom 0.4, so crossing it redraws what is on screen of every kanban
     if (lowDetail(this.cam.zoom) !== low) {
       for (const id of this.els.keys()) if (isContainerType(this.store.get(id)?.type ?? '')) this.markDirty(id);
+    }
+    // a placeholder's label keeps 12 px on screen, so it is drawn again when the zoom moves to another step
+    if (placeholderZoom(this.cam.zoom) !== step) {
+      for (const id of this.els.keys()) {
+        const o = this.store.get(id);
+        if (o?.type === 'image' && this.imageState(o).kind !== 'ok') this.markDirty(id);
+      }
     }
     this.camDirty = true;
     this.overlayDirty = true;
@@ -482,14 +506,30 @@ export class Renderer {
   /** Screen area covered by floating chrome; fitting keeps content clear of it. */
   insets = { top: 64, right: 16, bottom: 72, left: 80 };
 
-  private fitCam(r: Rect, pad: number, maxZoom: number): Camera {
-    const s = this.size();
-    const i = this.insets;
-    const aw = Math.max(80, s.w - i.left - i.right - pad * 2);
-    const ah = Math.max(80, s.h - i.top - i.bottom - pad * 2);
-    const zoom = Math.min(maxZoom, Math.max(MIN_ZOOM, Math.min(aw / Math.max(r.w, 1), ah / Math.max(r.h, 1))));
-    const cx = i.left + pad + aw / 2, cy = i.top + pad + ah / 2;
-    return { zoom, x: r.x + r.w / 2 - cx / zoom, y: r.y + r.h / 2 - cy / zoom };
+  private fitCam(r: Rect, pad: number, maxZoom: number, insets = this.insets): Camera {
+    return fitCamera(this.size(), insets, r, pad, maxZoom);
+  }
+
+  /**
+   * The first view of a board with content. A wide window keeps the usual breathing room; a phone fits the content between
+   * the tool rail and the right edge with a 16 px margin, because 120 px a side would leave a sliver (or cut the content).
+   */
+  fitFirst(r: Rect) {
+    const phone = this.phoneFitCam(r, 1);
+    if (phone) this.setCamera(phone);
+    else this.fit(r, 120, 1);
+  }
+
+  /** The Fit button: the whole board, animated. A phone gets the same rail-aware fit as the first view. */
+  flyToFit(r: Rect) {
+    const phone = this.phoneFitCam(r, 2);
+    if (phone) this.flyToCamera(phone);
+    else this.flyTo(r, 80, 2);
+  }
+
+  private phoneFitCam(r: Rect, maxZoom: number): Camera | null {
+    if (this.size().w > PHONE_MAX_WIDTH) return null;
+    return this.fitCam(r, PHONE_FIT_MARGIN, maxZoom, { ...this.insets, left: RAIL_RIGHT_EDGE, right: 0 });
   }
 
   /** Fit a world rect into view with padding (screen px). */
@@ -698,7 +738,7 @@ export class Renderer {
     if (entered?.type === 'group' && enteredBounds) {
       const v = this.viewport();
       const memberBounds = this.store.descendantsOf(entered.id)
-        .filter((member) => member.type !== 'group' && member.type !== 'frame' && isBox(member) && this.store.isShown(member) && !this.isHidden(member))
+        .filter((member) => member.type !== 'group' && member.type !== 'frame' && member.type !== 'tracker' && isBox(member) && this.store.isShown(member) && !this.isHidden(member))
         .map((member) => this.bounds(member))
         .filter((bounds): bounds is Rect => !!bounds);
       const cutouts = memberBounds.map((b) => `M${b.x} ${b.y}h${b.w}v${b.h}h-${b.w}z`).join(' ');

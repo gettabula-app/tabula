@@ -160,6 +160,12 @@ describe('Mermaid', () => {
     expect(objs.filter((o) => o.type === 'connector')).toHaveLength(4);
   });
 
+  it('reads a node whose name starts with a keyword as a node, and still skips the keyword lines', () => {
+    const p = parseMermaid('flowchart TD\n  style1 --> B\n  clickA --> directionX\n  classes --> endpoint\n  subgraph one\n  B --> C\n  end\n  style B fill:#f9f\n  classDef hot fill:#f00\n  class C hot\n  click C callback\n  linkStyle 0 stroke:#f00\n  direction LR');
+    expect(p.nodes.map((n) => n.id)).toEqual(['style1', 'B', 'clickA', 'directionX', 'classes', 'endpoint', 'C']);
+    expect(p.edges.map((e) => `${e.from}>${e.to}`)).toEqual(['style1>B', 'clickA>directionX', 'classes>endpoint', 'B>C']);
+  });
+
   it('imports a class diagram with relations pointing the right way', () => {
     const p = parseMermaid('classDiagram\n  class Animal {\n    +name: string\n    +speak() void\n  }\n  Animal <|-- Duck\n  Order *-- LineItem : contains');
     const gen = p.edges.find((e) => e.relation === 'generalization')!;
@@ -176,6 +182,12 @@ describe('Mermaid', () => {
     expect(sq.edges.map((e) => e.relation)).toEqual(['message', 'reply']);
     const objs = layout(sq, { x: 0, y: 0 }, factory());
     expect(objs.filter((o) => o.type === 'uml-lifeline')).toHaveLength(2);
+  });
+
+  it('reads the activation shorthand of a sequence message as part of the arrow, not of the name', () => {
+    const sq = parseMermaid('sequenceDiagram\n  A->>+B: hi\n  B-->>-A: ok\n  A->>B: again');
+    expect(sq.nodes.map((n) => n.id)).toEqual(['A', 'B']);
+    expect(sq.edges.map((e) => `${e.from}>${e.to}:${e.relation}`)).toEqual(['A>B:message', 'B>A:reply', 'A>B:message']);
   });
 
   it('exports a class diagram back to Mermaid', () => {

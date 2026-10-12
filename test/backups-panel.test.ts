@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AdminOverview, BackupBoards, BackupList, BackupPreview, Me } from '../src/api';
+import type { AdminOverview, BackupBoards, BackupList, BackupPreview, Me, TrackerReadinessReport } from '../src/api';
 import { onRestoring } from '../src/api';
 import type { DeniedReason } from '../src/sync';
 import { mountAccessBanner } from '../src/ui/access';
@@ -25,9 +25,10 @@ const SECOND = name(NOW - 90 * MIN);
 const LOST = name(NOW - 150 * MIN);
 const DAMAGED = name(NOW - 3 * DAY);
 
-const owner = (workspace?: Me['workspace']): Me => ({ user: { id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'owner' }, teams: [], ...(workspace ? { workspace } : {}) });
+const owner = (workspace?: Me['workspace']): Me => ({ user: { id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'owner' }, teams: [], mcpOauth: false, ...(workspace ? { workspace } : {}) });
+const trackerOwner = (): Me => ({ ...owner(), tracker: true });
 const hosted = (readOnly = false): Me['workspace'] => ({ readOnly, banner: null, seatLimit: 10, seatsUsed: 3 });
-const adminMe = (): Me => ({ user: { id: 'u2', email: 'admin@example.test', name: 'Admin', role: 'admin' }, teams: [] });
+const adminMe = (): Me => ({ user: { id: 'u2', email: 'admin@example.test', name: 'Admin', role: 'admin' }, teams: [], mcpOauth: false });
 
 const listing = (patch: Partial<BackupList> = {}): BackupList => ({
   backups: [
@@ -38,7 +39,7 @@ const listing = (patch: Partial<BackupList> = {}): BackupList => ({
   ],
   truncated: false,
   status: {
-    lastSuccessAt: NOW - 30 * MIN, lastFailureAt: null, lastFailureError: null, consecutiveFailures: 0, nextRunAt: NOW + 30 * MIN, running: false,
+    target: 's3', lastSuccessAt: NOW - 30 * MIN, lastFailureAt: null, lastFailureError: null, consecutiveFailures: 0, nextRunAt: NOW + 30 * MIN, running: false,
     intervalMinutes: 60, keyId: 'a1b2c3d4', bytesStored: 18_874_368, objects: 52, manifests: 4,
   },
   restore: { inProgress: null, maintenance: false, last: null, protectedBackups: [], oldData: [] },
@@ -66,11 +67,27 @@ const overview: AdminOverview = {
   sessions: { active: 1 }, signIns7d: 1, live: { rooms: 0, connections: 0 }, instance: { authEnabled: true, baseUrl: 'http://localhost', mail: 'log', version: '0.1.0' },
 };
 
+const readinessReport = (patch: Partial<TrackerReadinessReport> = {}): TrackerReadinessReport => {
+  const ids = [
+    'offsite_enabled', 'latest_backup_fresh', 'schedule_meets_rpo', 'backup_decrypts', 'tracker_data_clean', 'counters_floor_ok',
+    'links_consistent', 'search_ok', 'slice8_secrets', 'restore_drill_recent', 'retention_30d', 'import_verified',
+  ];
+  return {
+    at: NOW,
+    overall: 'no_go',
+    gate: { closed: true, since: NOW - 11 * MIN, floor: 'pending' },
+    targets: { rpoMinutes: 15, rtoHours: 4, retentionDays: 30 },
+    checks: ids.map((id, i) => ({ id, label: id, state: i === 0 ? 'fail' : 'pass', detail: i === 0 ? 'newest backup 41 minutes old, target 15' : `${i} verified` })),
+    ...patch,
+  };
+};
+
 // ------------------------------------------------------------------ the mocked server
 
 interface Reply { status?: number; body?: unknown; headers?: Record<string, string> }
+type ReplyOrNetwork = Reply | 'network';
 type Req = { method: string; path: string; body: any };
-type Route = Reply | 'network' | ((req: Req) => Reply | 'network');
+type Route = ReplyOrNetwork | ((req: Req) => ReplyOrNetwork | Promise<ReplyOrNetwork>);
 
 const json = (body: unknown, status = 200, headers?: Record<string, string>): Reply => ({ status, body, headers });
 const refuse = (status: number, error: string, extra: Record<string, unknown> = {}, headers?: Record<string, string>): Reply =>
@@ -96,7 +113,7 @@ function serve(routes: Record<string, Route> = {}) {
     calls.push(req);
     const route = table[`${method} ${path}`];
     if (route === undefined) return new Response(JSON.stringify({ error: 'not_found', message: 'No such endpoint' }), { status: 404, headers: { 'content-type': 'application/json' } });
-    const reply = typeof route === 'function' ? route(req) : route;
+    const reply = typeof route === 'function' ? await route(req) : route;
     if (reply === 'network') throw new TypeError('Failed to fetch');
     return new Response(reply.body === undefined ? null : JSON.stringify(reply.body), { status: reply.status ?? 200, headers: { 'content-type': 'application/json', ...reply.headers } });
   });
@@ -213,6 +230,7 @@ describe('the list', () => {
       'Next backup': '2026-01-15 10:30 UTC · in 30 minutes',
       'How often': 'Every hour',
       Key: 'a1b2c3d4',
+      Target: 'S3 bucket',
       Stored: '18 MB · 4 backups · 52 files',
     });
     expect(panel().querySelectorAll('h3').map(textOf)).toEqual(['Status', '4 backups']);
@@ -1106,5 +1124,151 @@ describe('the Overview of a hosted workspace', () => {
     await openOverview(owner({ ...hosted()!, billing: false }));
     expect(hasControl(panel(), 'Manage billing')).toBe(false);
     expect(textOf(panel())).toContain("This workspace is provided free (education or internal). There's nothing to bill.");
+  });
+});
+
+// ------------------------------------------------------------------ tracker readiness
+
+describe('tracker readiness in Backups', () => {
+  const READINESS = 'GET /api/admin/tracker/readiness';
+  const EPOCH = 'POST /api/admin/tracker/key-epoch';
+  const DRILL = 'POST /api/admin/tracker/drill-record';
+  const CUTOVER = 'POST /api/admin/tracker/cutover-record';
+
+  it('shows the report with labels, a word and icon, the gate and all checks', async () => {
+    await open(trackerOwner(), { [READINESS]: json(readinessReport()) });
+    const section = need(panel(), '.backups-readiness');
+    expect(textOf(section)).toContain('Tracker readiness');
+    expect(textOf(need(section, '.backups-readiness-overall'))).toContain('Not ready');
+    expect(need(section, '.backups-readiness-overall .ico')).toBeTruthy();
+    expect(textOf(need(section, '.backups-readiness-gate'))).toContain('closed since 2026-01-15 09:49 UTC');
+    expect(need(section, '.backups-readiness-row')).toBeTruthy();
+    expect(section.querySelectorAll('.backups-readiness-row')).toHaveLength(12);
+    expect(textOf(need(section, '[data-check-id="offsite_enabled"]'))).toContain('Offsite backup');
+    expect(textOf(need(section, '[data-check-id="offsite_enabled"]'))).toContain('newest backup 41 minutes old, target 15');
+    expect(asked('GET', '/api/admin/tracker/readiness')).toHaveLength(1);
+  });
+
+  it('renders a readiness 404 as one quiet line and no error line', async () => {
+    await open(trackerOwner(), { [READINESS]: refuse(404, 'not_found') });
+    const section = need(panel(), '.backups-readiness');
+    expect(textOf(section)).toBe('Tracker readiness is not available on this server yet.');
+    expect(section.querySelectorAll('p')).toHaveLength(1);
+    expect(section.querySelectorAll('[role="alert"]')).toHaveLength(0);
+    expect(hasControl(section, 'Refresh')).toBe(false);
+  });
+
+  it('uses the plain error line for readiness failures other than not_found', async () => {
+    await open(trackerOwner(), { [READINESS]: refuse(503, 'tracker_restoring') });
+    expect(alerts()).toEqual(['Tracker writes are paused while a restore is being checked. Try again when it is complete.']);
+    expect(textOf(panel())).not.toContain('tracker_restoring');
+  });
+
+  it('fetches once on open and once for a manual refresh, without scheduling timers', async () => {
+    let attempts = 0;
+    const timer = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      await open(trackerOwner(), { [READINESS]: () => (attempts++, json(readinessReport())) });
+      expect(attempts).toBe(1);
+      expect(timer).not.toHaveBeenCalled();
+      control(panel(), 'Refresh').click();
+      await flush();
+      expect(attempts).toBe(2);
+      expect(timer).not.toHaveBeenCalled();
+    } finally {
+      timer.mockRestore();
+    }
+  });
+
+  it('requires JUMP, posts it once, and keeps the action disabled while pending', async () => {
+    let finish!: (reply: ReplyOrNetwork) => void;
+    const pending = new Promise<ReplyOrNetwork>((resolve) => { finish = resolve; });
+    await open(trackerOwner(), { [READINESS]: json(readinessReport()), [EPOCH]: () => pending });
+    const input = need(panel(), '#tracker-epoch-confirm');
+    expect(control(panel(), 'Move counters forward').disabled).toBe(true);
+    type(input, 'jump');
+    expect(control(panel(), 'Move counters forward').disabled).toBe(true);
+    type(input, 'JUMP');
+    expect(control(panel(), 'Move counters forward').disabled).toBe(false);
+    control(panel(), 'Move counters forward').click();
+    expect(control(panel(), 'Moving counters…').disabled).toBe(true);
+    control(panel(), 'Moving counters…').click();
+    expect(asked('POST', '/api/admin/tracker/key-epoch')).toHaveLength(1);
+    expect(asked('POST', '/api/admin/tracker/key-epoch')[0].body).toEqual({ confirm: 'JUMP' });
+    finish(json({ ok: true }));
+    await flush();
+    expect(asked('POST', '/api/admin/tracker/key-epoch')).toHaveLength(1);
+    expect(asked('GET', '/api/admin/tracker/readiness')).toHaveLength(2);
+  });
+
+  it('shows the plain epoch error on failure', async () => {
+    await open(trackerOwner(), {
+      [READINESS]: json(readinessReport()),
+      [EPOCH]: refuse(400, 'key_epoch_confirmation_mismatch'),
+    });
+    type(need(panel(), '#tracker-epoch-confirm'), 'JUMP');
+    control(panel(), 'Move counters forward').click();
+    await flush();
+    expect(alerts()).toEqual(['The confirmation did not match. Type JUMP exactly, in capital letters.']);
+    expect(textOf(panel())).not.toContain('key_epoch_confirmation_mismatch');
+  });
+
+  it('validates a drill JSON paste, then posts the record and the cutover date and acceptance', async () => {
+    await open(trackerOwner(), {
+      [READINESS]: json(readinessReport()),
+      [DRILL]: json({ ok: true }),
+      [CUTOVER]: json({ ok: true }),
+    });
+    const textarea = need(panel(), '#tracker-drill-json');
+    type(textarea, '{broken');
+    control(panel(), 'Save drill record').click();
+    expect(asked('POST', '/api/admin/tracker/drill-record')).toHaveLength(0);
+    expect(alerts()).toEqual(['Paste valid JSON.']);
+
+    const drill = {
+      at: '2026-01-15T10:00:00.000Z', kind: 'local', schema: 17, restoreSeconds: 540, dataLossSeconds: 120,
+      boxes: [{ id: 'restore', result: 'pass' }], overall: 'pass',
+    };
+    type(need(panel(), '#tracker-drill-json'), JSON.stringify(drill));
+    control(panel(), 'Save drill record').click();
+    await flush();
+    expect(asked('POST', '/api/admin/tracker/drill-record').map((call) => call.body)).toEqual([drill]);
+    expect(asked('GET', '/api/admin/tracker/readiness')).toHaveLength(2);
+
+    const cutover = control(panel(), 'Save cutover check');
+    expect(cutover.disabled).toBe(true);
+    type(need(panel(), '#tracker-import-verified-at'), '2026-01-12');
+    expect(control(panel(), 'Save cutover check').disabled).toBe(true);
+    choose(need(panel(), 'input[type="checkbox"]'));
+    expect(control(panel(), 'Save cutover check').disabled).toBe(false);
+    control(panel(), 'Save cutover check').click();
+    await flush();
+    expect(asked('POST', '/api/admin/tracker/cutover-record').map((call) => call.body)).toEqual([
+      { importVerifiedAt: '2026-01-12', lossReportAccepted: true },
+    ]);
+    expect(asked('GET', '/api/admin/tracker/readiness')).toHaveLength(3);
+  });
+
+  it('keeps hostile check details as plain text without links or lookups', async () => {
+    const detail = '<a href="/api/tickets">TAB-123: private issue title</a>';
+    const report = readinessReport({ checks: [{ id: 'offsite_enabled', label: 'untrusted server label', state: 'fail', detail }] });
+    await open(trackerOwner(), { [READINESS]: json(report) });
+    const row = need(panel(), '[data-check-id="offsite_enabled"]');
+    const shown = need(row, '.backups-readiness-detail');
+    expect(shown.textContent).toBe(detail);
+    expect(row.querySelectorAll('a')).toHaveLength(0);
+    expect(textOf(row)).not.toContain('untrusted server label');
+  });
+
+  it('sends a readiness 401 to sign-in', async () => {
+    await open(trackerOwner(), { [READINESS]: refuse(401, 'unauthenticated') });
+    expect(browser.location.hash).toBe('#/signin');
+    expect(alerts()).toHaveLength(0);
+  });
+
+  it('does not request or show readiness when the tracker feature flag is off', async () => {
+    await open(owner(), { [READINESS]: json(readinessReport()) });
+    expect(asked('GET', '/api/admin/tracker/readiness')).toHaveLength(0);
+    expect(panel().querySelectorAll('.backups-readiness')).toHaveLength(0);
   });
 });

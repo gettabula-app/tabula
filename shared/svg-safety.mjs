@@ -31,8 +31,11 @@ const ANIMATABLE = new Set([
 ]);
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
-const TAG_RE = /<(\/?)([A-Za-z][A-Za-z0-9]*)((?:\s+[A-Za-z_:][A-Za-z0-9_:.-]*(?:\s*=\s*(?:"[^"<>]*"|'[^'<>]*'))?)*)\s*(\/?)>/y;
-const ATTR_RE = /\s+([A-Za-z_:][A-Za-z0-9_:.-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g;
+// Inside a tag only the whitespace both the HTML and the XML parser skip ([\t\n\r ]; form feed is refused as a control
+// character). `\s` would also take U+00A0 and the other Unicode spaces, which a browser reads as the start of an unquoted
+// value: `title=\u00a0"x onclick=alert(1) y"` is one quoted attribute to `\s` and an onclick to the browser.
+const TAG_RE = /<(\/?)([A-Za-z][A-Za-z0-9]*)((?:[\t\n\r ]+[A-Za-z_:][A-Za-z0-9_:.-]*(?:[\t\n\r ]*=[\t\n\r ]*(?:"[^"<>]*"|'[^'<>]*'))?)*)[\t\n\r ]*(\/?)>/y;
+const ATTR_RE = /[\t\n\r ]+([A-Za-z_:][A-Za-z0-9_:.-]*)(?:[\t\n\r ]*=[\t\n\r ]*(?:"([^"]*)"|'([^']*)'))?/g;
 // Character classes by code point, not by regular expression (as in board-ops.mjs).
 const isSvgControl = (cp) => cp <= 0x08 || cp === 0x0b || cp === 0x0c || (cp >= 0x0e && cp <= 0x1f) || (cp >= 0x7f && cp <= 0x9f) || cp === 0x2028 || cp === 0x2029;
 // whitespace, control and invisible characters a browser ignores inside a URL scheme
@@ -45,7 +48,8 @@ const without = (value, drop) => {
   return out;
 };
 const RASTER_DATA_RE = /^data:image\/(png|jpeg|gif|webp)[;,]/;
-const BLOCKED_ATTRIBUTES = new Set(['xml:base', 'srcdoc', 'formaction', 'action', 'poster', 'ping']);
+// Inside SVG title/desc the HTML parser reads <image> as <img>, where srcset can load outside the body.
+const BLOCKED_ATTRIBUTES = new Set(['xml:base', 'srcdoc', 'srcset', 'formaction', 'action', 'poster', 'ping']);
 
 const decodeBasic = (v) => v.replace(/&(amp|lt|gt|quot|apos);/g, (_m, name) => ({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" })[name]);
 
@@ -72,7 +76,9 @@ function attributeProblem(element, name, rawValue) {
   if (lname === 'style' && /@import|expression|behavior|binding/.test(flat)) return 'has a style that loads or runs something';
   // mask, cursor and the like take CSS images, which can name an address without url()
   if (/(image-set|image|cross-fade|element|paint|src)\(/.test(flat)) return 'has a CSS image function that could load something from outside';
-  for (const m of flat.matchAll(/url\(([^)]*)\)/g)) {
+  for (const m of flat.matchAll(/url\(([^)]*)(\)|$)/g)) {
+    // CSS accepts the end of an attribute as the end of an unclosed url(), so it must not escape this check.
+    if (!m[2]) return 'has a url() that is not closed';
     if (!m[1].replace(/^['"]/, '').startsWith('#')) return 'has a url() that points outside the icon';
   }
   if (local === 'attributename' && !ANIMATABLE.has(flat)) return `animates ${value.slice(0, 30)}, which an icon may not change`;

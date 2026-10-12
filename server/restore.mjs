@@ -21,8 +21,12 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import * as Y from 'yjs';
 import { BackupError, PROTECTED_KEY, assetHashOf, createScrubber, isBackupPath, parseManifestName, parseProtections, validateRelPath } from './backup.mjs';
-import { newObjectId } from './board-ops.mjs';
+import { newObjectId, SERVER_TRACKER_FIELDS } from './board-ops.mjs';
 import { canRead, readSchemaState } from './schema.mjs';
+import { checkTrackerData } from './tracker/backup-check.mjs';
+import { computeKeyFloor, readKeyFloorFile } from './tracker/key-floor.mjs';
+import { restoreGateValue, TRACKER_RESTORE_GATE_KEY } from './tracker/gate.mjs';
+import { SERVER_CARD_FIELDS } from './tracker/projection.mjs';
 
 const MIB = 1024 * 1024;
 const MINUTE_MS = 60_000;
@@ -108,6 +112,7 @@ export const RESTORE_STATUS = Object.freeze({
   backup_incomplete: 422,
   schema_too_new: 422,
   integrity_check_failed: 422,
+  tracker_data_invalid: 422,
   no_active_owner: 422,
   restore_failed: 500,
 });
@@ -142,6 +147,49 @@ export class SimulatedCrash extends Error {
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 const noop = () => {};
+const RECONCILE_DONE_KEY = 'tracker.reconcile_done';
+const FTS_READY_KEY = 'tracker.fts_ready';
+
+const countValue = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : undefined);
+const trackerName = (value) => typeof value === 'string' && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : null;
+
+function cleanTrackerSummary(value) {
+  if (!isObject(value)) return null;
+  const fields = ['schema', 'trackers', 'tickets', 'archived', 'events', 'maxEventId', 'comments', 'aliases', 'links', 'kanbanLinks', 'outboxPending', 'notifications', 'ftsRows'];
+  const summary = {};
+  for (const field of fields) {
+    const count = countValue(value[field]);
+    if (count !== undefined) summary[field] = count;
+  }
+  summary.counters = Array.isArray(value.counters) ? value.counters.slice(0, 100).flatMap((row) => {
+    const scope = trackerName(row?.scope);
+    const prefix = trackerName(row?.prefix);
+    const next = countValue(row?.next);
+    const maxNumber = countValue(row?.maxNumber);
+    return scope && prefix && next !== undefined && maxNumber !== undefined ? [{ scope, prefix, next, maxNumber }] : [];
+  }) : [];
+  return summary;
+}
+
+function cleanTracker(value) {
+  if (!isObject(value)) return undefined;
+  const findings = Array.isArray(value.findings) ? value.findings.slice(0, 100).flatMap((row) => {
+    const count = countValue(row?.count);
+    return typeof row?.code === 'string' && /^[a-z_]{1,40}$/.test(row.code) && count !== undefined ? [{ code: row.code, count }] : [];
+  }) : [];
+  const repaired = {};
+  if (isObject(value.repaired)) {
+    for (const [code, count] of Object.entries(value.repaired)) {
+      if (/^[a-z_]{1,40}$/.test(code) && countValue(count) !== undefined) repaired[code] = count;
+    }
+  }
+  const result = { summary: cleanTrackerSummary(value.summary), findings, repaired };
+  for (const field of ['boardsReconciled', 'cardsStripped', 'cardsRepaired', 'unlinked', 'boardsFailed']) {
+    const count = countValue(value[field]);
+    if (count !== undefined) result[field] = count;
+  }
+  return result;
+}
 
 // ---------------------------------------------------------------- file system helpers
 
@@ -455,7 +503,8 @@ export function recoverOnStart({ dataDir, log = noop, step = noop }) {
 
 /**
  * @typedef {object} RestoreHooks what the relay supplies
- * @property {() => void | Promise<void>} [enterMaintenance] answer 503 from now on, close every socket with the restoring code, save every open room and then stop saving them, stop the timers that use the database
+ * @property {() => boolean} [saveRooms] synchronously save every room; false aborts before maintenance or any restart
+ * @property {() => void | Promise<void>} [enterMaintenance] synchronously freeze edits and room saves, answer 503, close every socket with the restoring code, stop the timers that use the database
  * @property {() => void | Promise<void>} [closeDirectory] close the database (default: directory.close())
  */
 
@@ -506,6 +555,8 @@ function fromBackupError(err, where = '') {
 export function createRestore({
   backup,
   directory,
+  cloud = null,
+  keyFloorFile = null,
   config = null,
   dataDir,
   hooks = {},
@@ -565,6 +616,8 @@ export function createRestore({
   function cleanRecord(value) {
     if (!isObject(value)) return null;
     const count = (v) => (Number.isSafeInteger(v) && v >= 0 ? v : undefined);
+    const tracker = cleanTracker(value.tracker);
+    const trackerDetached = count(value.trackerDetached);
     return {
       kind: value.kind === 'board' ? 'board' : 'workspace',
       result: value.result === 'done' ? 'done' : 'failed',
@@ -574,19 +627,22 @@ export function createRestore({
       ...(count(value.files) !== undefined ? { files: count(value.files) } : {}),
       ...(count(value.bytes) !== undefined ? { bytes: count(value.bytes) } : {}),
       ...(count(value.boards) !== undefined ? { boards: count(value.boards) } : {}),
+      ...(trackerDetached !== undefined ? { trackerDetached } : {}),
+      ...(tracker ? { tracker } : {}),
       ...(value.keepOldFor === keepOldWords('days') || value.keepOldFor === keepOldWords('next-backup') ? { keepOldFor: value.keepOldFor } : {}),
     };
   }
 
+  /** The stored record, null when there is none, undefined when the database cannot be read (after a restore has closed it). */
   function readLast() {
     try {
       return cleanRecord(JSON.parse(directory.getSetting(STATUS_KEY) ?? 'null'));
     } catch {
-      return null;
+      return undefined;
     }
   }
 
-  let last = readLast();
+  let last = readLast() ?? null;
 
   function setLast(record) {
     last = record;
@@ -824,6 +880,7 @@ export function createRestore({
     try {
       let version;
       let schema;
+      let tracker = null;
       try {
         const db = new DatabaseSync(copy, { readOnly: true });
         try {
@@ -843,6 +900,28 @@ export function createRestore({
       if (!canRead(schema, MIGRATIONS.length)) {
         throw new RestoreError('schema_too_new', `The database in the backup was written by a newer Tabula (schema ${version}, this one knows ${MIGRATIONS.length}). ${NEWEST_SCHEMA_HINT}`);
       }
+      try {
+        const db = new DatabaseSync(copy, { readOnly: true });
+        try {
+          const checked = checkTrackerData(db, { at: now() });
+          if (checked.present) {
+            tracker = { present: true, summary: checked.summary, findings: checked.findings };
+            const structural = checked.findings.filter((finding) =>
+              ['duplicate_active_link', 'link_to_missing_ticket'].includes(finding.code) && finding.count > 0);
+            if (structural.length) {
+              throw new RestoreError('tracker_data_invalid', 'The tracker data in this backup has structurally invalid links, so nothing was changed', {
+                summary: checked.summary,
+                findings: checked.findings,
+              });
+            }
+          }
+        } finally {
+          db.close();
+        }
+      } catch (err) {
+        if (err instanceof RestoreError) throw err;
+        throw new RestoreError('integrity_check_failed', 'The database in the backup cannot be read, so nothing was changed');
+      }
       let counts;
       try {
         const opened = openDirectory(copy);
@@ -861,7 +940,7 @@ export function createRestore({
         if (err instanceof RestoreError) throw err;
         throw new RestoreError('invalid_backup', 'The database in the backup could not be opened by this version of Tabula, so nothing was changed');
       }
-      return counts;
+      return { ...counts, tracker };
     } finally {
       removeSqliteFiles(copy);
     }
@@ -949,6 +1028,50 @@ export function createRestore({
     const { DatabaseSync } = await import('node:sqlite');
     const file = path.join(stagingDir, 'directory.sqlite');
     openDirectory(file).close();
+
+    let manifestMax;
+    try {
+      const listed = await backup.listManifests();
+      let foundCounters = false;
+      const counters = [];
+      for (const item of listed.slice(0, 50)) {
+        try {
+          const manifest = await backup.readManifest(item.name);
+          const rows = manifest?.tracker?.summary?.counters;
+          if (!Array.isArray(rows)) continue;
+          foundCounters = true;
+          for (const row of rows) {
+            if (trackerName(row?.scope) && trackerName(row?.prefix) && Number.isSafeInteger(row.next) && row.next > 0) {
+              counters.push({ scope: row.scope, prefix: row.prefix, next: row.next });
+            }
+          }
+        } catch {
+          /* an unreadable or legacy manifest is not floor evidence */
+        }
+      }
+      if (foundCounters) manifestMax = { counters };
+    } catch {
+      manifestMax = undefined;
+    }
+
+    let controlPlane;
+    if (cloud && typeof cloud.readKeyFloor === 'function') {
+      try { controlPlane = (await cloud.readKeyFloor()) ?? undefined; } catch { controlPlane = undefined; }
+    }
+    const floorFile = keyFloorFile ? readKeyFloorFile(keyFloorFile)?.counters : undefined;
+    let liveBefore;
+    try {
+      liveBefore = {
+        counters: directory.db.prepare(
+          'SELECT scope, prefix, next_number FROM ticket_counters ORDER BY scope, prefix LIMIT 100',
+        ).all().flatMap((row) => trackerName(row.scope) && trackerName(row.prefix)
+          && Number.isSafeInteger(Number(row.next_number)) && Number(row.next_number) > 0
+          ? [{ scope: row.scope, prefix: row.prefix, next: Number(row.next_number) }]
+          : []),
+      };
+    } catch {
+      liveBefore = undefined;
+    }
     const nowMs = now();
     const carried = {};
     for (const key of CARRIED_SETTINGS) carried[key] = directory.getSetting(key);
@@ -959,6 +1082,7 @@ export function createRestore({
 
     let removed;
     let record;
+    let trackerRecord = null;
     const db = new DatabaseSync(file);
     try {
       db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON');
@@ -975,12 +1099,138 @@ export function createRestore({
         if (has('guest_sessions')) db.exec('DELETE FROM guest_sessions');
         if (has('join_codes')) db.prepare('UPDATE join_codes SET revoked_at = ? WHERE revoked_at IS NULL').run(nowMs);
         if (has('access_tokens')) db.prepare('UPDATE access_tokens SET revoked_at = ? WHERE revoked_at IS NULL').run(nowMs);
+        if (has('oauth_grants')) db.prepare("UPDATE oauth_grants SET revoked_at = ?, revoked_reason = 'restore' WHERE revoked_at IS NULL").run(nowMs);
+        if (has('oauth_requests')) db.exec('DELETE FROM oauth_requests');
+        if (has('oauth_codes')) db.exec('DELETE FROM oauth_codes');
+        if (has('oauth_tokens')) db.exec('UPDATE oauth_tokens SET replay_ciphertext = NULL, replay_until = NULL, replay_count = 0');
         if (has('invites')) db.exec('UPDATE invites SET revoked = 1 WHERE revoked = 0');
         db.exec("DELETE FROM settings WHERE key = 'backup.status' OR key LIKE 'cloud.%'");
         db.exec("DELETE FROM audit WHERE action IN ('backup.run', 'backup.failed')");
         for (const [key, value] of Object.entries(carried)) if (value !== null) upsert.run(key, value);
         upsert.run(PROTECTED_KEY, JSON.stringify(protectedNow));
         upsert.run(KEEP_KEY, JSON.stringify(keep));
+
+        if (has('tickets') && info.trackerCheck?.present === true) {
+          const repaired = {
+            key_mismatch: 0,
+            counter_below_max: 0,
+            link_without_board_link: 0,
+            alias_collision: 0,
+            orphan_event: 0,
+            event_missing: Number(info.trackerCheck.findings.find((finding) => finding.code === 'event_missing')?.count) || 0,
+            outbox_stale: 0,
+            fts_missing: 0,
+          };
+          let floorResult = { counters: [], known: false };
+          const trackerCount = count('tickets');
+          const restored = new Map();
+          if (has('ticket_counters')) {
+            for (const row of db.prepare('SELECT scope, prefix, next_number FROM ticket_counters ORDER BY scope, prefix LIMIT 100').all()) {
+              const key = JSON.stringify([row.scope, row.prefix]);
+              restored.set(key, { scope: row.scope, prefix: row.prefix, next: Number(row.next_number), maxNumber: 0 });
+            }
+          }
+          for (const row of db.prepare(
+            'SELECT tracker_id AS scope, prefix, COALESCE(MAX(number), 0) AS max_number FROM tickets GROUP BY tracker_id, prefix ORDER BY tracker_id, prefix LIMIT 100',
+          ).all()) {
+            const key = JSON.stringify([row.scope, row.prefix]);
+            const prior = restored.get(key) ?? { scope: row.scope, prefix: row.prefix, next: 1, maxNumber: 0 };
+            prior.maxNumber = Number(row.max_number) || 0;
+            restored.set(key, prior);
+          }
+          const restoredCounters = [...restored.values()];
+          floorResult = computeKeyFloor({
+            restored: restoredCounters,
+            liveBefore,
+            manifestMax,
+            controlPlane,
+            floorFile,
+            restoredHasTickets: trackerCount > 0,
+          });
+          if (has('ticket_counters')) {
+            const readCounter = db.prepare('SELECT next_number FROM ticket_counters WHERE scope = ? AND prefix = ?');
+            const updateCounter = db.prepare('UPDATE ticket_counters SET next_number = ?, updated_at = ? WHERE scope = ? AND prefix = ?');
+            const insertCounter = db.prepare('INSERT INTO ticket_counters (scope, prefix, next_number, updated_at) VALUES (?, ?, ?, ?)');
+            for (const row of floorResult.counters) {
+              const prior = readCounter.get(row.scope, row.prefix);
+              const restoredRow = restoredCounters.find((entry) => entry.scope === row.scope && entry.prefix === row.prefix);
+              if (restoredRow && restoredRow.next <= restoredRow.maxNumber) repaired.counter_below_max++;
+              const next = Math.max(Number(prior?.next_number) || 1, row.next);
+              if (prior) updateCounter.run(next, nowMs, row.scope, row.prefix);
+              else insertCounter.run(row.scope, row.prefix, next, nowMs);
+            }
+          }
+
+          if (has('tickets') && has('ticket_search')) {
+            db.exec(`DELETE FROM ticket_search WHERE ticket_id IN (
+              SELECT id FROM tickets WHERE archived_at IS NULL AND key != prefix || '-' || number
+            )`);
+          }
+          if (has('tickets')) repaired.key_mismatch = db.prepare(
+            "UPDATE tickets SET key = prefix || '-' || number WHERE key != prefix || '-' || number",
+          ).run().changes;
+
+          if (has('ticket_links') && has('kanban_tracker_links')) {
+            repaired.link_without_board_link = db.prepare(
+              `UPDATE ticket_links SET removed_at = ? WHERE removed_at IS NULL AND NOT EXISTS (
+                SELECT 1 FROM kanban_tracker_links k WHERE k.board_id = ticket_links.board_id
+                  AND k.kanban_id = ticket_links.kanban_id AND k.removed_at IS NULL
+              )`,
+            ).run(nowMs).changes;
+          }
+          if (has('ticket_aliases') && has('tickets')) {
+            if (has('ticket_search')) db.exec(`DELETE FROM ticket_search WHERE ticket_id IN (
+              SELECT DISTINCT a.ticket_id FROM ticket_aliases a JOIN tickets canonical
+                ON canonical.key = COALESCE(a.display_key, a.external_id) AND canonical.id <> a.ticket_id
+              JOIN tickets owner ON owner.id = a.ticket_id WHERE owner.archived_at IS NULL
+            )`);
+            repaired.alias_collision = db.prepare(
+              `DELETE FROM ticket_aliases WHERE id IN (
+                SELECT a.id FROM ticket_aliases a JOIN tickets canonical
+                  ON canonical.key = COALESCE(a.display_key, a.external_id) AND canonical.id <> a.ticket_id
+              )`,
+            ).run().changes;
+          }
+          if (has('ticket_events') && has('tickets')) {
+            repaired.orphan_event = db.prepare(
+              'DELETE FROM ticket_events WHERE NOT EXISTS (SELECT 1 FROM tickets WHERE tickets.id = ticket_events.ticket_id)',
+            ).run().changes;
+          }
+          if (has('ticket_projection_outbox')) {
+            const applied = db.prepare('DELETE FROM ticket_projection_outbox WHERE applied_at IS NOT NULL').run().changes;
+            const pending = db.prepare(
+              'UPDATE ticket_projection_outbox SET attempts = 0, next_attempt_at = ? WHERE applied_at IS NULL',
+            ).run(nowMs).changes;
+            repaired.outbox_stale = applied + pending;
+          }
+          if (has('notifications') && Number.isSafeInteger(info.createdAt)) {
+            const notificationColumns = new Set(db.prepare('PRAGMA table_info(notifications)').all().map((row) => row.name));
+            if (['created_at', 'emailed_at', 'suppressed_at'].every((column) => notificationColumns.has(column))) {
+              db.prepare(
+                'UPDATE notifications SET suppressed_at = ? WHERE emailed_at IS NULL AND created_at < ? AND suppressed_at IS NULL',
+              ).run(nowMs, info.createdAt);
+            }
+          }
+
+          const countersAboveInitial = has('ticket_counters') && Number(db.prepare(
+            'SELECT COUNT(*) AS n FROM ticket_counters WHERE next_number > 1',
+          ).get().n) > 0;
+          if (trackerCount > 0 || countersAboveInitial) {
+            upsert.run(TRACKER_RESTORE_GATE_KEY, restoreGateValue({ since: nowMs, reason: 'restore', floor: floorResult.known ? 'known' : 'pending' }));
+            db.prepare('DELETE FROM settings WHERE key = ? OR key = ?').run(RECONCILE_DONE_KEY, FTS_READY_KEY);
+            // A workspace that never used the tracker keeps the restore record it always had.
+            trackerRecord = {
+              summary: info.trackerCheck.summary,
+              findings: info.trackerCheck.findings,
+              repaired,
+            };
+          } else {
+            db.prepare('DELETE FROM settings WHERE key = ?').run(TRACKER_RESTORE_GATE_KEY);
+          }
+        } else {
+          db.prepare('DELETE FROM settings WHERE key = ?').run(TRACKER_RESTORE_GATE_KEY);
+        }
+
         record = {
           kind: 'workspace',
           result: 'done',
@@ -990,14 +1240,21 @@ export function createRestore({
           bytes: info.bytes,
           boards: info.boards,
           keepOldFor: info.keepOldFor,
+          ...(trackerRecord ? { tracker: trackerRecord } : {}),
         };
         upsert.run(STATUS_KEY, JSON.stringify(record));
+        const trackerAudit = trackerRecord ? {
+          tickets: count('tickets'),
+          repaired: Object.entries(trackerRecord.repaired).reduce((sum, [code, value]) =>
+            sum + (code === 'event_missing' ? 0 : value), 0),
+        } : null;
         db.prepare('INSERT INTO audit (ts, actor_id, action, detail) VALUES (?, ?, ?, ?)').run(
           nowMs,
           info.actorId,
           'restore.done',
           JSON.stringify({ kind: 'workspace', manifest: info.manifest, files: info.files, bytes: info.bytes, boards: info.boards, users: info.users,
-            sessionsRemoved: removed.sessions, guestSessionsRemoved: removed.guestSessions, joinCodesRevoked: removed.joinCodes, keepOldFor: info.keepOldFor }),
+            sessionsRemoved: removed.sessions, guestSessionsRemoved: removed.guestSessions, joinCodesRevoked: removed.joinCodes, keepOldFor: info.keepOldFor,
+            ...(trackerAudit ? { tracker: trackerAudit } : {}) }),
         );
         db.exec('COMMIT');
       } catch (err) {
@@ -1123,6 +1380,7 @@ export function createRestore({
       const oldDir = chooseOldDir();
       const prepared = await prepareDatabase(stagingDir, {
         manifest: name,
+        createdAt: Date.parse(manifest.createdAt),
         files: plan.files,
         bytes: plan.bytes,
         boards: plan.boards,
@@ -1132,10 +1390,13 @@ export function createRestore({
         swapAt: oldDir.stamp,
         mode: retention.mode,
         keepOldFor: retention.keepOldFor,
+        trackerCheck: counts.tracker,
       });
       say(`checked ${plan.files} files; ${prepared.sessions} sessions end with the restore`);
       const record = prepared.record;
 
+      // No await between the last save and freezing edits: a failed save leaves the live rooms available for retry.
+      if (hooks.saveRooms?.() === false) throw new RestoreError('restore_failed', 'The current room changes could not be saved, so nothing was restored');
       pointOfNoReturn = true;
       await enterMaintenance();
       const oldFiles = liveEntries();
@@ -1223,7 +1484,10 @@ export function createRestore({
           /* the next start removes it by name */
         }
       }
-      setLast({ kind: 'workspace', result: 'failed', at: now(), manifest: name, error: code });
+      const tracker = code === 'tracker_data_invalid' && isObject(failure.extra)
+        ? cleanTracker({ summary: failure.extra.summary, findings: failure.extra.findings, repaired: {} })
+        : undefined;
+      setLast({ kind: 'workspace', result: 'failed', at: now(), manifest: name, error: code, ...(tracker ? { tracker } : {}) });
       audit(actor, 'restore.failed', { kind: 'workspace', manifest: name, error: code });
     }
     if (pointOfNoReturn) {
@@ -1335,6 +1599,24 @@ export function createRestore({
         boardDoc?.destroy();
         throw new RestoreError('invalid_backup', 'The board in the backup cannot be read, so nothing was changed');
       }
+      let trackerDetached = 0;
+      boardDoc.transact(() => {
+        const objects = boardDoc.getMap('objects');
+        const containerFields = new Set([...SERVER_TRACKER_FIELDS, 'ext', 'tracker']);
+        objects.forEach((object) => {
+          if (!(object instanceof Y.Map)) return;
+          const type = object.get('type');
+          const fields = type === 'card' ? SERVER_CARD_FIELDS : type === 'container' ? containerFields : null;
+          if (!fields) return;
+          let stripped = false;
+          for (const field of fields) {
+            if (!object.has(field)) continue;
+            object.delete(field);
+            stripped = true;
+          }
+          if (stripped) trackerDetached++;
+        });
+      });
       const boardOut = Buffer.from(Y.encodeStateAsUpdate(boardDoc));
       boardDoc.destroy();
 
@@ -1370,19 +1652,20 @@ export function createRestore({
       put(`${id}.yjs`, boardOut);
       if (commentBytes) put(`${id}~comments.yjs`, commentBytes);
       fsyncDir(dataDir);
-      const detail = { kind: 'board', manifest: name, boardId: id, files: commentBytes ? 2 : 1, ...(pictures.length ? { images: pictures.length } : {}), fallback };
+      const detail = { kind: 'board', manifest: name, boardId: id, files: commentBytes ? 2 : 1, trackerDetached, ...(pictures.length ? { images: pictures.length } : {}), fallback };
       directory.transaction(() => {
         directory.createBoard({ id, title, ownerId: person.id, teamId: teamOk ? row.team_id : null });
         for (const r of pictures) directory.putAsset({ boardId: id, hash: r.hash, mime: r.mime, bytes: r.bytes, width: r.width, height: r.height, createdBy: person.id, createdAt: now() });
         directory.audit(person.id, 'restore.done', detail);
       });
       written.length = 0;
-      setLast({ kind: 'board', result: 'done', at: now(), manifest: name, files: detail.files });
+      setLast({ kind: 'board', result: 'done', at: now(), manifest: name, files: detail.files, trackerDetached });
       say(`restored a board from ${name} as a copy`);
       return {
         ok: true,
         boardId: id,
         title,
+        trackerDetached,
         teamId: teamOk ? row.team_id : null,
         ...(fallback ? { fallback: 'personal', message: 'The original team no longer exists or you cannot see it, so the copy is in your personal space.' } : {}),
       };
@@ -1502,6 +1785,15 @@ export function createRestore({
       writeFileDurable(databaseFile, data);
       const withContent = new Set(manifest.files.filter((f) => ROOM_FILE_RE.test(f.path) && !f.path.endsWith('~comments.yjs')).map((f) => f.path.slice(0, -'.yjs'.length)));
       return await withBackupDatabase(databaseFile, (db) => {
+        const tracker = checkTrackerData(db, { at: now() });
+        const structural = tracker.findings.filter((finding) =>
+          ['duplicate_active_link', 'link_to_missing_ticket'].includes(finding.code) && finding.count > 0);
+        if (structural.length) {
+          throw new RestoreError('tracker_data_invalid', 'The tracker data in this backup has structurally invalid links, so its boards cannot be listed', {
+            summary: tracker.summary,
+            findings: tracker.findings,
+          });
+        }
         const rows = db
           .prepare('SELECT b.id AS id, b.title AS title, b.team_id AS team_id, b.deleted_at AS deleted_at, t.name AS team_name FROM boards b LEFT JOIN teams t ON t.id = b.team_id ORDER BY b.updated_at DESC, b.id')
           .iterate();
@@ -1607,6 +1899,9 @@ export function createRestore({
 
   function status() {
     const nowMs = now();
+    // The recovery after a restart updates the stored record; a closed database keeps the one held in memory.
+    const stored = readLast();
+    if (stored !== undefined) last = stored;
     return {
       inProgress: busy,
       maintenance,
@@ -1650,6 +1945,7 @@ export function createRestore({
     restoreWorkspace,
     recoverOnStart: () => recoverOnStart({ dataDir, log: say, step }),
     status,
+    isRunning: () => busy !== null || maintenance,
     start,
     stop,
     sweepOldData,

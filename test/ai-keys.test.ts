@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { REMOVE_TRACKER_MIGRATION } from './tracker-rewind';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -355,7 +356,7 @@ describe('the ai_keys table', () => {
     d.close();
     const raw = new DatabaseSync(file);
     // an older directory has the table without the column
-    raw.exec(`DROP TABLE guest_sessions; DROP TABLE join_codes; ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ${modelMigration}`);
+    raw.exec(`${REMOVE_TRACKER_MIGRATION} DROP TABLE guest_sessions; DROP TABLE join_codes; ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ${modelMigration}`);
     raw.close();
     const again = openDirectory(file);
     expect(again.getAiKeyInfo('workspace')).toMatchObject({ provider: 'anthropic', model: null });
@@ -371,7 +372,7 @@ describe('the ai_keys table', () => {
     d.createBoard({ id: 'board1', title: 'Kept', ownerId: u.id });
     d.close();
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; DROP TABLE ai_keys; PRAGMA user_version = 6');
+    raw.exec(`${REMOVE_TRACKER_MIGRATION} DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; DROP TABLE ai_keys; PRAGMA user_version = 6`);
     raw.close();
 
     const again = openDirectory(file);

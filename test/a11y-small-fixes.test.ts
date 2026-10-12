@@ -7,6 +7,14 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const read = (file: string) => readFileSync(join(ROOT, file), 'utf8');
 
 describe('accessibility audit follow-ups', () => {
+  it('keeps shared modal chrome light and quiet', () => {
+    const styles = read('src/styles.css');
+    expect(styles).toMatch(/\.modal-head\s*\{[^}]*border-bottom:\s*1px solid var\(--tray-line\)/);
+    expect(styles).toMatch(/\.modal-head h2\s*\{[^}]*font:\s*600 16px\/1\.3 var\(--ui\)/);
+    expect(styles).toMatch(/\.modal \.btn\s*\{[^}]*border:\s*0[^}]*background:\s*color-mix\(in srgb, var\(--tray-text\) 6%, transparent\)[^}]*font-weight:\s*500/);
+    expect(styles).toMatch(/\.modal \.btn\.armed, \.modal \.btn\.danger\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--danger\) 6%, transparent\)[^}]*color:\s*var\(--danger\)/);
+  });
+
   it('keeps the visible poll question and its accessible name aligned', () => {
     const source = read('src/ui/polls.ts');
     expect(source).toMatch(/'aria-label': 'Question'/);
@@ -42,11 +50,13 @@ describe('accessibility audit follow-ups', () => {
     expect(read('src/styles.css')).toMatch(/\.pop-head h2/);
   });
 
-  it('keeps visible focus indicators on the board name, admin fields and dialog fields', () => {
+  it('keeps keyboard focus visible on modal buttons and modal fields flat', () => {
     const styles = read('src/styles.css');
     const boardName = styles.match(/\.board-name\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(boardName).not.toMatch(/outline\s*:\s*none/);
-    expect(styles).not.toMatch(/\.modal \.input:focus-visible, \.popover \.input:focus-visible\s*\{[^}]*outline\s*:\s*none/);
+    expect(styles).toMatch(/\.modal \.input:focus\s*\{[^}]*border-color:\s*var\(--tray-text\)[^}]*outline:\s*none/);
+    expect(styles).toMatch(/\.modal \.input:focus-visible\s*\{[^}]*outline:\s*none/);
+    expect(styles).toMatch(/\.modal :focus-visible:not\(input\):not\(textarea\):not\(select\)[^{]*\{[^}]*outline:\s*2px solid var\(--tray-text\)/);
     expect(read('src/ui/admin.css')).not.toMatch(/\.admin \.input:focus-visible\s*\{[^}]*outline\s*:\s*none/);
     expect(read('src/ui/tokens.css')).not.toMatch(/\.tokens-dialog \.input:focus-visible\s*\{[^}]*outline\s*:\s*none/);
     expect(read('src/ui/comments.css')).toMatch(/\.comment-card :focus-visible\s*\{[^}]*outline:\s*2px solid var\(--tray-text\)/);

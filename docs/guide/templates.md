@@ -35,6 +35,8 @@ Tabula creates a new board named after the template, with its frames, fonts and 
 
 The **Start from a template** row on the Boards page shows up to four tiles: your templates first, then built-in ones. Click a tile to open a new board from it, or choose **All templates**.
 
+A new board started from a template opens with the template already in place, and Undo does not take it away: it is where the board begins. On a phone the first view fits the template between the tool bar and the right edge.
+
 If your workspace uses sign-in and you are offline, starting a board from a template needs the server. The buttons are disabled and a note says why.
 
 ## Add a template to the board you are on
@@ -57,7 +59,7 @@ Frames bring everything inside them, and connectors are kept when both of their 
 
 **Category** is a list, not free text. It offers the eight built-in categories and **Custom**. Those are the only categories a template can have.
 
-Guests can use templates but cannot save them. If you are a guest, the form says **Guests cannot save templates.** and **Save template** stays off.
+Guests can use templates but cannot save them. The board menu hides **Save board as template** for guests. If you reach a save form from another template action, it says **Guests cannot save templates.** and **Save template** stays off.
 
 ## Share a template
 

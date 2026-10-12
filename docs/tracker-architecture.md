@@ -439,22 +439,28 @@ Maintain `ticket_search` in the same `directory.transaction` that changes the ti
 
 Parse filters before building an FTS query. Never pass an untrusted filter string directly as SQL or raw FTS syntax.
 
-V1 grammar:
+Filter grammar:
 
 | Filter | Meaning |
 |---|---|
-| `assignee:me` | Tickets assigned to the current actor. |
-| `assignee:<user>` | Tickets assigned to a visible user ID or unambiguous name. |
-| `state:<name-or-key>` | Tickets in a workflow state. |
-| `label:<name>` | Tickets with the label. |
-| `project:<name-or-id>` | Tickets in the project. |
-| `milestone:<name-or-id>` | Tickets in the milestone. |
-| `due:overdue` | Due before now and not completed/canceled/archived. |
-| `due:today` | Due today in the workspace timezone. |
-| `due:before-YYYY-MM-DD` | Due before a date. |
-| `has:link` | Ticket has at least one active canvas card link. |
-| `is:archived` | Include archived tickets. |
-| `created:after-YYYY-MM-DD` | Created since the date. |
+| `state:<key-or-name>`, `label:<name>` | Match states and labels by key/name, case-insensitively. |
+| `assignee:me`, `assignee:<member name/email>`, `assignee:none` | Match the actor, a member, or no assignee. |
+| `creator:me`, `creator:<member name/email>` | Match tickets created directly by that user; token-created tickets do not count as their owner's. |
+| `creator:agent`, `creator:integration`, `creator:import`, `creator:system` | Match the creator type; imports include source `linear-import` or `created_by_type = 'import'`. |
+| `priority:none|urgent|high|medium|low` | Match priority names stored as 0 through 4. |
+| `category:backlog|unstarted|started|completed|canceled` | Match the state's category. |
+| `project:<name>`, `milestone:<name>`, `project:none`, `milestone:none` | Match case-insensitive names or missing associations; named filters include archived rows, repeated milestone names match across projects, and unknown names are invalid. |
+| `due:overdue`, `due:today`, `due:before-DATE`, `due:after-DATE`, `due:none`, `due:this-week` | Match due dates; today and this week use UTC, with the week Monday through Sunday. `after` includes the date. |
+| `created:after-DATE`, `created:before-DATE`, `updated:after-DATE`, `updated:before-DATE` | Compare timestamps at UTC midnight; `after` includes that date and `before` is exclusive. |
+| `is:blocked`, `is:blocking` | Match an incoming block from an open ticket, or an outgoing block to an open ticket. Open excludes categories `completed` and `canceled`. |
+| `has:relation`, `has:parent`, `has:sub` | Match any relation, a direct parent, or direct children. |
+| `parent:TAB-12`, `blocks:TAB-12`, `blocked-by:TAB-12` | Match direct children, blockers, or blocked tickets for the named key. |
+| `relates:TAB-12`, `duplicates:TAB-12`, `duplicated-by:TAB-12` | Match the symmetric relation or the directed duplicate relation. |
+| `has:link` | Always false until tracker slice 4 adds links. |
+| `is:archived` | Include archived tickets; they are excluded by default. |
+
+**Slice 2 decisions:** Prefix any token with `-` to negate it; comma-separated any-of values are supported for state, label, assignee, creator, priority, category, project and milestone, and `-` makes those lists none-of. Lists have at most 20 values, tokens at most 20 per call, and commas always separate values, so filter names cannot contain commas. Negation includes tickets where the field is unset. Dates must be calendar-valid `YYYY-MM-DD`; timestamp `after` includes UTC midnight on the date and `before` is exclusive. Project/milestone names and relation keys are case-insensitive; unknown names and missing or inaccessible relation keys return `invalid_filter` naming the token. Filter values stay parameterized SQL values, and FTS syntax is unchanged. Saved views validate this exact grammar. `has:link` stays false in this slice.
+
 - Search body limit: 512 Unicode code points; filter count limit: 20; saved query JSON limit: 8 KB.
 - Return at most 50 rows per page; use keyset pagination on rank bucket, `updated_at`, and `tickets.id`, not SQL `OFFSET`.
 - Rank exact key/alias match first, title prefix second, title token match third, description/comment match after that. Use deterministic tie-breaking by `tickets.updated_at DESC, tickets.id`.
@@ -654,7 +660,10 @@ Require `idempotencyKey` on create, comment, transition, and link writes, unique
 
 ## 8. Linear importer
 
+Operator procedure: [docs/linear-import.md](linear-import.md).
 ### Source and mapping
+
+**Archived issues (known, 2026-10-10):** Linear's AI archived every Done issue. Every Linear API query the importer makes (and the Linear-to-board script 01b9936) must pass `includeArchived: true`, or the Done history is silently missing; the dry-run report must count archived issues separately so a shortfall is visible.
 
 **RECOMMENDED:** Provide a CLI importer in the app repo using the Linear API for complete migration. Accept CSV export as a fallback when an API token cannot be provided. Keep the import credential local to the operator; never save it in a board or tracker row.
 
@@ -806,6 +815,13 @@ Notes:
 
 This is the proposed test plan; it is not a request to run tests while drafting this spec. Unit coverage: migration safety, counter rollback/no reuse, categories, query grammar, event versions, idempotency, access, signatures, rotation, retries, and import mapping. Relay integration: use `test/start-relay.ts` as the relay process starter and `test/mcp-harness.ts` for signed-in MCP calls; extend `test/backup-harness.ts` for backup/restore. Cover Yjs updates, `roomAccess.write`, SQL failure, restart, and stale projections. UI E2E: frame/ticket flows, keyboard, comments/history, linked moves, offline reconnect, multi-board projection, viewer denial, deep links, search, notifications. Integration E2E: signatures, duplicate/expired delivery, repository allow-list, fork text, wake, DNS rebinding, retries, replay, rotation. Backup/restore: full encrypted snapshot, two projections, counter/alias, pending queues, FTS rebuild, history/copy, and key loss. Apply section 3 invariants and section 4 permissions to every affected slice.
 
+#### Slice 2 decisions
+
+- Ticket `project` references resolve by active project name, case-insensitively. A ticket milestone resolves within the selected project; without one, its name must identify exactly one active milestone so the project can be inferred. Clearing or changing a project with an incompatible current milestone requires clearing or changing both fields in the same update. Existing archived associations remain visible on the ticket, but cannot be newly assigned.
+- A ticket pair has one relation row. Relations store `blocks`, `duplicates` and symmetric `relates_to`; `blocked_by` and `duplicated_by` normalize to the inverse endpoint order. Reads render the viewer-facing inverse, and a relation write appends one event to each ticket. `cloned_from` remains a schema-reserved kind and is not accepted by this slice's command.
+- Saved-view query JSON is `{filter, sort}`. The only supported sort is `updated_desc`, matching `list_tickets` ordering and cursor semantics. Filter tokens are validated through the read-only `list_tickets` command path; later filter grammar additions can be consumed by saved views without changing their stored shape.
+- Ticket association changes use the normal `updated` ticket event. Project and milestone lifecycle rows do not have a separate event stream in this schema; this slice adds the `related` and `unrelated` ticket event types.
+
 ## 12. Contracts to freeze with design before building
 
 The names and shapes below need a design agreement. They are proposals, not existing TypeScript interfaces.
@@ -900,8 +916,10 @@ On a linked card (flat, per `docs/kanban.md`): `extProvider: "tabula"`, `extKey:
 - Views: `/t/views/<viewId>`, `/t/inbox`, `/t/my`, `/t/board`, `/t/projects/<projectId>`.
 - A pasted `TAB-123` renders as a ticket chip only when the viewer can read the ticket; otherwise plain text.
 - Internal random ticket ids never appear in URLs.
+- The client resolves chips through the existing per-ticket detail endpoint and store cache. It does not add a batch REST endpoint: lookups run at most four at a time, are capped at 100 unique keys per call, and cache missing or unreadable results for 30 seconds. Both cases remain plain text.
+- Ticket and board-position routes use the ticket detail response's `resolvedKey` to replace an alias URL with the canonical key.
 
-**Assumption:** `/t/*` does not clash with an existing route in `src/main.ts`; check before freezing.
+The client treats a valid tracker path as a route when no explicit hash navigation is active. The existing `#/t/<id>/edit` template route remains a separate hash route.
 
 ### Tracker frame object
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
@@ -32,8 +33,9 @@ async function until(test: () => boolean | Promise<boolean>, ms: number, what: s
 }
 
 /** Open mode unless `env` turns accounts on. The relay's data directory is the harness's, so the test can put files in it and read them back. */
-async function startRelay(env: Record<string, string> = {}): Promise<Relay> {
+async function startRelay(env: Record<string, string> = {}, preload?: string): Promise<Relay> {
   const started = await startRelayProcess({
+    spawnArgs: preload ? ['--import', pathToFileURL(preload).href] : [],
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     envFor: (port) => ({
       ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: h.dir, HOST: '127.0.0.1', TABULA_AUTH: 'off', TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${port}`,
@@ -71,9 +73,27 @@ async function edit(relay: Relay, room: string, value: string) {
 }
 
 const roomFile = (room: string) => path.join(h.dir, `${room}.yjs`);
+
+/** On Windows a file the relay is replacing right now can fail to open for a moment (EISDIR, EPERM, EBUSY); read it again a few times, and say so. Elsewhere one read. */
+function readRoomFile(file: string): Buffer {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return fs.readFileSync(file);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? '';
+      if (process.platform !== 'win32' || !['EISDIR', 'EPERM', 'EBUSY'].includes(code) || attempt >= 20) {
+        // say what is on disk, so a failure shows whether the room file itself became a directory
+        const kind = (name: string) => { try { const st = fs.lstatSync(name); return st.isDirectory() ? 'directory' : st.isFile() ? `file ${st.size} bytes` : 'other'; } catch { return 'missing'; } };
+        throw new Error(`${(err as Error).message} (${path.basename(file)}: ${kind(file)}; ${path.basename(file)}.tmp: ${kind(`${file}.tmp`)})`, { cause: err });
+      }
+      console.warn(`[settle-test] reading ${path.basename(file)} failed with ${code}; reading again (${attempt + 1})`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+    }
+  }
+}
 function savedNote(room: string) {
   const doc = new Y.Doc();
-  Y.applyUpdate(doc, fs.readFileSync(roomFile(room)));
+  Y.applyUpdate(doc, readRoomFile(roomFile(room)));
   return doc.getMap('objects').get('note');
 }
 
@@ -100,12 +120,8 @@ async function newestBackup() {
 const manifestPuts = () => h.fake.count('PUT', /manifests/);
 
 /** Waits until a run that is going has made its last request (it reads the manifest back and prunes after the manifest is written). */
-async function runEnded() {
-  let seen = -1;
-  while (seen !== h.fake.log.length) {
-    seen = h.fake.log.length;
-    await sleep(400);
-  }
+async function runEnded(relay: Relay, manifestName: string) {
+  await until(() => relay.out().includes(`manifest ${manifestName}`), 10_000, 'the completed backup was not logged');
 }
 
 async function timedExit(relay: Relay, limitMs = 60_000) {
@@ -153,7 +169,7 @@ describe('the settle backup of a running relay', { timeout: 60_000 }, () => {
     const writer = await connect(relay.port, 'twice-room');
     writer.getMap('objects').set('note', 'first');
     await until(() => manifestPuts() === 1, 20_000, 'no first backup');
-    await runEnded();
+    await runEnded(relay, (await newestBackup())!.name);
     const requests = h.fake.log.length;
     await sleep(2500);
     expect(h.fake.log).toHaveLength(requests);
@@ -184,7 +200,7 @@ describe('the settle backup of a running relay', { timeout: 60_000 }, () => {
     await until(() => manifestPuts() >= 1, 20_000, 'no backup after the upload');
     expect((await newestBackup())!.paths).toContain(`assets/${hash.slice(0, 2)}/${hash}`);
     // a refused upload is not a change
-    await runEnded();
+    await runEnded(relay, (await newestBackup())!.name);
     const requests = h.fake.log.length;
     const refused = await fetch(`${relay.base}/api/boards/pics/assets`, { method: 'POST', headers: { 'content-type': 'image/png' }, body: new Uint8Array(makePng()) });
     expect(refused.status).toBe(403);
@@ -200,16 +216,20 @@ describe('the settle backup of a running relay', { timeout: 60_000 }, () => {
       TABULA_CLOUD_WORKSPACE_ID: 'ws_settle', TABULA_BACKUP_SETTLE_SECONDS: '1',
     });
     const status = async () => (await fetch(`${relay.base}/api/internal/backup-status`, { headers: { authorization: `Bearer ${token}` } })).json() as Promise<Record<string, unknown>>;
-    const before = await status();
-    expect(before).toMatchObject({ enabled: true, dirty: false, lastTrigger: null, settleSeconds: 1 });
+    // wait for each status instead of reading it once: a slow runner has not always settled the start-up writes yet, and the failure prints the last status
+    const statusWhere = async (ok: (s: Record<string, unknown>) => boolean, what: string) => {
+      let last: Record<string, unknown> = {};
+      await until(async () => ok((last = await status())), 20_000, `${what}; last status: ${JSON.stringify(last)}`);
+      return last;
+    };
+    const before = await statusWhere((s) => s.enabled === true && s.dirty === false && s.lastTrigger === null && s.settleSeconds === 1, 'the relay did not report a clean start');
     // a read changes nothing
     expect((await fetch(`${relay.base}/api/internal/usage`, { headers: { authorization: `Bearer ${token}` } })).status).toBe(200);
-    expect(await status()).toMatchObject({ dirty: false });
+    await statusWhere((s) => s.dirty === false, 'a read left the status dirty');
 
     const res = await fetch(`${relay.base}/api/internal/limits`, { method: 'PUT', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ banner: 'Hello' }) });
     expect(res.status).toBe(200);
-    await until(async () => (await status()).lastTrigger === 'settle', 20_000, 'no settle backup after the call');
-    const after = await status();
+    const after = await statusWhere((s) => s.lastTrigger === 'settle' && s.dirty === false && typeof s.lastManifest === 'string', 'no settled settle backup after the call');
     expect(after).toMatchObject({ dirty: false, consecutiveFailures: 0, lastTrigger: 'settle' });
     expect(after.lastManifest).toEqual(expect.stringMatching(/\.json\.enc$/));
     // the schedule did not move
@@ -236,6 +256,65 @@ describe('the settle backup of a running relay', { timeout: 60_000 }, () => {
 });
 
 describe('the final backup of a relay that is asked to stop', { timeout: 100_000 }, () => {
+  it.each([false, true])('flushes edits accepted while backup.stop waits, with a blocked final write: %s', async (blocked) => {
+    h = await harness({ seed: false });
+    h.write('gate-room.yjs', docBytes('holds the backup open'));
+    h.write('late-room.yjs', docBytes('before editing'));
+    const preload = path.join(h.dir, 'hold-backup-read.mjs');
+    fs.writeFileSync(preload, `
+      import fs from 'node:fs/promises';
+      const readFile = fs.readFile;
+      fs.readFile = async function (file, ...options) {
+        // the upload reads the staged copy the snapshot barrier made, after the writers were released
+        if (String(file).includes('.backup-snapshot-') && String(file).endsWith('gate-room.yjs')) {
+          process.send({ type: 'backup-read-blocked' });
+          await new Promise(() => {});
+        }
+        return readFile.call(this, file, ...options);
+      };
+    `);
+    const relay = await startRelay({ TABULA_BACKUP_SETTLE_SECONDS: '1', TABULA_BACKUP_SHUTDOWN_SECONDS: '0', SAVE_DEBOUNCE_MS: '30000' }, preload);
+    let readBlocked = false;
+    relay.child.on('message', (message: { type?: string }) => {
+      if (message.type === 'backup-read-blocked') readBlocked = true;
+    });
+    const writer = await connect(relay.port, 'late-room');
+    const watcher = await connect(relay.port, 'late-room');
+    writer.getMap('objects').set('note', 'before shutdown');
+    await until(() => watcher.getMap('objects').get('note') === 'before shutdown', 5000, 'the first edit did not sync');
+    // Naming the live version triggers a backup without flushing the room's 30-second save timer.
+    const named = await fetch(`${relay.base}/api/boards/late-room/versions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-tabula': '1' }, body: JSON.stringify({ label: 'Start the backup' }) });
+    expect(named.status).toBe(201);
+    await until(() => readBlocked, 10_000, 'the backup did not reach the held read');
+    const stoppedAt = Date.now();
+    const exiting = timedExit(relay);
+    await until(() => savedNote('late-room') === 'before shutdown', 5000, 'shutdown did not flush the first edit');
+    if (blocked) {
+      // A directory where the save writes its temporary file makes every save fail. A save that is writing right now owns the name for a moment.
+      const tmp = `${roomFile('late-room')}.tmp`;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          // never remove the name first: a relay save that is mid-write owns it, and taking it away between the write and the
+          // rename lets the rename move this directory onto the room file on Windows (it turned late-room.yjs into a directory)
+          fs.mkdirSync(tmp);
+          break;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 100) throw err;
+          await sleep(10);
+        }
+      }
+    }
+    writer.getMap('objects').set('note', 'during backup stop');
+    await until(() => watcher.getMap('objects').get('note') === 'during backup stop', 5000, 'the edit during backup stop did not sync');
+    const exit = await exiting;
+    const ms = Date.now() - stoppedAt;
+    expect(exit).toEqual({ code: blocked ? 1 : 0, signal: null });
+    expect(savedNote('late-room')).toBe(blocked ? 'before shutdown' : 'during backup stop');
+    // The held read never resolves: the existing two-second stop budget must still end shutdown.
+    expect(ms).toBeGreaterThanOrEqual(1800);
+    expect(ms).toBeLessThan(2000 + 2500);
+  });
+
   it('backs up what was edited moments ago, before it exits', async () => {
     h = await harness({ seed: false });
     // the room is written 30 seconds after an edit and settling is an hour away: only the shutdown can save and back it up

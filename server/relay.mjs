@@ -44,6 +44,13 @@ import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
+import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
+import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
+import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
+import { KEY_FLOOR_CHANGED_EVENT, createKeyFloorReporter } from './tracker/key-floor.mjs';
+import { trackerGateState } from './tracker/gate.mjs';
+import { createTrackerRestoreRecovery } from './tracker/restore-recovery.mjs';
+import { OpsError } from './board-ops.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -64,6 +71,9 @@ const DIST = path.resolve(process.env.DIST_DIR || path.join(here, '..', 'dist'))
 const ROOM_RE = /^([A-Za-z0-9_-]{1,64})(~comments)?$/;
 const SAVE_DEBOUNCE_MS = Number(process.env.SAVE_DEBOUNCE_MS) > 0 ? Number(process.env.SAVE_DEBOUNCE_MS) : 1000;
 const SAVE_MAX_WAIT_MS = saveMaxWaitMs(); // 30 s; the test-only TABULA_TEST_SAVE_MAX_WAIT_MS can only shorten it (server/save-delay.mjs)
+// After a failed write (disk full, permissions), the next attempt. A finite value from 0.25 s to 60 s: a tiny one would spin the retry log,
+// an infinite one would never retry.
+const SAVE_RETRY_MS = Math.min(60_000, Math.max(250, Number(process.env.SAVE_RETRY_MS) > 0 ? Number(process.env.SAVE_RETRY_MS) : 5_000));
 const DEFAULT_TITLE = 'Untitled board'; // the directory's title for a board created without one
 const UNLOAD_AFTER_MS = Number(process.env.ROOM_UNLOAD_MS) > 0 ? Number(process.env.ROOM_UNLOAD_MS) : 60_000;
 const PING_MS = 30_000;
@@ -77,10 +87,13 @@ const MSG_WORKSPACE = 4;
 // Relay to client only, on a comments room: a change from this client was undone because its author rules forbid it
 // (docs/comment-authz.md). Payload: JSON { undone: ('edit'|'delete'|'resolve'|'author'|'other')[] }.
 const MSG_COMMENT_NOTICE = 5;
+// Relay to the writer of a guarded linked-card update; the payload names exactly the cards to undo locally.
+const MSG_TRACKER_NOTICE = 7;
 // Relay to client only, on a board room: the board's live AI runs (docs/ai.md, "Live runs"). Payload: JSON
 // { kind: 'snapshot', runs } on joining, then { kind: 'patch', run } per change, each shaped for that socket's person.
 const MSG_AI_RUNS = 6;
 const AI_SWEEP_MS = 30_000;
+const trackerSocketBudget = createTrackerSocketBudget();
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
@@ -175,6 +188,21 @@ function settleVolume(dir) {
 let maintenance = false;
 let roomsFrozen = false;
 
+async function closeKeyFloorReporter() {
+  if (!keyFloorReporter) return;
+  let timer = null;
+  try {
+    await Promise.race([
+      keyFloorReporter.flush(),
+      new Promise((resolve) => { timer = setTimeout(resolve, 4_000); }),
+    ]);
+  } catch { /* the floor report must not delay a restore or shutdown */ }
+  finally {
+    if (timer !== null) clearTimeout(timer);
+    keyFloorReporter.close();
+  }
+}
+
 // A room name is `<boardId>` or `<boardId>~comments` (the `~` cannot occur in a board id).
 function parseRoom(name) {
   const m = typeof name === 'string' ? ROOM_RE.exec(name) : null;
@@ -200,8 +228,9 @@ function boardState(id) {
   if (room) return Y.encodeStateAsUpdate(room.doc);
   try {
     return fs.readFileSync(path.join(DATA_DIR, `${id}.yjs`));
-  } catch {
-    return null;
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
   }
 }
 const history = createHistory({ dataDir: DATA_DIR, boardState, log });
@@ -215,13 +244,16 @@ let directory = null;
 let auth = null;
 let api = null;
 let cloud = null;
+let keyFloorReporter = null;
 let buildApi = null;
-// Team chat (docs/chat.md), accounts mode with TABULA_CHAT=on only. chat.sqlite is opened on first use.
+// Team chat (docs/chat.md), accounts mode, on unless TABULA_CHAT=off. chat.sqlite is opened on first use.
 let chat = null;
 let chatHub = null;
 let chatStore = null;
 let chatRetention = null;
 let chatNotifier = null;
+let trackerNotifier = null;
+let trackerGuard = null;
 let joinCodeService = null;
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
@@ -231,7 +263,12 @@ if (config.authEnabled) {
     import('./api.mjs'),
     import('./cloud.mjs'),
   ]);
-  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier });
+  let oauthSecret = null;
+  if (config.mcp?.oauth) {
+    const { loadOAuthSecret } = await import('./instance-secret.mjs');
+    oauthSecret = loadOAuthSecret(DATA_DIR);
+  }
+  directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier, oauthSecret });
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -239,10 +276,20 @@ if (config.authEnabled) {
   }
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
   cloud = createCloud({ config: config.cloud, directory, events });
+  if (config.tracker) {
+    keyFloorReporter = createKeyFloorReporter({
+      directory,
+      events,
+      cloud,
+      floorFile: config.trackerKeyFloorFile ?? null,
+      log,
+    });
+    directory.setKeyFloorListener(() => events.emit(KEY_FLOOR_CHANGED_EVENT));
+  }
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
-    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
+    const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier, mailAfterMsFromEnv }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
       import('./chat.mjs'),
       import('./chat-access.mjs'),
       import('./chat-hub.mjs'),
@@ -266,8 +313,8 @@ if (config.authEnabled) {
       readOnly: cloud?.limits().readOnly === true,
       log,
     });
-    // Not documented: the relay tests shorten the ten minutes nobody must have looked before a mention email goes
-    const mailAfterMs = Number(env.TABULA_CHAT_MENTION_MAIL_AFTER_MS) || undefined;
+    // Not documented, and only under NODE_ENV=test (chat-notify.mjs)
+    const mailAfterMs = mailAfterMsFromEnv(env);
     chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
     chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
@@ -281,6 +328,23 @@ if (config.authEnabled) {
     });
     chatRetention = createChatRetention({ directory, store, paused: () => maintenance, runWriter: (fn) => snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn(), log });
     chatRetention.start();
+  }
+  if (config.tracker) {
+    trackerGuard = createTrackerGuard({ directory, config: {
+      readOnly: () => cloud?.limits().readOnly === true || trackerGateState(directory).closed,
+    }, log });
+    const { createTrackerNotifier, trackerTickMsFromTestEnv } = await import('./tracker/outbox.mjs');
+    const { boardAccessForDirectory } = await import('./tracker/access.mjs');
+    trackerNotifier = createTrackerNotifier({
+      directory,
+      mailer: createMailer(config),
+      baseUrl: config.baseUrl,
+      log,
+      boardAccess: boardAccessForDirectory(directory),
+      paused: () => trackerGateState(directory).closed,
+      intervalMs: trackerTickMsFromTestEnv(env),
+    });
+    trackerNotifier.start();
   }
 } else if (env.TABULA_CLOUD_TOKEN || env.TABULA_CLOUD_URL || env.TABULA_CLOUD_WORKSPACE_ID) {
   console.error('TABULA_CLOUD_* is ignored: hosted workspace mode needs TABULA_AUTH=on');
@@ -318,10 +382,12 @@ function testDisk(value) {
 const restore = createRestore({
   backup,
   directory,
+  cloud,
+  keyFloorFile: config.trackerKeyFloorFile ?? null,
   config: backupConfig,
   dataDir: DATA_DIR,
   log,
-  hooks: { enterMaintenance },
+  hooks: { saveRooms: saveAllRooms, enterMaintenance },
   exit: (code) => process.exit(code),
   // not documented: the relay tests keep the process in maintenance mode for a while after the answer, to look at it
   exitDelayMs: Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) : 0,
@@ -368,7 +434,14 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier });
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+    read: (name, fn) => roomAccess.read(name, fn),
+    write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
+    invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
+    snapshotBoard: (boardId, user, label) => history.actions.snapshotBefore(boardId, user, { label }),
+    openTrackerRestoreWindow: (boardId, userId) => trackerGuard?.openRestoreWindow(boardId, userId, { roomAccess, baseUrl: config.baseUrl }),
+    closeTrackerRestoreWindow: (boardId, userId) => trackerGuard?.closeRestoreWindow(boardId, userId),
+  } });
 }
 
 // ---------------------------------------------------------------- rooms
@@ -387,13 +460,14 @@ function liveStats() {
 
 // Every open room to its file; the one place both shutdown and a restore do it.
 function saveAllRooms() {
-  if (roomsFrozen) return;
-  for (const r of rooms.values()) r.save();
+  if (roomsFrozen) return true;
+  let saved = true;
+  for (const r of rooms.values()) if (!r.save()) saved = false;
+  return saved;
 }
 
-// A restore is about to replace the data directory. The order matters: sockets first (they stop editing), then every
-// room is saved for the last time, then nothing may save again, then the timers that use the database stop. The restore
-// engine stops the backups and closes the database next.
+// The restore engine just saved every room synchronously. Close sockets and freeze rooms before yielding, so no
+// edits can arrive between that save and the freeze. The restore engine stops the backups and closes the database next.
 async function enterMaintenance() {
   maintenance = true;
   for (const ws of wss.clients) {
@@ -406,20 +480,32 @@ async function enterMaintenance() {
   chatHub?.stop();
   chatRetention?.stop();
   chatNotifier?.stop();
+  trackerNotifier?.stop();
+  trackerProjectionWorker?.stop();
+  for (const room of rooms.values()) {
+    if (room.kind !== 'board') continue;
+    try { trackerGuard?.flushTitles(room.name); }
+    catch (error) { log(`room ${room.name}: tracker title flush failed`, error?.code ?? 'error'); }
+  }
+  trackerGuard?.invalidateAll();
+  trackerGuard?.clearRestoreWindows();
   closeChat();
-  saveAllRooms();
   roomsFrozen = true;
   for (const room of rooms.values()) {
     clearTimeout(room.saveTimer);
     clearTimeout(room.unloadTimer);
+    clearTimeout(room.trackerGuardTimer);
+    if (room.kind === 'board') trackerGuard?.clearTitles(room.name);
     room.saveTimer = null;
     room.unloadTimer = null;
+    room.trackerGuardTimer = null;
     room.doc.destroy();
   }
   rooms.clear();
   // The live AI runs belong to rooms that are gone. A provider call still out finds its run dropped and changes nothing;
   // nothing else of the AI path survives, because the API answers 503 and the sockets are closed.
   aiLive.dropAll();
+  await closeKeyFloorReporter();
   cloud?.close();
   history.close();
 }
@@ -430,8 +516,6 @@ class Room {
     this.kind = parseRoom(name).kind;
     this.file = path.join(DATA_DIR, `${name}.yjs`);
     this.doc = new Y.Doc({ gc: true });
-    this.awareness = new awarenessProtocol.Awareness(this.doc);
-    this.awareness.setLocalState(null);
     /** @type {Map<import('ws').WebSocket, Set<number>>} */
     this.conns = new Map();
     this.saveTimer = null;
@@ -441,22 +525,40 @@ class Room {
     this.pendingBarrierSave = false;
     /** @type {Array<{ ws: import('ws').WebSocket, data: Buffer }>} */
     this.deferredMessages = [];
+    this.trackerGuardTimer = null;
+    this.trackerGuardObjects = new Set();
 
-    if (fs.existsSync(this.file)) {
+    try {
+      let saved;
       try {
-        Y.applyUpdate(this.doc, fs.readFileSync(this.file));
+        saved = fs.readFileSync(this.file);
       } catch (err) {
-        log(`room ${name}: could not read saved state`, err);
+        if (err?.code !== 'ENOENT') throw err;
       }
+      if (saved) Y.applyUpdate(this.doc, saved);
+    } catch (err) {
+      // Keep unreadable state in place: an empty replacement would hide it from backups and image retention.
+      this.doc.destroy();
+      throw err;
     }
+    this.awareness = new awarenessProtocol.Awareness(this.doc);
+    this.awareness.setLocalState(null);
 
     /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
     this.held = null;
-    this.doc.on('update', (update) => {
+    this.doc.on('update', (update, origin, _doc, transaction) => {
       this.dirty = true;
       if (this.held) this.held.push(update);
       else this.broadcastUpdate(update);
       this.scheduleSave();
+      if (this.kind === 'board' && config.tracker && directory && this.conns.has(origin)) {
+        try {
+          const ids = changedObjectIds(transaction, this.doc);
+          if (ids.size) this.scheduleTrackerGuard(ids);
+        } catch (err) {
+          log(`room ${this.name}: could not schedule tracker guard`, err?.message);
+        }
+      }
     });
     // Accounts mode: the relay checks comment authorship on every write to a comments room.
     this.guard = directory && this.kind === 'comments'
@@ -509,6 +611,26 @@ class Room {
     }
   }
 
+  /** Applies a board-room update and its tracker correction before releasing the held broadcast. */
+  trackerGuarded(ws, apply) {
+    if (ws.trackerGuardRejected) return;
+    if (!trackerSocketBudget.allow(`${ws.userId ?? 'anonymous'}\u0000${this.name}`)) {
+      ws.trackerGuardRejected = true;
+      sendTrackerRateLimitedNotice(ws);
+      ws.close(1008, 'rate_limited');
+      return;
+    }
+    const user = ws.guest
+      ? { id: ws.userId, role: 'guest', workspaceRole: 'guest' }
+      : directory.getUser(ws.userId) ?? { id: ws.userId, role: null };
+    const actor = {
+      type: 'user', userId: ws.userId, user,
+      notify: (undone) => sendTrackerNotice(ws, undone),
+    };
+    const result = trackerGuard.run(this, actor, apply);
+    sendTrackerNotice(ws, result.undone);
+  }
+
   // A debounce, but never later than SAVE_MAX_WAIT_MS after the first change that is still unsaved.
   scheduleSave() {
     clearTimeout(this.saveTimer);
@@ -518,28 +640,44 @@ class Room {
     this.saveTimer = setTimeout(() => this.save(), delay);
   }
 
+  /** Writes the room to its file. False when the write failed: the edits stay in memory and the save is tried again. */
   save() {
     clearTimeout(this.saveTimer);
     this.saveTimer = null;
-    if (roomsFrozen) return;
+    if (roomsFrozen) return true;
     if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
+      // Not a failure: the snapshot barrier holds writes for a moment and the save runs again when it is released.
       this.pendingBarrierSave = true;
-      return;
+      return true;
+    }
+    if (this.kind === 'board' && trackerGuard) {
+      try { trackerGuard.flushTitles(this.name); }
+      catch (err) { log(`room ${this.name}: tracker titles could not flush`, err?.code ?? 'error'); }
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
     }
     this.pendingBarrierSave = false;
-    this.firstUnsavedAt = null;
     const tmp = `${this.file}.tmp`;
     const bytes = Y.encodeStateAsUpdate(this.doc);
     try {
       fs.writeFileSync(tmp, bytes);
+      // The room file is only ever replaced by the complete regular file just written: if something else took the temporary
+      // name meanwhile (a directory on Windows can win a rename over a file), the save fails and is retried.
+      if (!fs.lstatSync(tmp).isFile()) throw Object.assign(new Error('the temporary save path is not a file'), { code: 'ENOTFILE' });
+      try {
+        if (fs.lstatSync(this.file).isDirectory()) throw Object.assign(new Error('the room file path is a directory'), { code: 'EISDIR' });
+      } catch (err) {
+        if (err?.code !== 'ENOENT') throw err;
+      }
       renameSyncRetry(tmp, this.file);
     } catch (err) {
-      // A save that cannot finish must not take the relay down (this runs in a timer): keep the room dirty and try again.
-      log(`room ${this.name}: could not save, will retry`, err?.code ?? err?.message);
+      // A full or failing disk must not throw out of a timer: that would end the process and every room's unsaved edits.
+      log(`room ${this.name}: could not save, will retry in ${SAVE_RETRY_MS / 1000} s`, err?.code ?? err?.message);
       this.firstUnsavedAt ??= Date.now();
-      if (!this.saveTimer && !roomsFrozen) this.saveTimer = setTimeout(() => this.save(), 2000);
-      return;
+      if (!this.saveTimer && !roomsFrozen) this.saveTimer = setTimeout(() => this.save(), SAVE_RETRY_MS);
+      return false;
     }
+    this.firstUnsavedAt = null;
     // `changed`: something was edited since the last save. A save that only rewrites the same state (a room that is
     // unloaded, the save at shutdown) is not a change for the backups.
     const changed = this.dirty;
@@ -554,6 +692,7 @@ class Room {
     }
     history.onSave(this, bytes);
     if (changed) backup?.noteChange();
+    return true;
   }
 
   join(ws) {
@@ -594,7 +733,13 @@ class Room {
     clearTimeout(this.unloadTimer);
     this.unloadTimer = setTimeout(() => {
       if (this.conns.size === 0) {
-        this.save();
+        if (!this.save()) {
+          this.releaseIfIdle();
+          return;
+        }
+        clearTimeout(this.trackerGuardTimer);
+        this.trackerGuardTimer = null;
+        if (this.kind === 'board') trackerGuard?.clearTitles(this.name);
         this.doc.destroy();
         rooms.delete(this.name);
         if (this.kind === 'board') aiLive.dropBoard(this.name);
@@ -617,6 +762,35 @@ class Room {
   setName(title) {
     const meta = this.doc.getMap('meta');
     if (meta.get('name') !== title) this.doc.transact(() => meta.set('name', title), 'relay');
+  }
+
+  scheduleTrackerGuard(objectIds) {
+    for (const id of objectIds) this.trackerGuardObjects.add(id);
+    // no reset on later updates, so steady editing cannot postpone the repair
+    if (this.trackerGuardTimer) return;
+    this.trackerGuardTimer = setTimeout(() => {
+      this.trackerGuardTimer = null;
+      const queued = [...this.trackerGuardObjects];
+      const pendingTitles = queued.filter((id) => trackerGuard?.hasPendingTitle(this.name, id));
+      const ids = queued.filter((id) => !pendingTitles.includes(id));
+      this.trackerGuardObjects.clear();
+      if (pendingTitles.length) {
+        this.trackerGuardTimer = setTimeout(() => {
+          this.trackerGuardTimer = null;
+          this.scheduleTrackerGuard(pendingTitles);
+        }, 500);
+        this.trackerGuardTimer.unref?.();
+      }
+      if (!ids.length) return;
+      try {
+        reconcileTrackerProjection({
+          directory, roomAccess, boardId: this.name, baseUrl: config.baseUrl, objectIds: ids, origin: 'remote-client',
+        });
+      } catch (err) {
+        log(`room ${this.name}: tracker guard failed`, err?.message);
+      }
+    }, 200);
+    this.trackerGuardTimer.unref?.();
   }
 
 
@@ -644,7 +818,10 @@ class Room {
         encoding.writeVarUint(enc, MSG_SYNC);
         const apply = () => syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
         // A state vector (step 1) changes nothing, so only step 2 and updates go through the guard.
-        if (this.guard && ws.userId && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
+        const syncType = decoding.peekVarUint(dec);
+        if (this.kind === 'board' && trackerGuard && config.tracker && directory && ws.userId
+          && syncType !== syncProtocol.messageYjsSyncStep1) this.trackerGuarded(ws, apply);
+        else if (this.guard && ws.userId && syncType !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
         else apply();
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
@@ -667,6 +844,17 @@ class Room {
   }
 }
 
+/** The room for a new socket, or null when it cannot be opened (its file cannot be read): the socket is closed. */
+function openRoom(ws, name) {
+  try {
+    return getRoom(name);
+  } catch (err) {
+    log(`room ${name}: could not open`, err?.message);
+    ws.close(1011, 'internal_error');
+    return null;
+  }
+}
+
 function getRoom(name) {
   if (roomsFrozen) throw new Error('the workspace is being restored');
   let r = rooms.get(name);
@@ -675,6 +863,13 @@ function getRoom(name) {
     rooms.set(name, r);
     log(`room ${name}: loaded`);
     r.nameFromDirectory();
+    if (config.tracker && directory) queueMicrotask(() => {
+      try {
+        retryTrackerProjectionOnRoomLoad({ directory, roomAccess, boardId: name, baseUrl: config.baseUrl });
+      } catch (err) {
+        log(`room ${name}: tracker projection retry failed`, err?.message);
+      }
+    });
   }
   return r;
 }
@@ -697,19 +892,40 @@ const roomAccess = {
       doc.destroy();
     }
   },
-  write(name, origin, fn) {
+  write(name, origin, fn, trackerContext = null) {
     const room = getRoom(name);
     try {
       let result;
-      room.doc.transact(() => {
+      const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
       }, origin);
+      if (room.kind === 'board' && trackerGuard && trackerContext?.actor) {
+        const guarded = trackerGuard.run(room, trackerContext.actor, apply, { source: trackerContext.source ?? 'board' });
+        const refused = guarded.undone.find((entry) => entry.reason !== 'limit_exceeded');
+        if (refused) {
+          const code = ['forbidden', 'read_only', 'rate_limited', 'limit_exceeded'].includes(refused.reason) ? refused.reason : 'invalid_input';
+          throw new OpsError(code, `Linked card write was refused (${refused.reason}).`, refused.reason === 'title_invalid' ? 'title' : undefined);
+        }
+      } else apply();
       return result;
     } finally {
       room.releaseIfIdle();
     }
   },
+  invalidateTracker(boardId) {
+    trackerGuard?.invalidate(boardId);
+  },
 };
+
+const trackerProjectionWorker = config.tracker && directory
+  ? createTrackerProjectionWorker({ directory, roomAccess, baseUrl: config.baseUrl, log })
+  : null;
+trackerProjectionWorker?.start();
+
+const trackerRestoreRecovery = config.tracker && directory
+  ? createTrackerRestoreRecovery({ directory, roomAccess, baseUrl: config.baseUrl, log })
+  : null;
+void trackerRestoreRecovery?.start();
 
 // AI features in open mode (docs/ai.md): the operator's key, counted per client address. Accounts mode has the route in api.mjs.
 const openAiRun = config.authEnabled ? null : createOpenRun({ config, canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), roomExists: (name) => roomAccess.exists(name), live: aiLive, log });
@@ -739,6 +955,22 @@ if (config.mcp) {
   mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier });
 }
 
+let oauthRoutes = null;
+if (config.mcp?.oauth) {
+  const { createOAuthRoutes } = await import('./oauth-routes.mjs');
+  oauthRoutes = createOAuthRoutes({ config, directory });
+  const sweepOAuth = () => {
+    const sweep = () => directory.cleanup();
+    try {
+      if (snapshotBarrier) Promise.resolve(snapshotBarrier.runWriter(sweep)).catch(() => log('OAuth cleanup failed'));
+      else sweep();
+    } catch {
+      log('OAuth cleanup failed');
+    }
+  };
+  setInterval(sweepOAuth, 10 * 60 * 1000).unref();
+}
+
 function workspaceHint(readOnly) {
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, MSG_WORKSPACE);
@@ -751,6 +983,21 @@ function send(ws, msg) {
   ws.send(msg, (err) => {
     if (err) ws.close();
   });
+}
+
+function sendTrackerNotice(ws, undone) {
+  if (!undone?.length) return;
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, MSG_TRACKER_NOTICE);
+  encoding.writeVarString(enc, JSON.stringify({ undone }));
+  send(ws, encoding.toUint8Array(enc));
+}
+
+function sendTrackerRateLimitedNotice(ws) {
+  const enc = encoding.createEncoder();
+  encoding.writeVarUint(enc, MSG_TRACKER_NOTICE);
+  encoding.writeVarString(enc, JSON.stringify({ undone: [{ reason: 'rate_limited' }], reason: 'rate_limited' }));
+  send(ws, encoding.toUint8Array(enc));
 }
 
 // ---------------------------------------------------------------- http
@@ -790,7 +1037,11 @@ function sendFile(res, file, status, cache) {
     'referrer-policy': 'no-referrer',
     'cache-control': cache,
   };
-  if (ext === '.html') headers['content-security-policy'] = CSP;
+  if (ext === '.html') {
+    headers['content-security-policy'] = CSP;
+    // Older browsers ignore frame-ancestors; the consent screen must never be frameable (docs/mcp-oauth.md 7.5).
+    if (!ALLOW_FRAMING) headers['x-frame-options'] = 'DENY';
+  }
   res.writeHead(status, headers);
   fs.createReadStream(file).pipe(res);
 }
@@ -884,14 +1135,19 @@ function serveStatic(req, res, url) {
     res.writeHead(403).end();
     return;
   }
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
+  const appRoute = url.pathname === '/t' || url.pathname.startsWith('/t/')
+    || url.pathname === '/b' || url.pathname.startsWith('/b/');
+  if (appRoute || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
   const ext = path.extname(file);
   const headers = {
     'content-type': MIME[ext] || 'application/octet-stream',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
   };
-  if (ext === '.html') headers['content-security-policy'] = CSP;
+  if (ext === '.html') {
+    headers['content-security-policy'] = CSP;
+    if (!ALLOW_FRAMING) headers['x-frame-options'] = 'DENY';
+  }
   headers['cache-control'] = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
   res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
@@ -924,7 +1180,18 @@ async function onRequest(req, res) {
       req.socket.destroy();
       return;
     }
-    if (url.pathname === '/mcp' && auth?.authenticateGuest(req.headers.cookie)) {
+    const oauthPath = url.pathname === '/oauth' || url.pathname.startsWith('/oauth/')
+      || url.pathname === '/.well-known/oauth' || url.pathname.startsWith('/.well-known/oauth-')
+      // no OpenID Connect (spec 1): a discovery probe gets a JSON 404, never the single-page app
+      || url.pathname.startsWith('/.well-known/openid-');
+    if (oauthPath && (!config.mcp?.oauth || !oauthRoutes)) {
+      sendJson(res, 404, { error: 'not_found' });
+    } else if (oauthPath && maintenance) {
+      res.setHeader('retry-after', '30');
+      sendJson(res, 503, { error: 'restoring' });
+    } else if (oauthPath) {
+      await runOpenWriter(() => oauthRoutes.handle(req, res));
+    } else if (url.pathname === '/mcp' && auth?.authenticateGuest(req.headers.cookie)) {
       sendJson(res, 403, { error: 'forbidden', message: 'This guest session is limited to one board' });
     } else if (url.pathname === '/mcp' && maintenance) {
       res.setHeader('retry-after', '30');
@@ -1196,7 +1463,8 @@ server.on('upgrade', (req, socket, head) => {
 
     if (!config.authEnabled) {
       ws.canWrite = true;
-      const room = getRoom(name);
+      const room = openRoom(ws, name);
+      if (!room) return;
       ws.on('message', (data) => room.onMessage(ws, data));
       ws.on('close', () => room.leave(ws));
       room.join(ws);
@@ -1231,10 +1499,10 @@ server.on('upgrade', (req, socket, head) => {
     ws.checkedAt = Date.now();
     ws.sessionRevoked = false;
     ws.denied = false;
+    const room = openRoom(ws, name);
+    if (!room) return;
     track(ws);
     if (ws.guest) armGuestExpiry(ws);
-
-    const room = getRoom(name);
     ws.on('message', (data) => {
       refresh(ws, false);
       if (!ws.denied) room.onMessage(ws, data);
@@ -1260,30 +1528,37 @@ const pinger = setInterval(() => {
   }
 }, PING_MS);
 
-// The rooms are saved first, so the files and the backup's view of the open rooms are final. Then the backup gets
+// The rooms are saved first, so the files include the state the final backup starts with. Then the backup gets
 // TABULA_BACKUP_SHUTDOWN_SECONDS to finish a run in progress and to back up what changed since the last one (a restore
 // holds maintenance and stops the backups itself). Whatever is still running after that is told to stop and given a
 // moment to let go of the database before it is closed; both waits are short, so a supervisor's kill timeout is not reached.
 const BACKUP_STOP_WAIT_MS = 2000;
 async function stopRelay() {
   clearInterval(pinger);
+  await closeKeyFloorReporter();
   cloud?.close();
-  saveAllRooms();
+  // A snapshot hold must never turn a shutdown save into a deferred one: the process is about to exit.
+  const saveNow = () => (snapshotBarrier ? snapshotBarrier.allowWrites(saveAllRooms) : saveAllRooms());
+  let saved = saveNow();
   if (backup && !maintenance && backupConfig.shutdownSeconds > 0) {
     await backup.finish({ budgetMs: backupConfig.shutdownSeconds * 1000 });
-    // people were still editing while it ran
-    saveAllRooms();
   }
   const stopping = backup?.stop();
   restore?.stop();
-  history.close();
   chatHub?.stop();
   chatRetention?.stop();
   chatNotifier?.stop();
-  if (stopping) await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
+  trackerNotifier?.stop();
+  trackerProjectionWorker?.stop();
+  if (stopping) {
+    await Promise.race([stopping, new Promise((resolve) => setTimeout(resolve, BACKUP_STOP_WAIT_MS))]);
+    // Edits can arrive during either backup wait. Nothing may yield between this final save and exit.
+    saved = saveNow();
+  }
+  history.close();
   closeChat();
   directory?.close();
-  process.exit(0);
+  process.exit(saved ? 0 : 1);
 }
 // Every way in shares one run, so a second signal while it winds down changes nothing.
 let shuttingDown = null;

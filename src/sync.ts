@@ -8,6 +8,7 @@ import { Comments } from './comments';
 import type { User } from './types';
 import { USER_COLORS, personColor } from './palette';
 import { isDesktop } from './desktop-env';
+import { trackerNoticeReason, type TrackerNoticeReason } from './tracker/ui/guard-notice';
 
 // ---------------------------------------------------------------- identity
 
@@ -215,6 +216,42 @@ export function onCommentNotice(provider: HintTarget, callback: (undone: string[
   };
 }
 
+/** Board rooms: the relay tells this editor which linked-card changes it corrected. */
+export const MSG_TRACKER_NOTICE = 7;
+
+export interface TrackerNoticeMessage {
+  undone: { cardId?: string; reason: TrackerNoticeReason }[];
+}
+
+export function onTrackerNotice(provider: HintTarget, callback: (message: TrackerNoticeMessage) => void): void {
+  provider.messageHandlers[MSG_TRACKER_NOTICE] = (_encoder, decoder) => {
+    let undone: unknown;
+    try {
+      const payload = JSON.parse(decoding.readVarString(decoder)) as { undone?: unknown } | null;
+      undone = payload?.undone;
+    } catch {
+      return;
+    }
+    if (!Array.isArray(undone)) return;
+    const entries: TrackerNoticeMessage['undone'] = [];
+    for (const value of undone) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const item = value as { cardId?: unknown; reason?: unknown };
+      const reason = trackerNoticeReason(item.reason);
+      if (!reason) continue;
+      // A whole-socket notice (rate_limited) names no card: it still earns a toast, but undoes nothing locally.
+      if (typeof item.cardId === 'string') entries.push({ cardId: item.cardId, reason });
+      else if (item.cardId === undefined) entries.push({ reason });
+    }
+    if (!entries.length) return;
+    try {
+      callback({ undone: entries });
+    } catch {
+      /* a failing listener must not break the socket */
+    }
+  };
+}
+
 /**
  * Board rooms (docs/ai.md, "Live runs"): the relay tells every socket about the board's AI runs, as JSON
  * { kind: 'snapshot', runs } when it joins while runs are open, then { kind: 'patch', run } per change. Like the notices
@@ -283,6 +320,8 @@ export interface BoardConn {
   onWorkspaceHint: (fn: () => void) => () => void;
   /** The relay undid changes this person made in the comments (accounts mode); `undone` lists the kinds. */
   onCommentNotice: (fn: (undone: string[]) => void) => () => void;
+  /** The relay corrected linked-card changes from this person, with one reason per card. */
+  onTrackerNotice: (fn: (message: TrackerNoticeMessage) => void) => () => void;
   /** The relay sent the board's live AI runs (a snapshot on joining, then a patch per change). */
   onAiRuns: (fn: (message: AiRunsMessage) => void) => () => void;
   /** Reconnects both rooms for a fresh sync; does nothing once the relay has refused this board. */
@@ -307,6 +346,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
   const deniedListeners = new Set<(r: DeniedReason) => void>();
   const hintListeners = new Set<() => void>();
   const noticeListeners = new Set<(undone: string[]) => void>();
+  const trackerNoticeListeners = new Set<(message: TrackerNoticeMessage) => void>();
   const aiRunListeners = new Set<(message: AiRunsMessage) => void>();
   const conn: BoardConn = {
     id, doc, store, comments, provider: null, awareness: null as unknown as Awareness, status: 'local', denied: null,
@@ -326,6 +366,10 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     onCommentNotice: (fn) => {
       noticeListeners.add(fn);
       return () => noticeListeners.delete(fn);
+    },
+    onTrackerNotice: (fn) => {
+      trackerNoticeListeners.add(fn);
+      return () => trackerNoticeListeners.delete(fn);
     },
     onAiRuns: (fn) => {
       aiRunListeners.add(fn);
@@ -370,6 +414,11 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     onWorkspaceHint(provider, hinted);
     // registered even with no listener yet, so an app that does not draw runs does not log every message as unknown
     onAiRuns(provider, (message) => aiRunListeners.forEach((l) => l(message)));
+    onTrackerNotice(provider, (message) => {
+      for (const listener of trackerNoticeListeners) {
+        try { listener(message); } catch { /* one listener must not stop the socket or other listeners */ }
+      }
+    });
     commentsProvider = new WebsocketProvider(url, commentsRoom(id), cdoc, { maxBackoffTime: 8000 });
     commentsProvider.awareness.setLocalState(null);
     commentsProvider.on('connection-close', onClose);
@@ -411,6 +460,7 @@ export function scratchBoard(id: string, user: User, commentsReadOnly = true): B
     onDenied: () => () => undefined,
     onWorkspaceHint: () => () => undefined,
     onCommentNotice: () => () => undefined,
+    onTrackerNotice: () => () => undefined,
     onAiRuns: () => () => undefined,
     resync: () => undefined,
     destroy: () => {

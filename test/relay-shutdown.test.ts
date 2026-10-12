@@ -104,6 +104,17 @@ afterEach(async () => {
 });
 
 describe('relay shutdown', { timeout: 60_000 }, () => {
+  it('reports a failed final save and still saves the other rooms', async () => {
+    const relay = await startRelay();
+    await editWithoutSaving(relay, 'blocked-room', 'cannot be saved');
+    fs.mkdirSync(`${roomFile(relay, 'blocked-room')}.tmp`);
+    await editWithoutSaving(relay, 'healthy-room', 'saved despite the other failure');
+    relay.child.send({ type: 'shutdown' });
+    expect(await exitOf(relay)).toEqual({ code: 1, signal: null });
+    expect(fs.existsSync(roomFile(relay, 'blocked-room'))).toBe(false);
+    expect(savedNote(relay, 'healthy-room')).toBe('saved despite the other failure');
+  });
+
   it('saves a room edited moments ago when asked to stop over the IPC channel, on every system', async () => {
     const relay = await startRelay();
     await editWithoutSaving(relay, 'ipc-room', 'typed just before the stop');
@@ -117,10 +128,11 @@ describe('relay shutdown', { timeout: 60_000 }, () => {
     relay.child.send({ type: 'status' });
     relay.child.send('shutdown');
     relay.child.send({ shutdown: true });
+    // The relay does not acknowledge ignored IPC messages, so keep a short observation window on this channel.
     await sleep(400);
+    await editWithoutSaving(relay, 'ignored-room', 'still running');
     expect(relay.child.exitCode).toBeNull();
     expect(relay.child.signalCode).toBeNull();
-    await editWithoutSaving(relay, 'ignored-room', 'still running');
     relay.child.send({ type: 'shutdown' });
     expect(await exitOf(relay)).toEqual({ code: 0, signal: null });
     expect(savedNote(relay, 'ignored-room')).toBe('still running');

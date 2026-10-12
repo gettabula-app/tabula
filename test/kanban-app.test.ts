@@ -507,6 +507,28 @@ describe('placing templates with kanbans', () => {
     expect(count(store, 'sticky')).toBe(2);
     expect(notify).not.toHaveBeenCalled();
   });
+
+  it('a template that starts a board is not an undo step, one added to a board is', () => {
+    const started = harness();
+    withFlow(started.app);
+    started.store.undo.clear();
+    const before = started.store.cache.size;
+    insertTemplate(started.app, kanbanTemplate(), { start: true });
+    insertCustomTemplate(started.app, custom(), { start: true });
+    const filled = started.store.cache.size;
+    expect(filled).toBeGreaterThan(before);
+    started.store.undo.undo();
+    expect(started.store.cache.size).toBe(filled);
+
+    const added = harness();
+    withFlow(added.app);
+    added.store.undo.clear();
+    const empty = added.store.cache.size;
+    insertTemplate(added.app, kanbanTemplate());
+    expect(added.store.cache.size).toBeGreaterThan(empty);
+    added.store.undo.undo();
+    expect(added.store.cache.size).toBe(empty);
+  });
 });
 
 // ---------------------------------------------------------------- slice 4: lanes and discipline
@@ -570,6 +592,21 @@ describe('the kanban header, the lane ⋯ and the add-lane +', () => {
 });
 
 describe('lane and kanban menu actions', () => {
+  it('refuses deleting a mapped lane through BoardApp, but allows an unmapped lane on the linked kanban', () => {
+    const { app, store, container, lanes, notify } = harness();
+    store.doc.transact(() => store.objects.get(container)!.set('ext', {
+      provider: 'tabula', tracker: 'tracker-1', map: { [lanes[0]]: 'todo' },
+    }), 'tracker-projection');
+
+    expect(app.deleteLane(lanes[0], false)).toBe(false);
+    expect(notify).toHaveBeenLastCalledWith('Unlink the kanban from the tracker before deleting this lane');
+    expect(app.deleteLane(lanes[0], true)).toBe(false);
+    expect(store.get(lanes[0])).toBeDefined();
+
+    expect(app.deleteLane(lanes[1], true)).toBe(true);
+    expect(store.get(lanes[1])).toBeUndefined();
+  });
+
   it('each is one undo step; a refusal is a toast and writes nothing', () => {
     const { app, store, container, lanes, notify } = harness();
     const steps = () => (store.undo as unknown as { undoStack: unknown[] }).undoStack.length;

@@ -7,6 +7,7 @@ import { h } from './dom';
 interface SignInOptions {
   notice?: string;
   invite?: { token: string; teamName: string };
+  oauthRequest?: string;
 }
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
@@ -55,7 +56,7 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
       submit.disabled = true;
       submit.textContent = 'Sending…';
       try {
-        await api.requestLogin(email, invite?.token);
+        await api.requestLogin(email, invite?.token, opts.oauthRequest);
       } catch (err) {
         setError(describe(err));
         submit.disabled = false;
@@ -88,7 +89,7 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
   showForm(opts.notice);
 }
 
-export async function renderVerify(root: HTMLElement, token: string, done: (me: Me) => void): Promise<void> {
+export async function renderVerify(root: HTMLElement, token: string, done: (me: Me, oauthRequest?: string) => void, oauthRequest?: string): Promise<void> {
   document.title = 'Signing in - Tabula';
   root.replaceChildren(page(h('p', { class: 'signin-lede', role: 'status' }, 'Signing you in…')));
   try {
@@ -97,6 +98,7 @@ export async function renderVerify(root: HTMLElement, token: string, done: (me: 
     const expired = err instanceof ApiError && (err.code === 'invalid_token' || err.status === 400);
     renderSignIn(root, {
       notice: cloudErrorMessage(err) ?? (expired ? 'This link has expired or was already used. Request a new one.' : FAILED),
+      oauthRequest,
     });
     return;
   }
@@ -104,11 +106,12 @@ export async function renderVerify(root: HTMLElement, token: string, done: (me: 
   try {
     me = await api.me();
   } catch {
-    renderSignIn(root, { notice: FAILED });
+    renderSignIn(root, { notice: FAILED, oauthRequest });
     return;
   }
-  setSignedIn(me);
-  done(me);
+  await setSignedIn(me);
+  if (oauthRequest) done(me, oauthRequest);
+  else done(me);
 }
 
 export async function renderInvite(root: HTMLElement, token: string, auth: AuthState, done: (me: Me) => void): Promise<void> {
@@ -159,7 +162,7 @@ export async function renderInvite(root: HTMLElement, token: string, auth: AuthS
       joinBtn.before(error);
       return;
     }
-    setSignedIn(me);
+    await setSignedIn(me);
     done(me);
   };
   joinBtn.addEventListener('click', join);

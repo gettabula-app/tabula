@@ -88,16 +88,27 @@ describe('chat over the API', { timeout: 60_000 }, () => {
   it('pages backwards with before, 50 by default and 100 at most', async () => {
     const { creator, board } = await setup();
     await list(creator, board); // opens chat.sqlite
+    const seedStartedAt = Date.now();
     const db = new DatabaseSync(path.join(h.dir, 'chat.sqlite'));
     try {
       db.exec('PRAGMA busy_timeout = 5000');
       const insert = db.prepare(`INSERT INTO chat_messages (kind, ref, author_id, author_name, body, client_id, created_at) VALUES ('board', ?, ?, 'x', ?, ?, ?)`);
-      for (let i = 0; i < 130; i++) insert.run(board, creator.user.id, `m${i}`, `seed-${i}-client`, Date.now());
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        for (let i = 0; i < 130; i++) insert.run(board, creator.user.id, `m${i}`, `seed-${i}-client`, Date.now());
+        db.exec('COMMIT');
+      } catch (error) {
+        db.exec('ROLLBACK');
+        throw error;
+      }
     } finally {
       db.close();
     }
+    const seedMs = Date.now() - seedStartedAt;
     const texts = (r: any) => r.body.messages.map((m: any) => m.text);
-    const first = await list(creator, board);
+    const first = await list(creator, board).catch((cause) => {
+      throw new Error(`post-seed history request failed after ${seedMs}ms of fixture seeding`, { cause });
+    });
     expect(texts(first)).toEqual(Array.from({ length: 50 }, (_, i) => `m${80 + i}`));
     const second = await list(creator, board, `?before=${first.body.next}`);
     expect(texts(second)).toEqual(Array.from({ length: 50 }, (_, i) => `m${30 + i}`));
@@ -272,6 +283,8 @@ describe('chat over the API', { timeout: 60_000 }, () => {
     expect(await err({ text: 'x', replyTo: 'one' })).toEqual([400, 'bad_request']);
     const many = Array.from({ length: 11 }, (_, i) => `@{user${i}}`).join(' ');
     expect(await err({ text: many })).toEqual([400, 'too_many_mentions']);
+    // the limit holds for what is stored: 500 mentions of nobody in the channel would become 4,000 characters of @someone
+    expect(await err({ text: '@{a}'.repeat(500) })).toEqual([400, 'too_long']);
 
     const huge = await h.api(ana.cookie, 'POST', url(board), { clientId: cid(), text: 'x'.repeat(17 * 1024) });
     expect(huge.status).toBe(413);
@@ -423,6 +436,7 @@ describe('chat over the API', { timeout: 60_000 }, () => {
       { max: 60, call: (who: Account) => h.api(who.cookie, 'GET', `/api/chat/board/${board}`) },
       { max: 60, call: (who: Account) => h.api(who.cookie, 'GET', '/api/chat/unread') },
       { max: 60, call: (who: Account) => h.api(who.cookie, 'PUT', `/api/chat/board/${board}/read`, { lastId: 0 }) },
+      { max: 120, call: (who: Account) => h.api(who.cookie, 'GET', `/api/chat/board/${board}/messages`) },
     ];
     for (const { max, call } of reads) {
       const ana = await person('commenter');
@@ -442,17 +456,25 @@ describe('chat over the API', { timeout: 60_000 }, () => {
   });
 });
 
-describe('without chat', { timeout: 60_000 }, () => {
-  const off = createHarness({ accounts: true });
+describe('chat by default, and without it', { timeout: 60_000 }, () => {
+  const off = createHarness({ accounts: true, settings: { CHAT: 'off' } });
+  const on = createHarness({ accounts: true });
   const open = createHarness({ accounts: false, settings: { CHAT: 'on' } });
   beforeAll(async () => {
-    await Promise.all([off.start(), open.start()]);
+    await Promise.all([off.start(), on.start(), open.start()]);
   });
   afterAll(async () => {
-    await Promise.all([off.cleanup(), open.cleanup()]);
+    await Promise.all([off.cleanup(), on.cleanup(), open.cleanup()]);
   });
 
-  it('has no chat routes in accounts mode without TABULA_CHAT=on', async () => {
+  it('is on in accounts mode with no setting at all', async () => {
+    const who = await on.signInOwner();
+    expect((await on.api(who.cookie, 'GET', '/api/me')).body.chat).toBe(true);
+    expect((await on.api(who.cookie, 'GET', '/api/chat/unread')).status).toBe(200);
+    expect((await on.api(who.cookie, 'GET', '/api/admin/chat')).status).toBe(200);
+  });
+
+  it('has no chat routes in accounts mode with TABULA_CHAT=off', async () => {
     const who = await off.signInOwner();
     expect((await off.api(who.cookie, 'GET', '/api/me')).body.chat).toBeUndefined();
     expect((await off.api(who.cookie, 'GET', '/api/chat/unread')).status).toBe(404);

@@ -17,11 +17,20 @@ export const migrationSql = (entry) => (typeof entry === 'string' ? entry : entr
 
 /**
  * The lowest schema generation that can still read a database right after migration number `n` (1-based) ran. A plain string is
- * expand-only: the generation before it still reads the database. An entry that breaks that says `minReader: n` (or any
- * number from 0 to n).
+ * expand-only: the generation before it still reads the database. Its SQL may start with `-- minReader: k` when an additive migration
+ * is known to remain readable by an earlier generation. An entry that breaks that says `{ sql, minReader: n }` (or another
+ * explicit number from 0 to n).
  */
 export function declaredMinReader(entry, n) {
-  if (typeof entry === 'string') return n - 1;
+  if (typeof entry === 'string') {
+    const annotated = entry.match(/^\s*--\s*minReader:\s*(\d+)\s*$/m);
+    if (!annotated) return n - 1;
+    const value = Number(annotated[1]);
+    if (!Number.isInteger(value) || value < 0 || value > n) {
+      throw new TypeError(`migration ${n} minReader annotation must be a whole number from 0 to ${n}`);
+    }
+    return value;
+  }
   const value = entry?.minReader;
   if (typeof entry?.sql !== 'string' || !Number.isInteger(value) || value < 0 || value > n) {
     throw new TypeError(`migration ${n} must be SQL text or { sql, minReader } with minReader a whole number from 0 to ${n}`);

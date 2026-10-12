@@ -6,6 +6,8 @@ import { editCard, knownLabels, OWNER_NAME_MAX, type CardPatch } from '../contai
 import { CARD_LINK_MAX } from '../safe-obj';
 import { listLabels, toggleCardLabel } from '../labels';
 import { kanbanSwatch } from '../markup';
+import { navigateTrackerPath } from '../route';
+import { buildTrackerPath } from '../tracker-route';
 import { dialog } from './common';
 import { h, icon } from './dom';
 import { isDueDate, ownerKey, ownerOptions } from './kanban-logic';
@@ -35,8 +37,10 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const card0 = app.store.get(id);
   if (card0?.type !== 'card' || !app.canOpenCard()) return null;
   const editable = !app.readOnly && !card0.locked;
+  const linked = card0.extProvider === 'tabula';
   const canComment = !app.comments.readOnly();
   const cardOf = () => app.store.get(id) as BaseObj | undefined;
+  const projectedTitle = (card: BaseObj) => (card as BaseObj & { tracker?: { title?: string } }).tracker?.title ?? card.text ?? '';
   const save = (patch: CardPatch) => {
     if (!editable) return;
     // refused or unchanged: the fields show what the card has again
@@ -49,7 +53,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const dirty = { head: false, desc: false, link: false };
   const title = h('input', { class: 'input', type: 'text', maxlength: LIMITS.title * 2, 'aria-label': 'Title', autocomplete: 'off' });
   const saveTitle = () => {
-    if (!dirty.head) return;
+    if (!dirty.head || linked) return;
     dirty.head = false;
     save({ title: title.value });
   };
@@ -156,8 +160,9 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const clearLink = h('button', { class: 'btn ghost k-clear', type: 'button', onclick: () => { dirty.link = false; link.value = ''; clearLinkError(); save({ link: null }); } }, 'Clear');
 
   const labels = h('div', { class: 'k-labels', role: 'group', 'aria-label': 'Labels' });
+  const trackerValues = h('div', { class: 'k-stack', role: 'group', 'aria-label': 'Tracker fields' });
   const manage = editable
-    ? h('button', { class: 'btn ghost', type: 'button', onclick: () => app.openLabels?.() }, 'Edit labels')
+    ? h('button', { class: 'btn ghost k-label-edit', type: 'button', onclick: () => app.openLabels?.() }, 'Edit labels')
     : null;
 
   // ---- actions
@@ -167,18 +172,28 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     editable ? h('button', { class: 'btn danger', type: 'button', onclick: () => { d.close(); app.setSelection([id]); app.deleteSelection(); } }, icon('trash', 16), 'Delete') : null,
   );
 
+  const openTrackerTicket = linked && card0.extKey
+    ? h('a', {
+      class: 'k-open-tracker', href: buildTrackerPath({ kind: 'ticket', key: card0.extKey }),
+      onclick: (event: Event) => { event.preventDefault(); navigateTrackerPath({ kind: 'ticket', key: card0.extKey! }); },
+    }, 'Edit in tracker')
+    : null;
+
+  const trackerField = (label: string, value: string) => field(label, h('span', { class: 'k-link-readonly' }, value || 'None'));
+
   const note = editable ? null : h('p', { class: 'k-note' }, card0.locked && !app.readOnly ? 'This card is locked. Unlock it to change it.' : canComment ? 'You can comment on this card. Only editors can change it.' : 'Only editors can change this card.');
   const body = h('div', { class: 'k-card-form' },
     note,
+    openTrackerTicket,
     field('Title', title),
     field('Description', desc),
-    h('div', { class: 'k-row2' },
+    linked ? trackerValues : h('div', { class: 'k-row2' },
       field('Owner', h('div', { class: 'k-stack' }, owner, ownerName, ownerKinds)),
       field('Due', h('div', { class: 'k-due' }, due, editable ? clearDue : null)),
     ),
     field('Link', h('div', { class: 'k-link-wrap' },
       h('div', { class: 'k-link-field' }, link, editable ? clearLink : null), openLink, readOnlyLink, linkError)),
-    h('div', { class: 'field' }, h('div', { class: 'field-label k-label-head' }, h('span', null, 'Labels'), manage), labels),
+    linked ? null : h('div', { class: 'field' }, h('div', { class: 'field-label k-label-head' }, h('span', null, 'Labels'), manage), labels),
     actions,
   );
   keepKeys(body);
@@ -191,8 +206,32 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     // a field being typed in keeps what is typed, unless what it wrote was refused
     const focused = reset ? null : document.activeElement;
     // a text field keeps what is being typed into it; otherwise it shows the card
-    if (!(dirty.head && document.activeElement === title)) title.value = card.text ?? '';
+    if (!(dirty.head && document.activeElement === title)) title.value = linked ? projectedTitle(card) : card.text ?? '';
     if (!(dirty.desc && document.activeElement === desc)) desc.value = card.desc ?? '';
+    if (linked) {
+      const tracker = (card as BaseObj & { tracker?: {
+        assignee?: { name?: string } | null;
+        due?: string | null;
+        labels?: { name?: string }[];
+        priority?: string;
+      } }).tracker;
+      const assignee = typeof tracker?.assignee?.name === 'string' ? tracker.assignee.name : '';
+      const dueRaw = typeof tracker?.due === 'string' ? new Date(`${tracker.due.slice(0, 10)}T12:00:00`) : null;
+      const dueDate = dueRaw && !Number.isNaN(dueRaw.getTime())
+        ? dueRaw.toLocaleDateString(undefined, dueRaw.getFullYear() === new Date().getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' })
+        : '';
+      const ticketLabels = Array.isArray(tracker?.labels)
+        ? tracker.labels.map((label) => typeof label?.name === 'string' ? label.name : '').filter(Boolean).join(', ')
+        : '';
+      trackerValues.replaceChildren(
+        trackerField('Assignee', assignee),
+        trackerField('Due', dueDate),
+        trackerField('Labels', ticketLabels),
+        ...(typeof tracker?.priority === 'string'
+          ? [trackerField('Priority', tracker.priority === 'none' ? '' : `${tracker.priority[0]?.toUpperCase() ?? ''}${tracker.priority.slice(1)}`)]
+          : []),
+      );
+    }
     // the owner picker: me, who is here and who is already named on this board (docs/kanban.md, Owners)
     const present = app.participants().map((p) => ({ id: p.user.id, name: p.user.name }));
     const assigned = [...app.store.cache.values()].filter((o) => o.type === 'card') as BaseObj[];
@@ -257,7 +296,8 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     if (focusedLabel) [...labels.querySelectorAll<HTMLElement>('button')].find((b) => b.dataset.label === focusedLabel)?.focus();
   }
 
-  for (const el of [title, desc]) el.readOnly = !editable;
+  title.readOnly = !editable || linked;
+  desc.readOnly = !editable;
   for (const el of [owner, due, link]) el.disabled = !editable;
 
   const lane = card0.parent ? app.store.get(card0.parent) : undefined;
@@ -314,7 +354,9 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const start = { title, owner, due, link, labels } as const;
   if (focus && focus !== 'title') {
     requestAnimationFrame(() => {
-      const el = focus === 'labels' ? (labels.querySelector('button') as HTMLElement | null) ?? manage : start[focus];
+      const el = linked && (focus === 'owner' || focus === 'due' || focus === 'labels')
+        ? openTrackerTicket
+        : focus === 'labels' ? (labels.querySelector('button') as HTMLElement | null) ?? manage : start[focus];
       el?.focus();
     });
   }

@@ -5,7 +5,7 @@ import { cardContentHeight } from '../markup';
 import { USER_COLORS } from '../palette';
 import { Builder } from '../templates';
 import type { BoardApp } from '../app';
-import type { BaseObj, ConnectorObj, Obj, Step } from '../types';
+import type { BaseObj, ConnectorObj, Obj } from '../types';
 import { demoViewInsets, initialDemoView } from './view';
 
 const SEEDED_AT = Date.UTC(2026, 9, 9, 12, 0, 0);
@@ -123,17 +123,19 @@ const STICKERS = [
 function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; name: string; color: string; order: number }[] } {
   const me = app.user.id;
   const phone = app.r.size().w <= 500;
-  const lowerShift = phone ? 120 : 0;
-  const lower = (y: number) => y + lowerShift;
-  const frameY = phone ? 145 : 150;
-  const introFrameHeight = phone ? 185 : 210;
-  const improveFrameY = phone ? 390 : 150;
-  const improveFrameWidth = phone ? 530 : 470;
-  const improveFrameHeight = phone ? 170 : 210;
-  const flowY = phone ? 590 : 400;
-  const flowHeight = phone ? 130 : 165;
-  const toolkitShift = 520;
-  const toolkitY = (y: number) => lower(y + toolkitShift);
+  // Phone: the first screen is the title, one hint line and one 2x2 group of four notes, sized so
+  // the camera lands near 100% and the note text renders at 13px or more. The other frames sit well
+  // below the first screen (a pan reveals them).
+  const frameY = phone ? 134 : 150;
+  const introFrameWidth = phone ? 300 : 530;
+  const introFrameHeight = phone ? 204 : 210;
+  const improveFrameY = phone ? 920 : 150;
+  const improveFrameWidth = phone ? 300 : 470;
+  const improveFrameHeight = phone ? 204 : 210;
+  const flowY = phone ? 1160 : 400;
+  const flowHeight = phone ? 210 : 165;
+  const toolkitShift = phone ? 460 : 520;
+  const toolkitY = (y: number) => y + toolkitShift;
   const objects: Obj[] = [];
   const wellId = 'demo-well-frame';
   const improveId = 'demo-improve-frame';
@@ -142,17 +144,17 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
   const wellIds = ['demo-well-1', 'demo-well-2', 'demo-well-3', 'demo-well-4', 'demo-well-5'];
 
   objects.push(
-    base('demo-title', 'text', 40, 25, phone ? 530 : 1030, 55, me, {
-      text: 'A board to play with', font: 'cabinet-grotesk', fontSize: 40, fontWeight: 700,
+    base('demo-title', 'text', 40, 25, phone ? 300 : 1030, phone ? 45 : 55, me, {
+      text: 'A board to play with', font: 'cabinet-grotesk', fontSize: phone ? 30 : 40, fontWeight: 700,
       textColor: '#18212B', align: 'left', valign: 'middle',
     }),
-    base('demo-instructions', 'text', 40, 96, phone ? 530 : 1080, 38, me, {
-      text: phone ? 'Try it: click, drag, group, vote, then Esc.' : 'Try it: click, drag, double-click, Cmd/Ctrl+G to group, place a dot, then Esc.',
-      fontSize: 17, fontWeight: 400, textColor: '#5B6672', align: 'left', valign: 'middle',
+    base('demo-instructions', 'text', 40, phone ? 76 : 96, phone ? 300 : 1080, phone ? 30 : 38, me, {
+      text: phone ? 'Tap a note to edit it. Drag to move it.' : 'Try it: click, drag, double-click, Cmd/Ctrl+G to group, place a dot, then Esc.',
+      fontSize: phone ? 15 : 17, fontWeight: 400, textColor: '#5B6672', align: 'left', valign: 'middle',
     }),
-    frame(wellId, 'What went well', 40, frameY, 530, introFrameHeight, me, '#FFF8D7'),
+    frame(wellId, 'What went well', 40, frameY, introFrameWidth, introFrameHeight, me, '#FFF8D7'),
     frame(improveId, 'To improve', phone ? 40 : 680, improveFrameY, improveFrameWidth, improveFrameHeight, me, '#F6F1FF'),
-    frame(flowId, 'A tiny flow', 40, flowY, phone ? 530 : 1110, flowHeight, me, '#F5F8FC'),
+    frame(flowId, 'A tiny flow', 40, flowY, phone ? 300 : 1110, flowHeight, me, '#F5F8FC'),
     frame(toolkitId, 'More to try', 40, toolkitY(990), 400, 650, me, '#F7F8FA'),
   );
 
@@ -163,38 +165,49 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
     ['Good keyboard shortcuts', '#FFE16B', 155, 430],
     ['We can share a laugh', '#FFA3C4', 410, 430],
   ] as const;
-  wellNotes.forEach(([text, fill, x, y], i) => {
-    const noteY = phone ? (y === 270 ? 185 : 250) : (y === 270 ? 195 : 285);
-    const align = i === 1 || i === 2 ? 'left' : 'center';
-    objects.push(sticky(wellIds[i], text, x, noteY, fill, wellId, me, phone ? 60 : 70, align));
-  });
+  // Phone notes: 130 x 80 at 16px in two columns (x 52 and 198), two rows.
+  const phoneNote = (id: string, text: string, fill: string, col: number, row: number, top: number, parent: string, align: 'left' | 'center' = 'center') => {
+    const note = sticky(id, text, 52 + col * 146, top + 16 + row * 92, fill, parent, me, 80, align);
+    return Object.assign(note, { w: 130, fontSize: 16 });
+  };
+  if (phone) {
+    wellNotes.slice(0, 4).forEach(([text, fill], i) => objects.push(phoneNote(wellIds[i], text, fill, i % 2, Math.floor(i / 2), frameY, wellId, i === 1 || i === 2 ? 'left' : 'center')));
+  } else {
+    wellNotes.forEach(([text, fill, x, y], i) => {
+      const align = i === 1 || i === 2 ? 'left' : 'center';
+      objects.push(sticky(wellIds[i], text, x, y === 270 ? 195 : 285, fill, wellId, me, 70, align));
+    });
+  }
 
   const improvements = [
-    ['Name the next action', '#CDB8FF', phone ? 70 : 710, phone ? 420 : 195],
-    ['Add a keyboard hint', '#FFE16B', phone ? 310 : 950, phone ? 420 : 195],
-    ['Tighten the toolbar', '#FFA3C4', phone ? 70 : 710, phone ? 485 : 285],
-    ['Show one sample board', '#BCE88C', phone ? 310 : 950, phone ? 485 : 285],
+    ['Name the next action', '#CDB8FF', 710, 195],
+    ['Add a keyboard hint', '#FFE16B', 950, 195],
+    ['Tighten the toolbar', '#FFA3C4', 710, 285],
+    ['Show one sample board', '#BCE88C', 950, 285],
   ] as const;
-  improvements.forEach(([text, fill, x, y], i) => objects.push(sticky(`demo-improve-${i + 1}`, text, x, y, fill, improveId, me, phone ? 60 : 70)));
+  improvements.forEach(([text, fill, x, y], i) => objects.push(phone
+    ? phoneNote(`demo-improve-${i + 1}`, text, fill, i % 2, Math.floor(i / 2), improveFrameY, improveId)
+    : sticky(`demo-improve-${i + 1}`, text, x, y, fill, improveId, me, 70)));
 
   const flowShapes = phone ? [
-    base('demo-flow-start', 'shape', 60, 628, 90, 58, me, { parent: flowId, kind: 'rect', text: 'Start here', fill: '#DDF5E8', fontSize: 14, align: 'center' }),
-    base('demo-flow-decision', 'shape', 170, 624, 96, 66, me, { parent: flowId, kind: 'diamond', text: 'Pick a note', fill: '#FFF2C2', fontSize: 14, align: 'center' }),
-    base('demo-flow-feedback', 'shape', 286, 628, 88, 58, me, { parent: flowId, kind: 'ellipse', text: 'Add a dot', fill: '#DCEBFF', fontSize: 14, align: 'center' }),
-    base('demo-flow-done', 'shape', 394, 628, 108, 58, me, { parent: flowId, kind: 'rounded', text: 'See what wins', fill: '#FFE2D6', fontSize: 14, align: 'center' }),
+    base('demo-flow-start', 'shape', 56, flowY + 45, 110, 56, me, { parent: flowId, kind: 'rect', text: 'Start here', fill: '#DDF5E8', fontSize: 14, align: 'center' }),
+    base('demo-flow-decision', 'shape', 190, flowY + 40, 110, 66, me, { parent: flowId, kind: 'diamond', text: 'Pick a note', fill: '#FFF2C2', fontSize: 14, align: 'center' }),
+    base('demo-flow-feedback', 'shape', 190, flowY + 135, 110, 56, me, { parent: flowId, kind: 'ellipse', text: 'Add a dot', fill: '#DCEBFF', fontSize: 14, align: 'center' }),
+    base('demo-flow-done', 'shape', 56, flowY + 135, 110, 56, me, { parent: flowId, kind: 'rounded', text: 'See what wins', fill: '#FFE2D6', fontSize: 14, align: 'center' }),
   ] : [
     base('demo-flow-start', 'shape', 75, 445, 145, 84, me, { parent: flowId, kind: 'rect', text: 'Start here', fill: '#DDF5E8', fontSize: 17, align: 'center' }),
     base('demo-flow-decision', 'shape', 335, 433, 150, 108, me, { parent: flowId, kind: 'diamond', text: 'Pick a note', fill: '#FFF2C2', fontSize: 17, align: 'center' }),
     base('demo-flow-feedback', 'shape', 605, 445, 145, 84, me, { parent: flowId, kind: 'ellipse', text: 'Add a dot', fill: '#DCEBFF', fontSize: 17, align: 'center' }),
     base('demo-flow-done', 'shape', 865, 445, 170, 84, me, { parent: flowId, kind: 'rounded', text: 'See what wins', fill: '#FFE2D6', fontSize: 17, align: 'center' }),
   ];
-  objects.push(...flowShapes);
   objects.push(
+    ...flowShapes,
     connector('demo-flow-link-1', 'demo-flow-start', 'demo-flow-decision', 'straight', me, {}, flowId),
     connector('demo-flow-link-2', 'demo-flow-decision', 'demo-flow-feedback', 'elbow', me, { label: 'yes' }, flowId),
     connector('demo-flow-link-3', 'demo-flow-feedback', 'demo-flow-done', 'straight', me, {}, flowId),
-    connector('demo-sticky-to-frame', wellIds[4], improveId, 'elbow', me, { label: 'share an idea' }, wellId),
   );
+  // The long connector between the two frames would cross the phone's first screen.
+  if (!phone) objects.push(connector('demo-sticky-to-frame', wellIds[4], improveId, 'elbow', me, { label: 'share an idea' }, wellId));
 
   ICONS.forEach((icon, i) => {
     const positions = [[70, toolkitY(1070)], [170, toolkitY(1070)], [270, toolkitY(1070)], [70, toolkitY(1155)], [170, toolkitY(1155)]] as const;
@@ -277,35 +290,23 @@ function createComments(app: BoardApp) {
     const rect = app.store.geometry(obj);
     return anchorFor({ x: rect.x + rect.w * fx, y: rect.y + rect.h * fy }, { ...obj, ...rect } as BaseObj);
   };
-  const first = app.comments.addThread(authorMarta, anchor('demo-well-frame', 0.94, 0.05), 'I like that the first action is obvious.');
-  if (!first) throw new Error('Could not add demo comments.');
-  app.comments.reply(first, authorJonas, 'Same — it feels easy to scan.');
+  // A phone gets one thread, below its first screen, so the opening view carries no badge.
+  const phone = app.r.size().w <= 500;
+  if (!phone) {
+    const first = app.comments.addThread(authorMarta, anchor('demo-well-frame', 0.94, 0.05), 'I like that the first action is obvious.');
+    if (!first) throw new Error('Could not add demo comments.');
+    app.comments.reply(first, authorJonas, 'Same — it feels easy to scan.');
+  }
   const second = app.comments.addThread(authorJonas, anchor('demo-improve-frame', 0.32, 0.05), 'Could this card show one keyboard tip?');
   if (!second) throw new Error('Could not add demo comments.');
   app.comments.reply(second, authorMarta, 'Good call.');
+  if (phone) return;
   const third = app.comments.addThread(authorMarta, anchor('demo-flow-frame', 0.65, 0.05), 'Try a dot on a sticky, then add your own.');
   if (!third) throw new Error('Could not add demo comments.');
 }
 
 function seed(app: BoardApp) {
   const { objects, labels } = makeObjects(app);
-  const voteId = 'demo-vote-step';
-  const pollId = 'demo-next-poll';
-  const pollStepId = 'demo-poll-step';
-  const pollOptions = [
-    { id: 'demo-poll-option-groups', text: 'Groups and connectors' },
-    { id: 'demo-poll-option-planning', text: 'Templates and kanban' },
-    { id: 'demo-poll-option-facilitation', text: 'Polls and facilitation' },
-  ];
-  const voteStep: Step = {
-    id: voteId, title: 'Dot vote', instructions: 'Use your three dots on the notes you want to build on.',
-    mode: 'vote', frameId: 'demo-well-frame', votesPerPerson: 3, voteScope: 'selection',
-    voteItems: ['demo-well-1', 'demo-well-2', 'demo-well-3', 'demo-well-4', 'demo-well-5'],
-  };
-  const pollStep: Step = {
-    id: pollStepId, title: 'Which feature should we show next?', instructions: 'Choose one option.',
-    mode: 'poll', pollId,
-  };
 
   app.store.undo.stopCapturing();
   app.store.transact(() => {
@@ -313,41 +314,20 @@ function seed(app: BoardApp) {
     app.store.meta.set('demoSeeded', true);
     labels.forEach((label) => app.store.labels.set(label.id, label));
     objects.forEach((o) => app.store.create(o));
-
-    app.store.flow.set('steps', [voteStep, pollStep]);
-    app.store.flow.set('active', 0);
-    app.store.flow.set('timer', null);
-    app.store.flow.set('reveal', false);
-    app.store.flow.set('focus', null);
-    app.store.flow.set('stepStartedAt', SEEDED_AT);
-    app.store.flow.set('results', null);
-
-    app.store.votes.set(`${voteId}:demo-marta:demo-dot-1`, { itemId: 'demo-well-2', userId: 'demo-marta', stepId: voteId });
-    app.store.votes.set(`${voteId}:demo-jonas:demo-dot-1`, { itemId: 'demo-well-3', userId: 'demo-jonas', stepId: voteId });
-
-    app.store.polls.set(pollId, {
-      id: pollId, question: 'Which feature should we show next?', options: pollOptions,
-      multiple: false, anonymous: false, revealed: false, createdAt: SEEDED_AT, createdBy: 'demo-marta',
-    });
-    app.store.pollAnswers.set(`${pollId}:demo-marta`, {
-      pollId, userId: 'demo-marta', optionIds: [pollOptions[0].id], updatedAt: SEEDED_AT, name: 'Marta', color: USER_COLORS[0],
-    });
-    app.store.pollAnswers.set(`${pollId}:demo-jonas`, {
-      pollId, userId: 'demo-jonas', optionIds: [pollOptions[2].id], updatedAt: SEEDED_AT, name: 'Jonas', color: USER_COLORS[1],
-    });
   });
   app.store.undo.stopCapturing();
   app.store.undo.clear();
 
   createComments(app);
-  // Let the renderer measure the viewport, then fit the intro cluster clear of the vote bar and toolbars.
+  // Let the renderer measure the viewport, then fit the intro cluster clear of the toolbars.
   const fitIntro = () => {
     const viewport = app.r.size();
-    const bounds = app.r.contentBounds(['demo-title', 'demo-instructions', 'demo-well-frame', 'demo-improve-frame', 'demo-flow-frame']);
+    const phone = viewport.w <= 500;
+    const bounds = app.r.contentBounds(phone
+      ? ['demo-title', 'demo-instructions', 'demo-well-frame']
+      : ['demo-title', 'demo-instructions', 'demo-well-frame', 'demo-improve-frame', 'demo-flow-frame']);
     if (!bounds) return app.zoomToFit();
-    const flowbar = app.r.root?.parentElement?.querySelector<HTMLElement>('.flowbar.show');
-    const flowbarTop = flowbar?.getBoundingClientRect().top;
-    app.r.setCamera(initialDemoView(viewport, bounds, demoViewInsets(viewport, flowbarTop)));
+    app.r.setCamera(initialDemoView(viewport, bounds, demoViewInsets(viewport)));
   };
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fitIntro);
   else fitIntro();

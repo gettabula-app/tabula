@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { REMOVE_TRACKER_MIGRATION } from './tracker-rewind';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { AssetError, ASSETS_MIGRATION, HASH_RE, assetHeaders, createAssetIndex, createAssetStore, createJsonAssetIndex, createUploadLimiter, readBytes } from '../server/assets.mjs';
 import { parseSize } from '../server/config.mjs';
 import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
+import { createBlobCache, memoryBackend } from '../src/asset-store';
 import { SECRET, containsSecret, makeGif, makeJpeg, makePng, makeWebp } from './image-fixtures';
 
 // docs/images.md, Assets and Quota: the store, both forms of its index, the limiter and the body reader.
@@ -250,7 +252,7 @@ describe('the assets table of the directory', () => {
     d.close();
     const raw = new DatabaseSync(file);
     // an older directory has neither of these tables and no model column on its AI keys
-    raw.exec(`DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ${at}`);
+    raw.exec(`${REMOVE_TRACKER_MIGRATION} DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; ALTER TABLE ai_keys DROP COLUMN model; PRAGMA user_version = ${at}`);
     raw.close();
     const again = openDirectory(file);
     expect(again.getSetting('kept')).toBe('yes');
@@ -267,5 +269,29 @@ describe('the assets table of the directory', () => {
     expect(d.boardAssetBytes('b1')).toBe(100);
     expect(d.assetsTotalBytes()).toBe(100);
     d.close();
+  });
+});
+
+describe('the browser blob cache', () => {
+  it('requests persistent storage once on the first pending put, without waiting for it', async () => {
+    let finish!: (granted: boolean) => void;
+    const persist = vi.fn<() => Promise<boolean>>(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const cache = createBlobCache(memoryBackend(), { persist });
+    const blob = new Blob([new Uint8Array(4)], { type: 'image/png' });
+
+    await cache.put({ key: 'hash', blob, mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: false });
+    expect(persist).not.toHaveBeenCalled();
+    await cache.put({ key: 'pending:1', blob, mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: true });
+    await cache.put({ key: 'pending:2', blob, mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: true });
+    expect(persist).toHaveBeenCalledTimes(1);
+    finish(true);
+  });
+
+  it('keeps pending bytes over the cap when the persistence request rejects', async () => {
+    const cache = createBlobCache(memoryBackend(), { cap: 0, persist: async () => { throw new Error('denied'); } });
+    const blob = new Blob([new Uint8Array(4)], { type: 'image/png' });
+
+    await expect(cache.put({ key: 'pending:1', blob, mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: true })).resolves.toBeUndefined();
+    expect(await cache.backend.getBlob('pending:1')).toBeDefined();
   });
 });

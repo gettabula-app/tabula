@@ -30,15 +30,20 @@ describe('demo initial camera', () => {
     expect(view.zoom).toBeGreaterThanOrEqual(minimumZoom);
   });
 
-  it('centres the intro within the area clear of the phone vote bar', () => {
-    const viewport = { w: 390, h: 844 };
-    const bounds = { x: 40, y: 25, w: 530, h: 650 };
-    const insets = demoViewInsets(viewport, 541);
-    const view = initialDemoView(viewport, bounds, insets);
-    const screenCenterX = ((bounds.x + bounds.w / 2) - view.x) * view.zoom;
-    const screenCenterY = ((bounds.y + bounds.h / 2) - view.y) * view.zoom;
-    expect(screenCenterX).toBeCloseTo(insets.left + PAD + (viewport.w - insets.left - insets.right - PAD * 2) / 2);
-    expect(screenCenterY).toBeCloseTo(insets.top + PAD + (viewport.h - insets.top - insets.bottom - PAD * 2) / 2);
+  it('centres the intro on a wide screen and puts it at the top on a phone', () => {
+    const desktop = { w: 1280, h: 800 };
+    const wide = { x: 40, y: 25, w: 1110, h: 525 };
+    const insets = demoViewInsets(desktop);
+    const view = initialDemoView(desktop, wide, insets);
+    expect(((wide.y + wide.h / 2) - view.y) * view.zoom).toBeCloseTo(insets.top + PAD + (desktop.h - insets.top - insets.bottom - PAD * 2) / 2);
+
+    const phone = { w: 390, h: 844 };
+    const bounds = { x: 40, y: 25, w: 300, h: 330 };
+    const phoneInsets = demoViewInsets(phone);
+    const pv = initialDemoView(phone, bounds, phoneInsets);
+    expect((bounds.y - pv.y) * pv.zoom).toBeCloseTo(phoneInsets.top + PAD);
+    expect(((bounds.x + bounds.w / 2) - pv.x) * pv.zoom).toBeCloseTo(phoneInsets.left + PAD + (phone.w - phoneInsets.left - phoneInsets.right - PAD * 2) / 2);
+    expect(pv.zoom).toBeGreaterThan(0.85);
   });
 });
 

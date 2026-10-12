@@ -1,5 +1,6 @@
 import type { TemplateContent, TemplateScope } from './custom-templates';
 import { isRestoringAnswer } from './restoring-answer';
+import { decisionBody, type OAuthDecisionInput, type OAuthScope } from './ui/oauth-consent-logic';
 
 export type UserRole = 'owner' | 'admin' | 'member' | 'guest';
 export type TeamRole = 'admin' | 'member';
@@ -36,15 +37,37 @@ export interface Me {
   workspace?: Workspace;
   /** Present (true) only when AI tool access is turned on for this server (docs/mcp.md). */
   mcp?: boolean;
+  /** Whether connected OAuth apps are available on this server. */
+  mcpOauth: boolean;
   /** Present (true) when this server stores images on boards (docs/images.md). */
   images?: boolean;
   /** Present only when this person may bring their own AI key (docs/ai.md). */
   ai?: { personalKeys: true };
   /** Present (true) when team chat is on for this server (docs/chat.md). */
   chat?: boolean;
+  /** Present (true) when this server enables tracker frame creation. */
+  tracker?: boolean;
   /** Present only when the relay has one-board guest join codes enabled. */
   joinCodes?: true;
 }
+
+/** GET /api/oauth/requests: consent details verified against the signed request and current session. */
+export interface OAuthConsentRequest {
+  clientName: string;
+  clientNameIsClaim: boolean;
+  redirectHost: string;
+  redirectUri: string;
+  verified: boolean;
+  maxScope: OAuthScope;
+  /** Missing on older servers; only true enables the board picker. */
+  pickerAvailable?: boolean;
+  scopes?: { unrestricted: OAuthScope; boards: OAuthScope };
+  boards?: { id: string; name: string; role: string }[];
+  nonce: string;
+  readOnly: boolean;
+}
+
+export interface OAuthDecisionResponse { redirect: string }
 
 export interface JoinCodeInfo {
   id: string;
@@ -152,6 +175,27 @@ export interface CreatedAccessToken extends AccessToken {
 }
 
 export interface AdminAccessToken extends AccessToken {
+  userId: string;
+  userName: string;
+  email: string;
+  userRole: UserRole;
+}
+
+/** A connected OAuth app, without board ids, resource URLs, hashes or tokens. */
+export interface ConnectedGrant {
+  id: string;
+  clientId: string;
+  clientName: string;
+  redirectHost: string;
+  scope: AccessScope;
+  /** null means every board the person can open. */
+  boardCount: number | null;
+  createdAt: number;
+  lastUsedAt: number | null;
+  expiresAt: number;
+}
+
+export interface AdminGrant extends ConnectedGrant {
   userId: string;
   userName: string;
   email: string;
@@ -368,6 +412,7 @@ export interface BackupSummary {
 
 /** The backup engine's own status, as the owner sees it: times in ms since the epoch, null when not known yet. */
 export interface BackupEngineStatus {
+  target: 's3' | 'dir' | null;
   lastSuccessAt: number | null;
   lastFailureAt: number | null;
   lastFailureError: string | null;
@@ -391,6 +436,8 @@ export interface RestoreRecord {
   bytes?: number;
   boards?: number;
   keepOldFor?: string;
+  /** Tracker recovery counts after a whole restore (server/tracker/restore-recovery.mjs). */
+  tracker?: { boardsFailed?: number };
 }
 
 export interface RestoreStatus {
@@ -406,6 +453,52 @@ export interface BackupList {
   truncated: boolean;
   status: BackupEngineStatus;
   restore: RestoreStatus;
+}
+
+export type TrackerReadinessOverall = 'go' | 'no_go' | 'unknown';
+export type TrackerCheckState = 'pass' | 'fail' | 'unknown' | 'na';
+
+export interface TrackerReadinessCheck {
+  id: string;
+  label: string;
+  state: TrackerCheckState;
+  detail?: string;
+  since?: number;
+}
+
+export interface TrackerReadinessGate {
+  closed: boolean;
+  since: number;
+  floor: 'pending' | 'known';
+}
+
+/** The backup and restore readiness report for the tracker (docs/tracker-s7.md, section 9). */
+export interface TrackerReadinessReport {
+  at: number;
+  overall: TrackerReadinessOverall;
+  gate: TrackerReadinessGate | null;
+  targets: { rpoMinutes: number; rtoHours: number; retentionDays: number };
+  checks: TrackerReadinessCheck[];
+}
+
+export type TrackerDrillKind = 'production' | 'local';
+export type TrackerDrillResult = string;
+
+/** An owner supplied restore drill record. The timestamp is emitted by the drill script. */
+export interface TrackerDrillRecord {
+  at: number | string;
+  kind: TrackerDrillKind;
+  schema: number;
+  restoreSeconds: number;
+  dataLossSeconds: number;
+  boxes: { id: string; result: TrackerDrillResult }[];
+  overall: 'pass' | 'fail';
+}
+
+/** An owner supplied cutover verification record. */
+export interface TrackerCutoverRecord {
+  importVerifiedAt: string;
+  lossReportAccepted: true;
 }
 
 /** What restoring one backup would do, before anything is downloaded. */
@@ -628,7 +721,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
 
   /** Raw bytes in, JSON out (an image upload). The server decides the type from the bytes; `type` is only what we declare. */
   async function sendBytes<T>(path: string, bytes: Blob, type: string, timeoutMs = ASSET_TIMEOUT_MS): Promise<T> {
-    const init: RequestInit = { method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'x-tabula': '1', 'content-type': type }, body: bytes };
+    const init: RequestInit = { method: 'POST', credentials: 'same-origin', redirect: 'manual', headers: { accept: 'application/json', 'x-tabula': '1', 'content-type': type }, body: bytes };
     if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) init.signal = AbortSignal.timeout(timeoutMs);
     let res: Response;
     try {
@@ -636,6 +729,9 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     } catch {
       throw new ApiError(0, 'network', 'network');
     }
+    // A manual cross-origin redirect can be opaque (status 0); keep it in the upload failure path as a redirect.
+    if (res.type === 'opaqueredirect') throw new ApiError(307, 'redirect', 'redirect');
+    if (res.redirected) throw new ApiError(res.status || 307, 'redirect', 'redirect');
     const body = await readBody(res);
     if (!res.ok) throw failure(res, body);
     if (!body.valid) throw new ApiError(res.status, 'unknown', 'unknown');
@@ -672,11 +768,19 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     config: () => call<{ authEnabled: boolean; images?: boolean; joinCodes?: boolean }>('GET', '/api/config'),
     me: () => call<Me>('GET', '/api/me'),
     updateMe: (name: string) => call<ApiUser>('PATCH', '/api/me', { name }),
-    requestLogin: (email: string, invite?: string) =>
-      call<{ ok: true }>('POST', '/api/auth/request', { email, invite }),
+    requestLogin: (email: string, invite?: string, oauthRequest?: string) => {
+      const payload: { email: string; invite?: string; oauthRequest?: string } = { email };
+      if (invite !== undefined) payload.invite = invite;
+      if (oauthRequest !== undefined) payload.oauthRequest = oauthRequest;
+      return call<{ ok: true }>('POST', '/api/auth/request', payload);
+    },
     verifyLogin: (token: string) => call<{ user: ApiUser }>('POST', '/api/auth/verify', { token }),
     logout: () => call<void>('POST', '/api/auth/logout'),
     logoutAll: () => call<void>('POST', '/api/auth/logout-all'),
+    oauthRequest: (envelope: string) =>
+      call<OAuthConsentRequest>('GET', `/api/oauth/requests${qs({ request: envelope })}`),
+    oauthDecision: (input: OAuthDecisionInput) =>
+      call<OAuthDecisionResponse>('POST', '/api/oauth/requests/decision', decisionBody(input)),
 
     teams: () => call<Team[]>('GET', '/api/teams'),
     createTeam: (name: string) => call<Team>('POST', '/api/teams', { name }),
@@ -742,13 +846,22 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     deleteVersion: (boardId: string, id: string) => call<void>('DELETE', `/api/boards/${seg(boardId)}/versions/${seg(id)}`),
     beginRestore: (boardId: string, id: string, by?: string) =>
       call<{ preRestore: Version | null }>('POST', `/api/boards/${seg(boardId)}/versions/${seg(id)}/begin-restore`, { by }),
+    beginTrackerRestoreWindow: (boardId: string) =>
+      call<{ expiresAt: number }>('POST', `/api/tracker/boards/${seg(boardId)}/restore-window`),
+    endTrackerRestoreWindow: (boardId: string) =>
+      call<void>('DELETE', `/api/tracker/boards/${seg(boardId)}/restore-window`),
     accessTokens: () => call<AccessToken[]>('GET', '/api/me/tokens'),
     createAccessToken: (input: { name: string; scope: AccessScope; boardIds?: string[]; days?: number }) =>
       call<CreatedAccessToken>('POST', '/api/me/tokens', input),
     revokeAccessToken: (id: string) => call<void>('DELETE', `/api/me/tokens/${seg(id)}`),
-    revokeAllAccessTokens: () => call<{ revoked: number }>('POST', '/api/me/tokens/revoke-all'),
+    revokeAllAccessTokens: () => call<{ revoked: number; grants?: number }>('POST', '/api/me/tokens/revoke-all'),
     adminAccessTokens: () => call<AdminAccessToken[]>('GET', '/api/admin/tokens'),
     adminRevokeAccessToken: (id: string) => call<void>('DELETE', `/api/admin/tokens/${seg(id)}`),
+    myGrants: () => call<ConnectedGrant[]>('GET', '/api/me/grants'),
+    disconnectGrant: (id: string) => call<void>('DELETE', `/api/me/grants/${seg(id)}`),
+    adminGrants: () => call<AdminGrant[]>('GET', '/api/admin/grants'),
+    adminDisconnectGrant: (id: string) => call<void>('DELETE', `/api/admin/grants/${seg(id)}`),
+    adminRevokeAllGrants: () => call<{ revoked: number }>('POST', '/api/admin/grants/revoke-all'),
 
     aiConfig: () => call<AiConfig>('GET', '/api/ai/config'),
     saveMyAiKey: (input: { provider: string; apiKey: string; baseUrl?: string; model?: string }) =>
@@ -794,6 +907,10 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     adminBackups: () => call<BackupList>('GET', '/api/admin/backups', undefined, BACKUP_TIMEOUT_MS),
     adminBackup: (name: string) => call<BackupPreview>('GET', `/api/admin/backups/${seg(name)}`, undefined, BACKUP_TIMEOUT_MS),
     adminBackupBoards: (name: string) => call<BackupBoards>('GET', `/api/admin/backups/${seg(name)}/boards`, undefined, BACKUP_TIMEOUT_MS),
+    adminTrackerReadiness: () => call<TrackerReadinessReport>('GET', '/api/admin/tracker/readiness'),
+    adminTrackerKeyEpoch: () => call<void>('POST', '/api/admin/tracker/key-epoch', { confirm: 'JUMP' }),
+    adminTrackerDrillRecord: (record: TrackerDrillRecord) => call<void>('POST', '/api/admin/tracker/drill-record', record),
+    adminTrackerCutoverRecord: (record: TrackerCutoverRecord) => call<void>('POST', '/api/admin/tracker/cutover-record', record),
     restoreBackupBoard: (manifest: string, boardId: string) =>
       call<BoardCopy>('POST', '/api/admin/backups/restore-board', { manifest, boardId }, BACKUP_TIMEOUT_MS),
     restoreBackup: (manifest: string, confirm: string) =>

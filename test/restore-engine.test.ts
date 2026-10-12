@@ -1,3 +1,4 @@
+import { migrationSql } from '../server/schema.mjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -162,6 +163,60 @@ describe('whole restore credential invalidation', () => {
       restored.close();
     }
   });
+
+  it('does not revive an OAuth grant, request marker, code or replay ciphertext from a snapshot', async () => {
+    h = await harness({ accounts: true });
+    seedA(h);
+    const directory = h.directory!;
+    const owner = ownerOf(h);
+    const client = directory.registerClient({
+      name: 'Restore regression app',
+      redirectUris: ['https://claude.ai/callback'],
+      maxScope: 'write',
+      now: h.clock.now,
+    }).client!;
+    const grant = directory.oauthInternals!.createGrant({
+      clientId: client.clientId,
+      userId: owner.id,
+      scope: 'write',
+      boardIds: null,
+      resource: 'https://tabula.example/mcp',
+      now: h.clock.now,
+    });
+    directory.oauthInternals!.issueCode({
+      requestId: 'restore-oauth-request',
+      grantId: grant.id,
+      clientId: client.clientId,
+      redirectUri: client.redirectUris[0],
+      codeChallenge: 'c'.repeat(43),
+      scope: 'write',
+      resource: 'https://tabula.example/mcp',
+      now: h.clock.now,
+    });
+    directory.db.prepare('INSERT INTO oauth_requests (id, client_id, created_at, expires_at) VALUES (?, ?, ?, ?)')
+      .run('restore-oauth-request', client.clientId, h.clock.now, h.clock.now + 10 * MIN);
+    directory.oauthInternals!.issueTokens({ grantId: grant.id, scope: 'write', now: h.clock.now });
+    directory.db.prepare("UPDATE oauth_tokens SET replay_ciphertext = 'encrypted-test-value', replay_until = ?, replay_count = 1 WHERE kind = 'refresh'")
+      .run(h.clock.now + 20_000);
+    const engines = rig(h);
+    const saved = await backupNow(engines.backup);
+    expect(saved.ok).toBe(true);
+
+    h.clock.now += HOUR;
+    directory.revokeGrant(grant.id, 'self', h.clock.now);
+    await engines.restore.restoreWorkspace({ manifest: saved.manifest, confirm: CONFIRM, actor: owner });
+
+    const restored = reopen(h);
+    try {
+      expect(restored.getGrant(grant.id)).toMatchObject({ revokedAt: h.clock.now, revokedReason: 'restore' });
+      expect(restored.db.prepare('SELECT COUNT(*) AS n FROM oauth_requests').get()).toEqual({ n: 0 });
+      expect(restored.db.prepare('SELECT COUNT(*) AS n FROM oauth_codes').get()).toEqual({ n: 0 });
+      expect(restored.db.prepare('SELECT replay_ciphertext, replay_until, replay_count FROM oauth_tokens').get())
+        .toEqual({ replay_ciphertext: null, replay_until: null, replay_count: 0 });
+    } finally {
+      restored.close();
+    }
+  });
 });
 
 describe('a whole restore', () => {
@@ -303,7 +358,7 @@ describe('a whole restore', () => {
   it('leaves unrelated files alone (the mail outbox, notes) and restores an older schema, migrating it', async () => {
     const s = await scenario();
     const older = await sqliteBytes((db) => {
-      for (let i = 0; i < 3; i++) db.exec(MIGRATIONS[i]);
+      for (let i = 0; i < 3; i++) db.exec(migrationSql(MIGRATIONS[i]));
       db.exec('PRAGMA user_version = 3');
       db.exec("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'owner@example.com', 'Owner', 'owner', 0, 1)");
       db.exec("INSERT INTO settings (key, value) VALUES ('fixture', 'old schema')");

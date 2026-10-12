@@ -5,6 +5,7 @@ import {
   cacheServerBoards,
   cachedServerBoards,
   initAuth,
+  isHostedWorkspace,
   onAuth,
   setSignedIn,
   signOut,
@@ -33,8 +34,8 @@ function serve(routes: Record<string, Route>) {
   });
 }
 
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
 }
 
 function headersOf(call: Call): Record<string, string> {
@@ -46,6 +47,7 @@ const networkDown = () => Promise.reject(new TypeError('Failed to fetch'));
 const me: Me = {
   user: { id: 'u1', email: 'ana@example.com', name: 'Ana', role: 'member' },
   teams: [{ id: 't1', name: 'Design', role: 'admin' }],
+  mcpOauth: false,
 };
 
 function board(id: string, updatedAt: number): ServerBoard {
@@ -116,6 +118,49 @@ describe('api client requests', () => {
     expect(JSON.parse(String(calls[0].init.body))).toEqual({ email: 'ana@example.com' });
   });
 
+  it('carries an OAuth return envelope through sign-in only when supplied', async () => {
+    const { fetchFn, calls } = recorder(() => json({ ok: true }));
+    const client = createApi(fetchFn);
+    await client.requestLogin('ana@example.com', undefined, 'opaque_123');
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ email: 'ana@example.com', oauthRequest: 'opaque_123' });
+  });
+
+  it('calls the consent endpoints and sends an exact decision body', async () => {
+    const { fetchFn, calls } = recorder(() => json({ redirect: 'https://app.example/callback' }));
+    const client = createApi(fetchFn);
+    await client.oauthRequest('opaque_123');
+    await client.oauthDecision({ request: 'opaque_123', decision: 'deny', nonce: 'session-bound' });
+    await client.oauthDecision({ request: 'opaque_123', decision: 'allow', scope: 'comment', nonce: 'session-bound' });
+    expect(calls.map((call) => `${call.init.method} ${call.url}`)).toEqual([
+      'GET /api/oauth/requests?request=opaque_123',
+      'POST /api/oauth/requests/decision',
+      'POST /api/oauth/requests/decision',
+    ]);
+    expect(JSON.parse(String(calls[1].init.body))).toEqual({ request: 'opaque_123', decision: 'deny', nonce: 'session-bound' });
+    expect(JSON.parse(String(calls[2].init.body))).toEqual({ request: 'opaque_123', decision: 'allow', scope: 'comment', nonce: 'session-bound' });
+  });
+
+  it('maps connected app list and revocation methods to their API routes', async () => {
+    const { fetchFn, calls } = recorder(({ url, init }) => {
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      if (url.endsWith('/revoke-all')) return json({ revoked: 2 });
+      return json([]);
+    });
+    const client = createApi(fetchFn);
+    await client.myGrants();
+    await client.disconnectGrant('g1');
+    await client.adminGrants();
+    await client.adminDisconnectGrant('g2');
+    await client.adminRevokeAllGrants();
+    expect(calls.map((call) => `${call.init.method} ${call.url}`)).toEqual([
+      'GET /api/me/grants',
+      'DELETE /api/me/grants/g1',
+      'GET /api/admin/grants',
+      'DELETE /api/admin/grants/g2',
+      'POST /api/admin/grants/revoke-all',
+    ]);
+  });
+
   it('maps every endpoint to the documented method and path', async () => {
     const { fetchFn, calls } = recorder(() => json({}));
     const client = createApi(fetchFn);
@@ -126,6 +171,8 @@ describe('api client requests', () => {
     await client.verifyLogin('tok');
     await client.logout();
     await client.logoutAll();
+    await client.oauthRequest('opaque_123');
+    await client.oauthDecision({ request: 'opaque_123', decision: 'deny', nonce: 'n' });
     await client.teams();
     await client.createTeam('Ops');
     await client.updateTeam('t1', { archived: true });
@@ -154,6 +201,8 @@ describe('api client requests', () => {
       'POST /api/auth/verify',
       'POST /api/auth/logout',
       'POST /api/auth/logout-all',
+      'GET /api/oauth/requests?request=opaque_123',
+      'POST /api/oauth/requests/decision',
       'GET /api/teams',
       'POST /api/teams',
       'PATCH /api/teams/t1',
@@ -213,6 +262,12 @@ describe('api client errors', () => {
     });
   });
 
+  it('keeps Retry-After seconds on ApiError facts', async () => {
+    const { fetchFn } = recorder(() => json({ error: 'rate_limited', message: 'wait' }, 429, { 'retry-after': '17' }));
+    await expect(createApi(fetchFn).oauthDecision({ request: 'opaque_123', decision: 'deny', nonce: 'n' }))
+      .rejects.toMatchObject({ status: 429, code: 'rate_limited', facts: { retryAfter: 17 } });
+  });
+
   it('uses the code as the message when the body has none', async () => {
     const { fetchFn } = recorder(() => json({ error: 'not_found' }, 404));
     await expect(createApi(fetchFn).boards()).rejects.toMatchObject({ status: 404, code: 'not_found', message: 'not_found' });
@@ -233,9 +288,39 @@ describe('api client errors', () => {
     await expect(createApi(fetchFn).boards()).rejects.toBeInstanceOf(ApiError);
     await expect(createApi(fetchFn).boards()).rejects.toMatchObject({ status: 0, code: 'network' });
   });
+
+  it.each([307, 308, 502, 504])('preserves upload failure status %i without following a redirect', async (status) => {
+    let init: RequestInit | undefined;
+    const fetchFn = (async (_input: RequestInfo | URL, request?: RequestInit) => {
+      init = request;
+      return new Response(null, { status });
+    }) as typeof fetch;
+
+    await expect(createApi(fetchFn).uploadAsset('b1', new Blob([new Uint8Array([1])]), 'image/png'))
+      .rejects.toMatchObject({ status });
+    expect(init?.redirect).toBe('manual');
+  });
+
+  it('turns an opaque upload redirect into a numeric retryable error', async () => {
+    const response = new Response(null, { status: 200 });
+    Object.defineProperty(response, 'type', { value: 'opaqueredirect' });
+    const fetchFn = (async () => response) as typeof fetch;
+
+    await expect(createApi(fetchFn).uploadAsset('b1', new Blob([new Uint8Array([1])]), 'image/png'))
+      .rejects.toMatchObject({ status: 307, code: 'redirect' });
+  });
 });
 
 describe('initAuth', () => {
+  it('derives hosted mode from the existing /api/me workspace field', () => {
+    const workspace = { readOnly: false, banner: null, seatLimit: 4, seatsUsed: 2 };
+    expect(isHostedWorkspace({ mode: 'open' })).toBe(false);
+    expect(isHostedWorkspace({ mode: 'signed-in', me })).toBe(false);
+    expect(isHostedWorkspace({ mode: 'signed-in', me: { ...me, workspace } })).toBe(true);
+    expect(isHostedWorkspace({ mode: 'offline', me: { ...me, workspace } })).toBe(true);
+    expect(isHostedWorkspace({ mode: 'offline', me: null })).toBe(false);
+  });
+
   it('stays in open mode without calling me when accounts are off', async () => {
     const { fetchFn, calls } = serve({ '/api/config': () => json({ authEnabled: false }) });
     expect(await initAuth(createApi(fetchFn))).toEqual({ mode: 'open' });

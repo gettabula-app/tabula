@@ -4,6 +4,7 @@ import type { BoardApp } from '../src/app';
 import { Store } from '../src/store';
 import { newKanban } from '../src/containers';
 import { openContainerMenu, openFilterPopover, openLaneMenu } from '../src/ui/kanban-menus';
+import { LINKED_LANE_DELETE_MESSAGE } from '../src/tracker/linked-lane';
 import { EMPTY_FILTER, type KanbanFilter } from '../src/ui/kanban-logic';
 import type { Id } from '../src/types';
 import { FakeEvent, installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
@@ -50,6 +51,33 @@ const menu = () => browser.document.body.querySelector('.k-menu') as FakeElement
 const items = () => menu()!.querySelectorAll('button').map((b) => textOf(b));
 
 describe('the lane menu', () => {
+  it('disables both delete choices for a mapped tracker lane with the unlink instruction', () => {
+    const { store, app, container, lanes } = setup();
+    store.doc.transact(() => store.objects.get(container)!.set('ext', {
+      provider: 'tabula', tracker: 'tracker-1', map: { [lanes[1]]: 'in_progress' },
+    }), 'tracker-projection');
+    openLaneMenu(app as unknown as BoardApp, lanes[1], at);
+
+    const deletes = menu()!.querySelectorAll('button').filter((b) => textOf(b).startsWith('Delete lane'));
+    expect(deletes).toHaveLength(2);
+    for (const button of deletes) {
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute('data-tip')).toBe(LINKED_LANE_DELETE_MESSAGE);
+      expect(button.getAttribute('title')).toBe(LINKED_LANE_DELETE_MESSAGE);
+    }
+  });
+
+  it('leaves an unmapped lane deletable in a linked kanban', () => {
+    const { store, app, container, lanes } = setup();
+    store.doc.transact(() => store.objects.get(container)!.set('ext', {
+      provider: 'tabula', tracker: 'tracker-1', map: { [lanes[1]]: 'in_progress' },
+    }), 'tracker-projection');
+    openLaneMenu(app as unknown as BoardApp, lanes[0], at);
+    const deletes = menu()!.querySelectorAll('button').filter((b) => textOf(b).startsWith('Delete lane'));
+    expect(deletes).toHaveLength(2);
+    expect(deletes.every((button) => !button.disabled)).toBe(true);
+  });
+
   it.each(['transparent', 'none', 'red;background:url(https://evil.example/x)', '"><script>alert(1)</script>', ''])('opens with a lane fill of %j, the colour reading None', (fill) => {
     const { store, app, lanes } = setup();
     store.transact(() => store.update(lanes[1], { fill }));

@@ -51,7 +51,7 @@ export async function harness({ accounts = false, env = {}, pageSize = 1000, see
   const fake = await startFakeS3({ creds: CREDS, clock: () => clock.now, pageSize });
   const logs: string[] = [];
   const engines: Engine[] = [];
-  const directory: Dir | null = accounts ? openDirectory(path.join(dir, 'directory.sqlite'), { snapshotBarrier }) : null;
+  const directory: Dir | null = accounts ? openDirectory(path.join(dir, 'directory.sqlite'), { snapshotBarrier, oauthInternals: true }) : null;
   if (directory) {
     directory.createUser({ email: 'owner@example.com', name: 'Owner', role: 'owner' });
     directory.createUser({ email: 'member@example.com', name: 'Member', role: 'member' });
@@ -63,7 +63,13 @@ export async function harness({ accounts = false, env = {}, pageSize = 1000, see
     fs.mkdirSync(path.dirname(file(rel)), { recursive: true });
     fs.writeFileSync(file(rel), data);
   };
-  const config = () => loadBackupConfig(envFor(fake, env), () => {})!;
+  const config = () => {
+    const loaded = loadBackupConfig(envFor(fake, env), () => {})!;
+    // The snapshot barrier abandons a copy that outlasts its hold (5 s by default) and the run then fails. A loaded CI runner can
+    // take that long for a run of these tests, so every backup test gets the largest hold unless it names its own.
+    if (env.TABULA_BACKUP_SNAPSHOT_MAX_HOLD_SECONDS === undefined) loaded.snapshotMaxHoldSeconds = 60;
+    return loaded;
+  };
 
   const index = (ids: string[]) =>
     Buffer.from(JSON.stringify({ v: 1, versions: ids.map((id, i) => ({ id, createdAt: 1000 + i, kind: 'auto', label: null, by: null, byName: null, objects: 1, bytes: 10, hash: `h${i}`, from: null })) }));
@@ -118,7 +124,8 @@ export async function harness({ accounts = false, env = {}, pageSize = 1000, see
     await Promise.all(engines.map((e) => e.stop()));
     directory?.close();
     await fake.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    // A worker that was just stopped can still hold its temporary copy for a moment on Windows (EBUSY).
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 
   return { clock, dir, fake, logs, directory, file, write, config, engine, expectedPaths, runAt, close, index };

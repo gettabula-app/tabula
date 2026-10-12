@@ -2,6 +2,7 @@ import './history.css';
 import type { BoardApp } from '../app';
 import type { Obj } from '../types';
 import { ApiError, api, type Version } from '../api';
+import { formatShortcutLabel } from '../shortcuts';
 import { authState } from '../auth';
 import { workspaceOf, cloudErrorMessage } from '../cloud-logic';
 import { Renderer } from '../render';
@@ -36,6 +37,41 @@ function errorText(error: unknown, fallback: string): string {
 }
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+export function restoreSuccessToast(platform: string): string {
+  return `Version restored. Press ${formatShortcutLabel('Ctrl/Cmd+Z', platform)} to undo.`;
+}
+
+const TRACKER_WINDOW_GRACE_MS = 1500;
+
+type TrackerRestoreWindowApi = Pick<typeof api, 'beginTrackerRestoreWindow' | 'endTrackerRestoreWindow'>;
+
+/** Best-effort tracker window; the server's bulk threshold still protects a restore when either request fails. */
+export async function withTrackerRestoreWindow<T>(
+  boardId: string,
+  enabled: boolean,
+  client: TrackerRestoreWindowApi,
+  apply: () => T | Promise<T>,
+  graceMs = TRACKER_WINDOW_GRACE_MS,
+): Promise<T> {
+  if (!enabled) return await apply();
+  try {
+    await client.beginTrackerRestoreWindow(boardId);
+  } catch {
+    // A 409 means someone else holds the window; a network failure is covered by the guard's bulk threshold too.
+  }
+  try {
+    return await apply();
+  } finally {
+    // The restore reaches the relay over the socket and the window closes over HTTP: two channels, so give the updates a moment to land first.
+    if (graceMs > 0) await new Promise((resolve) => setTimeout(resolve, graceMs));
+    try {
+      await client.endTrackerRestoreWindow(boardId);
+    } catch {
+      /* the window expires by itself if cleanup cannot reach the server */
+    }
+  }
+}
 
 /** Version history: a panel with the saved versions and a read-only preview of one (docs/history.md). */
 export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => void } {
@@ -479,10 +515,13 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
     busy = false;
     if (preview !== p) return;
     // Rebuilt against the board as it is by now, so edits made while the dialog was open are neither lost nor duplicated.
-    applyRestore(app.store, planNow(p));
+    const auth = authState();
+    const trackerEnabled = (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+    const linkedKanbans = [...app.store.cache.values()].some((o) => o.type === 'container' && o.ext?.provider === 'tabula');
+    await withTrackerRestoreWindow(boardId, trackerEnabled && linkedKanbans, api, () => applyRestore(app.store, planNow(p)));
     closePreview();
     (document.activeElement as HTMLElement | null)?.blur();
-    toast('Version restored. Press Ctrl+Z to undo.');
+    toast(restoreSuccessToast(typeof navigator === 'undefined' ? '' : navigator.platform));
     window.setTimeout(() => {
       if (panelOpen) void load();
     }, REFRESH_AFTER_RESTORE_MS);

@@ -98,6 +98,48 @@ function all(root: FakeElement): FakeElement[] {
 }
 
 describe('the card dialog, for an editor', () => {
+  it('uses quiet owner and label chips with a text-only Edit labels action', () => {
+    const { app, card } = setup();
+    open(app, card);
+    expect(box()!.querySelector('.k-label-head .k-label-edit')).not.toBeNull();
+    const css = readFileSync(new URL('../src/ui/card-dialog.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.k-owner-kind-btn\.on\s*\{[^}]*border-color:\s*transparent[^}]*background:\s*color-mix\(in srgb, var\(--tray-text\) 8%, transparent\)/);
+    expect(css).toMatch(/\.k-chip\.on\s*\{[^}]*border-color:\s*transparent[^}]*background:\s*color-mix\(in srgb, var\(--tray-text\) 8%, transparent\)/);
+    expect(css).toMatch(/\.modal \.k-label-head \.k-label-edit\s*\{[^}]*color:\s*var\(--tray-muted\)/);
+  });
+
+  it('shows linked ticket fields read only and leaves the owner, due and label controls out', () => {
+    const { store, app, card } = setup();
+    store.doc.transact(() => {
+      const map = store.objects.get(card)!;
+      map.set('extProvider', 'tabula');
+      map.set('extKey', 'TAB-9');
+      map.set('tracker', {
+        ticketId: 'ticket-9', ticketKey: 'TAB-9', title: 'Fix a login loop',
+        state: { id: 'state-1', key: 'todo', name: 'To do', category: 'unstarted' },
+        assignee: { userId: 'u9', name: 'A <img src=x onerror=run()>' },
+        labels: [{ id: 'label-1', name: 'Security <script>run()</script>', color: null }],
+        priority: 'high', due: '2026-11-09', projectionSeq: 1,
+      });
+    }, 'tracker-projection');
+
+    const d = open(app, card)!;
+    const dialogBox = box()!;
+    const controlLabels = dialogBox.querySelectorAll('input, textarea, select').map((el) => el.getAttribute('aria-label'));
+    expect(controlLabels).not.toContain('Owner');
+    expect(controlLabels).not.toContain('Due date');
+    expect(button('Bug')).toBeUndefined();
+    expect(textOf(dialogBox)).toContain('A <img src=x onerror=run()>');
+    expect(textOf(dialogBox)).toContain('Security <script>run()</script>');
+    expect(textOf(dialogBox)).toContain(new Date('2026-11-09T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+    expect(textOf(dialogBox)).toContain('High');
+    expect(dialogBox.querySelectorAll('img, script')).toHaveLength(0);
+    const edit = dialogBox.querySelector('a.k-open-tracker') as FakeElement;
+    expect(edit.textContent).toBe('Edit in tracker');
+    expect(edit.getAttribute('href')).toContain('TAB-9');
+    d.close();
+  });
+
   it('shows the card and saves each field as it is left, one undo step each', () => {
     const { store, app, card, bug } = setup();
     open(app, card);

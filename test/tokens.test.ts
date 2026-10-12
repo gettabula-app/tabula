@@ -190,7 +190,46 @@ describe('access tokens in the directory', () => {
     d.close();
 
     const raw = new DatabaseSync(file);
-    raw.exec('DROP TABLE guest_sessions; DROP TABLE join_codes; DROP TABLE user_prefs; DROP TABLE assets; DROP TABLE templates; DROP TABLE ai_keys; DROP TABLE access_tokens; ALTER TABLE sessions DROP COLUMN user_agent; PRAGMA user_version = 3');
+    raw.exec(`
+      PRAGMA foreign_keys = OFF;
+      DROP TABLE notifications;
+      UPDATE schema_meta SET value = '0' WHERE key = 'min_reader';
+      DROP TABLE ticket_projection_outbox;
+      DROP TABLE ticket_links;
+      DROP TABLE kanban_state_mappings;
+      DROP TABLE kanban_tracker_links;
+      DROP TABLE saved_views;
+      DROP TABLE ticket_relations;
+      DROP TABLE milestones;
+      DROP TABLE projects;
+      DROP TABLE ticket_search;
+      DROP TABLE ticket_comments;
+      DROP TABLE ticket_events;
+      DROP TABLE ticket_labels;
+      DROP TABLE ticket_aliases;
+      DROP TABLE ticket_subscriptions;
+      DROP TABLE ticket_field_versions;
+      DROP TABLE tickets;
+      DROP TABLE ticket_states;
+      DROP TABLE ticket_workflows;
+      DROP TABLE ticket_counters;
+      DROP TABLE labels;
+      DROP TABLE trackers;
+      DROP TABLE guest_sessions;
+      DROP TABLE join_codes;
+      DROP TABLE user_prefs;
+      DROP TABLE assets;
+      DROP TABLE templates;
+      DROP TABLE ai_keys;
+      DROP TABLE oauth_tokens;
+      DROP TABLE oauth_codes;
+      DROP TABLE oauth_grants;
+      DROP TABLE oauth_requests;
+      DROP TABLE oauth_clients;
+      DROP TABLE access_tokens;
+      ALTER TABLE sessions DROP COLUMN user_agent;
+      PRAGMA user_version = 3;
+    `);
     raw.close();
 
     const again = openDirectory(file);
@@ -231,9 +270,10 @@ describe('configuration', () => {
   });
 
   it('turns on per-user tokens in accounts mode and says which settings it ignores', () => {
-    expect(load({ ...accounts, MCP: 'on' }).mcp).toEqual({ mode: 'accounts', ignored: [] });
-    expect(load({ ...accounts, MCP: 'on', MCP_TOKEN: TOKEN, MCP_SCOPE: 'write' }).mcp).toEqual({
+    expect(load({ ...accounts, MCP: 'on' }).mcp).toMatchObject({ mode: 'accounts', oauth: false, ignored: [] });
+    expect(load({ ...accounts, MCP: 'on', MCP_TOKEN: TOKEN, MCP_SCOPE: 'write' }).mcp).toMatchObject({
       mode: 'accounts',
+      oauth: false,
       ignored: ['TABULA_MCP_TOKEN', 'TABULA_MCP_SCOPE'],
     });
   });
@@ -243,7 +283,7 @@ describe('configuration', () => {
     expect(() => load({ MCP: 'on', MCP_TOKEN: 'short' })).toThrow(/TABULA_MCP_TOKEN/);
     expect(() => load({ MCP: 'on', MCP_TOKEN: `${'a'.repeat(16)} ${'b'.repeat(16)}` })).toThrow(/without spaces/);
     expect(() => load({ MCP: 'on', MCP_TOKEN: TOKEN, MCP_SCOPE: 'admin' })).toThrow(/TABULA_MCP_SCOPE/);
-    expect(load({ MCP: 'on', MCP_TOKEN: TOKEN }).mcp).toEqual({ mode: 'open', token: TOKEN, scope: 'read', ignored: [] });
+    expect(load({ MCP: 'on', MCP_TOKEN: TOKEN }).mcp).toMatchObject({ mode: 'open', token: TOKEN, scope: 'read', oauth: false, ignored: [] });
     expect(load({ MCP: 'on', MCP_TOKEN: ` ${TOKEN} `, MCP_SCOPE: 'comment' }).mcp).toMatchObject({ token: TOKEN, scope: 'comment' });
   });
 

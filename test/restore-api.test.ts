@@ -7,6 +7,7 @@ import { createApi } from '../server/api.mjs';
 import { createAuth } from '../server/auth.mjs';
 import { createCloud } from '../server/cloud.mjs';
 import { loadConfig } from '../server/config.mjs';
+import { setRestoreGate } from '../server/tracker/gate.mjs';
 import { HOUR, MIN, harness, type Harness } from './backup-harness';
 import { audits, backupNow, becomeB, filesOf, rig, seedA, setting, type Rig } from './restore-harness';
 
@@ -27,9 +28,9 @@ afterEach(async () => {
   await h?.close();
 });
 
-type Options = { backups?: boolean; cloud?: boolean; restoring?: () => boolean; engine?: Record<string, unknown> | ((h: Harness) => Record<string, unknown>) };
+type Options = { backups?: boolean; cloud?: boolean; tracker?: boolean; restoring?: () => boolean; engine?: Record<string, unknown> | ((h: Harness) => Record<string, unknown>) };
 
-async function setup({ backups = true, cloud: withCloud = false, restoring = () => false, engine = {} }: Options = {}) {
+async function setup({ backups = true, cloud: withCloud = false, tracker = false, restoring = () => false, engine = {} }: Options = {}) {
   h = await harness({ accounts: true });
   const world = seedA(h);
   const r: Rig = rig(h, typeof engine === 'function' ? engine(h) : engine);
@@ -41,7 +42,7 @@ async function setup({ backups = true, cloud: withCloud = false, restoring = () 
   const d = h.directory!;
   d.createUser({ email: 'admin@example.com', name: 'Admin', role: 'admin' });
   d.createUser({ email: 'guest@example.com', name: 'Guest', role: 'guest' });
-  const env = { PORT: '8787', TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com', DATA_DIR: h.dir, ...(withCloud ? { TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: 'https://cloud.example.com', TABULA_CLOUD_WORKSPACE_ID: 'ws_restore' } : {}) };
+  const env = { PORT: '8787', TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: 'owner@example.com', DATA_DIR: h.dir, ...(tracker ? { TABULA_TRACKER: 'on' } : {}), ...(withCloud ? { TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: 'https://cloud.example.com', TABULA_CLOUD_WORKSPACE_ID: 'ws_restore' } : {}) };
   const config = loadConfig(env);
   const events = new EventEmitter();
   const cloud = createCloud({ config: config.cloud, directory: d, events, log: () => {} });
@@ -50,6 +51,10 @@ async function setup({ backups = true, cloud: withCloud = false, restoring = () 
   const api = createApi({
     directory: d, auth, config, roomExists: () => false, events, cloud: cloud as never, mailer, restore: backups ? (r.restore as never) : null, maintenance: restoring,
     backupStatus: () => ({ enabled: true, restore: r.restore.status() }) as never,
+    roomAccess: {
+      openTrackerRestoreWindow: (boardId: string) => ({ boardId, expiresAt: h.clock.now + MIN }),
+      closeTrackerRestoreWindow: (boardId: string) => ({ boardId, closed: true }),
+    } as never,
   });
 
   let finished = 0;
@@ -241,10 +246,12 @@ describe('restoring the workspace', () => {
 
   it('answers 409 to a second one while the first runs, and 429 when one was just tried', async () => {
     let open!: (v: { ok: boolean }) => void;
+    let enterRun!: () => void;
     const held = new Promise<{ ok: boolean }>((resolve) => (open = resolve));
-    const s = await setup({ engine: (hh) => ({ backup: { ...hh.engine(), runNow: () => held } }) });
+    const entered = new Promise<void>((resolve) => (enterRun = resolve));
+    const s = await setup({ engine: (hh) => ({ backup: { ...hh.engine(), runNow: () => { enterRun(); return held; } } }) });
     const first = post(s, { manifest: s.manifest, confirm: 'RESTORE' });
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await entered;
     const second = await post(s, { manifest: s.manifest, confirm: 'RESTORE' });
     expect(second.status).toBe(409);
     expect(second.body).toMatchObject({ error: 'restore_in_progress' });
@@ -304,6 +311,44 @@ describe('a hosted workspace that is read-only', () => {
   });
 });
 
+describe('tracker restore gate', () => {
+  it('blocks tracker writes and restore-window opens while reads and window closes remain available', async () => {
+    const s = await setup({ tracker: true });
+    const first = await s.call('POST', '/api/tracker/tickets', {
+      body: { title: 'Visible before gate', idempotencyKey: 'before-gate-123' },
+    });
+    expect(first.status).toBe(201);
+    const observed = await s.call('GET', '/api/tracker/tickets');
+    expect(observed.status).toBe(200);
+    expect(observed.body.tickets).toHaveLength(1);
+    expect((await s.call('POST', '/api/tracker/boards/b1/restore-window')).status).toBe(200);
+    expect((await s.call('DELETE', '/api/tracker/boards/b1/restore-window')).status).toBe(200);
+
+    setRestoreGate(h.directory!, { since: h.clock.now, reason: 'restore', floor: 'pending' });
+    expect((await s.call('GET', '/api/tracker/tickets')).body.tickets).toHaveLength(1);
+    const blocked = await s.call('POST', '/api/tracker/tickets', {
+      body: { title: 'Must not be created', idempotencyKey: 'during-gate-123' },
+    });
+    expect(blocked.status).toBe(503);
+    expect(blocked.body).toEqual({
+      error: 'tracker_restoring',
+      message: 'Ticket writes are paused while the workspace is being restored.',
+      floor: 'pending',
+    });
+    const open = await s.call('POST', '/api/tracker/boards/b1/restore-window');
+    expect(open.status).toBe(503);
+    expect(open.body).toMatchObject({ error: 'tracker_restoring', floor: 'pending' });
+    expect((await s.call('POST', '/api/admin/tracker/cutover-record', { body: {} })).status).toBe(503);
+    expect((await s.call('POST', '/api/admin/tracker/cutover-record', {
+      cookie: s.cookies.member, body: {},
+    })).status).toBe(403);
+    const closed = await s.call('DELETE', '/api/tracker/boards/b1/restore-window');
+    expect(closed.status).toBe(200);
+    expect(closed.body).toMatchObject({ boardId: 'b1', closed: true });
+    expect((await s.call('GET', '/api/tracker/tickets')).body.tickets).toHaveLength(1);
+  });
+});
+
 const roomsAdded = () => fs.readdirSync(h.dir).filter((n) => /^[A-Za-z0-9_-]{9}\.yjs$/.test(n)).length;
 
 describe('maintenance mode', () => {
@@ -320,6 +365,18 @@ describe('maintenance mode', () => {
       expect(res.headers.get('retry-after')).toBe('30');
     }
     expect(s.exits).toEqual([]);
+  });
+
+  it('answers the tracker key-epoch route directly with tracker_restoring, with no session, no directory read and no route', async () => {
+    const s = await setup({ restoring: () => true });
+    for (const cookie of [s.cookies.owner, null, `${s.config.cookieName}=garbage`]) {
+      const res = await s.call('POST', '/api/admin/tracker/key-epoch', { cookie, body: { confirm: 'JUMP' } });
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: 'tracker_restoring', message: 'Ticket writes are paused while the workspace is being restored.', floor: 'pending' });
+      expect(res.headers.get('retry-after')).toBe('30');
+    }
+    // the generic reply is unchanged for every other path
+    expect((await s.call('GET', '/api/admin/tracker/readiness')).body).toMatchObject({ error: 'restoring' });
   });
 
   it('keeps answering the backup status, with the restore in it, to the control plane', async () => {

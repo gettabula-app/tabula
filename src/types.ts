@@ -18,11 +18,30 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'group' | 'icon' | 'image' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
 export type VAlign = 'top' | 'middle' | 'bottom';
+export type TrackerStateCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+
+export interface TrackerProjection {
+  ticketId: Id;
+  ticketKey: string;
+  title: string;
+  state: { id: Id; key: string; name: string; category: TrackerStateCategory };
+  assignee: { userId: Id; name: string } | null;
+  labels: { id: Id; name: string; color: string | null }[];
+  priority: 'none' | 'urgent' | 'high' | 'medium' | 'low';
+  due: string | null;
+  projectionSeq: number;
+}
+
+export interface TrackerContainerExt {
+  provider: 'tabula';
+  tracker: Id;
+  map: Record<string, string>;
+}
 
 export type Head =
   | 'none' | 'arrow' | 'open' | 'triangle' | 'diamond' | 'diamond-open'
@@ -89,6 +108,17 @@ export interface BaseObj extends Partial<StyleFields> {
   kind?: ShapeKind;
   // a frame's title; for anything else the name the layers panel shows (TAB-198)
   name?: string;
+  /** Read-only TABULA projection fields on linked cards; trackerId also selects a workspace on tracker frames. */
+  extProvider?: 'tabula';
+  extKey?: string;
+  extUrl?: string;
+  trackerId?: string;
+  /** Default tracker tab for this frame: navigation state only. */
+  view?: 'inbox' | 'my' | 'all' | 'board' | 'projects';
+  /** Saved tracker view selected by this frame: navigation state only. */
+  viewId?: string;
+  /** Ticket key opened by default in this frame: navigation state only. */
+  focusKey?: string;
   // icon
   ref?: string;
   body?: string;
@@ -111,6 +141,12 @@ export interface BaseObj extends Partial<StyleFields> {
   privateStep?: Id;
   // container (docs/kanban.md). `parent` says which lane or container, `rank` is `<key>@<parent>`.
   layout?: string;
+  /** Server-written TABULA tracker link for a kanban container. */
+  ext?: TrackerContainerExt;
+  /** Compact server-written snapshot of the linked ticket; clients issue tracker commands to change it. */
+  tracker?: TrackerProjection;
+  /** Server marker for a linked ticket state that has no mapped lane. */
+  trackerUnmappedState?: boolean;
   rank?: string;
   laneW?: number;
   stage?: typeof STAGES[number];

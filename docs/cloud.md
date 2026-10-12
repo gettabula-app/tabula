@@ -4,6 +4,8 @@ Tabula can run as one workspace of a hosted service: a separate control plane (b
 
 Not in it: creating or deleting the instance, Stripe, routing. Those belong to the control plane.
 
+Fly's edge replays hosted requests, but Fly cannot replay request bodies over 1 MB; TAB-127 documents how image uploads stay visible and retry.
+
 ## Turning it on
 
 | Variable | Meaning |
@@ -14,6 +16,8 @@ Not in it: creating or deleting the instance, Stripe, routing. Those belong to t
 
 Cloud mode is on only when `TABULA_AUTH=on` **and** all three are set.
 
+A hosted workspace runs accounts mode, so it has team chat (docs/chat.md) with no variable: chat is on by default there, `chat.sqlite` is created on first use and is in the backups, and `TABULA_CHAT=off` is the operator's opt-out. A workspace gets it when it moves to an image that has this default.
+
 - None set: nothing changes, the routes below answer `404`.
 - Some but not all set: the relay refuses to start and names the missing variables. A token that is too short, a URL that is not allowed or an id that does not fit refuse startup too.
 - All set with `TABULA_AUTH` off: cloud mode stays off and the relay logs that the variables are ignored. (The values are still validated.)
@@ -21,6 +25,8 @@ Cloud mode is on only when `TABULA_AUTH=on` **and** all three are set.
 ## Calls from the control plane
 
 The endpoints below sit under `/api/internal/`. They need the bearer token and nothing else: no cookie, no `x-tabula` header, and a session cookie that comes along is ignored. The token is compared in constant time (both sides are hashed first, so the length of a guess shows nothing). A missing or wrong token answers `401 {error: 'unauthenticated'}` with `WWW-Authenticate: Bearer`. The public edge must not forward `/api/internal/` to browsers.
+
+For a directory backup pull, the control plane derives and keeps a separate bearer token and gives the instance only its SHA-256 digest in `TABULA_BACKUP_PULL_TOKEN_SHA256`. The instance's `/api/backup-export/` route is public to the service (bearer only, no user session), so the control plane can call it to wake a stopped machine; the returned files remain sealed ciphertext.
 
 ```
 GET /api/internal/usage
@@ -69,10 +75,11 @@ Which data volume the instance runs on (`docs/backups.md`, Volumes and restores)
 
 ```
 GET /api/internal/version
-  -> { version, startedAt, build: { schema, maxReader }, disk: { schema, minReader, legacy }, updates: { auto: boolean } }
+  -> { version, startedAt, build: { schema, maxReader }, disk: { schema, minReader, legacy }, capabilities: { tracker: { fts5: boolean, enabled: boolean } }, updates: { auto: boolean } }
 ```
 
 The release label (`null` if `TABULA_VERSION` was not set), process start time in milliseconds, the schema generations and rollback limits this build declares, and the generations and legacy status of its database files. Each nested schema field has `directory` and `chat` values; chat is `null` when it is off. This endpoint contains no secrets. See [migrations.md](migrations.md) for the reader rule and release contract.
+`capabilities.tracker.fts5` reports the same SQLite tokenizer probe required by migration 12; `capabilities.tracker.enabled` reports whether `TABULA_TRACKER=on`. These fields let the control plane distinguish a compatible SQLite build from one with ticket tools enabled.
 `updates.auto` is the current automatic update setting, defaulting to `true`; security updates are always applied.
 
 **Contract for an adopt-volume action.** When the control plane swaps a machine's mount to another volume (a Tier 1 restore from a snapshot, or a move), it should:
@@ -221,7 +228,11 @@ The instance calls `POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/portal` and retur
 ```
 POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/usage   { seats, guests, autoUpgrade? }
 POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/settings   { autoUpgrade }
+POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/key-floor   { counters: [{ scope, prefix, floor }] }
+POST <TABULA_CLOUD_URL>/v1/workspaces/<id>/key-floor/read   {}
 ```
+
+The ticket-key floor calls are specified by `docs/tracker-s7.md` section 6.3. The control plane stores only monotonic counter numbers and applies its own per-call jump limit. Its `workspace_key_floor` table and handlers are a separate change in the `tabula-cloud` repository.
 
 Sent 30 seconds after the last change to the people in the workspace (an account created through an invite, a role change, disable or enable, a removal). A burst of changes is one report, with the counts read when it is sent, and a report that would repeat the last successful one is skipped. A failure is logged (without the token or the answer) and never reaches the request that caused the change; the control plane also pulls `GET /api/internal/usage` now and then. Reports that are still waiting when the process stops are not sent.
 

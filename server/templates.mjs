@@ -17,7 +17,7 @@ export const TEMPLATE_CATEGORIES = [
 export const TEMPLATE_SCOPES = ['personal', 'team', 'workspace'];
 // the object types of ObjType in src/types.ts (a test keeps them equal), and the relations of UmlRelation
 // not 'image': a template is copied to boards that cannot read another board's assets (docs/images.md, Templates)
-export const TEMPLATE_OBJ_TYPES = OBJ_TYPES.filter((t) => t !== 'image');
+export const TEMPLATE_OBJ_TYPES = OBJ_TYPES.filter((t) => t !== 'image' && t !== 'tracker');
 export const TEMPLATE_RELATIONS = [
   'association', 'directed', 'generalization', 'realization', 'dependency', 'aggregation', 'composition', 'message',
   'async', 'reply', 'include', 'extend', 'transition',
@@ -334,6 +334,7 @@ export function validateTemplateContent(raw) {
   const ids = new Map();
   list.forEach((o, i) => {
     if (!isRecord(o)) fail(`Object ${i + 1} is not an object.`);
+    if (o.type === 'tracker') fail('Templates cannot contain tracker frames.');
     if (typeof o.id !== 'string' || !ID_RE.test(o.id)) fail(`Object ${i + 1} needs an id of 1 to 64 letters, digits, - or _.`);
     if (ids.has(o.id)) fail(`Object ${i + 1} shares its id with another object.`);
     if (typeof o.type !== 'string' || !TEMPLATE_OBJ_TYPES.includes(o.type)) fail(`Object ${i + 1} has an unknown type.`);
@@ -361,6 +362,7 @@ export function validateTemplateContent(raw) {
       cursor = parents.get(cursor);
     }
   }
+  const byId = new Map(objects.map((o) => [o.id, o]));
   for (const group of objects.filter((o) => o.type === 'group')) {
     let cursor = group;
     const seen = new Set([group.id]);
@@ -368,7 +370,7 @@ export function validateTemplateContent(raw) {
     while (cursor.parent) {
       if (seen.has(cursor.parent)) break; // the cycle error above already names this input
       seen.add(cursor.parent);
-      cursor = objects.find((o) => o.id === cursor.parent);
+      cursor = byId.get(cursor.parent);
       if (!cursor) break;
       if (cursor.type === 'group') depth++;
     }

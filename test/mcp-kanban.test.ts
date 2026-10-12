@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
 import * as Y from 'yjs';
 import { KANBAN, rankBetween, sortedChildren, splitRank } from '../shared/containers.mjs';
 import { createHarness, until, type Account, type Body } from './mcp-harness';
@@ -642,10 +643,11 @@ describe('kanban MCP card tools', () => {
     expect(createTool.inputSchema.properties.objects.items.properties.type.enum).toEqual(['sticky', 'shape', 'text', 'frame', 'connector']);
 
     const before = (await h.tool(token.token, 'get_board', { boardId: board })).data.counts.total;
-    for (const type of ['container', 'lane', 'card', 'group', 'image']) {
+    for (const type of ['container', 'lane', 'card', 'group', 'image', 'tracker']) {
       const refused = await h.tool(token.token, 'create_objects', { boardId: board, objects: [{ type, x: 0, y: 0 }] });
       expect(refused.error).toBe('invalid_input');
       expect(refused.data.path).toBe('objects[0].type');
+      expect((refused.data.message ?? '').includes('Tracker frames can only be created by the app')).toBe(type === 'tracker');
     }
 
     const cardUpdate = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: cardId, x: 12, parent: doingId }] });
@@ -1183,5 +1185,84 @@ describe('kanban creation, exact order and bulk tools', () => {
       if (kanban?.data?.kanban?.id) await removeObjects(live, [...cards, kanban.data.kanban.id, ...kanban.data.lanes.map((lane: Body) => lane.id)]);
       live.provider.destroy();
     }
+  });
+});
+
+describe('tracker-linked kanban MCP planner refusals', () => {
+  const trackerHarness = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on' }, env: { ROOM_UNLOAD_MS: '1200' } });
+  let trackerOwner: Account;
+  let trackerBoard: string;
+  let trackerToken: string;
+  const trackerKanban = 'tracker-kanban';
+  const trackerCard = 'tracker-card';
+
+  beforeAll(async () => {
+    await trackerHarness.start();
+    trackerOwner = await trackerHarness.signInOwner();
+    trackerBoard = await trackerHarness.newBoard(trackerOwner.cookie);
+    const doc = new Y.Doc();
+    const objects = doc.getMap('objects');
+    const seed = (id: string, type: string, fields: Record<string, unknown> = {}) => {
+      objects.set(id, new Y.Map(Object.entries({ id, type, ...fields })));
+    };
+    seed(trackerKanban, 'container', { layout: 'kanban', name: 'Tracker board' });
+    seed('tracker-lane-todo', 'lane', { parent: trackerKanban, rank: 'a0@todo', stage: 'todo', name: 'To do' });
+    seed('tracker-lane-doing', 'lane', { parent: trackerKanban, rank: 'a1@doing', stage: 'doing', name: 'Doing' });
+    seed(trackerCard, 'card', { parent: 'tracker-lane-todo', rank: 'a0@card', text: 'Original title' });
+    fs.writeFileSync(trackerHarness.roomFile(trackerBoard), Y.encodeStateAsUpdate(doc));
+    doc.destroy();
+
+    const linked = await trackerHarness.api(trackerOwner.cookie, 'POST', '/api/tracker/links', {
+      boardId: trackerBoard,
+      kanbanId: trackerKanban,
+      mapping: { 'tracker-lane-todo': 'todo', 'tracker-lane-doing': 'in_progress' },
+      createTickets: true,
+      idempotencyKey: 'tracker-mcp-planner-123',
+    });
+    if (linked.status !== 201) throw new Error(`could not link the MCP test kanban (${linked.status})`);
+    const made = await trackerHarness.newToken(trackerOwner.cookie, {
+      name: 'linked board planner tests', scope: 'write', tracker: 'write', boardIds: [trackerBoard],
+    });
+    trackerToken = made.token;
+  });
+
+  afterAll(async () => {
+    trackerHarness.closeProviders();
+    await trackerHarness.cleanup();
+  });
+
+  it('refuses linked-card move, batch move, title, due, labels, and owner writes without changing the room', async () => {
+    const list = async () => (await trackerHarness.tool(trackerToken, 'list_kanban_cards', {
+      boardId: trackerBoard, kanbanId: trackerKanban,
+    })).data.cards;
+    const before = await list();
+    const refused = [
+      ['move_kanban_card', { boardId: trackerBoard, kanbanId: trackerKanban, cardId: trackerCard, laneId: 'tracker-lane-doing' }, 'laneId'],
+      ['move_kanban_cards', { boardId: trackerBoard, kanbanId: trackerKanban, moves: [{ cardId: trackerCard, laneId: 'tracker-lane-doing' }] }, 'moves[0].laneId'],
+      ['update_kanban_card', { boardId: trackerBoard, kanbanId: trackerKanban, cardId: trackerCard, title: 'New title' }, 'title'],
+      ['update_kanban_card', { boardId: trackerBoard, kanbanId: trackerKanban, cardId: trackerCard, due: '2026-12-31' }, 'due'],
+      ['update_kanban_card', { boardId: trackerBoard, kanbanId: trackerKanban, cardId: trackerCard, labels: [] }, 'labels'],
+      ['update_kanban_card', { boardId: trackerBoard, kanbanId: trackerKanban, cardId: trackerCard, ownerName: 'Other owner' }, 'ownerName'],
+    ] as const;
+    for (const [name, args, path] of refused) {
+      const result = await trackerHarness.tool(trackerToken, name, args);
+      expect(result.error).toBe('invalid_input');
+      expect(result.data).toMatchObject({ path, message: 'Linked card: use transition_ticket / update_ticket' });
+    }
+    expect(await list()).toEqual(before);
+  });
+
+  it('allows an MCP card in a mapped lane and auto-creates its ticket', async () => {
+    const title = `MCP auto-create ${Date.now()}`;
+    const created = await trackerHarness.tool(trackerToken, 'add_kanban_card', {
+      boardId: trackerBoard, kanbanId: trackerKanban, laneId: 'tracker-lane-todo', title,
+    });
+    expect(created.error).toBeUndefined();
+    expect(created.data.card.title).toBe(title);
+
+    const searched = await trackerHarness.tool(trackerToken, 'search_tickets', { query: title });
+    expect(searched.error).toBeUndefined();
+    expect(searched.data.tickets).toHaveLength(1);
+    expect(searched.data.tickets[0]).toMatchObject({ title });
   });
 });

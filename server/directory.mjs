@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { normaliseEmail } from './config.mjs';
-import { describeSchema, migrate } from './schema.mjs';
+import { describeSchema, migrate, readSchemaState } from './schema.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
+import { OAUTH_MIGRATION, createOauthStore } from './oauth.mjs';
 import { AI_KEYS_MIGRATION, AI_KEYS_MODEL_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
 import { ASSETS_MIGRATION, createAssetIndex } from './assets.mjs';
 
@@ -25,6 +26,15 @@ const RANK_ROLE = { 4: 'owner', 3: 'editor', 2: 'commenter', 1: 'viewer' };
 
 // A share role the CASE does not know ranks 0, which grants nothing.
 const shareRank = (column) => `CASE ${column} WHEN 'editor' THEN 3 WHEN 'commenter' THEN 2 WHEN 'viewer' THEN 1 ELSE 0 END`;
+
+/**
+ * The ticket search table, one definition for the migration and for the rebuild after a restore (server/tracker/restore-recovery.mjs).
+ * The text is part of schema 12 and must stay byte for byte what a fresh database holds in sqlite_master.
+ */
+export const TICKET_SEARCH_DDL = `CREATE VIRTUAL TABLE ticket_search USING fts5(
+    ticket_id UNINDEXED, title, description, comments, identifiers, aliases,
+    tokenize = 'unicode61 remove_diacritics 2'
+  )`;
 
 export const MIGRATIONS = [
   `
@@ -178,6 +188,317 @@ export const MIGRATIONS = [
   );
   CREATE INDEX guest_sessions_expiry ON guest_sessions(expires_at);
   `,
+  // Tracker core (docs/tracker-architecture.md, slice 1). Additive so schema 11 remains a valid reader.
+  `
+  ALTER TABLE access_tokens ADD COLUMN tracker TEXT;
+
+  CREATE TABLE trackers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE ticket_workflows (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE ticket_states (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL REFERENCES ticket_workflows(id) ON DELETE RESTRICT,
+    state_key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('backlog', 'unstarted', 'started', 'completed', 'canceled')),
+    position INTEGER NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    archived_at INTEGER,
+    created_at INTEGER NOT NULL,
+    UNIQUE (workflow_id, state_key)
+  );
+  CREATE TABLE tickets (
+    id TEXT PRIMARY KEY,
+    prefix TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    key TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    state_id TEXT NOT NULL REFERENCES ticket_states(id) ON DELETE RESTRICT,
+    tracker_id TEXT NOT NULL REFERENCES trackers(id) ON DELETE RESTRICT,
+    priority INTEGER NOT NULL DEFAULT 0,
+    estimate REAL,
+    parent_ticket_id TEXT REFERENCES tickets(id) ON DELETE SET NULL,
+    assignee_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    project_id TEXT,
+    milestone_id TEXT,
+    due_date TEXT,
+    archived_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    created_by_type TEXT NOT NULL,
+    created_by_id TEXT,
+    updated_seq INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'app',
+    UNIQUE (prefix, number)
+  );
+  CREATE TABLE ticket_counters (
+    scope TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    next_number INTEGER NOT NULL CHECK (next_number > 0),
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (scope, prefix)
+  );
+  CREATE TABLE ticket_field_versions (
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    field TEXT NOT NULL,
+    event_seq INTEGER NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT,
+    PRIMARY KEY (ticket_id, field)
+  );
+  CREATE TABLE labels (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    color TEXT,
+    created_at INTEGER NOT NULL,
+    created_by TEXT,
+    archived_at INTEGER
+  );
+  CREATE UNIQUE INDEX labels_active_name ON labels(name COLLATE NOCASE) WHERE archived_at IS NULL;
+  CREATE TABLE ticket_labels (
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE RESTRICT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (ticket_id, label_id)
+  );
+  CREATE TABLE ticket_comments (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    parent_id TEXT REFERENCES ticket_comments(id) ON DELETE SET NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT,
+    author_snapshot TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    edited_at INTEGER,
+    deleted_at INTEGER,
+    client_id TEXT,
+    UNIQUE (actor_type, actor_id, client_id)
+  );
+  CREATE UNIQUE INDEX ticket_comments_client_idempotency ON ticket_comments(actor_type, COALESCE(actor_id, ''), client_id)
+    WHERE client_id IS NOT NULL;
+  CREATE TABLE ticket_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    event_type TEXT NOT NULL,
+    schema_version INTEGER NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT,
+    source TEXT NOT NULL,
+    idempotency_key TEXT,
+    created_at INTEGER NOT NULL,
+    before_json TEXT,
+    after_json TEXT,
+    details_json TEXT NOT NULL DEFAULT '{}',
+    UNIQUE (source, actor_type, actor_id, idempotency_key)
+  );
+  CREATE TABLE ticket_aliases (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    display_key TEXT,
+    url TEXT,
+    created_at INTEGER NOT NULL,
+    UNIQUE (provider, external_id)
+  );
+  CREATE UNIQUE INDEX ticket_events_idempotency ON ticket_events(source, actor_type, COALESCE(actor_id, ''), idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+  CREATE TABLE ticket_subscriptions (
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (ticket_id, user_id)
+  );
+  ${TICKET_SEARCH_DDL};
+
+  CREATE INDEX tickets_state_updated ON tickets(state_id, updated_at DESC);
+  CREATE INDEX tickets_assignee_state_updated ON tickets(assignee_user_id, state_id, updated_at DESC);
+  CREATE INDEX tickets_project_milestone_state ON tickets(project_id, milestone_id, state_id);
+  CREATE INDEX tickets_active_due ON tickets(due_date) WHERE archived_at IS NULL;
+  CREATE INDEX ticket_events_ticket_id ON ticket_events(ticket_id, id DESC);
+  CREATE INDEX ticket_events_id ON ticket_events(id DESC);
+  CREATE INDEX ticket_comments_ticket_time ON ticket_comments(ticket_id, created_at, id);
+  CREATE INDEX ticket_comments_parent_time ON ticket_comments(parent_id, created_at);
+  CREATE INDEX ticket_aliases_external ON ticket_aliases(provider, external_id);
+  CREATE INDEX ticket_subscriptions_user ON ticket_subscriptions(user_id, ticket_id);
+
+  INSERT INTO trackers (id, name, prefix, created_at) VALUES ('trk_default', 'Tabula', 'TAB', 0);
+  INSERT INTO ticket_workflows (id, name, is_default, version, created_at, updated_at)
+    VALUES ('wf_default', 'Default', 1, 1, 0, 0);
+  INSERT INTO ticket_states (id, workflow_id, state_key, name, category, position, is_default, created_at) VALUES
+    ('st_todo', 'wf_default', 'todo', 'To do', 'unstarted', 0, 1, 0),
+    ('st_in_progress', 'wf_default', 'in_progress', 'In progress', 'started', 1, 0, 0),
+    ('st_in_review', 'wf_default', 'in_review', 'In review', 'started', 2, 0, 0),
+    ('st_done', 'wf_default', 'done', 'Done', 'completed', 3, 0, 0),
+    ('st_cancelled', 'wf_default', 'cancelled', 'Cancelled', 'canceled', 4, 0, 0);
+  INSERT INTO ticket_counters (scope, prefix, next_number, updated_at) VALUES ('trk_default', 'TAB', 1, 0);
+  `,
+  // Tracker projects, relations and saved views. Additive so the slice 1 reader can keep using its tables.
+  `
+  -- minReader: 11
+  CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL,
+    owner_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    archived_at INTEGER
+  );
+  CREATE TABLE milestones (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    start_at INTEGER,
+    due_at INTEGER,
+    state TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    archived_at INTEGER
+  );
+  CREATE TABLE ticket_relations (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT REFERENCES tickets(id) ON DELETE RESTRICT,
+    related_ticket_id TEXT REFERENCES tickets(id) ON DELETE RESTRICT,
+    kind TEXT NOT NULL CHECK (kind IN ('blocks', 'blocked_by', 'relates_to', 'duplicates', 'duplicated_by', 'cloned_from')),
+    created_at INTEGER NOT NULL,
+    created_by_type TEXT NOT NULL,
+    created_by_id TEXT,
+    CHECK (ticket_id <> related_ticket_id)
+  );
+  CREATE TABLE saved_views (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    query_json TEXT NOT NULL,
+    is_shared INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE UNIQUE INDEX projects_active_name ON projects(name COLLATE NOCASE) WHERE archived_at IS NULL;
+  CREATE INDEX projects_state_updated ON projects(state, updated_at DESC);
+  CREATE INDEX milestones_project_due ON milestones(project_id, due_at, updated_at DESC);
+  CREATE INDEX milestones_active_project ON milestones(project_id, name COLLATE NOCASE) WHERE archived_at IS NULL;
+  CREATE UNIQUE INDEX ticket_relations_normalized ON ticket_relations(min(ticket_id, related_ticket_id), max(ticket_id, related_ticket_id));
+  CREATE INDEX ticket_relations_related ON ticket_relations(related_ticket_id, ticket_id);
+  CREATE INDEX saved_views_owner_updated ON saved_views(owner_user_id, updated_at DESC);
+  CREATE INDEX saved_views_shared_updated ON saved_views(updated_at DESC) WHERE is_shared = 1;
+  `,
+  // Tracker slice 6: the notifications table is the in-app inbox and the email outbox in one (docs/tracker-architecture.md
+  // section 6, Notification fan-out). Purely additive (new table and indexes, foreign keys only CASCADE), so the build before
+  // it still reads the file and the annotation below keeps `minReader` at 11, which keeps a rollback to v5.0.1 possible. One row per person per
+  // event: `dedupe_key` is `ev:<event id>` for event notices and `due:<ticket id>:<due date>` for due-soon notices.
+  // `suppressed_at` marks a notice whose recipient lost access.
+  `
+  -- minReader: 11
+  CREATE TABLE notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    event_id INTEGER REFERENCES ticket_events(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('assigned', 'mentioned', 'commented', 'status_changed', 'due_soon', 'relation_changed', 'integration_activity')),
+    dedupe_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    read_at INTEGER,
+    emailed_at INTEGER,
+    email_attempts INTEGER NOT NULL DEFAULT 0,
+    next_email_at INTEGER,
+    last_email_error_code TEXT,
+    suppressed_at INTEGER
+  );
+  CREATE UNIQUE INDEX notifications_user_dedupe ON notifications(user_id, dedupe_key);
+  CREATE INDEX notifications_user_inbox ON notifications(user_id, read_at, created_at DESC);
+  CREATE INDEX notifications_ticket ON notifications(ticket_id);
+  CREATE INDEX notifications_email_due ON notifications(next_email_at)
+    WHERE next_email_at IS NOT NULL AND emailed_at IS NULL AND suppressed_at IS NULL;
+  `,
+  // Tracker slice 4: SQL-owned kanban links and the durable SQL-to-Yjs projection outbox. These tables are additive and
+  // deliberately keep the minimum reader at 11 so hosted workspaces can still roll back to v5.0.1 while TABULA_TRACKER is off.
+  { sql: `
+  CREATE TABLE kanban_tracker_links (
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    workflow_id TEXT NOT NULL REFERENCES ticket_workflows(id),
+    created_at INTEGER NOT NULL,
+    created_by TEXT,
+    removed_at INTEGER,
+    idempotency_key TEXT,
+    idempotency_result_json TEXT
+  );
+  CREATE UNIQUE INDEX kanban_tracker_links_active ON kanban_tracker_links(board_id, kanban_id)
+    WHERE removed_at IS NULL;
+  CREATE UNIQUE INDEX kanban_tracker_links_idempotency ON kanban_tracker_links(board_id, created_by, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+  CREATE INDEX kanban_tracker_links_board ON kanban_tracker_links(board_id, kanban_id, removed_at);
+
+  CREATE TABLE kanban_state_mappings (
+    kanban_link_id TEXT NOT NULL REFERENCES kanban_tracker_links(id) ON DELETE CASCADE,
+    lane_id TEXT NOT NULL,
+    state_id TEXT NOT NULL REFERENCES ticket_states(id) ON DELETE RESTRICT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (kanban_link_id, lane_id)
+  );
+  CREATE UNIQUE INDEX kanban_state_mappings_state ON kanban_state_mappings(kanban_link_id, state_id);
+  CREATE INDEX kanban_state_mappings_by_state ON kanban_state_mappings(state_id);
+
+  CREATE TABLE ticket_links (
+    id TEXT PRIMARY KEY,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    created_by_type TEXT NOT NULL,
+    created_by_id TEXT,
+    removed_at INTEGER,
+    last_projection_seq INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE UNIQUE INDEX ticket_links_active_card ON ticket_links(board_id, kanban_id, card_id)
+    WHERE removed_at IS NULL;
+  CREATE UNIQUE INDEX ticket_links_active_ticket ON ticket_links(kanban_id, ticket_id)
+    WHERE removed_at IS NULL;
+  CREATE INDEX ticket_links_ticket ON ticket_links(ticket_id, removed_at);
+  CREATE INDEX ticket_links_board ON ticket_links(board_id, kanban_id, removed_at);
+
+  CREATE TABLE ticket_projection_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE RESTRICT,
+    board_id TEXT NOT NULL,
+    kanban_id TEXT NOT NULL,
+    card_id TEXT NOT NULL,
+    event_seq INTEGER NOT NULL,
+    operation TEXT NOT NULL CHECK (operation IN ('upsert', 'remove')),
+    projection_json TEXT,
+    created_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at INTEGER NOT NULL,
+    applied_at INTEGER,
+    last_error_code TEXT,
+    UNIQUE (board_id, kanban_id, card_id, event_seq)
+  );
+  CREATE INDEX ticket_projection_outbox_pending ON ticket_projection_outbox(applied_at, next_attempt_at, event_seq, id);
+  `, minReader: 11 },
+  // OAuth slice 1 adds tables only. Keep v5.0.1 (schema generation 11) as the rollback floor.
+  { sql: OAUTH_MIGRATION, minReader: 11 },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -226,12 +547,30 @@ const toInvite = (r) => ({
 const inviteActive = (invite, now) =>
   !invite.revoked && invite.expiresAt > now && (invite.maxUses == null || invite.uses < invite.maxUses);
 
-/** @param {string} file @param {{ snapshotBarrier?: any }} [options] */
-export function openDirectory(file, { snapshotBarrier = null } = {}) {
+/** Probe the exact FTS5 tokenizer migration 12 needs. Returns false when this SQLite build lacks it. */
+export function ftsAvailable(db) {
+  const probe = '__tabula_tracker_fts_probe';
+  try {
+    db.exec(`CREATE VIRTUAL TABLE temp.${probe} USING fts5(value, tokenize = 'unicode61 remove_diacritics 2')`);
+    db.exec(`DROP TABLE temp.${probe}`);
+    return true;
+  } catch {
+    try { db.exec(`DROP TABLE IF EXISTS temp.${probe}`); } catch { /* best-effort cleanup */ }
+    return false;
+  }
+}
+
+/** @param {string} file @param {{ snapshotBarrier?: any, ftsProbe?: (db: any) => boolean, oauthSecret?: Buffer | null, oauthInternals?: boolean }} [options] */
+export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier = null, oauthSecret = null, oauthInternals = false } = {}) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const db = new DatabaseSync(file);
   try {
     db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000');
+    // Leave a valid schema 11 file if this SQLite build cannot provide the required FTS5 tokenizer.
+    if (readSchemaState(db).version < 12) {
+      migrate(db, MIGRATIONS.slice(0, 11), 'directory');
+      if (!ftsProbe(db)) throw new Error('directory migration 12 requires SQLite FTS5 with unicode61 remove_diacritics 2');
+    }
     migrate(db, MIGRATIONS, 'directory');
   } catch (err) {
     db.close();
@@ -260,24 +599,44 @@ export function openDirectory(file, { snapshotBarrier = null } = {}) {
 
   let closed = false;
   let depth = 0;
+  let keyFloorListener = null;
+  const afterCommitCallbacks = [];
+  function afterCommit(fn) {
+    if (typeof fn !== 'function') return;
+    if (depth > 0) {
+      afterCommitCallbacks.push(fn);
+      return;
+    }
+    try { fn(); } catch { /* notifications must not undo a committed write */ }
+  }
   function transaction(fn) {
     if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed) {
       return snapshotBarrier.deferWrite(() => transaction(fn));
     }
     const nested = depth > 0;
+    const callbackMark = afterCommitCallbacks.length;
     const savepoint = `sp${depth}`;
     db.exec(nested ? `SAVEPOINT ${savepoint}` : 'BEGIN IMMEDIATE');
     depth++;
+    let committed = false;
     try {
       const result = fn();
       db.exec(nested ? `RELEASE ${savepoint}` : 'COMMIT');
+      committed = true;
       return result;
     } catch (err) {
       if (nested) db.exec(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
       else db.exec('ROLLBACK');
+      afterCommitCallbacks.length = callbackMark;
       throw err;
     } finally {
       depth--;
+      if (!nested && committed) {
+        const callbacks = afterCommitCallbacks.splice(0);
+        for (const callback of callbacks) {
+          try { callback(); } catch { /* notifications must not undo a committed write */ }
+        }
+      }
     }
   }
 
@@ -433,6 +792,7 @@ export function openDirectory(file, { snapshotBarrier = null } = {}) {
     transaction(() => {
       if (sets.length) run(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`, ...params, id);
       if (patch.disabled) revokeUserSessions(id);
+      if (patch.disabled === true || patch.role === 'guest') oauthStore.revokeUserGrants(id, 'user_state');
     });
     return getUser(id);
   }
@@ -443,6 +803,7 @@ export function openDirectory(file, { snapshotBarrier = null } = {}) {
     transaction(() => {
       run('DELETE FROM login_tokens WHERE email = ?', user.email);
       run("DELETE FROM board_shares WHERE principal_type = 'user' AND principal_id = ?", id);
+      oauthStore.revokeUserGrants(id, 'user_state');
       run('DELETE FROM users WHERE id = ?', id);
     });
   }
@@ -1013,6 +1374,9 @@ export function openDirectory(file, { snapshotBarrier = null } = {}) {
     return { entries, next: rows.length > n ? entries[entries.length - 1].id : null };
   }
 
+  const tokenStore = createTokenStore({ get, all, run, transaction });
+  const oauthStore = createOauthStore({ get, all, run, transaction, secret: oauthSecret, exposeInternals: oauthInternals });
+
   return {
     close() {
       if (closed) return;
@@ -1022,7 +1386,11 @@ export function openDirectory(file, { snapshotBarrier = null } = {}) {
     },
     /** This build's schema and the one on disk, for GET /api/internal/version (docs/migrations.md). */
     schemaReport: () => describeSchema(db, MIGRATIONS),
+    db,
     transaction,
+    afterCommit,
+    setKeyFloorListener: (fn) => { keyFloorListener = typeof fn === 'function' ? fn : null; },
+    keyFloorChanged: () => { try { keyFloorListener?.(); } catch { /* reporting cannot fail a write */ } },
     createUser,
     getUser,
     getUserByEmail,
@@ -1086,7 +1454,13 @@ export function openDirectory(file, { snapshotBarrier = null } = {}) {
     listShares,
     getSetting,
     setSetting,
-    ...createTokenStore({ get, all, run, transaction }),
+    ...tokenStore,
+    ...oauthStore,
+    invalidateOauthAfterRestore(reason = 'restore', now = Date.now(), purgeClients = false) {
+      return oauthStore.invalidateAfterRestore(now, reason, purgeClients);
+    },
+    // The personal-token API keeps its established name; OAuth has its distinct lookup method.
+    findAccessToken: tokenStore.findAccessToken,
     ...createTemplateStore({ get, all, run }),
     ...createAiKeyStore({ get, run, transaction }),
     ...createAssetIndex({ get, all, run }),

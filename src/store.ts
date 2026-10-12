@@ -10,6 +10,8 @@ import { customStickyColors } from './palette';
 
 /** Transaction origin for edits made on this device; only these are undoable. */
 export const LOCAL = 'local';
+/** Origin of the board's starting content (a seed, a template that starts a board): written, but never an undo step. */
+export const SEED = 'seed';
 
 export type ChangeListener = (changed: Set<Id>, origin?: unknown, fields?: ReadonlyMap<Id, ReadonlySet<string>>) => void;
 
@@ -18,6 +20,10 @@ export const COLOR_FIELDS: ReadonlySet<string> = new Set(['fill', 'stroke', 'tex
 /** Boolean flags on an object: a value that is not true or false is not written (TAB-198, TAB-203). */
 const FLAG_FIELDS: ReadonlySet<string> = new Set(['hidden', 'locked', 'flipX', 'flipY']);
 const BOX_FLAG_FIELDS: ReadonlySet<string> = new Set(['flipX', 'flipY']);
+const TRACKER_CARD_PROJECTION_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'trackerUnmappedState']);
+const UNDO_OBJECT_IDS = Symbol('undo-object-ids');
+
+interface UndoObjectIds { ids: Set<Id>; onlyObjects: boolean }
 
 export const DEFAULT_META: BoardMeta = {
   name: 'Untitled board',
@@ -53,6 +59,7 @@ function movedBetween(before: ContainerLayout | null | undefined, after: Contain
 }
 
 const cmpZ = (a: Obj, b: Obj) => (a.z < b.z ? -1 : a.z > b.z ? 1 : a.id < b.id ? -1 : 1);
+const isFrameLike = (o: Obj) => o.type === 'frame' || o.type === 'tracker';
 const EMPTY_GROUP_CLEANUP = Symbol('empty-group-cleanup');
 
 /**
@@ -78,6 +85,8 @@ export class Store {
   private readOnlyListeners = new Set<(v: boolean) => void>();
   /** Object ids touched by the current undo/redo transaction; consumed by the app's stack-item handler. */
   private undoChangedIds = new Set<Id>();
+  /** Shared object maps let undo stack items retain the ids they can later change. */
+  private undoObjectTypeIds = new WeakMap<object, Id>();
   /** Cleanup work is keyed to object transactions so ordinary edits do not scan the board. */
   private emptyGroupCleanupHints = new WeakMap<Y.Transaction, { scan: boolean; groups: Set<Id> }>();
   /** Local structural writes clean up in their undoable transaction; don't repeat the scan after it closes. */
@@ -110,10 +119,15 @@ export class Store {
     this.pollState = doc.getMap('pollState');
     this.labels = doc.getMap('labels');
 
-    this.objects.forEach((m, id) => this.cache.set(id, this.cachedObject(m.toJSON() as Obj)));
-    this.rebuildBoundIndex();
-    this.rebuildChildIndex();
-    this.refreshOrphans();
+    this.objects.forEach((m, id) => {
+      this.undoObjectTypeIds.set(m, id);
+      const object = this.cachedObject(m.toJSON() as Obj);
+      this.cache.set(id, object);
+      if (isConnector(object)) this.indexConnector(object);
+      this.indexChild(object);
+      if (object.type === 'container') this.containerIds.add(object.id);
+    });
+    if (this.containerIds.size) this.refreshOrphans();
 
     this.objects.observeDeep((events, transaction) => {
       const changed = new Set<Id>();
@@ -133,11 +147,16 @@ export class Store {
             noteFields(id, ['*']);
             if (change.action === 'delete') scanForEmptyGroups = true;
             if (change.action === 'add' || change.action === 'update') {
-              if (this.objects.get(id)?.get('type') === 'group') createdGroups.add(id);
+              const object = this.objects.get(id);
+              if (object) this.undoObjectTypeIds.set(object, id);
+              if (object?.get('type') === 'group') createdGroups.add(id);
             }
           }
         } else if (e.path.length > 0) {
           const id = String(e.path[0]);
+          const object = this.objects.get(id);
+          if (object) this.undoObjectTypeIds.set(object, id);
+          this.undoObjectTypeIds.set(e.target as object, id);
           changed.add(id);
           noteFields(id, [...e.changes.keys.keys()].map(String));
           if (transaction.changed.get(e.target)?.has('parent')) scanForEmptyGroups = true;
@@ -214,6 +233,30 @@ export class Store {
       trackedOrigins: new Set([LOCAL]),
       captureTimeout: 350,
     });
+    const rememberUndoObjects = <T extends {
+      stackItem: { meta: Map<any, any> };
+      changedParentTypes: Iterable<readonly [object, Iterable<unknown>]>;
+    }>(event: T) => {
+      const current = event.stackItem.meta.get(UNDO_OBJECT_IDS) as UndoObjectIds | undefined;
+      const item: UndoObjectIds = current ?? { ids: new Set(), onlyObjects: true };
+      for (const [type, changes] of event.changedParentTypes) {
+        for (const change of changes) {
+          const event = change as { target?: object; changes?: { keys?: Map<unknown, unknown> } };
+          const id = event.target ? this.undoObjectTypeIds.get(event.target) : undefined;
+          if (id) {
+            item.ids.add(id);
+          } else if (type === this.objects && event.target === this.objects) {
+            // Object creation and deletion only report the root map, whose changed keys are object ids.
+            for (const key of event.changes?.keys?.keys() ?? []) if (typeof key === 'string') item.ids.add(key);
+          } else {
+            item.onlyObjects = false;
+          }
+        }
+      }
+      event.stackItem.meta.set(UNDO_OBJECT_IDS, item);
+    };
+    this.undo.on('stack-item-added', (event) => rememberUndoObjects(event));
+    this.undo.on('stack-item-updated', (event) => rememberUndoObjects(event));
     // Also clear on an undo/redo transaction with no object observer events (for example meta-only and labels-only).
     this.doc.on('beforeTransaction', (transaction) => {
       if (transaction.origin === this.undo) this.undoChangedIds.clear();
@@ -225,6 +268,31 @@ export class Store {
     const changed = new Set(this.undoChangedIds);
     this.undoChangedIds.clear();
     return changed;
+  }
+
+  /**
+   * Drops undo or redo items that change only corrected objects. A Yjs stack item cannot safely be split, so an item
+   * that also changes any other object or board-wide data is kept intact rather than discarding unrelated work.
+   */
+  dropUndoFor(cardIds: Iterable<Id>): void {
+    const corrected = new Set(cardIds);
+    if (!corrected.size) return;
+    const keepUnrelated = (stack: typeof this.undo.undoStack) => {
+      let write = 0;
+      for (let read = 0; read < stack.length; read++) {
+        const stackItem = stack[read];
+        const item = stackItem.meta.get(UNDO_OBJECT_IDS) as UndoObjectIds | undefined;
+        const onlyCorrectedObjects = !!item && item.onlyObjects && item.ids.size > 0
+          && [...item.ids].every((id) => corrected.has(id));
+        if (!onlyCorrectedObjects) stack[write++] = stackItem;
+      }
+      const changed = write !== stack.length;
+      stack.length = write;
+      return changed;
+    };
+    const undoChanged = keepUnrelated(this.undo.undoStack);
+    const redoChanged = keepUnrelated(this.undo.redoStack);
+    if (undoChanged || redoChanged) this.undo.stopCapturing();
   }
 
   onChange(l: ChangeListener) {
@@ -254,6 +322,11 @@ export class Store {
     this.transactAs(fn, LOCAL);
   }
 
+  /** Writes the board's starting content. Unlike transact it is not an undo step, so Undo cannot empty a board that was only just filled. */
+  seed(fn: () => void) {
+    this.transactAs(fn, SEED);
+  }
+
   transactAs(fn: () => void, origin: string) {
     if (this._readOnly) return;
     this.doc.transact(fn, origin);
@@ -270,12 +343,12 @@ export class Store {
   ordered(): Obj[] {
     if (this.orderDirty) {
       const all = [...this.cache.values()];
-      const frames = all.filter((o) => o.type === 'frame').sort(cmpZ);
-      const rest = all.filter((o) => o.type !== 'frame' && !this.isLaidOut(o)).sort(cmpZ);
+      const frames = all.filter(isFrameLike).sort(cmpZ);
+      const rest = all.filter((o) => !isFrameLike(o) && !this.isLaidOut(o)).sort(cmpZ);
       const out: Obj[] = [...frames];
       const seen = new Set<Id>(frames.map((o) => o.id));
       const append = (o: Obj) => {
-        if (seen.has(o.id) || o.type === 'frame' || this.isLaidOut(o)) return;
+        if (seen.has(o.id) || isFrameLike(o) || this.isLaidOut(o)) return;
         seen.add(o.id);
         out.push(o);
         if (isGroup(o)) {
@@ -389,16 +462,25 @@ export class Store {
   }
 
   create(o: Obj) {
-    const stored = isGroup(o) ? { ...o, x: 0, y: 0, w: 0, h: 0, rotation: 0 } : o;
+    const stored = isGroup(o) ? { ...o, x: 0, y: 0, w: 0, h: 0, rotation: 0 }
+      : o.type === 'tracker' ? { ...o, w: Math.max(480, Number.isFinite(o.w) ? o.w : 0), h: Math.max(360, Number.isFinite(o.h) ? o.h : 0), rotation: 0 }
+      : o;
     // a colour outside the grammar is left out, so the object takes its type's default (TAB-203). A kanban container,
     // lane or card keeps what it has: its fill may be a palette key, which its own drawing checks (kanbanColor).
     const checked = (k: string) => COLOR_FIELDS.has(k) && !isContainerType(stored.type);
     // a flag such as `hidden` (TAB-198) is a boolean or absent; anything else is left out rather than read as truthy
     const entries = Object.entries(stored)
-      .filter(([k, v]) => v !== undefined && (!checked(k) || cleanColor(v) !== null) && (!FLAG_FIELDS.has(k) || typeof v === 'boolean') && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
+      .filter(([k, v]) => v !== undefined
+        && !(stored.type === 'card' && TRACKER_CARD_PROJECTION_FIELDS.has(k))
+        && k !== 'ext'
+        && k !== 'tracker'
+        && (!checked(k) || cleanColor(v) !== null)
+        && (!FLAG_FIELDS.has(k) || typeof v === 'boolean')
+        && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
       .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
     if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
+    if (o.type === 'tracker') this.needFeature(FEATURES.tracker);
   }
 
   update(id: Id, patch: Partial<Obj> | Record<string, unknown>) {
@@ -408,15 +490,21 @@ export class Store {
     let wroteField = false;
     let parentChanged = false;
     for (const [k, raw] of Object.entries(patch)) {
+      const currentType = m.get('type');
+      const type = (patch as Record<string, unknown>).type ?? currentType;
+      if ((currentType === 'card' || type === 'card') && TRACKER_CARD_PROJECTION_FIELDS.has(k)) continue;
+      if (k === 'ext' || k === 'tracker') continue;
       if (group && ['x', 'y', 'w', 'h', 'rotation'].includes(k)) continue;
-      const type = (patch as Record<string, unknown>).type ?? m.get('type');
       if (BOX_FLAG_FIELDS.has(k) && (type === 'connector' || type === 'group')) continue;
+      if (type === 'tracker' && k === 'rotation') continue;
       if (raw === undefined) {
         if (m.has(k)) { m.delete(k); wroteField = true; if (k === 'parent') parentChanged = true; }
         continue;
       }
       // a colour outside the grammar is not written; the object keeps the colour it has (TAB-203; kanban types as in create)
-      const v = COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
+      const v = type === 'tracker' && (k === 'w' || k === 'h') && typeof raw === 'number' && Number.isFinite(raw)
+        ? Math.max(k === 'w' ? 480 : 360, raw)
+        : COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
       if (v === null) continue;
       if (FLAG_FIELDS.has(k) && typeof v !== 'boolean') continue;
       const cur = m.get(k);
@@ -426,9 +514,17 @@ export class Store {
         if (k === 'parent') parentChanged = true;
       }
     }
+    if (m.get('type') === 'tracker') {
+      for (const [key, min] of [['w', 480], ['h', 360]] as const) {
+        const value = m.get(key);
+        if (typeof value === 'number' && Number.isFinite(value) && value < min) { m.set(key, min); wroteField = true; }
+      }
+      if (m.get('rotation') !== 0) { m.set('rotation', 0); wroteField = true; }
+    }
     if (m.size && (!group || wroteField)) m.set('updatedAt', Date.now());
     const type = (patch as Record<string, unknown>).type;
     if (typeof type === 'string' && isContainerType(type)) this.needFeature(FEATURES.containers);
+    if (type === 'tracker') this.needFeature(FEATURES.tracker);
     if (parentChanged) {
       const transaction = this.doc._transaction;
       if (transaction) this.locallyCleanedEmptyGroupTransactions.add(transaction);
@@ -610,9 +706,15 @@ export class Store {
    * `create` and `update`, such as a restore; the flag is only ever added, never taken away.
    */
   syncFeatures() {
+    let containers = false;
+    let tracker = false;
     for (const m of this.objects.values()) {
-      if (isContainerType(String(m.get('type')))) return this.needFeature(FEATURES.containers);
+      const type = String(m.get('type'));
+      if (isContainerType(type)) containers = true;
+      if (type === 'tracker') tracker = true;
     }
+    if (containers) this.needFeature(FEATURES.containers);
+    if (tracker) this.needFeature(FEATURES.tracker);
   }
 
   getMeta(): BoardMeta {
@@ -647,20 +749,6 @@ export class Store {
         else this.flow.set(k, v);
       }
     }, 'flow');
-  }
-
-  private rebuildBoundIndex() {
-    this.boundIndex.clear();
-    for (const o of this.cache.values()) if (isConnector(o)) this.indexConnector(o);
-  }
-
-  private rebuildChildIndex() {
-    this.childIndex.clear();
-    this.containerIds.clear();
-    for (const o of this.cache.values()) {
-      this.indexChild(o);
-      if (o.type === 'container') this.containerIds.add(o.id);
-    }
   }
 
   private cachedObject(o: Obj): Obj {

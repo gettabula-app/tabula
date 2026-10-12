@@ -7,6 +7,12 @@ import { addImages, pickImages } from './image-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
+import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
+import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from '../tracker-data';
+import { openRegisteredLinkDialog, openRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
+import { installTrackerLinkDialog } from '../tracker/ui/link-dialog-open';
+import { installTrackerUnlinkConfirm } from '../tracker/ui/unlink-confirm';
+import { mountTrackerFrames } from '../tracker/ui/frame';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
 import { leaveOutWithheld } from '../private-select';
@@ -31,15 +37,21 @@ import { canSeeHistory } from '../history';
 import { openFontPicker } from './fontpicker';
 import { csvKanbans, download, downloadCardsCsv, exportPng, exportSvgFile, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
 import { toMermaid } from '../mermaid';
+
+const trackerBoardMockVisual = import.meta.env.MODE === 'visual' && (() => {
+  const query = new URLSearchParams(location.search);
+  return query.has('debug') && query.get('trackerMock') === 'board';
+})();
 import { fontName } from '../fonts';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { isDesktop } from '../desktop-env';
 import { api } from '../api';
 import { authState, chatAvailable, imagesAvailable, onAuth, setSignedIn, setSignedOut, signOut } from '../auth';
 import { boardAccess, workspaceOf } from '../cloud-logic';
+import { denialForGuestSession, guestAccessEnded, GUEST_ENDED_SYNC_LABEL, GUEST_ENDED_SYNC_TIP } from '../guest-access';
 import { CANVAS_INK, USER_COLORS, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
-import { SHORTCUTS } from '../shortcuts';
+import { formatShortcutLabel, SHORTCUTS } from '../shortcuts';
 import { THEMES, getStoredTheme, setTheme } from '../themes';
 import { stickyColorField } from './colors';
 import { openAiKeyDialog } from './ai';
@@ -52,7 +64,7 @@ import { openSaveTemplate } from './save-template';
 import { mountSharePeople } from './share';
 import { mountJoinCodes } from './join-codes';
 import { guestMark } from './guest-mark';
-import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate, isRemovedGuestLink } from './share-logic';
+import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate } from './share-logic';
 import { trackPanelTop } from './panel-top';
 import { trackMoreY } from './scroll-cue';
 import { DEMO } from '../demo';
@@ -64,9 +76,36 @@ type IconName = keyof typeof ICONS;
  * `scratch` is a template being edited on a board that is not synced or listed: it has no sharing, sync status,
  * comments, version history or Save board as template, and its home button is whatever `nav.home` does.
  */
-export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean } = {}) {
+export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean; trackerId?: string; ticketKey?: string; guestId?: string } = {}) {
   const scratch = opts.scratch === true;
   const demo = opts.demo === true || DEMO;
+  let trackerStore: TrackerStore | null = null;
+  const trackerEnabled = () => {
+    const auth = authState();
+    return !scratch && !demo && (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+  };
+  app.linkTrackerKanban = (kanbanId) => {
+    const store = trackerStore;
+    if (!trackerEnabled() || app.readOnly || !store) return;
+    const layout = app.store.containerLayout(kanbanId);
+    const lanes = (layout?.lanes ?? []).map((laneId) => ({ id: laneId, name: app.store.get(laneId)?.name ?? 'Lane', cardCount: layout?.cards.get(laneId)?.length ?? 0 }));
+    openRegisteredLinkDialog({
+      boardId: app.conn.id, kanbanId, store,
+      kanban: { name: app.store.get(kanbanId)?.name ?? 'Kanban', lanes, cardCount: lanes.reduce((n, lane) => n + lane.cardCount, 0) },
+    });
+  };
+  app.unlinkTrackerKanban = (kanbanId) => {
+    const store = trackerStore;
+    if (!trackerEnabled() || app.readOnly || !store) return;
+    void store.listLinks(app.conn.id).then((links) => {
+      const link = links.find((candidate) => candidate.kanbanId === kanbanId);
+      if (!link) return app.notify('This kanban is no longer linked to the tracker.');
+      if (!openRegisteredUnlinkConfirm({ boardId: app.conn.id, kanbanId, link, store })) app.notify('The unlink confirmation is unavailable.');
+    }).catch((error: unknown) => app.notify(error instanceof Error ? error.message : 'Could not load tracker links.'));
+  };
+  const uninstallLinkDialog = installTrackerLinkDialog();
+  const uninstallUnlinkConfirm = installTrackerUnlinkConfirm();
+  app.lifetime?.signal.addEventListener('abort', () => { uninstallLinkDialog(); uninstallUnlinkConfirm(); }, { once: true });
   const chrome = h('div', { class: 'chrome' });
   root.appendChild(chrome);
   app.notify = toast;
@@ -90,10 +129,17 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const renderStatus = () => {
     const s = app.conn.status;
     const others = app.participants().filter((p) => !p.isMe).length;
-    status.dataset.state = s;
+    const currentAuth = authState();
+    const deniedForGuest = denialForGuestSession(opts.guestId ?? null, currentAuth, app.conn.denied);
+    const guestLinkRemoved = guestAccessEnded(currentAuth, deniedForGuest);
+    status.dataset.state = guestLinkRemoved ? 'denied' : s;
     let label = 'Local only';
     let tip = 'Sync is off. Every change is saved on this device.';
-    if (s === 'live') {
+    if (guestLinkRemoved) {
+      app.comments.setReadOnly(true);
+      label = GUEST_ENDED_SYNC_LABEL;
+      tip = GUEST_ENDED_SYNC_TIP;
+    } else if (s === 'live') {
       label = others ? `Live with ${others}` : 'Live';
       tip = 'Connected to the relay. Changes sync in real time.';
     } else if (s === 'connecting') {
@@ -101,19 +147,18 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
     } else if (s === 'denied') {
       const restoring = app.conn.denied === 'restoring';
-      const guestLinkRemoved = isRemovedGuestLink(authState().mode, app.conn.denied);
-      if (guestLinkRemoved) app.comments.setReadOnly(true);
-      label = guestLinkRemoved ? 'Join link expired' : restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
-      tip = guestLinkRemoved
-        ? 'This join link has expired or was revoked. Comments are read only.'
-        : restoring
+      label = restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
+      tip = restoring
         ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
         : 'The server refused this connection. Your changes are still saved on this device.';
     }
-    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', null, label));
-    if (s === 'denied' && isRemovedGuestLink(authState().mode, app.conn.denied)) status.setAttribute('aria-label', 'This join link has expired or was revoked');
-    else status.removeAttribute('aria-label');
-    status.dataset.tip = tip;
+    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', { class: 'sync-status-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-status-label' }, label));
+    status.setAttribute('aria-label', label);
+    if (window.innerWidth <= 480) {
+      status.dataset.tip = label;
+    } else {
+      status.dataset.tip = tip;
+    }
     // a change of state is announced; the count of people changing inside "live" is announced by name below
     if (lastState !== null && s !== lastState) announce(`Sync: ${label}`, { key: 'sync', delay: 800 });
     lastState = s;
@@ -121,6 +166,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   let lastState: string | null = null;
   app.on('status', renderStatus);
   app.on('presence', renderStatus);
+  app.lifetime.signal.addEventListener('abort', onAuth(renderStatus), { once: true });
   renderStatus();
 
   const badge = h('span', { class: 'readonly-badge', role: 'status' }, 'View only');
@@ -133,9 +179,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   // ---------------------------------------------------------------- top right
   const people = h('div', { class: 'people', 'aria-label': 'People on this board' });
+  const phonePeople = h('button', { class: 'phone-people', type: 'button', 'aria-label': 'People on this board', 'aria-haspopup': 'dialog' });
+  let fitSixAvatars = false;
   let knownPeople: Map<number, string> | null = null;
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
+    const limit = window.innerWidth < 380 ? 1 : window.innerWidth < 480 ? 2 : fitSixAvatars ? 6 : 3;
+    const remaining = Math.max(0, ps.length - limit);
     const canEditProfile = canChangeProfile(authState().mode);
     // who arrived and who left since the last time, said once the first list is known
     const now = new Map(ps.filter((p) => !p.isMe).map((p) => [p.clientId, `${p.user.name}${p.user.guest ? ' · Guest' : ''}`]));
@@ -145,7 +195,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     }
     knownPeople = now;
     const runs = liveRunsFor(app)?.list() ?? [];
-    people.replaceChildren(...ps.slice(0, 6).map((p) => {
+    people.replaceChildren(...ps.slice(0, limit).map((p) => {
       // someone with an AI run or preview on the board: the spark, and what they are doing as their name
       const busy = p.isMe ? null : badgeRun(p.user, runs);
       const name = `${p.user.name}${p.user.guest ? ' · Guest' : ''}`;
@@ -156,9 +206,45 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       const props = { class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': `${tip}, initials ${avatarText}` };
       if (p.isMe && !canEditProfile) return h('span', { ...props, role: 'img' }, ...children);
       return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
-    }), ...(ps.length > 6 ? [h('span', { class: 'avatar more' }, `+${ps.length - 6}`)] : []));
+    }), ...(remaining > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': `${remaining} more people here`, 'data-tip': `${remaining} more people here` }, `+${remaining}`)] : []));
+    const peopleLabel = ps.length === 1 ? 'People on this board: 1 person' : `People on this board: ${ps.length} people`;
+    phonePeople.hidden = ps.length < 2; // alone, the chip only repeats your own avatar; the menu still has your name and colour
+    phonePeople.setAttribute('aria-label', peopleLabel);
+    phonePeople.dataset.tip = peopleLabel;
+    phonePeople.replaceChildren(
+      h('span', { class: 'phone-people-avatars', 'aria-hidden': 'true' }, ...ps.slice(0, 2).map((p, index) => h('span', {
+        class: `avatar phone-avatar${index === 0 ? ' first' : ''}`, style: `--c:${p.user.color}`,
+      }, initials(p.user.name)))),
+      ...(ps.length > 2 ? [h('span', { class: 'phone-people-count', 'aria-hidden': 'true' }, String(ps.length))] : []),
+    );
   };
-  app.on('presence', renderPeople);
+  phonePeople.addEventListener('click', () => {
+    const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
+    const canEditProfile = canChangeProfile(authState().mode);
+    let pop: ReturnType<typeof popover>;
+    const list = h('div', { class: 'phone-people-list', role: 'menu', 'aria-label': 'People on this board' }, ...ps.map((p) => {
+      const name = `${p.user.name}${p.user.guest ? ' · Guest' : ''}`;
+      const initialsText = initials(p.user.name);
+      const children = [
+        h('span', { class: 'avatar phone-person-avatar', style: `--c:${p.user.color}`, 'aria-hidden': 'true' }, initialsText),
+        h('span', { class: 'phone-person-name' }, p.user.name),
+        p.isMe ? h('span', { class: 'phone-person-mark' }, 'You') : p.user.guest ? h('span', { class: 'phone-person-mark guest' }, 'Guest') : null,
+      ] as const;
+      if (p.isMe && !canEditProfile) return h('div', { class: 'menu-item phone-person-option', role: 'menuitem', 'aria-disabled': 'true' }, ...children);
+      return h('button', {
+        class: 'menu-item phone-person-option', type: 'button', role: 'menuitem',
+        'aria-label': `${p.isMe ? `${name} (you)` : `Go to ${name}`}, initials ${initialsText}`,
+        onclick: () => {
+          pop.close();
+          if (p.isMe) openProfile(app);
+          else app.followUser(p.clientId);
+        },
+      }, ...children);
+    }));
+    pop = popover(phonePeople, list, { side: 'bottom', className: 'phone-people-pop', label: 'People on this board' });
+  });
+  let refreshPresenceLayout = renderPeople;
+  app.on('presence', () => refreshPresenceLayout());
   renderPeople();
   const menuBtn = h('button', { class: 'icon-btn', 'aria-label': 'Menu' }, icon('dots', 18));
   const history = scratch || demo ? null : mountHistory(app, chrome);
@@ -169,9 +255,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const chat = !scratch && !demo && chatAvailable() && app.role !== null ? mountChat(app, sideTray) : null;
   const topRight = h('div', { class: 'tray top-right', role: 'region', 'aria-label': 'People and sharing' },
     scratch || demo ? null : people,
+    scratch || demo ? null : phonePeople,
     scratch ? null : comments.button,
     chat?.button,
-    scratch || demo || authState().mode === 'guest' ? null : h('button', { class: 'btn primary', onclick: () => openShare(app) }, icon('share', 16), 'Share'),
+    scratch || demo || authState().mode === 'guest' ? null : h('button', { class: 'btn primary share-btn', 'aria-label': 'Share', onclick: () => openShare(app) }, icon('share', 16), h('span', { class: 'share-label' }, 'Share')),
     menuBtn,
   );
 
@@ -232,6 +319,20 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('flow', syncVote);
   const pollBtn = h('button', { class: 'rail-btn', 'aria-label': 'Start a quick poll' }, icon('poll', 22));
   pollBtn.addEventListener('click', () => openQuickPoll(app, pollBtn));
+  // Tracker is a first-class insert action, gated by /api/me and absent on non-tracker workspaces.
+  const trackerCommand = h('button', {
+    class: 'rail-btn', hidden: true, 'data-command': 'tracker:create-frame', 'aria-label': 'Tracker', 'data-tip': 'Tracker',
+    onclick: () => {
+      const auth = authState();
+      if ((auth.mode !== 'signed-in' && auth.mode !== 'offline') || auth.me?.tracker !== true || app.readOnly) return;
+      const viewport = app.r.viewport();
+      const frame = createTrackerFrame(app.store, {
+        x: viewport.x + (viewport.w - TRACKER_FRAME_DEFAULT_SIZE.w) / 2,
+        y: viewport.y + (viewport.h - TRACKER_FRAME_DEFAULT_SIZE.h) / 2,
+      });
+      if (frame) app.setSelection([frame.id]);
+    },
+  }, icon('frame', 22));
   const rail = h('nav', { class: 'tray rail', 'aria-label': 'Tools' },
     h('div', { class: 'rail-tools' },
       toolBtn('Select', 'select', { kind: 'select' }, 'V'),
@@ -243,6 +344,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
       toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
+      trackerCommand,
       imageBtn,
       commentBtn,
       h('hr'),
@@ -261,6 +363,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       h('button', { class: 'rail-btn', 'aria-label': 'Redo', 'data-tip-key': 'mod+shift+z', onclick: () => app.store.undo.redo() }, icon('redo', 22)),
     ),
   );
+  // The phone demo keeps six tools (see .demo-board in styles.css).
+  for (const b of [stickyBtn, shapesBtn]) b.classList.add('demo-keep');
+  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="text"], [data-tool="connector"]')) b.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
   const railTools = rail.querySelector<HTMLElement>('.rail-tools');
   if (railTools) trackMoreY(railTools);
@@ -371,6 +476,71 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
   trackPanelTop(chrome, [topLeft, topRight]);
+  const updatePanelTop = () => {
+    const origin = chrome.getBoundingClientRect().top;
+    const bottoms = [topLeft, topRight].filter((bar) => typeof bar.getClientRects !== 'function' || bar.getClientRects().length > 0).map((bar) => bar.getBoundingClientRect().bottom);
+    const lowest = Math.max(origin, ...bottoms);
+    chrome.style.setProperty('--panel-top', `${Math.max(72, Math.ceil(lowest - origin + 8))}px`);
+  };
+  const positionPhoneTray = () => {
+    if (window.innerWidth <= 480) {
+      topRight.style.removeProperty('top');
+      const safeRight = typeof getComputedStyle === 'function'
+        ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-right')) || 0
+        : 0;
+      const rightWidth = topRight.getBoundingClientRect().width;
+      topLeft.style.right = `${Math.ceil(rightWidth + 16 + safeRight)}px`;
+      updatePanelTop();
+      return;
+    }
+    topLeft.style.removeProperty('right');
+    if (window.innerWidth > 860) {
+      topRight.style.removeProperty('top');
+      updatePanelTop();
+      return;
+    }
+    const origin = chrome.getBoundingClientRect().top;
+    const leftBottom = topLeft.getBoundingClientRect().bottom - origin;
+    const safeTop = typeof getComputedStyle === 'function'
+      ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-top')) || 0
+      : 0;
+    // the phone demo hides the board-name chip, so the menu pill rises to the banner's edge
+    const demoTop = topLeft.getBoundingClientRect().height === 0 ? 46 : 100;
+    const minimumTop = (chrome.closest('.demo-board') ? demoTop : 64) + safeTop;
+    topRight.style.top = `${Math.ceil(Math.max(minimumTop, leftBottom + 8))}px`;
+    updatePanelTop();
+  };
+  const refreshPeopleLayout = () => {
+    fitSixAvatars = false;
+    if (window.innerWidth > 480) {
+      // Measure the whole tray with the six-avatar candidate rendered. Keep it only if the actual row fits.
+      fitSixAvatars = true;
+      renderPeople();
+      const tray = topRight.getBoundingClientRect();
+      const safeLeft = typeof getComputedStyle === 'function' ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-left')) || 0 : 0;
+      const safeRight = typeof getComputedStyle === 'function' ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-right')) || 0 : 0;
+      fitSixAvatars = topRight.clientWidth > 0
+        && topRight.scrollWidth <= topRight.clientWidth + 1
+        && tray.left >= 12 + safeLeft - 0.5
+        && tray.right <= window.innerWidth - 12 - safeRight + 0.5;
+    }
+    renderPeople();
+    positionPhoneTray();
+    updatePanelTop();
+  };
+  refreshPresenceLayout = refreshPeopleLayout;
+  const topLeftObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(positionPhoneTray);
+  topLeftObserver?.observe(topLeft);
+  const onWindowResize = () => {
+    renderStatus();
+    refreshPeopleLayout();
+  };
+  window.addEventListener('resize', onWindowResize);
+  refreshPeopleLayout();
+  app.onDestroy(() => {
+    topLeftObserver?.disconnect();
+    window.removeEventListener('resize', onWindowResize);
+  });
   renderStickyTray();
   const props = mountProps(app, chrome);
   mountQuickbar(app, chrome, props, { demo });
@@ -410,6 +580,60 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // A hosted workspace can turn read-only (or back) while the board is open: the badge names the reason.
   app.lifetime.signal.addEventListener('abort', onAuth(syncReadOnly), { once: true });
   syncReadOnly();
+
+  let stopTrackerFrames: (() => void) | null = null;
+  let trackerVisualInit = false;
+  const mountTracker = (store: TrackerStore, api: TrackerApi, viewerId: string) => {
+    trackerStore = store;
+    stopTrackerFrames = mountTrackerFrames({ app, store, api, viewerId, initialTrackerId: opts.trackerId, initialTicketKey: opts.ticketKey });
+    if (trackerBoardMockVisual) {
+      Object.assign(window, { __trackerStore: store });
+      const existing = [...app.store.cache.values()].some((obj) => obj.type === 'tracker');
+      if (!existing) {
+        const viewport = app.r.viewport();
+        createTrackerFrame(app.store, {
+          x: viewport.x + (viewport.w - TRACKER_FRAME_DEFAULT_SIZE.w) / 2,
+          y: viewport.y + (viewport.h - TRACKER_FRAME_DEFAULT_SIZE.h) / 2,
+        });
+      }
+    }
+  };
+  const syncTracker = () => {
+    const auth = authState();
+    const signedInWithTracker = (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
+    const enabled = !scratch && !demo && (signedInWithTracker || trackerBoardMockVisual);
+    trackerCommand.hidden = !enabled;
+    if (enabled && !trackerStore) {
+      if (trackerBoardMockVisual) {
+        if (!trackerVisualInit) {
+          trackerVisualInit = true;
+          void Promise.all([import('../tracker-mock'), import('../tracker/ui/visual-seed')]).then(([mock, seed]) => {
+            trackerVisualInit = false;
+            if (app.lifetime.signal.aborted || !trackerBoardMockVisual) return;
+            const api = mock.createMockTrackerApi(seed.createTrackerVisualSeed());
+            mountTracker(createTrackerStore(api), api, 'visual-user');
+          }).catch((error: unknown) => console.error('Tracker visual mock failed to initialize.', error));
+        }
+      } else if (auth.mode === 'signed-in' || auth.mode === 'offline') {
+        const api = createHttpTrackerApi();
+        mountTracker(createTrackerStore(api), api, auth.me!.user.id);
+      }
+    } else if (!enabled && trackerStore) {
+      stopTrackerFrames?.();
+      stopTrackerFrames = null;
+      trackerStore.destroy();
+      trackerStore = null;
+    }
+  };
+  const stopTrackerAuth = onAuth(syncTracker);
+  app.lifetime.signal.addEventListener('abort', () => {
+    stopTrackerAuth();
+    stopTrackerFrames?.();
+    trackerStore?.destroy();
+    stopTrackerFrames = null;
+    trackerStore = null;
+  }, { once: true });
+  syncTracker();
 
   // Drop .drift / .json files onto the board to import them.
   root.addEventListener('dragover', (e) => {
@@ -616,11 +840,16 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     ? h('button', { class: 'menu-item guide-item', onclick: () => { pop.close(); window.open('/docs/', '_blank', 'noopener'); } },
       icon('link', 18), h('span', null, 'User guide'), h('span', { class: 'menu-hint' }, 'Opens in a new tab'))
     : null;
+  // Below 380px the Chat button leaves the top bar (styles.css) so the board name keeps room; the menu carries it, and a dot on the menu button shows unread
+  const chatNarrow = app.toggleChat ? h('button', { class: 'menu-item menu-chat-narrow', onclick: () => { pop.close(); app.toggleChat?.(); } }, icon('chat', 18), h('span', null, 'Chat')) : null;
   const pop = popover(anchor, h('div', { class: 'menu' },
     guide,
+    chatNarrow,
     account,
     h('div', { class: 'list-label' }, 'Board'),
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
+    // The demo opens as a plain board; voting is something the visitor starts.
+    demo ? writeItem('vote', 'Try dot voting', () => startVote(app, { kind: 'stickies' })) : null,
     scratch || demo || !canSaveTemplate(auth.mode) ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     demo ? [
       h('div', { class: 'list-label' }, 'Workspace features'),
@@ -719,7 +948,7 @@ function openProfile(app: BoardApp) {
       if (auth.mode === 'signed-in' && typed && typed !== u.name) {
         try {
           const updated = await api.updateMe(typed);
-          setSignedIn({ ...auth.me, user: updated });
+          await setSignedIn({ ...auth.me, user: updated });
           u.name = updated.name;
         } catch (err) {
           toast(err instanceof Error ? err.message : 'Could not save your name.');
@@ -776,9 +1005,10 @@ function openShortcuts(chat: boolean) {
   // the Ask AI row only for people who have the bar, the chat row only where the board has chat
   const listed = SHORTCUTS.filter((s) => (aiBarShown() || !s.ids.includes('mod+k')) && (chat || !s.ids.includes('m')));
   const groups = [...new Set(listed.map((s) => s.group))];
+  const platform = typeof navigator === 'undefined' ? '' : navigator.platform;
   const rows = groups.flatMap((group) => [
     h('tr', null, h('td', { colspan: 2, class: 'muted small' }, group)),
-    ...listed.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, s.keys)), h('td', null, s.action))),
+    ...listed.filter((s) => s.group === group).map((s) => h('tr', null, h('td', null, h('kbd', null, formatShortcutLabel(s.keys, platform))), h('td', null, s.action))),
   ]);
   dialog('Keyboard shortcuts', h('table', { class: 'shortcuts' }, ...rows), [{ label: 'Close', primary: true }]);
 }

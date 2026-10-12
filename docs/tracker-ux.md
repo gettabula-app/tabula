@@ -99,10 +99,12 @@ Every event has `id`, `at`, `actor` (user, or `{ kind: 'integration', provider }
 
 ### 2.5 Deep links ⟂
 
+Tracker links use path routes, so they can be opened directly, refreshed, and handled by the app's sign-in gate.
+
 - Ticket: `/t/TAB-123` on the workspace host. Opens the tracker (full screen on phone, the tracker frame focused on a canvas) with the ticket page open. Works for a signed-in member; others see the normal access screen.
 - Board position: `/b/<board>?tracker=<trackerId>&t=TAB-123` places the viewer at the tracker frame with the ticket open.
 - Tab or view: `/t/views/<viewId>`, `/t/inbox`, `/t/my`, `/t/board`, `/t/projects/<projectId>`.
-- A pasted `TAB-123` in a comment, description or chat renders as a **ticket chip** (key + state glyph + title, one line) that links to the ticket. A key that does not resolve stays plain text.
+- A pasted `TAB-123` in a comment, description or chat renders as a **ticket chip** (key + state glyph + title, one line) that links to `/t/TAB-123`. A key that does not resolve stays plain text.
 
 ## 3. The frame on the board
 
@@ -216,36 +218,38 @@ This tab exists so the tracker works fully without ever linking a canvas kanban.
 Two columns when there is room (frame over 900 units wide or full screen over 1100 px), one column otherwise. Left (about 8 of 12 columns): **title, description, sub-issues, relations, linked work, activity**. Right (4 columns): **properties**.
 
 ```
-TAB-123  In progress ▾                         ⋯  ←  →  ✕
-┌───────────────────────────────────────────────┬────────────────────┐
-│ Frame size presets do not keep aspect          │ STATE      In progress
-│ ───────────────────────────────────────────── │ ASSIGNEE   Mara
-│ Description …                                  │ PRIORITY   High
-│                                                │ PROJECT    Frames
-│ SUB-ISSUES  2 of 4                  +          │ MILESTONE  Beta
-│ RELATIONS   blocks TAB-130                  +  │ LABELS     ui  tablet
-│ LINKED WORK                                    │ DUE        Fri 16 Oct
-│  ◐ PR #482  Fix lane drop     merged  Mara     │ CREATED    Mara, 2 d
-│  ● a1b2c3d  Add presets       Mara             │ ON CANVAS  Sprint retro →
-│ ACTIVITY                                       │
-│  …                                             │
-└───────────────────────────────────────────────┴────────────────────┘
+TAB-123  Copy key                         Subscribe   ↗  ⋯  ×
+
+Frame size presets do not keep aspect
+Created by Johan · Oct 3
+
+Description …                              State       In progress
+                                            Assignee    Mara
+Sub-issues  2/4                             Priority    High
+  TAB-130  ◐ Add aspect presets             Due         Oct 16
+Relations   + Add relation
+Activity
+  [J] Johan moved from Backlog to Done · 1d ago
+  ┌ Leave a comment… ──────────────────┐
+  │                         attach  send│
+  └────────────────────────────────────┘
 ```
 
-- **Header strip**: key (tabular, with a **copy link** action on click), state button (a picker), a **Subscribe / Subscribed** toggle (a bell button; `Shift+S`; subscribers get Inbox entries for comments, state changes and linked PRs; you are subscribed automatically when you create, are assigned, comment or are mentioned), then ⋯ (copy link, copy key, copy as Markdown, duplicate, move to project, **archive**; there is no delete), previous/next in the current list (`J`/`K`, also arrows in the strip), close.
-- **Title**: Bodoni Moda 800 (the one place it is used at app size; see 11), editable in place (click or `Enter`), one line that wraps.
-- **Description**: Markdown text (no rich-text storage). One editing surface: a plain text area with Markdown shown as typed, a **Preview** toggle (`Cmd/Ctrl+Shift+P`) that renders it, and light helpers that insert text (`-` continues a list, `Tab` indents it, `@` mentions people, `TAB-` autocompletes ticket keys); paste an image to attach (workspace file store; size limit from architecture). Autosaves 800 ms after the last key; shows **Saved** / **Saving** / **Offline, will sync** in the header strip.
-- **Properties column**: each row is a label (small caps) and a value that opens a picker. Same keys as the list (`S A P L D M`). Read-only roles see plain values.
-- **Sub-issues**: a progress mini-bar ("2 of 4"), rows (key, state glyph, title, assignee), **+** adds one (inline title field), drag to reorder, `Enter` opens one. A sub-issue's page shows its parent as a breadcrumb in the header.
-- **Relations**: grouped by type; each row has the other ticket's key chip, state glyph, title, and a remove (×) on hover/focus. **+** opens a picker: choose relation type, then search tickets by key or title. `blocked by` an open ticket shows a **Blocked** mark on the ticket's list row. Duplicate: marking duplicate closes it (state Cancelled, category cancelled) after a confirm and keeps the pointer.
-- **Linked work** (7.1): PRs and commits from GitHub, and the **On canvas** link (9.5).
-- **Activity** (5.2): comments and history in one feed.
+- **Header**: one quiet row with the ticket key and copy-key action at left. Copy link, more actions and close are icon buttons with tooltips and accessible names. Subscribe is a quiet bell-and-text toggle (`Shift+S`); subscribers get Inbox entries for comments, state changes and linked PRs. Creation, assignment, comments and mentions subscribe automatically. The more-actions group contains copy link, copy as Markdown, duplicate, move to project and archive; there is no delete. Previous/next remain available with `J`/`K` and the current-list navigation controls.
+- **Title and metadata**: the title is 24–26 px Cabinet Grotesk at weight 600, wraps naturally and edits in place on click or `Enter`; there is no visible edit button. Below it, muted 13 px text reads “Created by Johan · Oct 3”. A sub-issue also shows an inline parent link and a small progress ring. Dates use one formatter: “Oct 3” in the current year and “Oct 3, 2025” in another year; where the field calls for relative wording it uses today, tomorrow or yesterday.
+- **Description**: Markdown text in the app's single sans family. Click or `Enter` to edit; an empty description reads “Add description…”. Editing uses a plain text area with Markdown shown as typed, a **Preview** toggle (`Cmd/Ctrl+Shift+P`), and helpers (`-` continues a list, `Tab` indents it, `@` mentions people, `TAB-` autocompletes ticket keys); paste an image to attach. Autosaves 800 ms after the last key and shows **Saved** / **Saving** / **Offline, will sync**.
+- **Primary properties**: State, assignee, priority and due date are compact 32 px glyph-and-value rows with no per-row visible label or box. The accessible name and tooltip include the property name (for example, “State: Done”). Click or `Enter` opens the existing picker; the keys remain `S A P L D M`. Read-only roles see plain values.
+- **Grouped properties**: muted 13 px headings group Labels, Project (with milestone nested), and Parent / Related. The property names remain available to assistive technology. On phones, the four primary properties stay directly under the title in a two-column block with 44 px targets; the other groups sit behind **More**.
+- **Sub-issues**: when present, a compact progress ring (“2/4”) and rows show key, state glyph, title and assignee. **+ Add sub-issues** appears as a quiet ghost row when empty and adds inline; populated rows can be reordered, and `Enter` opens one. A sub-issue's page shows its parent as an inline link below the title.
+- **Relations**: when present, group by type; each row has the other ticket's key, state glyph, title and a remove (×) on hover/focus. **+ Add relation** is the ghost row when empty. It opens a picker to choose relation type and search by key or title. `blocked by` an open ticket shows a **Blocked** mark on its list row. Duplicate closes it (state Cancelled, category cancelled) after confirmation and keeps the pointer.
+- **Linked work and cards** (7.1, 9.5): show compact rows when linked; show nothing when empty. PRs and commits come from GitHub; **On canvas** links to linked cards.
+- **Activity** (5.2): one chronological feed with compact, single-line history entries and soft comment panels. The composer is a rounded 12 px panel with “Leave a comment…” and quiet attach/send icon buttons. It has no uppercase label.
 - **Also known as**: under the title, one quiet grey line ("Also known as ENG-45, OLD-12") for old prefixes and imported Linear ids; each opens this ticket when used in a link or search. Absent when there are none. Search and ⌘K match aliases.
 - **Archived**: an archived ticket is hidden from every ordinary view and search (the filter has **Include archived**). Its page shows a banner across the top, "Archived on 12 Oct. Restore", with a **Restore** button (state and card come back); fields are read-only until restored.
 
 ### 5.2 Comments and history
 
-One chronological feed, oldest first (so the composer sits at the bottom), with a filter **All / Comments / History** (default All; History collapses runs of field changes: "Mara changed state, assignee and priority · 3 changes").
+One chronological feed, oldest first (so the composer sits at the bottom), with a filter **All / Comments / History** (default All; History collapses runs of field changes: “Mara changed state, assignee and priority · 3 changes”). Activity is headed at 14 px / 500; an event is one compact 13 px line with an 18 px round avatar, text and time. Comments use a soft panel, with 14–15 px body text at 1.55 line-height.
 
 - **Comment**: author, time, body (Markdown, rendered as the description is, smaller), **edit** (own), **delete** (own or admin, leaves "Comment deleted" row), **react** (the board's emoji picker; a small reaction row), **reply** (one level of threading). `Cmd/Ctrl+Enter` posts. `@` mentions notify the person (Inbox). Pasting a PR or commit URL renders its chip.
 - **History rows**: a glyph, "Mara moved this from Todo to In progress", time. Field changes show old → new. Integration events are attributed to the integration ("GitHub · merged PR #482 moved this to Done" with the rule noted). **Actors that are not people** (an agent's access token, the GitHub integration, an import) never get a person's avatar: they show a square **label badge** ("Agent · claude-code", "GitHub", "Import") in the same place and the same grey, so a feed can be scanned for who is human. The ticket's creator line says "Created by Mara" or "Created by agent claude-code" / "Created from GitHub" / "Imported from Linear" from the `source` (`app`, `import`, `mcp`, `integration`).
@@ -280,7 +284,7 @@ The tracker captures keys only in Work mode or full screen. On the canvas, with 
 
 | Key | Action |
 |---|---|
-| `↑ ↓` or `J K` | Move the row cursor (a 2 px cobalt left bar, plus the row's background; never colour alone: the focused row also draws an outline in forced-colours) |
+| `↑ ↓` or `J K` | Move the row cursor (a tinted background plus a 1 px inset outline; never colour alone: the focused row also draws an outline in forced-colors) |
 | `← →` | Collapse/expand a group; on the board, move between lanes |
 | `Enter` | Open the ticket |
 | `Space` | Peek (a small preview) / on the board lift or drop a card |
@@ -336,7 +340,7 @@ On a linked canvas card (9.3), when the ticket has at least one PR, a **chip** s
 [◐ #482]   open       [● #482]  merged      [○ #482]  closed     [◌ #482]  draft
 ```
 
-- Size: 18 px tall, 4 px padding, glyph + `#482`, Instrument Sans 600 11 px, square corners, a 1 px ink border, light-paper fill; **merged** inverts to ink fill with light-paper text, so it reads in monochrome and at 40 % zoom without colour. Open and draft use the outline; closed has a strike through the number.
+- Size: 22 px tall, 4 px padding, glyph + `#482`, `--ui` 13 px / 500, square corners, a 1 px low-contrast border and themed fill; **merged** inverts to ink fill with light-paper text, so it reads in monochrome and at 40 % zoom without color. Open and draft use the outline; closed has a strike through the number.
 - More than one PR: `#482 +1`.
 - Click: on the canvas it opens the ticket page's Linked work (in the tracker frame or a peek); **Cmd/Ctrl-click** opens the PR on GitHub. Tooltip and accessible name: "Pull request 482, merged, Fix lane drop on iPad".
 - At low zoom (card text under 9 px on screen) the chip collapses to the glyph alone.
@@ -397,7 +401,7 @@ At 360 to 600 px wide the tracker is **always full screen** (the canvas frame is
 - **Swipe actions** on a row (only as a shortcut; every one is also in the row's ⋯ and the ticket page): swipe right = **Assign to me**, swipe left = **Done** (state category completed), with an Undo toast.
 - **Filter**: a **Filter** button opens a bottom sheet with the same fields, applied as chips; **Save as view** at its end.
 - **Board**: lanes are horizontal pages (one lane per screen with the neighbours peeking 24 px), a lane switcher strip (state glyphs + counts) on top; **Move to…** on the card's ⋯ sheet is the move action (drag between lanes needs two screens and is not the primary path), long-press-drag works within the lane to reorder.
-- **Ticket**: one column; properties are a horizontally scrolling **chip row** under the title (each chip a picker sheet), then description, sub-issues, relations, linked work, activity. A sticky **comment composer** bar at the bottom ("Add a comment…") expands upward; it sits above the keyboard (uses the visual viewport as the emoji picker does).
+- **Ticket**: one column; State, Assignee, Priority and Due appear as a two-column glyph-and-value block directly under the title, with 44 px rows. Labels, Project, Milestone and the remaining properties sit behind **More**. Description, sub-issues, relations, linked work and activity follow. The rounded comment composer reads “Leave a comment…” and stays reachable without scrolling past nine rows; on-screen keyboard positioning follows the visual viewport.
 - **Pickers** are bottom sheets with 48 px rows and a search field that does not autofocus unless the list is long (over 12 items), so the keyboard does not open over a short list.
 - **Targets**: 44 px minimum everywhere; the key chip, state glyph and PR chip in a list row are not separate targets; the whole row opens the ticket.
 - **Integrations screen**: 7.4, phone paragraph.
@@ -443,9 +447,9 @@ A linked card is the normal canvas card (kanban spec) with these changes, in ord
 └────────────────────────────┘
 ```
 
-- **Key** in Instrument Sans 700, tabular, grey, small; it is the card's anchor to the tracker and the thing to click: **click the key** opens the ticket (peek in the tracker frame if one exists on this board, else a ticket sheet, else the deep link); the card body keeps the card behaviours (select, drag, double-click to edit title).
+- **Key** in `--ui` 13 px / 500, tabular, muted; it is the card's anchor to the tracker and the thing to click: **click the key** opens the ticket (peek in the tracker frame if one exists on this board, else a ticket sheet, else the deep link); the card body keeps the card behaviours (select, drag, double-click to edit title).
 - **Priority** glyph appears for urgent and high only (not for medium/low/none) to keep cards calm.
-- **Left border**: a 3 px ink bar, the **linked marker**; unlinked cards have no bar. It is a shape cue, so it does not rely on colour.
+- **Linked marker**: a 1 px inset hairline; unlinked cards have no marker. It is a shape cue, so it does not rely on color.
 - A card whose ticket is **done** shows the struck-through title and a check (the kanban `done` stage already does the check); **canceled** is greyed with a cross.
 - A card with a **blocked** ticket shows a small bar glyph and the word "Blocked" at the end of the meta row (and in the accessible name).
 - **Out of sync**: if the ticket cannot be reached (offline, access lost), the card shows a grey **cloud-off** glyph in the header and "Showing the last saved version"; edits are allowed locally and queue; for lost access the card shows "No access to TAB-124" and its fields as last known, locked.
@@ -481,7 +485,7 @@ The ticket page's **On canvas** property lists each linked card as "Sprint retro
 
 | Situation | Behaviour |
 |---|---|
-| First open, no tickets | **Inbox**: "Nothing needs you." (Bodoni, one line) + a grey sentence "Tickets that are assigned to you or mention you land here." **All issues**: "No issues yet." + **New issue** (`C`) + **Import from Linear / CSV** (admin). **Board**: the empty lanes with "+ New issue" in each. **Projects**: "Group tickets into projects with milestones." + **New project**. |
+| First open, no tickets | **Inbox**: “Nothing needs you.” (one line in the app sans) + a muted sentence “Tickets that are assigned to you or mention you land here.” **All issues**: “No issues yet.” + **New issue** (`C`) + **Import from Linear / CSV** (admin). **Board**: the empty lanes with “+ New issue” in each. **Projects**: “Group tickets into projects with milestones.” + **New project**. |
 | Loading | A skeleton of 8 rows (grey hairlines, no animation under reduced motion). The tabs, view bar and **New issue** are usable immediately. Under 200 ms nothing shows. |
 | Filter returns nothing | "No issues match." + the active chips and **Clear filters**. |
 | Offline | A thin grey line in the header: "Offline. Changes are saved here and will sync." Editing existing tickets keeps working on loaded data and syncs later. **Creating a ticket needs a connection**: **New issue**, **Create tickets** and the Link dialog's create option are disabled while offline with "Needs a connection to get a ticket number." (the draft stays, so nothing typed is lost). There are no provisional keys, so numbers have no gaps. |
@@ -492,30 +496,32 @@ The ticket page's **On canvas** property lists each linked card as "Sprint retro
 | Save failure | The header strip says **Not saved. Retry** (a button); the draft stays on screen; nothing is dropped silently. |
 | Destructive actions | Archive is undoable by toast. Tickets cannot be deleted. Removing a card's link to a ticket is a separate action (9.2, 9.3) and never archives the ticket. |
 
-Empty-state headlines are the **only** body-adjacent use of Bodoni Moda besides ticket titles and numerals; they are one line, never a paragraph, never an illustration, with one clear next action.
+Empty-state headlines use the app sans, stay to one line, and pair with one clear next action.
 
-## 11. The Swiss look
+## 11. Minimal tracker UI
 
-The tracker lives inside a tool whose own chrome is the dark **ink toolbar**; the tracker's surface is the **paper** side of the brand (`docs/brand.md`): content on `--tb-c-paper-hi`, rules in ink, one typeface for work.
+The tracker uses the app's `--ui` (Switzer) sans family everywhere. `--display` (Cabinet Grotesk) appears only on the ticket or project title at weight 600. This gives the issue surface the quiet density of a Linear-style work tool while preserving the app's existing theme colors.
 
-**Grid and rhythm**
-- A 12-column grid inside the frame with 24 px gutters at full screen, 16 px in a small frame; an 8 px baseline. Everything aligns: the key column, state column, title column and the property labels share their left edges across rows and pages.
-- Rows separate with **1 px hairlines** in `--tb-c-grey` at 25 %; section heads with a **2 px ink rule** above (the brand's magazine rule). No cards-in-cards, no shadows, no rounded corners (radius 0, as the board UI), no gradients.
-- Whitespace does the grouping: 24 px between ticket sections, 8 between rows' content, heads align to the grid, never centred except empty states.
+**Grid, lines and rhythm**
+- Use an 8 px spacing rhythm, 24–32 px between sections and compact, aligned rows. Whitespace groups content.
+- No 2 px or 3 px borders, rules, underlines or inset stripes. Where separation is needed, use one 1 px hairline at 8–12% of the text color over the surface. Dialog and popover borders use the same hairline. No decorative rules above section headings.
+- Avoid nested cards and heavy shadows. A comment may use a soft surface panel; controls and property rows stay unboxed until hover.
 
-**Type** (the brand has two faces; the tracker uses them as follows)
-- **Instrument Sans** for everything that is work: list rows 14 px/20 (13 px compact), properties, comments 15 px/22, buttons 700, labels 11 px **uppercase** 700 with 0.14em tracking. **Tabular figures** (`font-variant-numeric: tabular-nums`) for keys, counts, dates and times so columns line up.
-- **Bodoni Moda 800** only at 20 px and up: the **ticket title** (28 px page, 22 px peek), **tab empty states**, **big numerals** (project progress "12 / 18"; the brand rule "no Bodoni under 17 px" holds, so tab counts stay Instrument Sans). The **one italic turn** at the end of an empty-state headline ("Nothing needs *you*.").
-- Ticket key: Instrument Sans 700 with `TAB-` in grey and the number in ink, so the number scans; in the page header the key is Bodoni Italic 500 22 px in red **only** when the ticket is overdue and assigned to the viewer, otherwise ink. (Red is the rare accent.)
+**Type**
+- One sans family (`--ui`) across tracker UI, rows, chips, labels, controls, comments and dates. `--display` is reserved for ticket/project titles at weight 600.
+- UI weights are 400 and 500; use 600 only for the ticket/project title and the active tab or navigation label. Nothing in tracker CSS exceeds 600.
+- Chrome and rows are 13 px. Description and comment body text are 14–15 px / 1.55. Ticket titles are 24–26 px / 1.25, and 22 px in a peek or on a phone. Metadata is 12–13 px and muted.
+- Do not use uppercase tracked micro-labels. Property names are normal-case, muted 13 px text when displayed; the primary ticket properties use glyphs and accessible names instead. Use tabular figures for keys, counts, dates and times.
 
 **Theme**
 - Johan's rule: a theme can be set for the whole **workspace** and per **board**, and the board overrides. The tracker frame follows **the board it sits on** (resolved theme = board theme, else workspace theme, else the person's own choice). In full screen the tracker keeps the theme of the board it was opened from; opened from a deep link with no board, it uses the workspace theme.
 - Today the app has neither: the theme is a **per-browser personal setting** (`driftboard:theme` in local storage, chosen in the board menu's Theme list; `applyTheme` sets the colour variables on the document). Workspace and per-board themes are new work (a stored `theme` on the workspace and on the board, and the resolution above); the tracker reads the same colour variables as the board, so it needs nothing of its own once they exist. The tracker's ink and paper treatment below is defined against the variables (`--paper`, `--ink`, `--rule`, `--signal`, `--danger`), not fixed hex, so every theme (Default, Ayu, Kanagawa, Matrix, Evergreen) works.
 
-**Colour**
-- Ground `paper-hi` `#F7F5F0`; text `ink` `#121216`; secondary `grey` `#55555C`; **cobalt** `#2347F5` for focus, selection, the row cursor, links and the active tab's underline (3 px); **red** `#D42A18` for overdue, errors, and urgent only. State glyphs are **ink**, never rainbow, so a screen of tickets reads as a page, not a dashboard; **colour is never the only signal** (every state has a shape and a word; overdue has text).
-- Dark scheme: ground is the board's dark ground, text light paper, the lighter cobalt and red of the brand; hairlines at 30 % light paper. Same layout, same glyphs.
-- Labels are outlined chips (1 px border in the label colour, ink text) with the name always visible, so label colours add information without carrying it alone.
+**Color and focus**
+- Use the active theme tokens for ground, text, muted text, signal and danger. Do not hard-code colors. Muted text must meet 4.5:1 in all five themes; non-text glyphs and the cursor must meet 3:1 on their surface.
+- The focus ring and row cursor use ink-based `--trk-focus` / `--trk-cursor` tokens at a 2 px outline with a 2 px offset. The row cursor is a tinted background plus a 1 px inset outline; it has no side stripe or yellow ring.
+- A primary action is the one filled button on its surface: ink with paper text on light surfaces, or the theme signal with its paired text on dark surfaces. It uses 13 px / 500 and the small radius. Other controls are quiet or ghost buttons.
+- State glyphs use shape as well as color, and labels keep their names visible.
 
 **State glyphs** (16 px, 1.5 px stroke, square caps, geometric; ink)
 
@@ -530,19 +536,16 @@ The tracker lives inside a tool whose own chrome is the dark **ink toolbar**; th
 
 Priority is four ascending bars (filled = level; urgent is a filled square with an exclamation mark); none is a dash. All have text equivalents.
 
-**Chrome of the frame**
-- Header: tabs as text (Instrument Sans 600 14 px, uppercase off), active tab a 3 px cobalt underline and ink text, inactive grey; tab bar sits on the 2 px ink rule. No pill buttons, no icon-only tabs above 720 units.
-- Buttons: primary = ink fill, light-paper text, square, turns cobalt on hover (the site turns red; in-app the accent is cobalt); secondary = 1 px ink border. Height 32 px in a frame, 44 px on a phone.
-- Focus ring: 2 px cobalt outline, 2 px offset, always; never removed.
-- Motion: 120 ms for hover and picker; row reorder 160 ms; one pulse for incoming remote changes; **none** under `prefers-reduced-motion` (state changes cut).
-- The **snapshot** (3.2) uses the same type and rules, so zoomed far out the tracker reads as a printed table on the canvas: key column, title column, a state glyph; **no** tiny text under 9 px; when too small it is just the grid of hairlines and the frame's name in Bodoni.
-- Hard paper motifs (torn edges, tape, cut-outs) **do not** appear inside the tracker: it is an instrument, not an illustration. The exception is the empty-state of Projects and Inbox, where a single hand mark (one red circle) may circle the primary action, once per screen, at most.
+**Chrome**
+- Tabs use normal-case 13 px text; the active tab uses weight 600 and ink text on a subtle filled pill (ink at 6%). There is no underline or stripe.
+- Primary buttons use the shared theme treatment above. Dialogs and popovers have a 1 px low-contrast border. Phone controls are at least 44 px; desktop controls remain compact.
+- Respect reduced motion. Keep tracker content free of paper collage motifs; at low zoom the snapshot retains only readable key information and subtle hairlines.
 
 ## 12. Accessibility
 
 - All of section 6 is the keyboard model; a visible button exists for every shortcut.
 - Roles: lists `grid`, rows `row`, tabs `tablist`, pickers `listbox`, ticket properties a `dl`, the feed a `feed` with `article` per entry; live region for changes (6.5).
-- Contrast: all pairs follow the brand's tables; grey text only on paper-hi, 4.5:1; non-text (glyphs, focus) 3:1.
+- Contrast: muted text reaches 4.5:1 in every theme and surface, including trays. Non-text glyphs, focus and the row cursor reach 3:1 on their grounds.
 - Touch targets 44 px on touch devices; list rows are whole-row targets.
 - Reduced motion, forced colours (glyph shapes, outlines), 200 % zoom (the layout reflows by the frame-width rules) and screen-reader order (title, properties, description, relations, linked work, activity) are tested.
 - The canvas snapshot has an accessible name ("Tracker, All issues, 214 issues") and is a single focus stop; **Enter** enters it.

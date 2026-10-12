@@ -59,7 +59,16 @@ export function lintMigration(sql) {
   })) {
     reasons.push('NOT NULL column without a DEFAULT rejects older inserts');
   }
-  if (/\bCREATE\s+UNIQUE\s+INDEX\b/i.test(clean)) reasons.push('CREATE UNIQUE INDEX can reject older writes');
+  const createdTables = new Set(statements.flatMap((statement) => {
+    const match = /^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([\w$-]+)/i.exec(statement);
+    return match ? [match[1].toLowerCase()] : [];
+  }));
+  const uniqueIndexes = statements.filter((statement) => /^CREATE\s+UNIQUE\s+INDEX\b/i.test(statement));
+  if (uniqueIndexes.some((statement) => {
+    const match = /\bON\s+([\w$-]+)/i.exec(statement);
+    // An index on a table introduced in this same migration cannot reject writes from an older build.
+    return !match || !createdTables.has(match[1].toLowerCase());
+  })) reasons.push('CREATE UNIQUE INDEX can reject older writes');
   if (/\bCREATE\s+(?:TEMP(?:ORARY)?\s+)?TRIGGER\b/i.test(clean)) reasons.push('CREATE TRIGGER changes database write behavior');
   if (statements.some((statement) => /^UPDATE\b/i.test(statement))) reasons.push('UPDATE rewrites existing data');
   if (statements.some((statement) => /^DELETE\s+FROM\b/i.test(statement))) reasons.push('DELETE FROM removes existing data');

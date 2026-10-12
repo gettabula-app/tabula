@@ -97,10 +97,17 @@ export const KNOWN_AUDIT_ACTIONS = [
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
   'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
-  'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards',
+  'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards', 'backup.tracker_findings',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
+  'tracker.gate_cleared', 'tracker.restore_boards_failed', 'tracker.key_epoch', 'tracker.drill_record', 'tracker.cutover_record',
   'volume.adopt',
   'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
+  'mcp.oauth.client_registered', 'mcp.oauth.authorize', 'mcp.oauth.revoke', 'mcp.oauth.revoke_all', 'mcp.oauth.reuse_detected',
+  'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
+  'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
+  'tracker.link.create', 'tracker.link.delete', 'tracker.link.card', 'tracker.link.attach',
+  'tracker.card.move', 'tracker.card.title', 'tracker.card.create', 'tracker.card.unlink', 'tracker.guard.reject',
+  'tracker.label.create', 'tracker.milestone.create', 'tracker.milestone.update', 'tracker.project.create', 'tracker.project.update', 'tracker.ticket.archive', 'tracker.ticket.bulk', 'tracker.ticket.comment.delete', 'tracker.ticket.comment.edit', 'tracker.ticket.relate', 'tracker.ticket.restore', 'tracker.ticket.unrelate', 'tracker.view.create', 'tracker.view.delete', 'tracker.view.update',
 ] as const;
 
 export function isKnownAuditAction(action: string): boolean {
@@ -114,8 +121,81 @@ export function auditActor(entry: AuditEntry): string {
 
 const text = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 const flag = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+const object = (v: unknown): Record<string, unknown> | null => typeof v === 'object' && v !== null && !Array.isArray(v) ? v as Record<string, unknown> : null;
+const number = (v: unknown): number | undefined => typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 const quote = (s: string) => `“${s}”`;
 const clip = (s: string, max: number) => ([...s].length > max ? `${[...s].slice(0, max - 1).join('')}…` : s);
+
+function trackerRestoreCounts(value: unknown): string {
+  const tracker = object(value);
+  if (!tracker) return '';
+  const tickets = number(tracker.tickets);
+  const repaired = number(tracker.repaired);
+  const counts = [
+    tickets === undefined ? null : countLabel(tickets, 'ticket', 'tickets'),
+    repaired === undefined ? null : `${repaired} repaired`,
+  ].filter((part): part is string => part !== null);
+  return counts.length ? ` (${counts.join(', ')})` : '';
+}
+
+function epochCounterChanges(detail: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const add = (id: unknown, oldValue: unknown, newValue: unknown) => {
+    const oldNext = number(oldValue);
+    const newNext = number(newValue);
+    const label = text(id);
+    if (oldNext !== undefined && newNext !== undefined && label) lines.push(`${label}: ${oldNext} → ${newNext}`);
+  };
+  if (Array.isArray(detail.counters)) {
+    for (const counter of detail.counters) {
+      const row = object(counter);
+      if (!row) continue;
+      const scopedId = typeof row.scope === 'string' && typeof row.prefix === 'string' ? `${row.scope}/${row.prefix}` : undefined;
+      const id = row.id ?? row.counterId ?? scopedId ?? row.prefix;
+      add(id, row.oldNext ?? row.old ?? row.from, row.newNext ?? row.new ?? row.to);
+    }
+  } else if (object(detail.counters)) {
+    for (const [id, value] of Object.entries(object(detail.counters)!)) {
+      const row = object(value);
+      if (row) add(id, row.oldNext ?? row.old ?? row.from, row.newNext ?? row.new ?? row.to);
+    }
+  }
+  const oldNext = object(detail.oldNext ?? detail.old);
+  const newNext = object(detail.newNext ?? detail.new);
+  if (oldNext && newNext) {
+    for (const [id, oldValue] of Object.entries(oldNext)) add(id, oldValue, newNext[id]);
+  }
+  return lines;
+}
+
+function findingDetails(detail: Record<string, unknown>): { count: number; facts: string[] } {
+  const findings = Array.isArray(detail.findings) ? detail.findings : [];
+  const rows = findings.map(object).filter((row): row is Record<string, unknown> => row !== null);
+  const rowCount = rows.reduce((total, row) => total + (number(row.count) ?? 0), 0);
+  const counts = object(detail.counts);
+  const countTotal = counts ? Object.values(counts).reduce<number>((total, value) => total + (number(value) ?? 0), 0) : 0;
+  const explicitCount = number(detail.count ?? detail.problems);
+  const codeCount = Array.isArray(detail.codes) ? detail.codes.length : 0;
+  const count = explicitCount ?? (rowCount || countTotal || rows.length || codeCount);
+  const facts = new Map<string, number | null>();
+  for (const row of rows) {
+    const code = text(row.code);
+    if (code && /^[a-z][a-z0-9_]*$/.test(code)) facts.set(code, number(row.count) ?? null);
+  }
+  if (Array.isArray(detail.codes)) {
+    for (const value of detail.codes) {
+      const code = text(value);
+      if (code && /^[a-z][a-z0-9_]*$/.test(code) && !facts.has(code)) facts.set(code, null);
+    }
+  }
+  if (counts) {
+    for (const [code, value] of Object.entries(counts)) {
+      const amount = number(value);
+      if (/^[a-z][a-z0-9_]*$/.test(code) && amount !== undefined) facts.set(code, amount);
+    }
+  }
+  return { count, facts: [...facts].map(([code, amount]) => amount === null ? code : `${code}: ${amount}`) };
+}
 
 /**
  * One audit row as a sentence. Details hold ids, so names come from `lookup` when the caller has them.
@@ -277,6 +357,97 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const scope = ({ read: ' (read only)', comment: ' (read and comment)', write: ' (read and edit)' } as Record<string, string>)[text(d.scope) ?? ''] ?? '';
       return `${who} created an AI tool access token${name ? ` ${quote(clip(name, 60))}` : ''}${scope}`;
     }
+    case 'mcp.oauth.client_registered': {
+      const name = text(d.clientName);
+      return `An app registered itself${name ? ` as ${quote(clip(name, 60))}` : ''}`;
+    }
+    case 'mcp.oauth.authorize': {
+      const name = text(d.clientName);
+      const app = name ? quote(clip(name, 60)) : 'an app';
+      if (d.decision === 'deny') return `${who} declined to connect ${app}`;
+      const scope = ({ read: ' with read only access', comment: ' with read and comment access', write: ' with read and edit access', none: ' with no access' } as Record<string, string>)[text(d.scope) ?? ''] ?? '';
+      return `${who} connected ${app}${scope}`;
+    }
+    case 'mcp.oauth.revoke': {
+      const name = text(d.clientName);
+      const app = name ? ` ${quote(clip(name, 60))}` : '';
+      if (d.by === 'client') return `An app${app} disconnected itself from ${member}`;
+      if (d.by === 'self') return `${who} disconnected app${app}`;
+      if (d.by === 'admin') return `${who} disconnected app${app} from ${member}`;
+      if (d.by === 'sign_out_everywhere') return `System disconnected app${app} from ${member} when they signed out everywhere`;
+      return `System revoked app${app} for ${member} after an account state change`;
+    }
+    case 'mcp.oauth.revoke_all': {
+      const count = typeof d.grants === 'number' ? d.grants : null;
+      return `${who} revoked all connected apps${count === null ? '' : ` (${count})`}`;
+    }
+    case 'mcp.oauth.reuse_detected': {
+      const kind = d.kind === 'code' ? 'sign-in code' : 'refresh token';
+      const name = text(d.clientName);
+      const app = name ? quote(clip(name, 60)) : 'a connected app';
+      return `A used ${kind} was presented again; ${app} was disconnected from ${member}`;
+    }
+    // Tracker (docs/tracker-api.md): ids only in the row, never ticket text
+    case 'tracker.ticket.create':
+      return `${who} created a ticket`;
+    case 'tracker.ticket.update':
+      return `${who} changed a ticket`;
+    case 'tracker.ticket.transition':
+      return `${who} moved a ticket to another state`;
+    case 'tracker.ticket.comment':
+      return `${who} commented on a ticket`;
+    case 'tracker.ticket.subscribe':
+      return `${who} subscribed to a ticket`;
+    case 'tracker.ticket.unsubscribe':
+      return `${who} unsubscribed from a ticket`;
+    case 'tracker.link.create':
+      return `${who} linked a kanban to the tracker`;
+    case 'tracker.link.delete':
+      return `${who} unlinked a kanban from the tracker`;
+    case 'tracker.link.card':
+      return `${who} created a ticket from a kanban card`;
+    case 'tracker.link.attach':
+      return `${who} attached an existing ticket to a kanban card`;
+    case 'tracker.card.move':
+      return `${who} moved a linked card`;
+    case 'tracker.card.title':
+      return `${who} changed a linked card title`;
+    case 'tracker.card.create':
+      return `${who} created a ticket from a linked card`;
+    case 'tracker.card.unlink':
+      return `${who} unlinked a card from its ticket`;
+    case 'tracker.guard.reject':
+      return `${who} had a linked-card change rejected`;
+    case 'tracker.label.create':
+      return `${who} created a ticket label`;
+    case 'tracker.milestone.create':
+      return `${who} created a milestone`;
+    case 'tracker.milestone.update':
+      return `${who} changed a milestone`;
+    case 'tracker.project.create':
+      return `${who} created a project`;
+    case 'tracker.project.update':
+      return `${who} changed a project`;
+    case 'tracker.ticket.archive':
+      return `${who} archived a ticket`;
+    case 'tracker.ticket.bulk':
+      return `${who} changed several tickets at once`;
+    case 'tracker.ticket.comment.delete':
+      return `${who} deleted a ticket comment`;
+    case 'tracker.ticket.comment.edit':
+      return `${who} edited a ticket comment`;
+    case 'tracker.ticket.relate':
+      return `${who} linked two tickets`;
+    case 'tracker.ticket.restore':
+      return `${who} restored a ticket`;
+    case 'tracker.ticket.unrelate':
+      return `${who} removed a link between two tickets`;
+    case 'tracker.view.create':
+      return `${who} saved a ticket view`;
+    case 'tracker.view.delete':
+      return `${who} deleted a saved ticket view`;
+    case 'tracker.view.update':
+      return `${who} changed a saved ticket view`;
     case 'mcp.token.revoke': {
       const name = text(d.name);
       const label = name ? ` ${quote(clip(name, 60))}` : '';
@@ -284,7 +455,8 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     }
     case 'mcp.token.revoke_all': {
       const count = typeof d.count === 'number' ? d.count : null;
-      return `${who} revoked all of their AI tool access tokens${count === null ? '' : ` (${count})`}`;
+      const grants = typeof d.grants === 'number' ? d.grants : 0;
+      return `${who} revoked all of their AI tool access tokens${count === null ? '' : ` (${count})`}${grants > 0 ? ` and ${grants} connected app${grants === 1 ? '' : 's'}` : ''}`;
     }
     case 'asset.upload':
       return `${who} added an image to ${boardLabel}`;
@@ -336,6 +508,11 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const count = typeof d.count === 'number' ? ` (${countLabel(d.count, 'board', 'boards')})` : '';
       return `${who} listed the boards of ${backupLabel(d.manifest)}${count}`;
     }
+    case 'backup.tracker_findings': {
+      const result = findingDetails(d);
+      const noun = result.count === 1 ? 'problem' : 'problems';
+      return `Backup found ${result.count} tracker data ${noun}${result.facts.length ? ` (${result.facts.join(', ')})` : ''}`;
+    }
     case 'restore.started':
       return d.kind === 'board'
         ? `${who} started restoring a board as a copy from ${backupLabel(d.manifest)}`
@@ -343,14 +520,14 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     case 'restore.done': {
       if (d.kind === 'board') {
         const where = d.fallback === 'personal' ? ' in their personal space' : '';
-        return `${who} restored ${boardLabel} as a copy from ${backupLabel(d.manifest)}${where}`;
+        return `${who} restored ${boardLabel} as a copy from ${backupLabel(d.manifest)}${where}${trackerRestoreCounts(d.tracker)}`;
       }
       const facts = [
         typeof d.boards === 'number' ? countLabel(d.boards, 'board', 'boards') : null,
         typeof d.users === 'number' ? countLabel(d.users, 'person', 'people') : null,
         typeof d.sessionsRemoved === 'number' ? `${countLabel(d.sessionsRemoved, 'session', 'sessions')} ended` : null,
       ].filter(Boolean);
-      return `${who} restored the whole workspace from ${backupLabel(d.manifest)}${facts.length ? ` (${facts.join(', ')})` : ''}`;
+      return `${who} restored the whole workspace from ${backupLabel(d.manifest)}${facts.length ? ` (${facts.join(', ')})` : ''}${trackerRestoreCounts(d.tracker)}`;
     }
     case 'restore.failed': {
       const what = d.kind === 'board' ? 'a board copy' : 'the whole workspace';
@@ -361,18 +538,36 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const age = typeof d.ageDays === 'number' ? ` (${countLabel(d.ageDays, 'day', 'days')} old)` : '';
       return `The old data of a restore was removed${age}`;
     }
+    case 'tracker.gate_cleared': {
+      const seconds = number(d.closedSeconds ?? d.secondsClosed ?? d.durationSeconds ?? d.seconds);
+      return `Tracker writes reopened after a restore${seconds === undefined ? '' : ` (${countLabel(seconds, 'second', 'seconds')} closed)`}`;
+    }
+    case 'tracker.restore_boards_failed': {
+      const count = number(d.count);
+      return `A restore could not reconcile ${count === undefined ? 'some boards' : countLabel(count, 'linked board', 'linked boards')}; they are corrected when opened`;
+    }
+    case 'tracker.key_epoch': {
+      const changes = epochCounterChanges(d);
+      return `${who} jumped the ticket counters by 1000${changes.length ? ` (${changes.join('; ')})` : ''}`;
+    }
+    case 'tracker.drill_record': {
+      const kind = d.kind === 'production' || d.kind === 'local' ? d.kind : 'unknown kind';
+      return `${who} recorded a restore drill (${kind})`;
+    }
+    case 'tracker.cutover_record':
+      return `${who} recorded the cutover check`;
     case 'volume.adopt': {
       const from = idsOf(d.from);
       const to = idsOf(d.to);
       if (d.reason === 'operator') {
         const ws = from.workspaceId ? ` of workspace ${from.workspaceId}` : '';
-        return `An operator adopted the data volume${ws} into this workspace; everyone was signed out, and every AI tool access token and invite link was revoked`;
+        return `An operator adopted the data volume${ws} into this workspace; everyone was signed out, every connected app and AI tool access token was revoked, and every invite link was revoked`;
       }
       if (d.reason === 'restored-copy') {
         const vols = from.flyVolumeId && to.flyVolumeId ? ` (Fly volume ${from.flyVolumeId} → ${to.flyVolumeId})` : '';
-        return `The server adopted a restored copy of its data volume${vols}; everyone was signed out`;
+        return `The server adopted a restored copy of its data volume${vols}; everyone was signed out and every connected app was disconnected`;
       }
-      return 'The server adopted its data volume; everyone was signed out';
+      return 'The server adopted its data volume; everyone was signed out and every connected app was disconnected';
     }
     default:
       return entry.action;

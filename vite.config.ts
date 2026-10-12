@@ -46,6 +46,13 @@ const demoConfigPlugin = {
     return {
       publicDir: false,
       define: { 'import.meta.env.VITE_DEMO': '"1"' },
+      // No account, no tracker: keep its UI and data code out of the one-file demo bundle.
+      resolve: {
+        alias: [{
+          find: /^(?:\.{1,2}\/)+(?:tracker-data|tracker\/ui\/(?:frame|shell|link-dialog-open|unlink-confirm))$/,
+          replacement: path.join(ROOT, 'src/demo/no-tracker.ts'),
+        }],
+      },
       build: { sourcemap: false, rolldownOptions: { output: { codeSplitting: false } } },
     };
   },
@@ -58,6 +65,8 @@ const vitePort = Number(process.env.VITE_PORT) || 5173;
 // Vite proxies sync and API requests to the selected relay port.
 export default defineConfig({
   plugins: [docsPages, demoConfigPlugin, demoBuildPlugin()],
+  // Tracker and board deep links are HTML5 paths and must reach the SPA entry in development too.
+  appType: 'spa',
   server: {
     port: vitePort,
     strictPort: true,
@@ -78,6 +87,8 @@ export default defineConfig({
     // test and hook gets room to wait for a relay. Both limits stay well above RELAY_START_MS (test/relay-timing.ts), so
     // a slow start ends in the helper's error, which carries the relay's output, and not in a bare timeout.
     maxWorkers: process.env.CI ? 2 : undefined,
+    // every test file's fetch avoids reused idle sockets and retries one reset GET visibly (test/http-retry.ts)
+    setupFiles: ['./test/setup-http.ts'],
     testTimeout: 60_000,
     hookTimeout: 60_000,
   },
