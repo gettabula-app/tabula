@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BLOB_CACHE_BYTES, backoffMs, createBlobCache, createUploadQueue, evictionPlan, memoryBackend, type UploadRecord, type UploadResult } from '../src/asset-store';
+import { BLOB_CACHE_BYTES, backoffMs, createBlobCache, createUploadQueue, evictionPlan, fromStored, memoryBackend, toStored, withMemoryFallback, type UploadRecord, type UploadResult } from '../src/asset-store';
 
 // docs/images.md, Offline and the upload queue: pending images reach the server, in order, with backoff, and a deleted
 // object drops its record. The storage is injected, as icon-offline does.
@@ -406,7 +406,7 @@ describe('the blob cache', () => {
 
   it('evicts on put and marks a use on get', async () => {
     let t = 0;
-    const cache = createBlobCache(memoryBackend(), { cap: 25, now: () => ++t });
+    const cache = createBlobCache(memoryBackend(), { cap: 25, now: () => ++t, useMarkMs: 0, evictEveryPuts: 1 });
     await cache.put(rec('old', 10));
     await cache.put(rec('keep', 10));
     await cache.get('old'); // used more recently than 'keep'
@@ -467,5 +467,85 @@ describe('the blob cache', () => {
     expect(s.apply).toHaveBeenCalledTimes(1);
     expect(await s.backend.getBlob('pending:a')).toBeDefined();
     expect(await s.backend.listUploads()).toEqual([]);
+  });
+
+  it('checks the cap only every so many puts, and marks a use at most once per interval', async () => {
+    let t = 0;
+    const cache = createBlobCache(memoryBackend(), { cap: 15, now: () => t, useMarkMs: 1000, evictEveryPuts: 3 });
+    await cache.put(rec('a', 10)); // the first put of a page checks the cap
+    await cache.put(rec('b', 10)); // over the cap, but not yet checked
+    await cache.put(rec('c', 10));
+    expect(await cache.backend.getBlob('a')).toBeDefined();
+    await cache.put(rec('d', 10)); // the third put since the check
+    expect(await cache.backend.getBlob('a')).toBeUndefined();
+    t = 500;
+    await cache.get('d');
+    expect((await cache.backend.getBlob('d'))?.at).toBe(0); // too soon to mark again
+    t = 1500;
+    await cache.get('d');
+    expect((await cache.backend.getBlob('d'))?.at).toBe(1500);
+  });
+});
+
+describe('a store that will not keep what is written', () => {
+  /** A backend that refuses what `refuses` says, the way WebKit's private storage refuses a Blob. */
+  function refusing(refuses: { blobs?: boolean; uploads?: boolean }) {
+    const inner = memoryBackend();
+    const guarded = {
+      ...inner,
+      putBlob: async (r: Parameters<typeof inner.putBlob>[0]) => { if (refuses.blobs) throw new Error('DataError'); return inner.putBlob(r); },
+      putUpload: async (r: Parameters<typeof inner.putUpload>[0]) => { if (refuses.uploads) throw new Error('DataError'); return inner.putUpload(r); },
+    };
+    return { inner, backend: withMemoryFallback(guarded, () => undefined) };
+  }
+
+  it.each([['a Blob', { blobs: true }], ['everything', { blobs: true, uploads: true }]])('uploads an added image from memory when the store refuses %s', async (_label, refuses) => {
+    const { inner, backend } = refusing(refuses);
+    const cache = createBlobCache(backend);
+    const upload = vi.fn<(boardId: string, blob: Blob, mime: string) => Promise<UploadResult>>(async () => RESULT);
+    const apply = vi.fn<(rec: UploadRecord, res: UploadResult) => boolean>(() => true);
+    const onLost = vi.fn<(rec: UploadRecord) => void>();
+    const queue = createUploadQueue({ cache, upload, apply, onLost });
+    await cache.put({ key: 'pending:1', blob: blob(10), mime: 'image/png', width: 4, height: 3, boardId: 'b1', pending: true });
+    await queue.enqueue({ id: 'pending:1', boardId: 'b1', objectId: 'o1', hash: 'h' });
+    expect(await inner.getBlob('pending:1')).toBeUndefined(); // the store has nothing
+    await queue.run('b1');
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(upload.mock.calls[0][1].size).toBe(10);
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(onLost).not.toHaveBeenCalled();
+    expect(await queue.pending('b1')).toBe(0);
+  });
+
+  it('shows the picture from memory while the upload is pending, and says it is lost only after a reload', async () => {
+    const { inner, backend } = refusing({ blobs: true });
+    const cache = createBlobCache(backend);
+    const queue = createUploadQueue({ cache, upload: vi.fn<(boardId: string, blob: Blob, mime: string) => Promise<UploadResult>>(async () => RESULT), apply: () => true, onLost: vi.fn<(rec: UploadRecord) => void>() });
+    await cache.put({ key: 'pending:1', blob: blob(10), mime: 'image/png', width: 4, height: 3, boardId: 'b1', pending: true });
+    await queue.enqueue({ id: 'pending:1', boardId: 'b1', objectId: 'o1', hash: 'h' });
+    expect((await cache.get('pending:1'))?.blob.size).toBe(10);
+    // a new page over the same store: the memory is gone, the upload record is not
+    const onLost = vi.fn<(rec: UploadRecord) => void>();
+    const reloaded = createUploadQueue({ cache: createBlobCache(withMemoryFallback(inner, () => undefined)), upload: vi.fn<(boardId: string, blob: Blob, mime: string) => Promise<UploadResult>>(async () => RESULT), apply: () => true, onLost });
+    await reloaded.run('b1');
+    expect(onLost).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers the store when it works, and forgets the memory copy', async () => {
+    const { inner, backend } = refusing({});
+    await backend.putBlob({ key: 'k', blob: blob(3), mime: 'image/png', width: 1, height: 1, boardId: 'b', pending: false, at: 1 });
+    expect(await inner.getBlob('k')).toBeDefined();
+    await backend.deleteBlob('k');
+    expect(await backend.getBlob('k')).toBeUndefined();
+  });
+
+  it('keeps bytes and type for storing, and reads both the new shape and an earlier Blob record', async () => {
+    const original = { key: 'k', blob: new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), mime: 'image/png', width: 1, height: 1, boardId: 'b', pending: true, at: 5 };
+    const stored = await toStored(original);
+    expect(stored.blob).toBeUndefined();
+    expect([stored.data instanceof ArrayBuffer, stored.type, stored.pending]).toEqual([true, 'image/png', true]);
+    const back = fromStored(stored);
+    expect([back.blob.type, back.blob.size, back.key, back.at]).toEqual(['image/png', 3, 'k', 5]);
+    expect(fromStored(original).blob).toBe(original.blob);
   });
 });
