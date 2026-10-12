@@ -164,6 +164,8 @@ The data volume, disk alert and the headroom rules of the runbook (root disk ale
 
 **Open question: how the control plane reaches the ingest door.** The doors are tunnel-only by the brief, but the control plane runs on Fly and cannot join a NetBird or WireGuard tunnel without extra work. The runbook's answer is one public TLS door allow-listed to the Fly static egress address. Options: (a) that public door (the proxy then needs TLS and a firewall rule for the Fly address); (b) a WireGuard peer on the Fly machine; (c) keep ingest on the tunnel and have an operator machine relay for now. Until Johan chooses, ingest works only from machines on the tunnel.
 
+The public TLS door that implements that answer is `docs/telemetry-door.md` (optional compose profile `door`).
+
 ## Deploy checklist
 
 Nothing below has been done.
