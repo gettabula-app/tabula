@@ -110,7 +110,7 @@ describe('board chat in the dock', () => {
     dock.dispatch('open');
     mocks.mounts[0].onView?.({ unread: 3, mentions: 1 });
     expect(textOf(button.querySelector('.chat-count') as FakeElement)).toBe('3');
-    expect(button.getAttribute('aria-label')).toBe('Chat, 3 unread, 1 mentioning you');
+    expect(button.getAttribute('aria-label')).toBe('Chat, 3 unread, 1 mentioning you'); // the board's Chat button keeps its wording
     mocks.mounts[0].onView?.({ unread: 120, mentions: 0 });
     expect(textOf(button.querySelector('.chat-count') as FakeElement)).toBe('99+');
   });
@@ -127,6 +127,46 @@ describe('board chat in the dock', () => {
     panel.dispatchEvent(Object.assign(new FakeEvent('keydown'), { key: 'Escape' }));
     expect(dock.mode()).toBe('closed');
     expect(focus).toHaveBeenCalled();
+  });
+
+  it('a keyboard press on the Chat button moves into the message box; a mouse click leaves focus where it is', async () => {
+    const { button } = await setup();
+    button.dispatchEvent(Object.assign(new FakeEvent('click'), { detail: 1 }));
+    expect(mocks.mounts[0].conv.focusComposer).not.toHaveBeenCalled();
+    button.dispatchEvent(Object.assign(new FakeEvent('click'), { detail: 1 })); // closes
+    button.dispatchEvent(Object.assign(new FakeEvent('click'), { detail: 0 }));
+    expect(mocks.mounts[0].conv.focusComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it('after Esc leaves the message box the focus stays in the dock, and the next Esc closes it and goes back to the Chat button', async () => {
+    const { dock, button, overlay } = await setup();
+    button.click();
+    const panel = overlay.querySelector('.chat-dock') as FakeElement;
+    const focus = vi.spyOn(button, 'focus');
+    const used = Object.assign(new FakeEvent('keydown'), { key: 'Escape' });
+    used.preventDefault(); // the message box blurred itself
+    panel.dispatchEvent(used);
+    await Promise.resolve();
+    expect(panel.getAttribute('tabindex')).toBe('-1');
+    expect(browser!.document.activeElement).toBe(panel);
+    panel.dispatchEvent(Object.assign(new FakeEvent('keydown'), { key: 'Escape' }));
+    expect(dock.mode()).toBe('closed');
+    expect(focus).toHaveBeenCalled();
+  });
+
+  it('focus never falls to the page: closing from inside goes to the Chat button, minimising goes to the bubble', async () => {
+    const { dock, button, overlay } = await setup();
+    button.click();
+    const header = (label: string) => (overlay.querySelectorAll('.chat-dock-btn') as FakeElement[]).find((b) => b.getAttribute('aria-label') === label)!;
+    header('Minimise to a bubble').focus();
+    header('Minimise to a bubble').click();
+    expect(dock.mode()).toBe('bubble');
+    expect(browser!.document.activeElement).toBe(overlay.querySelector('.chat-bubble'));
+    (overlay.querySelector('.chat-bubble') as FakeElement).click();
+    header('Close chat').focus();
+    header('Close chat').click();
+    expect(dock.mode()).toBe('closed');
+    expect(browser!.document.activeElement).toBe(button);
   });
 
   it('the M shortcut toggles it like the button', async () => {
