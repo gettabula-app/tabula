@@ -215,7 +215,7 @@ describe('the dock with channels', () => {
     expect(bubble.hidden).toBe(false);
     expect(count.hidden).toBe(false);
     expect(textOf(count)).toBe('5');
-    expect(bubble.getAttribute('aria-label')).toBe('Chat, 5 unread, 1 mentioning you');
+    expect(bubble.getAttribute('aria-label')).toBe('Chat, 5 unread, you were mentioned');
     expect(count.classList.contains('mention')).toBe(true);
     stub.setUnread('team', 't1', { unread: 120, mentions: 0 });
     expect(textOf(count)).toBe('99+');

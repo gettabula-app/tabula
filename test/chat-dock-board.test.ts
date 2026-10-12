@@ -110,7 +110,7 @@ describe('board chat in the dock', () => {
     dock.dispatch('open');
     mocks.mounts[0].onView?.({ unread: 3, mentions: 1 });
     expect(textOf(button.querySelector('.chat-count') as FakeElement)).toBe('3');
-    expect(button.getAttribute('aria-label')).toBe('Chat, 3 unread, 1 mentioning you');
+    expect(button.getAttribute('aria-label')).toBe('Chat, 3 unread, 1 mentioning you'); // the board's Chat button keeps its wording
     mocks.mounts[0].onView?.({ unread: 120, mentions: 0 });
     expect(textOf(button.querySelector('.chat-count') as FakeElement)).toBe('99+');
   });

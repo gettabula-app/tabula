@@ -98,7 +98,8 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const chips = h('nav', { class: 'chat-dock-chips', 'aria-label': 'Chat channels' });
   const here = h('div', { class: 'chat-dock-here', hidden: true });
   const status = h('p', { class: 'chat-dock-status', role: 'status', hidden: true });
-  const body = h('div', { class: 'chat-dock-body' }, chips, here, status, conversationHost);
+  const top = h('div', { class: 'chat-dock-top' }, chips, here);
+  const body = h('div', { class: 'chat-dock-body' }, top, status, conversationHost);
   const button = (label: string, name: Parameters<typeof icon>[0], event: DockEvent) =>
     h('button', { class: 'icon-btn chat-dock-btn', type: 'button', 'aria-label': label, 'data-tip': label, onclick: () => dispatch(event) }, icon(name, 18));
   const context = h('span', { class: 'chat-dock-context' });
@@ -242,7 +243,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     bubbleCount.textContent = badgeText(t.unread);
     bubbleCount.hidden = t.unread === 0;
     bubbleCount.classList.toggle('mention', t.mentions > 0);
-    bubble.setAttribute('aria-label', t.unread ? `Chat, ${t.unread} unread${t.mentions ? `, ${t.mentions} mentioning you` : ''}` : 'Chat');
+    bubble.setAttribute('aria-label', t.unread ? `Chat, ${t.unread} unread${t.mentions ? ', you were mentioned' : ''}` : 'Chat');
   }
 
   /** Keeps the chat socket up while the dock is a panel or a bubble (the bubble counts), and the channel list loaded while it is a panel. */
