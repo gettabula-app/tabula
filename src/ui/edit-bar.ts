@@ -1,6 +1,7 @@
 import type { BoardApp } from '../app';
 import { h, icon } from './dom';
 import { safeInsets } from './safe-area';
+import { cornerTextInset, placeEditBar } from './edit-bar-layout';
 import './edit-bar.css';
 
 /** A small editing control that follows the text box while the camera moves. */
@@ -30,10 +31,12 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
   bar.appendChild(button);
   parent.appendChild(bar);
 
+  const fine = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
   const visible = () => app.editor.active && app.editor.textMode && !app.readOnly;
   const position = () => {
     if (!visible() || !bar.classList.contains('show')) return;
     const box = app.editor.textarea.getBoundingClientRect();
+    const note = app.editor.objectScreenRect() ?? box;
     const safe = safeInsets();
     const width = bar.offsetWidth;
     const height = bar.offsetHeight;
@@ -43,19 +46,14 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
     // the soft keyboard shrinks the visual viewport, not the window: the bar stays in what the person can see
     const vv = window.visualViewport;
     const bottomEdge = Math.min(window.innerHeight, vv ? vv.offsetTop + vv.height : window.innerHeight) - safe.bottom - 8;
-    const x = Math.max(leftEdge, Math.min((box.left + box.right - width) / 2, rightEdge - width));
-    const above = box.top - 8 - height;
-    const below = box.bottom + 8;
-    // the side with more room, so the picker that opens away from the note is tall enough to use instead of two rows
     // never under the top bars (a high note on a phone): they are drawn over the canvas
     const chrome = [...document.querySelectorAll<HTMLElement>('.top-left, .top-right')].map((el) => el.getBoundingClientRect());
-    const hits = (top: number) => chrome.some((r) => x < r.right && x + width > r.left && top < r.bottom && top + height > r.top);
-    const side = hits(above) && !hits(below) ? 'below' : hits(below) && !hits(above) ? 'above'
-      : box.top - topEdge >= bottomEdge - box.bottom - height ? 'above' : 'below';
-    bar.dataset.side = side;
-    let y = side === 'above' ? above : below;
-    y = Math.max(topEdge, Math.min(y, bottomEdge - height));
-    bar.style.transform = `translate(${x}px, ${y}px)`;
+    const hits = (x: number, top: number) => chrome.some((r) => x < r.right && x + width > r.left && top < r.bottom && top + height > r.top);
+    const placed = placeEditBar({ box, width, height, edges: { left: leftEdge, right: rightEdge, top: topEdge, bottom: bottomEdge }, hits, note, fine });
+    bar.dataset.side = placed.side;
+    // while the button is in the note's corner the text keeps clear of it; the text stays centred in the rest
+    app.editor.setBottomInset(placed.side === 'corner' ? cornerTextInset(fine) : 0);
+    bar.style.transform = `translate(${placed.x}px, ${placed.y}px)`;
   };
   const sync = () => {
     const show = visible();
