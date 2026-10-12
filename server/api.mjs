@@ -381,11 +381,24 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const TELEMETRY_CAPTURE_WINDOW_MS = 60_000;
   const TELEMETRY_CAPTURE_EVERY_MS = 10_000;
   const telemetryHourOf = (at) => Math.floor(at / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS;
+  // `pendingTelemetry` is the latest build of the hour that is still running (never handed out: a pull inside the hour would take a partial
+  // hour, and the collector on the other side drops a second report for the same workspace and hour); it becomes `completedTelemetry`
+  // once the hour has ended.
+  let pendingTelemetry = null;
   let completedTelemetry = null;
   let lastTelemetryCaptureAt = null;
 
+  const settleTelemetry = () => {
+    if (pendingTelemetry && pendingTelemetry.hour < telemetryHourOf(now())) {
+      completedTelemetry = pendingTelemetry;
+      pendingTelemetry = null;
+    }
+  };
+
   function captureTelemetryHour() {
+    settleTelemetry();
     if (!telemetryCollectionEnabled()) {
+      pendingTelemetry = null;
       completedTelemetry = null;
       return;
     }
@@ -393,11 +406,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     collectTelemetryGauges();
     const clean = telemetryCollector.snapshot().clean;
     if (!clean || clean.hour !== pinned || telemetryHourOf(now()) !== pinned) return;
-    completedTelemetry = telemetryEnabled() ? clean : dropFeatureSeries(clean);
+    pendingTelemetry = telemetryEnabled() ? clean : dropFeatureSeries(clean);
   }
 
   /** Called every few seconds: in the last minute of an hour it builds the report again every ten seconds. */
   function telemetryTick() {
+    try {
+      if (maintenance()) return; // a restore has closed or is swapping the directory
+      settleTelemetry();
+      tickWindow();
+    } catch (err) {
+      log(`api: telemetry capture failed: ${String(err?.message ?? err).slice(0, 120)}`);
+    }
+  }
+
+  function tickWindow() {
     const at = now();
     if (at - telemetryHourOf(at) < TELEMETRY_HOUR_MS - TELEMETRY_CAPTURE_WINDOW_MS) return;
     if (lastTelemetryCaptureAt !== null && at - lastTelemetryCaptureAt >= 0 && at - lastTelemetryCaptureAt < TELEMETRY_CAPTURE_EVERY_MS) return;
@@ -407,6 +430,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   /** The report to hand out: null when there is none, or when it is older than the hour before this one (a missed hour is not served as if it were fresh). */
   function telemetryToHandOut() {
+    settleTelemetry();
     if (!completedTelemetry) return { none: 'no_report_yet' };
     if (completedTelemetry.hour < telemetryHourOf(now()) - TELEMETRY_HOUR_MS) return { none: 'stale_report' };
     return { report: telemetryEnabled() ? completedTelemetry : dropFeatureSeries(completedTelemetry) };
@@ -831,10 +855,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           telemetryCollector.resetProductAnalytics();
           // the finished hour held feature counts too: they are taken out of it for good (a later opt-in must not bring them back)
           if (completedTelemetry) completedTelemetry = dropFeatureSeries(completedTelemetry);
+          if (pendingTelemetry) pendingTelemetry = dropFeatureSeries(pendingTelemetry);
         }
       } else {
         telemetryCollector.reset();
         completedTelemetry = null;
+        pendingTelemetry = null;
       }
       if (!telemetryCollectionEnabled()) {
         eventLoopDelay?.disable();

@@ -92,6 +92,7 @@ describe('who may ask', () => {
     let at = 1_800_000_000_000;
     const w = await setup({ now: () => at });
     w.api.captureTelemetryHour();
+    at += HOUR; // the hour has finished
     expect((await w.pull({})).status).toBe(401);
     expect((await w.pull({ authorization: 'Bearer nope' })).status).toBe(401);
     expect((await w.pull({ authorization: `Basic ${TOKEN}` })).status).toBe(401);
@@ -130,16 +131,18 @@ describe('what it answers', () => {
   });
 
   it('answers the finished hour as the report itself: scrubbed, the schema\'s shape, under 256 KB, with the workspace id and no content', async () => {
-    const at = 1_800_000_000_000;
+    let at = 1_800_000_000_000;
+    const first = at;
     const w = await setup({ now: () => at });
     const owner = w.signIn('owner');
     await w.call(owner, 'GET', '/api/me');
     w.api.captureTelemetryHour();
+    at += HOUR;
     const res = await w.pull();
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/json');
     const report = res.body;
-    expect(report).toMatchObject({ schema: 1, hour: Math.floor(at / HOUR) * HOUR, mode: 'hosted', workspace: 'ws_telemetry' });
+    expect(report).toMatchObject({ schema: 1, hour: Math.floor(first / HOUR) * HOUR, mode: 'hosted', workspace: 'ws_telemetry' });
     expect(Array.isArray(report.metrics) && report.metrics.length > 0).toBe(true);
     // the scrubber would not change it, so it is exactly what the collector's schema allows
     expect(scrubReport(report).clean).toEqual(report);
@@ -152,10 +155,12 @@ describe('what it answers', () => {
   });
 
   it('has the same shape as the Privacy tab\'s preview, and answers the same hour again if asked again', async () => {
-    const w = await setup({ now: () => 1_800_000_000_000 });
+    let at = 1_800_000_000_000;
+    const w = await setup({ now: () => at });
     const owner = w.signIn('owner');
     const preview = (await w.call(owner, 'GET', '/api/admin/privacy/preview')).body.preview;
     w.api.captureTelemetryHour();
+    at += HOUR;
     const first = (await w.pull()).body;
     expect(Object.keys(first).sort()).toEqual(Object.keys(preview).sort());
     expect(first.metrics.map((m: { name: string }) => m.name)).toEqual(expect.arrayContaining(['entities_total']));
@@ -168,9 +173,12 @@ describe('what it answers', () => {
     w.api.telemetryTick();
     expect((await w.pull()).status).toBe(503); // half past: nothing yet
     at += 30 * 60_000 - 5_000;
+    const hour = at - (at % HOUR);
     w.api.telemetryTick();
+    expect((await w.pull()).status).toBe(503); // built, but the hour is still running: never handed out inside it
+    at += 6_000;
     const res = await w.pull();
-    expect([res.status, res.body.hour]).toEqual([200, at - (at % HOUR)]);
+    expect([res.status, res.body.hour]).toEqual([200, hour]);
     const before = res.text;
     w.api.telemetryTick(); // the same hour again: not built twice
     expect((await w.pull()).text).toBe(before);
@@ -189,9 +197,11 @@ describe('the owner\'s and the operator\'s switches', () => {
   });
 
   it('keeps answering 200 with operating data when the owner turns product analytics off, through the real path (no manual capture in between)', async () => {
-    const w = await setup({ now: () => 1_800_000_000_000 });
+    let at = 1_800_000_000_000;
+    const w = await setup({ now: () => at });
     const owner = w.signIn('owner');
     w.api.captureTelemetryHour();
+    at += HOUR;
     expect((await w.pull()).status).toBe(200);
     expect((await w.call(owner, 'PUT', '/api/admin/privacy', { enabled: false })).status).toBe(200);
     const after = await w.pull(); // straight away: not a 503 until the next hour
@@ -201,7 +211,11 @@ describe('the owner\'s and the operator\'s switches', () => {
     for (const name of PRODUCT) expect(names).not.toContain(name);
     // a build made while the switch is off is operating-only too
     w.api.captureTelemetryHour();
-    expect((await w.pull()).status).toBe(200);
+    at += HOUR;
+    const later = await w.pull();
+    expect(later.status).toBe(200);
+    expect(later.body.hour).toBe(Math.floor(at / HOUR) * HOUR - HOUR);
+    for (const name of PRODUCT) expect(later.body.metrics.map((m: { name: string }) => m.name)).not.toContain(name);
   });
 
   it('takes feature series out of a report for good, and leaves the operating series and the rest of the report alone', () => {
@@ -225,12 +239,14 @@ describe('capture timing', () => {
     expect((await w.pull()).status).toBe(503); // not yet the last minute
     at = base + HOUR - 59_000;
     w.api.telemetryTick();
-    const first = await w.pull();
-    expect([first.status, first.body.hour]).toEqual([200, base]);
+    expect((await w.pull()).status).toBe(503); // built, but the hour has not ended: not handed out, so a pull cannot take a partial hour
     // a tick that comes late (here with 1.5 s to go) still builds: the hour is not skipped because an earlier window passed
     at = base + HOUR - 1_500;
     w.api.telemetryTick();
-    expect((await w.pull()).body.hour).toBe(base);
+    expect((await w.pull()).status).toBe(503);
+    at = base + HOUR + 1_000;
+    const done = await w.pull();
+    expect([done.status, done.body.hour]).toEqual([200, base]);
   });
 
   it('throws away a build that crosses the boundary instead of labelling it with the next hour', async () => {
@@ -239,8 +255,6 @@ describe('capture timing', () => {
     let step = 0;
     const w = await setup({ now: () => (at += step) });
     w.api.telemetryTick();
-    const good = await w.pull();
-    expect([good.status, good.body.hour]).toEqual([200, base]);
     // the clock now moves with every read, so a build that starts just before the boundary ends after it
     at = base + HOUR - 700;
     step = 300;
@@ -249,7 +263,47 @@ describe('capture timing', () => {
     at = base + HOUR + 60_000;
     const after = await w.pull();
     expect(after.status).toBe(200);
-    expect(after.text).toBe(good.text); // still the finished hour, not an empty one labelled with the new hour
+    expect(after.body.hour).toBe(base); // the finished hour from the earlier build, not an empty one labelled with the new hour
+    expect(after.body.metrics.length).toBeGreaterThan(0);
+  });
+
+  it('answers nothing for an hour whose only build crossed the boundary (503, never a report of the next hour)', async () => {
+    const base = startOfHour(1_800_000_000_000);
+    let at = base + HOUR - 700;
+    let step = 300;
+    const w = await setup({ now: () => (at += step) });
+    w.api.captureTelemetryHour();
+    step = 0;
+    at = base + HOUR + 60_000;
+    const res = await w.pull();
+    expect([res.status, res.body.error]).toEqual([503, 'no_report_yet']);
+  });
+
+  it('answers 503 stale_report when the whole capture window of an hour was missed', async () => {
+    const base = startOfHour(1_800_000_000_000);
+    let at = base + HOUR - 5_000;
+    const w = await setup({ now: () => at });
+    w.api.telemetryTick(); // hour A built
+    at = base + 2 * HOUR - 120_000; // hour B (the next one): the timer does not run in its last minute
+    w.api.telemetryTick(); // not in the window: nothing
+    at = base + HOUR + 120_000;
+    expect((await w.pull()).status).toBe(200); // hour A is the hour before this one: fresh
+    at = base + 2 * HOUR + 1_000; // hour B ended with no build, and the one after has just started
+    const res = await w.pull();
+    expect([res.status, res.body.error]).toEqual([503, 'stale_report']);
+  });
+
+  it('does not build while a restore has the workspace, and a tick on a closed directory does not throw', async () => {
+    const base = startOfHour(1_800_000_000_000);
+    let at = base + HOUR - 30_000;
+    const lines: string[] = [];
+    const w = await setup({ now: () => at, log: (line: string) => lines.push(line) });
+    w.state.restoring = true;
+    expect(() => w.api.telemetryTick()).not.toThrow();
+    w.state.restoring = false;
+    at = base + HOUR + 60_000;
+    expect((await w.pull()).body.error).toBe('no_report_yet'); // nothing was built while the restore had it
+    expect(lines).toEqual([]);
   });
 
   it('answers 503 stale_report when the stored report is older than the hour before this one, never serving a missed hour as fresh', async () => {
@@ -271,8 +325,10 @@ describe('the release label', () => {
   });
 
   it('keeps a date-style TABULA_VERSION from costing the whole report', async () => {
-    const w = await setup({ env: { TABULA_VERSION: '2026.10.09-1' }, now: () => 1_800_000_000_000 });
+    let at = 1_800_000_000_000;
+    const w = await setup({ env: { TABULA_VERSION: '2026.10.09-1' }, now: () => at });
     w.api.captureTelemetryHour();
+    at += HOUR;
     const res = await w.pull();
     expect([res.status, res.body.app_version]).toEqual([200, 'v2026.10.09']);
   });
@@ -284,6 +340,7 @@ describe('refused control-token attempts', () => {
     let at = 1_800_000_000_000;
     const w = await setup({ now: () => at, log: (line: string) => lines.push(line) });
     w.api.captureTelemetryHour();
+    at += HOUR;
     const bad = { authorization: 'Bearer secret-attempt-value' };
     for (let i = 0; i < 30; i++) expect((await w.pull(bad)).status).toBe(401);
     const limited = await w.pull(bad);
