@@ -21,6 +21,8 @@ Om din arbetsyta inte har inloggning visas en tabell, **Your boards** (Dina tavl
 
 Klicka på tavlans namn för att öppna den. En tavla som någon delat via en länk har samma adress i webbläsaren, så du kan också bokmärka den.
 
+Öppet läge har inga konton, så alla som når servern kan öppna dess tavlor. Använd det bara på din egen dator eller i ett nätverk du litar på. För allt som delas bredare slår du på inloggning; servern varnar vid start när öppet läge lyssnar på en nätverksadress.
+
 ## Arbetsytor med inloggning
 
 När din arbetsyta använder inloggning grupperas tavlorna:
