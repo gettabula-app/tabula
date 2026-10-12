@@ -3,7 +3,7 @@ import { normaliseEmail } from './config.mjs';
 
 const HOUR_MS = 60 * 60 * 1000;
 const EMAIL_LIMIT = 5;
-const IP_LIMIT = 20;
+const DEFAULT_IP_LIMIT = 300;
 const SWEEP_MS = 60 * 1000;
 const MAX_LIMITER_KEYS = 50_000;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -22,7 +22,7 @@ export class SeatLimitError extends Error {
   }
 }
 
-function createLimiter(now) {
+function createLimiter(now, ipLimit) {
   const byEmail = new Map();
   const byIp = new Map();
   let lastSweep = 0;
@@ -46,20 +46,26 @@ function createLimiter(now) {
     }
   }
 
+  // Returns null when the request may go on, else which limit was hit and the real seconds until the oldest hit leaves the window.
   return function allow(email, ip) {
     const t = now();
     sweep(t);
     const ipKey = String(ip || 'unknown').slice(0, 64);
     const emailHits = recent(byEmail, email, t);
     const ipHits = recent(byIp, ipKey, t);
-    if (emailHits.length >= EMAIL_LIMIT || ipHits.length >= IP_LIMIT) {
+    const emailFull = emailHits.length >= EMAIL_LIMIT;
+    const ipFull = ipHits.length >= ipLimit;
+    if (emailFull || ipFull) {
       if (emailHits.length) remember(byEmail, email, emailHits);
       if (ipHits.length) remember(byIp, ipKey, ipHits);
-      return false;
+      const wait = (hits) => Math.max(1, Math.ceil((hits[0] + HOUR_MS - t) / 1000));
+      const emailWait = emailFull ? wait(emailHits) : 0;
+      const ipWait = ipFull ? wait(ipHits) : 0;
+      return emailWait >= ipWait ? { scope: 'email', retryAfterSec: emailWait } : { scope: 'ip', retryAfterSec: ipWait };
     }
     remember(byEmail, email, [...emailHits, t]);
     remember(byIp, ipKey, [...ipHits, t]);
-    return true;
+    return null;
   };
 }
 
@@ -78,8 +84,8 @@ export function csrfOk(req) {
   }
 }
 
-export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true }) {
-  const allow = createLimiter(now);
+export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, log = () => {} }) {
+  const allow = createLimiter(now, config.authIpLimit ?? DEFAULT_IP_LIMIT);
 
   const cookieFlags = `Path=/; HttpOnly; SameSite=Lax${config.secureCookies ? '; Secure' : ''}`;
 
@@ -122,7 +128,11 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
     const { email, invite, ip, oauthRequest: requestedOAuth } = request;
     const address = normaliseEmail(email);
     if (!address) return { ok: true };
-    if (!allow(address, ip)) return { limited: true };
+    const blocked = allow(address, ip);
+    if (blocked) {
+      log(`auth request rate_limited scope=${blocked.scope}`);
+      return { limited: true, ...blocked };
+    }
 
     const t = now();
     const validInvite = typeof invite === 'string' && invite ? directory.findInvite(invite, t) : null;
