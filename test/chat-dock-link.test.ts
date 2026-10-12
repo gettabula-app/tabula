@@ -60,6 +60,17 @@ describe('the Chat link of the top bar', () => {
     expect(stub.watches).toHaveLength(1);
   });
 
+  it('on a page with no board, closing from inside puts focus back on the Chat link', async () => {
+    const { dock, link, click, stub } = await setup();
+    const a = link('boards');
+    click(a);
+    const close = (browser!.document.body.querySelectorAll('.chat-dock-btn') as FakeElement[]).find((b) => b.getAttribute('aria-label') === 'Close chat')!;
+    close.focus();
+    close.click();
+    expect(dock!.mode()).toBe('closed');
+    expect(stub.deps).toBeDefined();
+  });
+
   it('leaves a modified click, a middle click, and the Chat page itself to the address', async () => {
     const { dock, link, click } = await setup();
     for (const over of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }]) {

@@ -154,6 +154,21 @@ describe('board chat in the dock', () => {
     expect(focus).toHaveBeenCalled();
   });
 
+  it('focus never falls to the page: closing from inside goes to the Chat button, minimising goes to the bubble', async () => {
+    const { dock, button, overlay } = await setup();
+    button.click();
+    const header = (label: string) => (overlay.querySelectorAll('.chat-dock-btn') as FakeElement[]).find((b) => b.getAttribute('aria-label') === label)!;
+    header('Minimise to a bubble').focus();
+    header('Minimise to a bubble').click();
+    expect(dock.mode()).toBe('bubble');
+    expect(browser!.document.activeElement).toBe(overlay.querySelector('.chat-bubble'));
+    (overlay.querySelector('.chat-bubble') as FakeElement).click();
+    header('Close chat').focus();
+    header('Close chat').click();
+    expect(dock.mode()).toBe('closed');
+    expect(browser!.document.activeElement).toBe(button);
+  });
+
   it('the M shortcut toggles it like the button', async () => {
     const { dock, app } = await setup();
     app.toggleChat!();

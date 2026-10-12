@@ -77,6 +77,8 @@ export interface ChatDock {
   inset(): number;
   /** Hides the dock on a page that must stay chrome-free (consent, sign-in) or is the chat itself; the dock keeps its state. */
   setSuppressed(on: boolean): void;
+  /** The control that opened the dock (the Chat link), so focus can go back to it when the dock closes. */
+  noteOpener(el: HTMLElement | null): void;
   /** Focuses the message box of what is shown, once the dock is. */
   focusComposer(): void;
   destroy(): void;
@@ -140,12 +142,15 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     }
     e.preventDefault();
     dispatch('close');
-    board?.ctx.returnFocus?.()?.focus();
+    opener()?.focus();
   });
   const el = h('div', { class: 'chat-dock-host' }, panel, bubble);
   overlay.append(el);
 
   let suppressed = false;
+  let lastOpener: HTMLElement | null = null;
+  /** What gets focus when the dock closes from inside: the open board's Chat button, else the control that last opened it. */
+  const opener = (): HTMLElement | null => board?.ctx.returnFocus?.() ?? (lastOpener?.isConnected ? lastOpener : null);
   let board: { ctx: DockBoard; offPresence: (() => void) | null } | null = null;
   let entries: ChatChannelEntry[] = [];
   let loaded = false;
@@ -335,12 +340,16 @@ export function mountChatDock(overlay: HTMLElement, opts: {
 
   function dispatch(event: DockEvent): DockMode {
     const before = prefs.mode;
+    // focus inside the dock must not be lost when the dock goes away: it goes to what opened it, or to the bubble
+    const hadFocus = isShown() && !!document.activeElement && panel.contains(document.activeElement);
     prefs = nextDock(prefs, event);
     if (prefs.mode === 'closed') openKey = null; // the next opening chooses again
     saveDock(userId, prefs, opts.storage);
     paint();
     syncWatch();
     render();
+    if (hadFocus && prefs.mode === 'bubble') bubble.focus();
+    else if (hadFocus && prefs.mode === 'closed') opener()?.focus();
     if (prefs.mode !== before) listeners.forEach((fn) => fn(prefs.mode));
     return prefs.mode;
   }
@@ -374,6 +383,9 @@ export function mountChatDock(overlay: HTMLElement, opts: {
       return () => insetListeners.delete(fn);
     },
     inset: () => (suppressed ? 0 : dockInset(prefs.mode, window.innerWidth)),
+    noteOpener(el) {
+      lastOpener = el;
+    },
     setSuppressed(on) {
       if (suppressed === on) return;
       suppressed = on;

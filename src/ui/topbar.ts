@@ -34,6 +34,7 @@ function chatLink(current: TopbarPage): HTMLElement {
     const dock = currentChatDock();
     if (!dock) return;
     e.preventDefault();
+    dock.noteOpener(a);
     dock.dispatch('open');
     dock.focusComposer();
   });
