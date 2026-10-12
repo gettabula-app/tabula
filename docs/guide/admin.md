@@ -230,11 +230,24 @@ Anyone with a board open sees **Restoring…** in the status chip and the board 
 
 <!-- screenshot: Backups tab with the status and the list of backups -->
 
+## Privacy
+
+The **Privacy** tab shows what Tabula collects about how this workspace is used, and lets the owner switch it. Admins can read it; only the owner can change the setting.
+
+- On a hosted workspace, **Product analytics** is on by default and the owner can turn it off. It sends counts and durations of feature use to Tabula so we can see what is used and improve it, for example boards opened, polls run, timers, AI runs and chat message counts, and coarse device, browser and operating-system classes. Operating data stays on either way. We need it to run, back up and fix your workspace: request counts and durations, connection totals, resource use, the sizes of the workspace, backup and restore outcomes.
+- On a server you run yourself, it is off by default. The switch is **Send telemetry to Tabula**. When it is on, your server prepares the report once an hour for Tabula and for nothing else. Turning it on asks you to confirm first.
+- Anything you write or upload is never sent: titles, text, comments, chat, file names, search text and AI prompts. Neither is anything that identifies a person (names, email addresses, ids, IP addresses, browser strings), the addresses of your content, error text, or details of your own network.
+- **Show what would be sent** opens the exact report your workspace would build, with a **Copy** button. The tab also shows when a report was last prepared and who last changed the setting.
+- This version only prepares the report. Nothing has been sent yet, and sending starts in a later version. Turning the switch off stops collection at once.
+- If whoever runs your server has set the environment variable `TABULA_TELEMETRY`, the switch is locked and the tab says so.
+
+Changes to the setting are recorded in the [audit log](#audit-log) under **Privacy**.
+
 ## Audit log
 
 A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Actions the system takes on its own, such as the trial-ending notice to workspace owners, show **System** as the person. Backups and restores read as sentences too, naming the backup by its date. Hover an entry to see the underlying action name.
 
-- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **AI tool access**, **Images**, **Chat**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added, tested or removed; **AI tool access** shows access tokens being created and revoked (with their names, never their secrets). **Backups** shows the automatic backup runs (and failures, and how many damaged or missing files a run put back) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
+- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **AI tool access**, **Images**, **Chat**, **Privacy**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added, tested or removed; **AI tool access** shows access tokens being created and revoked (with their names, never their secrets). **Backups** shows the automatic backup runs (and failures, and how many damaged or missing files a run put back) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
 - Select **Load more** to go further back.
 
 Entries with no person are shown as the system, for example when a hosted workspace is locked or unlocked.
