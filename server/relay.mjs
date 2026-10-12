@@ -93,6 +93,7 @@ const MSG_TRACKER_NOTICE = 7;
 // { kind: 'snapshot', runs } on joining, then { kind: 'patch', run } per change, each shaped for that socket's person.
 const MSG_AI_RUNS = 6;
 const AI_SWEEP_MS = 30_000;
+const NOTIFICATION_SWEEP_MS = 60 * 60 * 1000;
 const trackerSocketBudget = createTrackerSocketBudget();
 
 const CLOSE_UNAUTHENTICATED = 4401;
@@ -246,6 +247,7 @@ let api = null;
 let cloud = null;
 let keyFloorReporter = null;
 let buildApi = null;
+let notificationStore = null;
 // Team chat (docs/chat.md), accounts mode, on unless TABULA_CHAT=off. chat.sqlite is opened on first use.
 let chat = null;
 let chatHub = null;
@@ -256,12 +258,13 @@ let trackerNotifier = null;
 let trackerGuard = null;
 let joinCodeService = null;
 if (config.authEnabled) {
-  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
+  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }, { createNotifications }] = await Promise.all([
     import('./directory.mjs'),
     import('./mailer.mjs'),
     import('./auth.mjs'),
     import('./api.mjs'),
     import('./cloud.mjs'),
+    import('./notifications.mjs'),
   ]);
   let oauthSecret = null;
   if (config.mcp?.oauth) {
@@ -269,6 +272,25 @@ if (config.authEnabled) {
     oauthSecret = loadOAuthSecret(DATA_DIR);
   }
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier, oauthSecret });
+  notificationStore = createNotifications({
+    directory,
+    trackerEnabled: config.tracker === true,
+    chatStore: () => chat?.store?.() ?? null,
+    chatAccess: (user, kind, ref) => chat?.access?.(user, kind, ref) ?? null,
+    roomAccess: { read: (name, fn) => roomAccess.read(name, fn) },
+    hub: { notify: (userId, counts) => chatHub?.notify(userId, counts) },
+  });
+  const sweepNotifications = () => {
+    const prune = () => directory.transaction(() => notificationStore.prune());
+    try {
+      if (snapshotBarrier) Promise.resolve(snapshotBarrier.runWriter(prune)).catch((err) => log('notifications: retention sweep failed', err?.message));
+      else prune();
+    } catch (err) {
+      log('notifications: retention sweep failed', err?.message);
+    }
+  };
+  sweepNotifications();
+  setInterval(sweepNotifications, NOTIFICATION_SWEEP_MS).unref();
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -315,7 +337,7 @@ if (config.authEnabled) {
     });
     // Not documented, and only under NODE_ENV=test (chat-notify.mjs)
     const mailAfterMs = mailAfterMsFromEnv(env);
-    chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
+    chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, notifications: notificationStore, log, mailAfterMs });
     chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
     events.on('user-removed', ({ userId } = {}) => {
@@ -434,7 +456,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
@@ -562,7 +584,22 @@ class Room {
     });
     // Accounts mode: the relay checks comment authorship on every write to a comments room.
     this.guard = directory && this.kind === 'comments'
-      ? createCommentGuard(this.doc, { isAccount: (id) => directory.getUser(id) !== null })
+      ? createCommentGuard(this.doc, {
+          isAccount: (id) => directory.getUser(id) !== null,
+          onReplyAdded: ({ threadId, threadAuthorId, replyAuthorId }) => {
+            try {
+              notificationStore?.record({
+                userId: threadAuthorId,
+                kind: 'comment_reply',
+                actorId: replyAuthorId,
+                boardId: this.name.slice(0, -'~comments'.length),
+                ref: threadId,
+              });
+            } catch (err) {
+              log('comments: could not store a reply notification', err?.message);
+            }
+          },
+        })
       : null;
 
     this.awareness.on('update', ({ added, updated, removed }, conn) => {
@@ -895,6 +932,16 @@ const roomAccess = {
   write(name, origin, fn, trackerContext = null) {
     const room = getRoom(name);
     try {
+      const commentThreadId = room.kind === 'comments' && typeof trackerContext?.commentThreadId === 'string'
+        ? trackerContext.commentThreadId
+        : null;
+      const commentActorId = typeof trackerContext?.notificationActorId === 'string' ? trackerContext.notificationActorId : null;
+      const commentSnapshot = () => {
+        if (!commentThreadId) return null;
+        const thread = room.doc.getMap('threads').get(commentThreadId);
+        return thread instanceof Y.Map ? thread.toJSON() : null;
+      };
+      const commentBefore = commentThreadId && commentActorId ? commentSnapshot() : null;
       let result;
       const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
@@ -907,6 +954,24 @@ const roomAccess = {
           throw new OpsError(code, `Linked card write was refused (${refused.reason}).`, refused.reason === 'title_invalid' ? 'title' : undefined);
         }
       } else apply();
+      const commentAfter = commentThreadId && commentActorId ? commentSnapshot() : null;
+      if (commentBefore && commentAfter && commentBefore.authorId !== commentActorId && typeof commentBefore.authorId === 'string') {
+        const beforeReplies = commentBefore.replies ?? {};
+        for (const [replyId, reply] of Object.entries(commentAfter.replies ?? {})) {
+          if (Object.hasOwn(beforeReplies, replyId) || reply?.authorId !== commentActorId) continue;
+          try {
+            (trackerContext?.notifications ?? notificationStore)?.record({
+              userId: commentBefore.authorId,
+              kind: 'comment_reply',
+              actorId: commentActorId,
+              boardId: room.name.slice(0, -'~comments'.length),
+              ref: commentThreadId,
+            });
+          } catch (err) {
+            log('comments: could not store a reply notification', err?.message);
+          }
+        }
+      }
       return result;
     } finally {
       room.releaseIfIdle();
@@ -952,7 +1017,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, notifications: notificationStore, log, snapshotBarrier });
 }
 
 let oauthRoutes = null;

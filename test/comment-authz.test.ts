@@ -9,10 +9,14 @@ const EDITOR: Actor = { id: 'edAccountId00000000000', role: 'editor', name: 'Eve
 const OWNER: Actor = { id: 'ownerAccountId00000000', role: 'owner', name: 'Olga' };
 
 /** A relay document with a guard, and clients that write to their own copy and send the difference. */
-function setup(seed?: (threads: Y.Map<Y.Map<unknown>>) => void, accounts: string[] = [ANA.id, BEN.id, EDITOR.id, OWNER.id]) {
+function setup(
+  seed?: (threads: Y.Map<Y.Map<unknown>>) => void,
+  accounts: string[] = [ANA.id, BEN.id, EDITOR.id, OWNER.id],
+  onReplyAdded?: (event: { threadId: string; threadAuthorId: string; replyId: string; replyAuthorId: string }) => void,
+) {
   const server = new Y.Doc();
   if (seed) server.transact(() => seed(server.getMap<any>('threads')));
-  const guard = createCommentGuard(server, { isAccount: (id: string) => accounts.includes(id) });
+  const guard = createCommentGuard(server, { isAccount: (id: string) => accounts.includes(id), onReplyAdded });
   const client = () => {
     const doc = new Y.Doc();
     Y.applyUpdate(doc, Y.encodeStateAsUpdate(server));
@@ -56,6 +60,17 @@ const reply = (id: string, author: Actor | { id: string; name: string }, extra: 
   ({ id, authorId: author.id, authorName: author.name, authorColor: '#123', text: 'Re', createdAt: 2, ...extra });
 
 describe('comment authorship on the relay', () => {
+  it('reports an accepted reply to another account even when the guard corrects its stamped name', () => {
+    const notifications: Array<{ threadId: string; threadAuthorId: string; replyId: string; replyAuthorId: string }> = [];
+    const { client, send } = setup((t) => newThread(t, 't1', ANA), undefined, (event) => notifications.push(event));
+    const bens = client();
+    expect(send(bens, BEN, (t) => {
+      const replies = t.get('t1')!.get('replies') as Y.Map<unknown>;
+      replies.set('r1', reply('r1', { id: BEN.id, name: 'Forged name' }));
+    })).toEqual(['author']);
+    expect(notifications).toEqual([{ threadId: 't1', threadAuthorId: ANA.id, replyId: 'r1', replyAuthorId: BEN.id }]);
+  });
+
   it('lets people write, edit and delete their own comments', () => {
     const { client, send, thread } = setup();
     const doc = client();

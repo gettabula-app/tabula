@@ -280,6 +280,13 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     for (const ws of Array.from(byUser.get(userId) ?? [])) send(ws, { t: 'read', kind, ref, lastId });
   }
 
+  /** A row in the unified inbox changed: send the access-filtered badge counts to every socket of its recipient. */
+  function notify(userId, counts = {}) {
+    const unread = Number.isSafeInteger(counts.unread) && counts.unread >= 0 ? counts.unread : 0;
+    const unreadMentions = Number.isSafeInteger(counts.unreadMentions) && counts.unreadMentions >= 0 ? counts.unreadMentions : 0;
+    for (const ws of Array.from(byUser.get(userId) ?? [])) send(ws, { t: 'notify', unread, unreadMentions });
+  }
+
   /** Closes every socket (a restore takes the server over, or it stops). */
   function closeAll(code, reason) {
     for (const ws of allSockets()) close(ws, code, reason);
@@ -347,5 +354,5 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     if (events) for (const [name, fn] of Object.entries(listeners)) events.off(name, fn);
   }
 
-  return { connect, publish, read, notice, activeSince, closeAll, stop, tick, stats: () => ({ users: byUser.size, sockets: allSockets().length, channels: byChannel.size }) };
+  return { connect, publish, read, notify, notice, activeSince, closeAll, stop, tick, stats: () => ({ users: byUser.size, sockets: allSockets().length, channels: byChannel.size }) };
 }

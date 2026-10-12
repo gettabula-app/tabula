@@ -22,6 +22,8 @@ import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
+import { createNotifications } from './notifications.mjs';
+import { createNotificationRoutes } from './notifications-routes.mjs';
 import { createBackupExport } from './backup-export.mjs';
 import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
 import { boardAccessForDirectory } from './tracker/access.mjs';
@@ -225,7 +227,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, notifications = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -749,6 +751,20 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   };
 
   const chatOn = Boolean(config.chat && chat);
+  const notificationStore = config.authEnabled && directory
+    ? notifications ?? createNotifications({
+        directory,
+        trackerEnabled: config.tracker === true,
+        chatStore: chat?.store ?? null,
+        chatAccess: chat?.access ?? null,
+        roomAccess,
+        hub: chat?.hub ?? null,
+        now,
+      })
+    : null;
+  const notificationRoutes = notificationStore
+    ? createNotificationRoutes({ notifications: notificationStore, compile, errors: { badRequest } })
+    : [];
   const chatRoutes = chatOn
     ? createChatRoutes({
         directory,
@@ -760,6 +776,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit,
         requireAdmin,
         notifier: chat.notifier ?? null,
+        notifications: notificationStore,
         emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
       })
@@ -804,6 +821,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // ------------------------------------------------------------ handlers
 
   const routes = [
+    ...notificationRoutes,
+
     compile('GET', 'admin/privacy', {}, ({ user }) => {
       requireAdmin(user);
       return [200, privacyState()];
@@ -1043,12 +1062,23 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       if (!invite || !team) throw notFound('This invite is not valid');
       let role = directory.getTeamRole(team.id, user.id);
       if (role === null || (role === 'member' && invite.role === 'admin')) {
+        const joined = role === null;
         role = invite.role;
         directory.transaction(() => {
           directory.addTeamMember(team.id, user.id, role);
           directory.recordInviteUse(invite.id);
+          if (joined && invite.createdBy) {
+            notificationStore?.record({
+              userId: invite.createdBy,
+              kind: 'team_joined',
+              actorId: user.id,
+              teamId: team.id,
+              ref: invite.id,
+            }, { notify: false });
+          }
           audit(user, 'invite.accept', { teamId: team.id, inviteId: invite.id, role });
         });
+        if (joined && invite.createdBy) notificationStore?.ping(invite.createdBy);
         emit('access-changed', { userId: user.id });
       }
       return [200, { team: { id: team.id, name: team.name }, role }];
@@ -1115,10 +1145,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const role = oneOf(body.role, SHARE_ROLES, 'role');
       const exists = principalType === 'team' ? directory.getTeam(principalId) : directory.getUser(principalId);
       if (!exists || !canSee(visiblePrincipals(user), principalType, principalId)) throw notFound('Unknown user or team');
+      const wasShared = directory.listShares(board.id).some((s) => s.principalType === principalType && s.principalId === principalId);
+      let notificationCreated = false;
       directory.transaction(() => {
         directory.shareBoard(board.id, { principalType, principalId, role });
+        if (principalType === 'user' && principalId !== user.id && !wasShared) {
+          notificationCreated = notificationStore?.record({
+            userId: principalId,
+            kind: 'board_shared',
+            actorId: user.id,
+            boardId: board.id,
+          }, { notify: false }).created === true;
+        }
         audit(user, 'board.share', { boardId: board.id, principalType, principalId, role });
       });
+      if (notificationCreated) notificationStore?.ping(principalId);
       emit('access-changed', { boardId: board.id });
       const share = directory.listShares(board.id).find((s) => s.principalType === principalType && s.principalId === principalId);
       return [201, share];

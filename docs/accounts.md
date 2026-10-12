@@ -92,6 +92,10 @@ POST   /api/auth/verify {token}         public  -> 200 {user} + Set-Cookie (see 
 POST   /api/auth/logout                 -> 204 (revokes this session, clears the cookie)
 POST   /api/auth/logout-all             -> 204 (revokes every session of this user)
 
+GET    /api/notifications?limit&before&unread=1 -> {items, nextCursor, unread, unreadMentions} (default 30, max 50; one access-filtered page across personal and tracker notices)
+GET    /api/notifications/unread        -> {unread, unreadMentions} (counts at most the newest 200 accessible unread rows)
+POST   /api/notifications/read {ids: string[] | all: true} -> {updated, unread, unreadMentions} (up to 100 ids; ids are from the unified list)
+
 GET    /api/teams                       -> [{id,name,role,memberCount,archived}]   (mine; workspace admins see all, role = their team role or null)
 POST   /api/teams {name}                -> 201 team  (not for guests; creator becomes team admin)
 PATCH  /api/teams/:id {name?,archived?} -> team      (team admin or workspace admin)
