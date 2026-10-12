@@ -1,6 +1,8 @@
 # Link cards
 
-TAB-135. Status: spec for review. Nothing here is built yet.
+TAB-135. Status: decisions frozen 2026-10-10. Built: slice 1 (the address guard, the pinned fetcher and the head parser, `server/link-guard.mjs`, `server/link-fetch.mjs`, `server/link-parse.mjs`) and slice 2a (the route `POST /api/boards/:id/unfurl` for text fields, the cache, the limits, the workspace setting `GET`/`PUT /api/admin/link-previews`, `TABULA_LINK_PREVIEWS`, `server/link-routes.mjs`). Slice 2b is built too: the preview image and the icon go through the same guard on every hop and into the asking board's assets (a second board claims them from the cache; one that would pass the quota is left out and the card keeps its text), `refresh: true` skips the cache, and the workspace, hourly and in-flight limits are injectable for tests. Not built: the admin switch in the page, slice 3 (the card) and slice 4 (the guide). The sections below say what the finished feature does.
+
+Slice 2a answers: a fetch outcome that fails is `422` with `{ error, message }` and one of the `unfurlError` codes; the other refusals are `400` (`bad_request`, `bad_url`, `credentials_in_url`), `403` (not an owner or editor), `409` `previews_off`, `429` `rate_limited` with `Retry-After`. The user agent names the instance (`TabulaLinkPreview/1.0 (+<instance origin>/docs/link-previews)`) and falls back to `https://gettabula.app/docs/link-previews` when the instance address is unknown or only a development address.
 
 Johan asked for "links with preview, parsed metadata and such". Today a pasted web address becomes a sticky note with the address as its text, and `docs/images.md` decided that pasting a URL fetches nothing, because a server-side fetch is an SSRF hole and a browser-side one leaks every viewer's IP address to a third party. This page specifies how link previews are added without either problem: **one guarded fetch on the relay, at the moment someone adds the link, with the result stored in the board**, so nobody's browser ever contacts the linked site to draw the card.
 
@@ -80,7 +82,7 @@ The quick bar offers the three as **Compact**, **Card** and **Large**, which res
 - **Paste.** The paste handler (`src/app.ts`) today turns text into stickies. A clipboard whose `text/plain` is a single line that parses as an `http:` or `https:` URL (with `URL`, after trimming), and nothing else, makes a link card at the pointer or the view centre. A URL among other text keeps today's behaviour (stickies). `Shift+Ctrl+V` ("paste as text") keeps the old behaviour for a URL too.
 - **Drop** a link from another tab (`text/uri-list`): a card per address, at most 10 per drop.
 - **The Link button** on the left rail (after **Image**) opens a small popover with an address field and **Add**.
-- **Normalised**: the `URL` parser's form, `#fragment` kept, user and password removed (`https://user:pass@host` is refused with "Addresses with a user name or password can't be added"), at most 2,048 characters. Non-web schemes (`javascript:`, `data:`, `file:`, `mailto:` in v1) are refused at the door; the card can only ever open `http` and `https`.
+- **Normalised**: the `URL` parser's form, `#fragment` kept, user and password removed (`https://user:pass@host` is refused with "Addresses that contain a user name or password cannot be added."), at most 2,048 characters. Non-web schemes (`javascript:`, `data:`, `file:`, `mailto:` in v1) are refused at the door; the card can only ever open `http` and `https`.
 - The card is created at once with `unfurl: 'pending'` (or `'off'` when previews are off), and the app asks the relay for the preview. When the answer arrives, the app writes the fields **with a non-undo origin**: undoing goes back past the whole card, not to an empty card. If the person closes the tab before the answer arrives, the card stays `pending` for everyone; after 30 seconds others see **Refresh preview** on it.
 
 ## Fetching a preview
@@ -282,3 +284,10 @@ Embedded players; site-specific cards (GitHub issue state, Figma frames, Linear 
 10. **Failed previews**: stay as they are until someone presses Refresh (drafted), or retry once by themselves the next time an editor opens the board?
 11. **The `/docs/link-previews` page** for site owners (what the user agent is, how to opt out with `robots.txt` `User-agent: TabulaLinkPreview`): do we honour `robots.txt` (one more request per site, cached), or only document the user agent?
 12. **v2 order**: YouTube/Vimeo thumbnails first, or GitHub cards first?
+
+
+## Decisions for Johan to revisit (slice 2)
+
+- **Guests do not create previews in v1.** A join-code guest of any role is refused with `403 guests_cannot_preview`; a server-side fetch on behalf of the least trusted role would spend the workspace's budget and probe the allowed network. Guests can still paste a plain link. CGO agrees for v1.
+- **Cache hits cost rate budget.** The rate limits are charged before the cache is read, so asking for an address that is already cached still counts as one of the person's 30 a minute.
+- **A full board leaves the cache without an image.** If the first board to ask had no room for the image, the cached answer has none for 24 hours, even for a board with room.

@@ -1,4 +1,4 @@
 /* Home page in accounts mode: the role column of the team and shared board lists, and the room for Add to workspace on the device list. */
 
-.board-table.access { --cols: minmax(0, 1fr) 144px 144px 32px; }
+.board-table.access { --cols: minmax(0, 1fr) 168px 144px 144px 32px; }
 .board-table.device { --cols: minmax(0, 1fr) 144px 200px; }
