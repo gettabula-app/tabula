@@ -2925,13 +2925,18 @@ const STATES = {
       const composer = document.querySelector('.chat-dock .chat-input')?.getBoundingClientRect();
       const handle = document.querySelector('.chat-dock-handle');
       const small = [...document.querySelectorAll('.chat-dock-head .chat-dock-btn, .chat-dock .chat-chip')].filter((b) => b.getClientRects().length).map((b) => b.getBoundingClientRect()).filter((b) => b.width < 43.5 || b.height < 43.5).length;
-      return { left: d.left, right: d.right, bottom: d.bottom, width: innerWidth, height: innerHeight, composerInside: !!composer && composer.bottom <= innerHeight && composer.top >= d.top, handle: !!handle && getComputedStyle(handle).display !== 'none', small };
+      const scrim = document.querySelector('.chat-dock-scrim');
+      const sc = scrim ? getComputedStyle(scrim) : null;
+      const sb = scrim ? scrim.getBoundingClientRect() : null;
+      const scrimOk = !!scrim && sc.display !== 'none' && sc.backgroundColor !== 'rgba(0, 0, 0, 0)' && Math.round(sb.width) === innerWidth && Math.round(sb.height) === innerHeight;
+      return { scrimOk, scrimColour: sc?.backgroundColor, left: d.left, right: d.right, bottom: d.bottom, width: innerWidth, height: innerHeight, composerInside: !!composer && composer.bottom <= innerHeight && composer.top >= d.top, handle: !!handle && getComputedStyle(handle).display !== 'none', small };
     });
     console.log(`chat-dock-sheet ${JSON.stringify(r)}`);
     if (env.width >= 600) return;
     if (r.left !== 0 || Math.round(r.right) !== r.width || Math.round(r.bottom) !== r.height) throw new Error(`chat-dock-sheet: the sheet is not full width at the bottom ${JSON.stringify(r)}`);
     if (!r.composerInside) throw new Error('chat-dock-sheet: the message box is not inside the sheet and the screen');
     if (!r.handle) throw new Error('chat-dock-sheet: no handle');
+    if (!r.scrimOk) throw new Error(`chat-dock-sheet: the scrim does not cover the screen (${r.scrimColour})`);
     if (r.small) throw new Error(`chat-dock-sheet: ${r.small} header buttons or chips under 44 px`);
   },
   async 'chat-dock-compact'(env) {
