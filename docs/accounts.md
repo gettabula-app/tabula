@@ -92,6 +92,10 @@ POST   /api/auth/verify {token}         public  -> 200 {user} + Set-Cookie (see 
 POST   /api/auth/logout                 -> 204 (revokes this session, clears the cookie)
 POST   /api/auth/logout-all             -> 204 (revokes every session of this user)
 
+GET    /api/notifications?limit&before&unread=1 -> {items, nextCursor, unread, unreadMentions} (default 30, max 50; one access-filtered page across personal and tracker notices)
+GET    /api/notifications/unread        -> {unread, unreadMentions} (counts at most the newest 200 accessible unread rows)
+POST   /api/notifications/read {ids: string[] | all: true} -> {updated, unread, unreadMentions} (up to 100 ids; ids are from the unified list)
+
 GET    /api/teams                       -> [{id,name,role,memberCount,archived}]   (mine; workspace admins see all, role = their team role or null)
 POST   /api/teams {name}                -> 201 team  (not for guests; creator becomes team admin)
 PATCH  /api/teams/:id {name?,archived?} -> team      (team admin or workspace admin)
@@ -105,6 +109,7 @@ GET    /api/invites/:token              public  {team: {id,name}, role}  (404 wh
 POST   /api/invites/:token/accept       -> 200 {team: {id,name}, role}   (signed-in user joins the team; same validity rules as at sign-in; idempotent: joining a team you are already in changes nothing and uses no invite slot; promotes a member to admin only when the invite grants admin)
 
 GET    /api/boards                      -> [{id,title,teamId,ownerId,role,createdAt,updatedAt}]   (every board the user can access)
+GET    /api/boards/presence             -> {presence: [{boardId,count,people,me?}]}   (signed-in non-guests only; live in-memory rooms among boards the caller can still open; `people` and `count` exclude the caller, each person has `userId`, `name`, `colour`, `joinedAt`, and optional `guest:true`; at most eight people per room, with `count` uncapped)
 POST   /api/boards {id, title?, teamId?} -> 201 board  (id must match the board id pattern and not be registered: 409; teamId requires team membership; guests cannot create. Adopting existing boards: if a room file `<id>.yjs` (or `<id>~comments.yjs`) already exists on disk but has no directory row, only a workspace owner/admin may register it, anyone else gets 409 `needs_admin`. A board that exists only in the caller's browser has no room file, so any member can register it and their local copy then syncs up)
 PATCH  /api/boards/:id {title?, teamId?: string|null} -> board  (board owner or workspace admin; moving into a team requires membership of that team)
 DELETE /api/boards/:id                  -> 204  (soft delete; board owner or workspace admin)

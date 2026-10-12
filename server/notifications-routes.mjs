@@ -1,0 +1,42 @@
+// Unified per-person notification endpoints (docs/notifications.md).
+
+export const NOTIFICATIONS_BODY_LIMIT = 8 * 1024;
+const READ_IDS_MAX = 100;
+
+export function createNotificationRoutes({ notifications, compile, errors }) {
+  const { badRequest } = errors;
+
+  return [
+    compile('GET', 'notifications', {}, ({ user, query }) => {
+      const rawLimit = query.get('limit');
+      if (rawLimit !== null && rawLimit !== '' && !/^\d{1,4}$/u.test(rawLimit)) throw badRequest('limit must be a whole number');
+      const before = query.get('before');
+      try {
+        return [200, notifications.list({
+          user,
+          limit: rawLimit == null || rawLimit === '' ? 30 : Number(rawLimit),
+          before: before || null,
+          unreadOnly: query.get('unread') === '1',
+        })];
+      } catch (error) {
+        if (error instanceof TypeError && /cursor/u.test(error.message)) throw badRequest('before must be a valid notification cursor');
+        throw error;
+      }
+    }),
+
+    compile('GET', 'notifications/unread', {}, ({ user }) => [200, notifications.unread(user)]),
+
+    compile('POST', 'notifications/read', { body: true, maxBody: NOTIFICATIONS_BODY_LIMIT, readOnlyOk: true }, ({ user, body }) => {
+      if (!body || typeof body !== 'object' || Array.isArray(body)) throw badRequest('Body must be an object');
+      for (const key of Object.keys(body)) if (key !== 'ids' && key !== 'all') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+      const all = body.all === true;
+      if (all) {
+        if (body.ids !== undefined) throw badRequest('Provide ids or all, not both');
+      } else if (body.all !== undefined || !Array.isArray(body.ids) || body.ids.length > READ_IDS_MAX
+        || body.ids.some((id) => typeof id !== 'string' || !id || id.length > 128)) {
+        throw badRequest(`ids must be an array of up to ${READ_IDS_MAX} notification ids, or set all to true`);
+      }
+      return [200, notifications.markRead({ user, ids: body.ids ?? [], all })];
+    }),
+  ];
+}

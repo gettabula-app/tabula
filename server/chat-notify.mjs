@@ -61,7 +61,7 @@ export const linkFor = (baseUrl, kind, ref) =>
  * @param {number} [deps.mailAfterMs] how long nobody must have looked before the email goes (ten minutes)
  * @param {boolean} [deps.timers] false in tests: nothing is scheduled; call `flush()` to run what is due
  */
-export function createChatNotifier({ directory, store, hub, mailer, access, baseUrl, log = () => {}, now = Date.now, mailAfterMs = MAIL_AFTER_MS, timers = true }) {
+export function createChatNotifier({ directory, store, hub, mailer, access, baseUrl, notifications = null, log = () => {}, now = Date.now, mailAfterMs = MAIL_AFTER_MS, timers = true }) {
   /** @type {Map<string, { userId: string, kind: string, ref: string, messageId: number, at: number, due: number, timer: ReturnType<typeof setTimeout> | null }>} */
   const pending = new Map();
   /** Mails already sent for a message and person, so an edit never sends again. */
@@ -92,6 +92,18 @@ export function createChatNotifier({ directory, store, hub, mailer, access, base
       if (userId === message.authorId) continue;
       const user = directory.getUser(userId);
       if (!user || user.disabled || !access(user, message.kind, message.ref)?.read) continue;
+      try {
+        notifications?.record({
+          userId,
+          kind: 'chat_mention',
+          actorId: message.authorId,
+          boardId: message.kind === 'board' ? message.ref : null,
+          teamId: message.kind === 'team' ? message.ref : null,
+          ref: String(message.id),
+        });
+      } catch (err) {
+        log('chat: could not store an in-app mention:', err?.message ?? 'error');
+      }
       const frame = {
         t: 'mention', kind: message.kind, ref: message.ref, id: message.id, from, channel: name, text: snippetOf(message.body, nameOf),
       };

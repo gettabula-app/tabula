@@ -47,11 +47,13 @@ const stampName = (actor) => (typeof actor.name === 'string' && actor.name.trim(
  * returns the kinds of change that were undone ('edit', 'delete', 'resolve', 'author', 'other'), for the notice the
  * sender gets. `isAccount(id)` says whether an author id is a current account, for the legacy marks.
  */
-export function createCommentGuard(doc, { isAccount }) {
+/** @param {any} doc @param {{ isAccount: (id: string) => boolean, onReplyAdded?: ((event: { threadId: string, threadAuthorId: string, replyId: string, replyAuthorId: string }) => void) | null }} options */
+export function createCommentGuard(doc, { isAccount, onReplyAdded = null }) {
   const threads = doc.getMap('threads');
   /** threadId -> JSON of the thread as last allowed. */
   const mirror = new Map();
   let touched = null;
+  let touchedBefore = null;
 
   threads.observeDeep((events) => {
     const ids = new Set();
@@ -59,7 +61,10 @@ export function createCommentGuard(doc, { isAccount }) {
       if (e.target === threads) e.keysChanged.forEach((k) => ids.add(k));
       else if (e.path.length) ids.add(String(e.path[0]));
     }
-    if (touched) ids.forEach((id) => touched.add(id));
+    if (touched) ids.forEach((id) => {
+      if (!touched.has(id)) touchedBefore.set(id, mirror.get(id) ?? null);
+      touched.add(id);
+    });
     else ids.forEach(refresh); // the relay's own writes (MCP, corrections) are allowed as they are
   });
 
@@ -290,6 +295,7 @@ export function createCommentGuard(doc, { isAccount }) {
     /** Applies `fn` (a client's sync message) as `actor` and corrects it. Returns the kinds of change undone. */
     run(actor, fn) {
       touched = new Set();
+      touchedBefore = new Map();
       let error = null;
       try {
         fn();
@@ -297,13 +303,30 @@ export function createCommentGuard(doc, { isAccount }) {
         error = err; // a bad message may still have applied part of an update: correct that part, then report it
       }
       const ids = touched;
+      const before = touchedBefore;
       touched = null;
+      touchedBefore = null;
       const undone = new Set();
       const rules = commentRules(actor);
       doc.transact(() => {
         for (const id of ids) checkThread(id, actor, rules, undone);
         clearOthers(undone);
       }, AUTHZ_ORIGIN);
+      for (const id of ids) {
+        const saved = before.get(id);
+        if (!saved || typeof saved !== 'object') continue; // A new thread cannot have a reply to someone else.
+        const prior = saved;
+        const after = jsonOf(threads.get(id));
+        if (!prior || !after || typeof prior.authorId !== 'string' || prior.authorId === actor.id) continue;
+        const previousReplies = prior.replies ?? {};
+        const currentReplies = after.replies ?? {};
+        for (const [replyId, reply] of Object.entries(currentReplies)) {
+          if (Object.hasOwn(previousReplies, replyId) || reply?.authorId !== actor.id) continue;
+          try {
+            onReplyAdded?.({ threadId: id, threadAuthorId: prior.authorId, replyId, replyAuthorId: actor.id });
+          } catch { /* a notification hook cannot undo an accepted comment */ }
+        }
+      }
       ids.forEach(refresh);
       if (error) throw error;
       return [...undone];

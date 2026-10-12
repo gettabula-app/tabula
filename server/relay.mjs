@@ -25,6 +25,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { loadConfig } from './config.mjs';
 import { ogKind, withOgTags } from './og-tags.mjs';
 import { withLegacyEnv } from './env.mjs';
@@ -46,6 +47,7 @@ import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 import { createLinkUnfurl, createOpenLinkRoutes } from './link-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
+import { createPresenceRegistry } from './presence.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
 import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
@@ -95,10 +97,12 @@ const MSG_TRACKER_NOTICE = 7;
 // { kind: 'snapshot', runs } on joining, then { kind: 'patch', run } per change, each shaped for that socket's person.
 const MSG_AI_RUNS = 6;
 const AI_SWEEP_MS = 30_000;
+const NOTIFICATION_SWEEP_MS = 60 * 60 * 1000;
 const trackerSocketBudget = createTrackerSocketBudget();
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
+const AWARENESS_COLOUR_RE = /^#[0-9a-f]{6}$/i;
 const GUEST_PRESENCE_COLORS = ['#326DD3', '#D3332D', '#1B8151', '#A06A00', '#7B58DB', '#CE2C7D', '#1C7C85', '#B9501C'];
 const GUEST_AWARENESS_STRING_LIMIT = 256;
 
@@ -239,6 +243,7 @@ const history = createHistory({ dataDir: DATA_DIR, boardState, log });
 
 // Live AI runs, shared by the run routes of both modes and the board rooms below.
 const aiLive = createLiveRuns();
+const presenceRegistry = createPresenceRegistry();
 
 // Accounts mode only. The modules are loaded lazily so open mode never touches node:sqlite.
 const events = new EventEmitter();
@@ -248,6 +253,7 @@ let api = null;
 let cloud = null;
 let keyFloorReporter = null;
 let buildApi = null;
+let notificationStore = null;
 // Team chat (docs/chat.md), accounts mode, on unless TABULA_CHAT=off. chat.sqlite is opened on first use.
 let chat = null;
 let chatHub = null;
@@ -257,13 +263,37 @@ let chatNotifier = null;
 let trackerNotifier = null;
 let trackerGuard = null;
 let joinCodeService = null;
+
+function presenceBoardIdsFor(user) {
+  if (!directory || !user || user.role === 'guest') return [];
+  return directory.listBoardsFor(user)
+    .filter((board) => directory.boardRole(board.id, user.id) !== null)
+    .map((board) => board.id);
+}
+
+function canReadPresence(user, boardId) {
+  return Boolean(directory && user && user.role !== 'guest' && directory.boardRole(boardId, user.id) !== null);
+}
+
+function boardPresenceFor(user, boardIds = presenceBoardIdsFor(user)) {
+  if (!directory || !user || user.role === 'guest') return [];
+  const accessible = new Set([...boardIds].filter((boardId) => canReadPresence(user, boardId)));
+  return presenceRegistry.snapshot(accessible, user.id, (boardId) => canReadPresence(user, boardId));
+}
+
+function boardPresenceForRoom(user, boardId) {
+  if (!canReadPresence(user, boardId)) return null;
+  return presenceRegistry.forBoard(boardId, user.id);
+}
+
 if (config.authEnabled) {
-  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
+  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }, { createNotifications }] = await Promise.all([
     import('./directory.mjs'),
     import('./mailer.mjs'),
     import('./auth.mjs'),
     import('./api.mjs'),
     import('./cloud.mjs'),
+    import('./notifications.mjs'),
   ]);
   let oauthSecret = null;
   if (config.mcp?.oauth) {
@@ -271,6 +301,25 @@ if (config.authEnabled) {
     oauthSecret = loadOAuthSecret(DATA_DIR);
   }
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier, oauthSecret });
+  notificationStore = createNotifications({
+    directory,
+    trackerEnabled: config.tracker === true,
+    chatStore: () => chat?.store?.() ?? null,
+    chatAccess: (user, kind, ref) => chat?.access?.(user, kind, ref) ?? null,
+    roomAccess: { read: (name, fn) => roomAccess.read(name, fn) },
+    hub: { notify: (userId, counts) => chatHub?.notify(userId, counts) },
+  });
+  const sweepNotifications = () => {
+    const prune = () => directory.transaction(() => notificationStore.prune());
+    try {
+      if (snapshotBarrier) Promise.resolve(snapshotBarrier.runWriter(prune)).catch((err) => log('notifications: retention sweep failed', err?.message));
+      else prune();
+    } catch (err) {
+      log('notifications: retention sweep failed', err?.message);
+    }
+  };
+  sweepNotifications();
+  setInterval(sweepNotifications, NOTIFICATION_SWEEP_MS).unref();
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -288,7 +337,7 @@ if (config.authEnabled) {
     });
     directory.setKeyFloorListener(() => events.emit(KEY_FLOOR_CHANGED_EVENT));
   }
-  auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
+  auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable, notifications: notificationStore });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
     const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier, mailAfterMsFromEnv }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
@@ -310,6 +359,11 @@ if (config.authEnabled) {
       directory,
       access,
       summary: (user) => unreadSummary({ directory, store, user, access }),
+      presenceBoardIds: presenceBoardIdsFor,
+      presenceForUser: boardPresenceFor,
+      presenceForBoard: boardPresenceForRoom,
+      presenceActivity: (boardId) => presenceRegistry.activity(boardId),
+      presenceCanRead: canReadPresence,
       channelUnread: (userId, kind, ref) => store().channelUnread(userId, kind, ref),
       events,
       readOnly: cloud?.limits().readOnly === true,
@@ -317,7 +371,7 @@ if (config.authEnabled) {
     });
     // Not documented, and only under NODE_ENV=test (chat-notify.mjs)
     const mailAfterMs = mailAfterMsFromEnv(env);
-    chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, log, mailAfterMs });
+    chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, notifications: notificationStore, log, mailAfterMs });
     chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
     events.on('user-removed', ({ userId } = {}) => {
@@ -438,7 +492,7 @@ const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpe
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
@@ -499,10 +553,15 @@ async function enterMaintenance() {
     clearTimeout(room.saveTimer);
     clearTimeout(room.unloadTimer);
     clearTimeout(room.trackerGuardTimer);
-    if (room.kind === 'board') trackerGuard?.clearTitles(room.name);
+    clearTimeout(room.presenceTimer);
+    if (room.kind === 'board') {
+      presenceRegistry.clear(room.name);
+      trackerGuard?.clearTitles(room.name);
+    }
     room.saveTimer = null;
     room.unloadTimer = null;
     room.trackerGuardTimer = null;
+    room.presenceTimer = null;
     room.doc.destroy();
   }
   rooms.clear();
@@ -522,6 +581,9 @@ class Room {
     this.doc = new Y.Doc({ gc: true });
     /** @type {Map<import('ws').WebSocket, Set<number>>} */
     this.conns = new Map();
+    /** Account-authenticated board connections only; cursor and other awareness fields never enter this map. */
+    this.presenceConnections = new Map();
+    this.presenceTimer = null;
     this.saveTimer = null;
     this.unloadTimer = null;
     this.dirty = false;
@@ -566,7 +628,22 @@ class Room {
     });
     // Accounts mode: the relay checks comment authorship on every write to a comments room.
     this.guard = directory && this.kind === 'comments'
-      ? createCommentGuard(this.doc, { isAccount: (id) => directory.getUser(id) !== null })
+      ? createCommentGuard(this.doc, {
+          isAccount: (id) => directory.getUser(id) !== null,
+          onReplyAdded: ({ threadId, threadAuthorId, replyAuthorId }) => {
+            try {
+              notificationStore?.record({
+                userId: threadAuthorId,
+                kind: 'comment_reply',
+                actorId: replyAuthorId,
+                boardId: this.name.slice(0, -'~comments'.length),
+                ref: threadId,
+              });
+            } catch (err) {
+              log('comments: could not store a reply notification', err?.message);
+            }
+          },
+        })
       : null;
 
     this.awareness.on('update', ({ added, updated, removed }, conn) => {
@@ -575,6 +652,7 @@ class Room {
         const ids = this.conns.get(conn);
         added.forEach((id) => ids.add(id));
         removed.forEach((id) => ids.delete(id));
+        this.updatePresenceColour(conn);
       }
       const enc = encoding.createEncoder();
       encoding.writeVarUint(enc, MSG_AWARENESS);
@@ -585,6 +663,39 @@ class Room {
 
   broadcast(msg) {
     for (const ws of this.conns.keys()) send(ws, msg);
+  }
+
+  updatePresenceColour(ws) {
+    if (this.kind !== 'board') return;
+    const identity = this.presenceConnections.get(ws);
+    if (!identity) return;
+    let colour = null;
+    for (const clientId of this.conns.get(ws) ?? []) {
+      const candidate = this.awareness.getStates().get(clientId)?.user?.color;
+      if (typeof candidate === 'string' && AWARENESS_COLOUR_RE.test(candidate)) {
+        colour = candidate;
+        break;
+      }
+    }
+    if (identity.colour === colour) return;
+    identity.colour = colour;
+    this.updatePresence();
+  }
+
+  updatePresence() {
+    if (this.kind !== 'board') return false;
+    const changed = presenceRegistry.update(this.name, this.presenceConnections.values());
+    if (changed) this.schedulePresenceUpdate();
+    return changed;
+  }
+
+  schedulePresenceUpdate() {
+    if (!chatHub || this.presenceTimer) return;
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null;
+      chatHub?.publishPresence(this.name);
+    }, 1000);
+    this.presenceTimer.unref?.();
   }
 
   broadcastUpdate(update) {
@@ -702,6 +813,10 @@ class Room {
   join(ws) {
     clearTimeout(this.unloadTimer);
     this.conns.set(ws, new Set());
+    if (this.kind === 'board' && ws.presenceIdentity) {
+      this.presenceConnections.set(ws, { ...ws.presenceIdentity });
+      this.updatePresence();
+    }
 
     // Start the sync handshake: send our state vector.
     const enc = encoding.createEncoder();
@@ -724,7 +839,9 @@ class Room {
   leave(ws) {
     const ids = this.conns.get(ws);
     this.conns.delete(ws);
+    const hadPresence = this.presenceConnections.delete(ws);
     if (ids?.size) awarenessProtocol.removeAwarenessStates(this.awareness, [...ids], null);
+    if (hadPresence) this.updatePresence();
     if (this.conns.size === 0) {
       if (this.saveTimer) this.save();
       this.releaseIfIdle();
@@ -899,6 +1016,16 @@ const roomAccess = {
   write(name, origin, fn, trackerContext = null) {
     const room = getRoom(name);
     try {
+      const commentThreadId = room.kind === 'comments' && typeof trackerContext?.commentThreadId === 'string'
+        ? trackerContext.commentThreadId
+        : null;
+      const commentActorId = typeof trackerContext?.notificationActorId === 'string' ? trackerContext.notificationActorId : null;
+      const commentSnapshot = () => {
+        if (!commentThreadId) return null;
+        const thread = room.doc.getMap('threads').get(commentThreadId);
+        return thread instanceof Y.Map ? thread.toJSON() : null;
+      };
+      const commentBefore = commentThreadId && commentActorId ? commentSnapshot() : null;
       let result;
       const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
@@ -911,6 +1038,24 @@ const roomAccess = {
           throw new OpsError(code, `Linked card write was refused (${refused.reason}).`, refused.reason === 'title_invalid' ? 'title' : undefined);
         }
       } else apply();
+      const commentAfter = commentThreadId && commentActorId ? commentSnapshot() : null;
+      if (commentBefore && commentAfter && commentBefore.authorId !== commentActorId && typeof commentBefore.authorId === 'string') {
+        const beforeReplies = commentBefore.replies ?? {};
+        for (const [replyId, reply] of Object.entries(commentAfter.replies ?? {})) {
+          if (Object.hasOwn(beforeReplies, replyId) || reply?.authorId !== commentActorId) continue;
+          try {
+            (trackerContext?.notifications ?? notificationStore)?.record({
+              userId: commentBefore.authorId,
+              kind: 'comment_reply',
+              actorId: commentActorId,
+              boardId: room.name.slice(0, -'~comments'.length),
+              ref: commentThreadId,
+            });
+          } catch (err) {
+            log('comments: could not store a reply notification', err?.message);
+          }
+        }
+      }
       return result;
     } finally {
       room.releaseIfIdle();
@@ -956,7 +1101,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier, history });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, notifications: notificationStore, log, snapshotBarrier, history });
 }
 
 let oauthRoutes = null;
@@ -1511,6 +1656,15 @@ server.on('upgrade', (req, socket, head) => {
     ws.roomKind = parsed.kind;
     ws.role = verdict.role;
     ws.guest = verdict.session.guest === true;
+    const presenceUser = directory.getUser(ws.userId);
+    ws.userName = presenceUser?.name ?? verdict.session.user.name ?? '';
+    ws.presenceIdentity = {
+      userId: ws.userId,
+      name: ws.userName,
+      guest: ws.guest,
+      colour: null,
+      joinedAt: Date.now(),
+    };
     ws.userColor = ws.guest ? guestPresenceColor(ws.userId) : null;
     ws.deleted = verdict.deleted;
     ws.canWrite = canWriteRoom(verdict.role, parsed.kind, verdict.deleted);
@@ -1591,6 +1745,18 @@ if (process.send) {
   process.on('message', (message) => {
     if (message?.type === 'shutdown') shutdown();
   });
+}
+
+// One line a minute, only when the event loop stalled (p99 or max over 100 ms): it tells a slow moment from a quiet one.
+if (config.slowRequestMs > 0) {
+  const loop = monitorEventLoopDelay({ resolution: 20 });
+  loop.enable();
+  setInterval(() => {
+    const p99 = Math.round(loop.percentile(99) / 1e6);
+    const max = Math.round(loop.max / 1e6);
+    if (p99 >= 100 || max >= 100) log(`event loop delay p99 ${p99}ms max ${max}ms in the last minute`);
+    loop.reset();
+  }, 60_000).unref();
 }
 
 server.listen(PORT, HOST, () => {
