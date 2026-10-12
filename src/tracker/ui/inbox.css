@@ -68,7 +68,7 @@
 .trk .trk-prefs-title { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.25; }
 .trk .trk-prefs-explanation { max-width: 680px; margin: 6px 0 16px; color: var(--trk-muted); font-size: 13px; }
 .trk .trk-prefs-rows {
-  display: grid; overflow: hidden; border: 1px solid var(--trk-rule); border-radius: 12px;
+  display: grid; overflow: hidden; border: 1px solid var(--trk-rule); border-radius: var(--radius-md, 12px);
   background: color-mix(in srgb, var(--trk-text) 2.5%, var(--trk-ground));
 }
 .trk .trk-prefs-row { display: grid; min-height: 60px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 8px 14px; }

@@ -118,7 +118,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .board-actions .icon-btn:not(:disabled):hover { border-color: var(--danger); background: transparent; color: var(--danger); }
 
 /* Template thumbnails: the objects drawn small in a 16:10 box, flush with the top edge of the card or tile. */
-.tpl-thumb { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: var(--canvas); border-bottom: 1px solid var(--rule); border-radius: var(--radius-xs) var(--radius-xs) 0 0; }
+.tpl-thumb { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; background: var(--canvas); border-bottom: 1px solid var(--rule); border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
 .tpl-thumb svg { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 
 /* Templates strip on the home page. */

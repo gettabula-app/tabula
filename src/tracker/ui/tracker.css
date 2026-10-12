@@ -363,7 +363,7 @@
 .trk-modal.modal-back { background: color-mix(in srgb, var(--trk-text) 28%, transparent); }
 .trk-modal .modal {
   width: min(540px, calc(100vw - 32px)); max-height: min(760px, 100%);
-  border: 1px solid var(--trk-rule); border-radius: 12px; background: var(--trk-ground); color: var(--trk-text);
+  border: 1px solid var(--trk-rule); border-radius: var(--radius-md, 12px); background: var(--trk-ground); color: var(--trk-text);
   box-shadow: 0 12px 40px color-mix(in srgb, var(--trk-text) 10%, transparent), 0 1px 2px color-mix(in srgb, var(--trk-text) 6%, transparent);
 }
 .trk-modal .modal-head { min-height: 44px; padding: 16px 20px 0; border: 0; background: var(--trk-ground); color: var(--trk-text); }
