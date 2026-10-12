@@ -48,7 +48,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .topbar-end { display: flex; align-items: center; gap: 16px; margin-left: auto; min-width: 0; }
 .topbar-me { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.home { max-width: 1120px; margin: 0 auto; padding: 48px 24px; display: grid; gap: 48px; }
+.home { max-width: 1120px; margin: 0 auto; padding: 48px calc(24px + var(--safe-right, env(safe-area-inset-right, 0px))) 48px calc(24px + var(--safe-left, env(safe-area-inset-left, 0px))); display: grid; gap: 48px; }
 .home > * { min-width: 0; }
 
 .home-title { margin: 0; font: 800 40px/1 var(--display); letter-spacing: -0.03em; }
@@ -210,7 +210,7 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .topbar-end { gap: 12px; }
   .topbar-me { max-width: 40vw; }
 
-  .home { gap: 40px; padding: 32px 16px 40px; }
+  .home { gap: 40px; padding: 32px calc(16px + var(--safe-right, env(safe-area-inset-right, 0px))) 40px calc(16px + var(--safe-left, env(safe-area-inset-left, 0px))); }
   .home-search { max-width: none; margin-top: 24px; }
   .tpl-toolbar { margin-top: 24px; }
   .tpl-toolbar .home-search { flex-basis: 100%; }
