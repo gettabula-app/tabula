@@ -1,6 +1,7 @@
 import './home.css';
 import './home-teams.css';
 import { boardsPresence } from '../presence';
+import { createPresenceFeed } from '../presence-feed';
 import { presenceCell } from './presence-cell';
 import { h, icon } from './dom';
 import { dialog, fmtAgo, popover, toast } from './common';
@@ -10,7 +11,7 @@ import { importedBoardName, readBoardFile, type ImportedBoard } from '../exporte
 import { storedWhere } from '../desktop-env';
 import { ApiError, api, type BoardRole, type Me, type ServerBoard, type Team } from '../api';
 import { cacheServerBoards, cachedServerBoards, chatAvailable, setSignedOut, type AuthState } from '../auth';
-import { boardUnread, onChatBadge } from '../chat';
+import { boardUnread, onChatBadge, onPresenceFrame, watchChat } from '../chat';
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 import { createWorkspaceBanner } from './workspace';
 import { accountMe, createTopbar, pageFooter, searchField } from './topbar';
@@ -127,6 +128,23 @@ function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boo
   };
   paint();
   refresh();
+  startPresence(() => page?.parentNode === root);
+}
+
+let stopPresence: (() => void) | null = null;
+
+/** "Here now" on the rows: live while this list is on the page, over the chat socket or by polling. */
+function startPresence(alive: () => boolean) {
+  stopPresence?.();
+  boardsPresence.reset();
+  stopPresence = boardsPresence.connect(createPresenceFeed({
+    store: boardsPresence,
+    alive,
+    chatOn: chatAvailable(),
+    onFrame: onPresenceFrame,
+    keepSocket: watchChat,
+    fetchList: async () => (await api.presence()).presence,
+  }));
 }
 
 /** Resolves to null when the session has ended: the user is sent to sign-in. */

@@ -3999,6 +3999,26 @@ const STATES = {
     await env.page.goto(`${env.base}/#/`);
     await env.page.locator('.topbar-badge.show').waitFor();
   },
+  // "Here now" on the Boards rows (docs/chat.md is not involved: presence is its own feed): the endpoint is stubbed with five people on the
+  // first board (the viewer too), one on the second and nobody on the others, so the squares, You, +N, the names on a phone and the
+  // empty cell all show.
+  async 'home-presence'(env) {
+    await env.page.route('**/api/boards/presence', async (route) => {
+      const boards = await (await env.page.request.get(`${env.base}/api/boards`)).json();
+      const who = [
+        ['u1', 'Maja', '#326DD3'], ['u2', 'Omar', '#D3332D'], ['u3', 'Lin', '#1B8151'], ['u4', 'Ben', '#CE2C7D'], ['u5', 'Eva', '#7B58DB'],
+      ].map(([userId, name, colour], i) => ({ userId, name, colour, joinedAt: 1000 + i }));
+      const presence = boards.slice(0, 2).map((b, i) => (i === 0
+        ? { boardId: b.id, count: 5, me: true, people: who }
+        : { boardId: b.id, count: 1, people: [who[2]] }));
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ presence }) });
+    });
+    await env.page.goto(`${env.base}/#/`);
+    await env.page.locator('.board-here:not(.nobody)').first().waitFor();
+    // the first board's cluster: hover list on the wide layout, so the shot shows every name
+    if (await env.page.evaluate(() => matchMedia('(hover: hover)').matches && innerWidth > 720)) await env.page.locator('.board-here:not(.nobody)').first().hover();
+    return { keepFocus: true };
+  },
   async 'chat-admin'({ page, base }) {
     await page.goto(`${base}/#/admin/chat`);
     await page.getByRole('radio', { name: '1 year' }).waitFor();
@@ -4773,7 +4793,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
-const CHAT_STATES = new Set(['chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
+const CHAT_STATES = new Set(['chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays', 'home-presence']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'privacy-hosted': ['accounts'], 'privacy-self': ['accounts'], 'privacy-top': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

@@ -255,8 +255,20 @@ function connect() {
   };
 }
 
+/** The Boards page's presence frames (`presence.snapshot`, `presence.update`, `presence.clear`) come over the same socket. */
+const presenceListeners = new Set<(f: Record<string, unknown>) => void>();
+
+export function onPresenceFrame(fn: (f: Record<string, unknown>) => void): () => void {
+  presenceListeners.add(fn);
+  return () => presenceListeners.delete(fn);
+}
+
 function onFrame(f: Record<string, unknown>) {
   const t = f.t;
+  if (typeof t === 'string' && t.startsWith('presence.')) {
+    for (const fn of Array.from(presenceListeners)) fn(f);
+    return;
+  }
   if (t === 'pong') {
     if (pongTimer) clearTimeout(pongTimer);
     pongTimer = null;
