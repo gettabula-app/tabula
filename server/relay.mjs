@@ -25,6 +25,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { loadConfig } from './config.mjs';
 import { ogKind, withOgTags } from './og-tags.mjs';
 import { withLegacyEnv } from './env.mjs';
@@ -1591,6 +1592,18 @@ if (process.send) {
   process.on('message', (message) => {
     if (message?.type === 'shutdown') shutdown();
   });
+}
+
+// One line a minute, only when the event loop stalled (p99 or max over 100 ms): it tells a slow moment from a quiet one.
+if (config.slowRequestMs > 0) {
+  const loop = monitorEventLoopDelay({ resolution: 20 });
+  loop.enable();
+  setInterval(() => {
+    const p99 = Math.round(loop.percentile(99) / 1e6);
+    const max = Math.round(loop.max / 1e6);
+    if (p99 >= 100 || max >= 100) log(`event loop delay p99 ${p99}ms max ${max}ms in the last minute`);
+    loop.reset();
+  }, 60_000).unref();
 }
 
 server.listen(PORT, HOST, () => {
