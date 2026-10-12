@@ -747,6 +747,7 @@ describe('loadConfig', () => {
       assets: { maxBytes: 10 * 1024 * 1024, boardQuota: 50 * 1024 * 1024, totalQuota: 0 },
       // the tracker (tickets) is off unless TABULA_TRACKER=on
       tracker: false,
+      telemetry: { defaultEnabled: false, forced: null },
     });
   });
 

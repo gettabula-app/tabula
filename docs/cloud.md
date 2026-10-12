@@ -82,6 +82,13 @@ The release label (`null` if `TABULA_VERSION` was not set), process start time i
 `capabilities.tracker.fts5` reports the same SQLite tokenizer probe required by migration 12; `capabilities.tracker.enabled` reports whether `TABULA_TRACKER=on`. These fields let the control plane distinguish a compatible SQLite build from one with ticket tools enabled.
 `updates.auto` is the current automatic update setting, defaulting to `true`; security updates are always applied.
 
+```
+GET /api/internal/telemetry
+  -> 200 the report of the last finished hour (the document itself) | 204 collection is off | 503 { error: 'no_report_yet' | 'restoring' }
+```
+
+The telemetry report for the control plane to forward (`docs/telemetry-design.md`, section 1a): the same already-scrubbed report the Privacy tab previews, for the last finished hour, at most 256 KB, with the workspace id and aggregate counts only. `204` when `TABULA_TELEMETRY=off`. `503` until the first hour after a start has finished, and while a restore runs; ask again next hour. An owner turning product analytics off removes feature-use series and discards the hour built before. Hosted workspaces only, with the bearer token, like the other calls here; a `404` means an image without the route. The instance sends nothing itself.
+
 **Contract for an adopt-volume action.** When the control plane swaps a machine's mount to another volume (a Tier 1 restore from a snapshot, or a move), it should:
 
 1. set `TABULA_FLY_VOLUME_ID=<the new volume id>` on the machine together with the mount change (so the instance can tell a restored copy from the disk it had: a changed id is adopted on its own, every account and guest session ends, every join code is revoked and an audit row `volume.adopt` is written);

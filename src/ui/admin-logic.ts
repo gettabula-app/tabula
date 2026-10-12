@@ -93,6 +93,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'admin.sessions.revoke', 'admin.session.revoke',
   'cloud.limits', 'cloud.notify',
   'updates.auto',
+  'telemetry.enabled', 'telemetry.disabled', 'telemetry.settings',
   'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.key.test',
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
@@ -321,6 +322,12 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     }
     case 'updates.auto':
       return `${who} turned automatic updates ${flag(d.to) === false ? 'off' : 'on'}`;
+    case 'telemetry.enabled':
+    case 'telemetry.disabled':
+    case 'telemetry.settings': {
+      const enabled = entry.action === 'telemetry.enabled' ? true : entry.action === 'telemetry.disabled' ? false : flag(d.to) ?? flag(d.enabled);
+      return `${who} turned product analytics ${enabled === false ? 'off' : 'on'}`;
+    }
     case 'ai.settings': {
       const changes: string[] = [];
       if (flag(d.enabled) !== undefined) changes.push(d.enabled ? 'turned on' : 'turned off');
@@ -661,8 +668,8 @@ export function overviewTiles(o: AdminOverview): OverviewTile[] {
 }
 
 /**
- * Admin sections to show: Access tokens only when AI tool access is on for this server, Backups only to owners, and
- * Settings only on a hosted workspace.
+ * Admin sections to show: Access tokens only when AI tool access is on for this server, Backups only to owners,
+ * Settings only on a hosted workspace, and Privacy on hosted and self-hosted instances.
  */
 export function visibleAdminTabs<T extends string>(tabs: readonly T[], mcp: boolean | undefined, role: UserRole | undefined, chat?: boolean, hosted = false): T[] {
   return tabs.filter((t) => (t !== 'tokens' || mcp === true) && (t !== 'backups' || role === 'owner') && (t !== 'chat' || chat === true) && (t !== 'settings' || hosted));
