@@ -20,6 +20,12 @@ export const IMAGE_UPLOAD_MESSAGES = {
   retryExhausted(status: number): string {
     return `An image could not be uploaded (error ${status}). It will be tried again when you open this board.`;
   },
+  /** The browser would not keep the bytes of an image just added (storage full or blocked), so nothing was added. */
+  notKept(count: number): string {
+    return count === 1
+      ? 'An image was not added because this browser would not keep a copy to upload. Its storage may be full or blocked. Free up space or allow site data, then add it again.'
+      : `${count} images were not added because this browser would not keep a copy to upload. Its storage may be full or blocked. Free up space or allow site data, then add them again.`;
+  },
   lost(count: number): string {
     return count === 1
       ? 'An image could not be uploaded because this browser no longer has it. Add it again.'

@@ -80,6 +80,14 @@ export function memoryBackend(): AssetBackend {
 
 const DB_NAME = 'tabula-assets';
 
+/** The browser would not keep a write: its storage is full, blocked or unavailable. The bytes are not stored. */
+export class StorageError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'StorageError';
+  }
+}
+
 /** IndexedDB, opened lazily. Every call resolves (a failure to open acts as an empty, unwritable store) so images still show. */
 export function idbBackend(): AssetBackend {
   let opened: Promise<IDBDatabase | null> | null = null;
@@ -98,27 +106,33 @@ export function idbBackend(): AssetBackend {
       resolve(null);
     }
   }));
-  const run = async <T>(store: 'blobs' | 'uploads', mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest | null, fallback: T): Promise<T> => {
+  // Reads act as an empty store when it cannot be used, so images still show. A write that fails (quota, blocked storage, a
+  // private window) rejects instead: acting as if it had been stored is how an added image ended up queued without its bytes.
+  const run = async <T>(store: 'blobs' | 'uploads', mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest | null, fallback: T, strict = false): Promise<T> => {
     const db = await open();
-    if (!db) return fallback;
-    return new Promise<T>((resolve) => {
+    if (!db) {
+      if (strict) throw new StorageError('This browser has no storage for images');
+      return fallback;
+    }
+    return new Promise<T>((resolve, reject) => {
+      const failed = (cause: unknown) => (strict ? reject(new StorageError('This browser would not store the image', cause)) : resolve(fallback));
       try {
         const tx = db.transaction(store, mode);
         const req = fn(tx.objectStore(store));
         tx.oncomplete = () => resolve((req ? req.result : undefined) as T);
-        tx.onerror = () => resolve(fallback);
-        tx.onabort = () => resolve(fallback);
-      } catch {
-        resolve(fallback);
+        tx.onerror = () => failed(tx.error);
+        tx.onabort = () => failed(tx.error);
+      } catch (cause) {
+        failed(cause);
       }
     });
   };
   return {
     getBlob: (k) => run<BlobRecord | undefined>('blobs', 'readonly', (s) => s.get(k), undefined),
-    putBlob: (r) => run<void>('blobs', 'readwrite', (s) => s.put(r), undefined),
+    putBlob: (r) => run<void>('blobs', 'readwrite', (s) => s.put(r), undefined, true),
     deleteBlob: (k) => run<void>('blobs', 'readwrite', (s) => s.delete(k), undefined),
     listBlobs: () => run<BlobRecord[]>('blobs', 'readonly', (s) => s.getAll(), []),
-    putUpload: (r) => run<void>('uploads', 'readwrite', (s) => s.put(r), undefined),
+    putUpload: (r) => run<void>('uploads', 'readwrite', (s) => s.put(r), undefined, true),
     deleteUpload: (id) => run<void>('uploads', 'readwrite', (s) => s.delete(id), undefined),
     listUploads: () => run<UploadRecord[]>('uploads', 'readonly', (s) => s.getAll(), []),
     clear: async () => {
@@ -160,7 +174,8 @@ export function createBlobCache(backend: AssetBackend, { cap = BLOB_CACHE_BYTES,
     backend,
     async get(key: string): Promise<BlobRecord | undefined> {
       const rec = await backend.getBlob(key);
-      if (rec) void backend.putBlob({ ...rec, at: now() });
+      // marking a use is a courtesy: a store that will not take it must not break reading
+      if (rec) void backend.putBlob({ ...rec, at: now() }).catch(() => undefined);
       return rec;
     },
     async put(rec: Omit<BlobRecord, 'at'>): Promise<void> {
@@ -169,15 +184,23 @@ export function createBlobCache(backend: AssetBackend, { cap = BLOB_CACHE_BYTES,
         void Promise.resolve().then(requestPersistence).catch(() => false);
       }
       await backend.putBlob({ ...rec, at: now() });
-      const all = await backend.listBlobs();
-      const drop = evictionPlan(all, new Map(all.map((r) => [r.key, r.blob.size])), cap);
-      for (const key of drop) await backend.deleteBlob(key);
+      try {
+        const all = await backend.listBlobs();
+        const drop = evictionPlan(all, new Map(all.map((r) => [r.key, r.blob.size])), cap);
+        for (const key of drop) await backend.deleteBlob(key);
+      } catch {
+        // the bytes are stored; making room can wait for the next put
+      }
     },
     /** The bytes of a pending key now belong to the hash the server gave. */
     async rekey(from: string, to: string): Promise<void> {
       const rec = await backend.getBlob(from);
       if (!rec) return;
-      await backend.putBlob({ ...rec, key: to, pending: false, at: now() });
+      try {
+        await backend.putBlob({ ...rec, key: to, pending: false, at: now() });
+      } catch {
+        return; // keep the bytes under the old key rather than lose them; the image is on the server either way
+      }
       await backend.deleteBlob(from);
     },
     clear: () => backend.clear(),
@@ -231,6 +254,9 @@ export function createUploadQueue(deps: QueueDeps) {
     try {
       const blob = await cache.backend.getBlob(rec.id);
       if (!blob) {
+        // another tab of this board may have uploaded it between our list and this read: then the record is gone too
+        const current = (await cache.backend.listUploads()).find((r) => r.id === rec.id);
+        if (!current || current.lost) return;
         const updated: UploadRecord = { ...rec, lost: true, notified: true };
         await cache.backend.putUpload(updated);
         if (!rec.notified) lost.push(updated);
