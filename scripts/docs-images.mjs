@@ -3,7 +3,7 @@
 // data folders and stops them at the end. Usage and notes: docs/visual-check.md ("Docs images").
 //   npm run docs:images                      all images, into docs/images
 //   npm run docs:images -- --only share-roles,signin --out /tmp/shots
-//   npm run docs:images -- --only admin-backups,chat-tray,kanban-card-dialog,layers-panel
+//   npm run docs:images -- --only admin-backups,chat-tray,chat-page,kanban-card-dialog,layers-panel
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -538,6 +538,32 @@ const SHOTS = {
     await context.close();
   },
 
+  // the Chat page (docs/chat.md, Interface): the channel list and the open board conversation, at a width where both show
+  async 'chat-page'({ browser, chat, chatPeople }) {
+    const W = 1200, H = 720;
+    const { context, page } = await newPage(browser, { base: chat.base, width: W, height: H, session: chatPeople.owner });
+    // The list shows boards with recent chat by the relay's real clock, and the demo messages carry the fixed 15 Jan date: only the
+    // list response gets the board's row added (as the backups shot stubs only its list).
+    await page.route('**/api/chat/channels', async (route) => {
+      const res = await route.fetch();
+      const body = await res.json();
+      if (!body.channels.some((c) => c.kind === 'board' && c.ref === 'docs-chat')) {
+        body.channels.push({ kind: 'board', ref: 'docs-chat', name: 'Design review', write: true, unread: 0, mentions: 0, lastId: 4, lastAt: NOW - 6 * 60_000 });
+      }
+      await route.fulfill({ response: res, json: body });
+    });
+    await page.goto(`${chat.base}/#/chat/board/docs-chat`);
+    await page.locator('.chat-conv.open').waitFor({ timeout: 15_000 });
+    await page.waitForFunction(() => document.querySelectorAll('.chat-conv.open .chat-msg').length === 4);
+    await page.locator('.chat-conv.open .chat-reaction').waitFor();
+    await page.locator('.chat-row.on').waitFor();
+    await park(page);
+    await page.evaluate(() => document.activeElement?.blur());
+    await settle(page);
+    await save(page, 'chat-page', { x: 0, y: 0, width: W, height: H });
+    await context.close();
+  },
+
   async 'kanban-card-dialog'({ browser, open }) {
     const W = 1100, H = 900;
     const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
@@ -624,7 +650,7 @@ async function main() {
       people = await seedAccounts(acc);
     }
     let chatPeople = null;
-    if (names.includes('chat-tray')) {
+    if (names.includes('chat-tray') || names.includes('chat-page')) {
       chat = await startRelay('chat', distDir);
       chatPeople = await seedGuideChat(chat);
     }

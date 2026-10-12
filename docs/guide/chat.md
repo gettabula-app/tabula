@@ -25,6 +25,8 @@ The channel list and the open conversation are dark panels, like the chat panel 
 - On a phone the list is one screen and the conversation another. **All channels** (or the browser's Back button) returns to the list.
 - On a team or workspace channel you may be unable to post. The box then says why, for example when the team is archived or the workspace is read-only.
 
+![The Chat page: the channel list on the left with Workspace and the board Design review, and the Design review conversation on the right with the same messages and Open board at the top](images/chat-page.png)
+
 The **Chat** link in the top bar shows how many messages you have not read in all your channels. On the **Boards** page, a number beside a board's name shows its unread chat messages.
 
 ## The chat panel
@@ -43,7 +45,7 @@ Chat opens in a floating panel at the right edge of the screen. It is the same p
 - On a phone (a screen narrower than 600 px) the panel opens as a bottom sheet over the board. Drag the handle down, or tap it, to turn the sheet into the chat button. The buttons are large and the message box stays above the keyboard.
 - The panel does not appear on the sign-in, invitation, join and app-consent pages, or on the Chat page itself, which is already the full chat.
 
-![Board chat with replies, a reaction, a mention and object chips (shown in the earlier side-panel layout)](images/chat-tray.png)
+![The chat panel on a board: Ana's messages with chips for the board objects they mention, Maya's replies as bubbles on the right with a mention and a thumbs-up reaction, and the message box below](images/chat-tray.png)
 
 ## Read
 
