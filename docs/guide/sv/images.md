@@ -41,6 +41,10 @@ Snabbåtgärdsfältet har två knappar för bilder:
 
 Bilden sparas först på din enhet och skickas sedan till servern i bakgrunden. Den visas direkt för dig. Om du är offline eller servern är långsam ser andra personer en grå ruta med texten ”Bilden har inte laddats upp än” tills den kommer fram. Den skickas när anslutningen är tillbaka. Du behöver inte göra något mer.
 
+Om kopian på din enhet har försvunnit, eller servern nekade uppladdningen, släpps inte bilden. Du får ett meddelande (”An image could not be uploaded because this browser no longer has it. Add it again.”), och rutan visar ”Not uploaded: add this image again”. En nekad uppladdning provas en gång till varje gång tavlan öppnas.
+
+I en hostad arbetsyta går det tills vidare inte att ladda upp en bild över 1 MB. Du ser ”This image is over 1 MB, which is the upload limit for now. Use a smaller image.”, och rutan visar ”Not uploaded: over 1 MB”. Om du släpper flera på en gång räknar meddelandet dem (”2 images are over 1 MB and may not upload to this workspace yet. Use smaller images.”). Tabula försöker skicka bilder på cirka 900 KB, så de flesta foton krymps så att de ryms.
+
 En grå ruta kan också visa:
 
 | Meddelande | Vad det betyder |

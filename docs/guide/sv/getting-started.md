@@ -21,7 +21,8 @@ Om du hellre vill börja med en färdig layout väljer du **Start from a templat
 ## Skärmen
 
 - **Uppe till vänster.** Knappen **All boards** (Alla tavlor) (husikonen) går tillbaka till sidan Boards. Bredvid den finns tavlans namn och synkroniseringsstatus. Märket **View only** (Endast visning) eller **Can comment** (Kan kommentera) visas här när du inte kan redigera tavlan.
-- **Uppe till höger.** Personerna på tavlan (runda avatarer), kommentarknappen, **Share** (Dela) och knappen **Menu** (Meny) (tre punkter).
+- **Uppe till höger.** Personerna på tavlan (runda avatarer på en rad, så många som ryms; ett **+N**-märke räknar resten), kommentarknappen, **Share** (Dela) och knappen **Menu** (Meny) (tre punkter).
+- **På en telefon** (en skärm upp till 480 px bred) delar båda fälten en rad. Till vänster finns huset, ett förkortat tavelnamn och synkpunkten. Till höger finns en personbricka (dold medan du är ensam; med andra visar den upp till två avatarer och ett antal, och ett tryck listar alla), kommentarknappen med sitt märke för olästa, **Share** (Dela) som ikon och knappen **Menu** (Meny). På en skärm smalare än 380 px flyttas **Chat** (Chatt) in i **Menu**, och en liten punkt på knappen **Menu** visar att chatten har olästa meddelanden.
 - **Vänstra verktygsfältet.** Verktygen beskrivs nedan.
 - **Nere till höger.** Zooma ut, zoomnivå, zooma in, **Fit board** (Visa hela tavlan) och en knapp för att visa eller dölja minikartan.
 - **Nedtill.** Sessionsraden för faciliterade sessioner. Se [Sessioner och fokusbegäranden](sessions.md).
@@ -50,7 +51,7 @@ Knappen **Menu** längst upp till höger innehåller åtgärder för hela tavlan
 
 - **Panorera.** Håll ned `Space` och dra, använd verktyget **Hand**, dra med mitten- eller högerknappen på musen eller rulla. På en styrplatta panorerar du med två fingrar.
 - **Zooma.** Håll ned `Ctrl` (`Cmd` på Mac) och rulla, eller nyp på en styrplatta eller pekskärm. Knapparna nere till höger zoomar i steg. Klicka på procentsatsen för att återgå till 100 %.
-- **Anpassa vyn.** **Fit board** (`Shift+1`) visar allt på tavlan. `Shift+2` anpassar vyn till markeringen.
+- **Anpassa vyn.** **Fit board** (`Shift+1`) visar allt på tavlan. `Shift+2` anpassar vyn till markeringen. När du öppnar en tavla på en telefon anpassas den första vyn redan till tavlan mellan verktygsfältet och högerkanten, så snart innehållet har lästs in; om du flyttar eller zoomar först lämnas din vy ifred.
 - **Minikarta.** Kartknappen nere till höger visar en liten översikt. Klicka eller dra i den för att hoppa till en annan del av tavlan.
 - **Gå till en person.** Klicka på någons avatar längst upp till höger för att hoppa till platsen där personen arbetar.
 

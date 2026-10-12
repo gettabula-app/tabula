@@ -35,6 +35,8 @@ Tabula skapar en ny tavla med mallens namn, ramar, typsnitt och sessionssteg, oc
 
 Raden **Start from a template** (Börja med en mall) på sidan Boards visar upp till fyra rutor: först dina egna mallar och sedan inbyggda mallar. Klicka på en ruta om du vill öppna en ny tavla från den, eller välj **All templates** (Alla mallar).
 
+En ny tavla som startas från en mall öppnas med mallen redan på plats, och Ångra tar inte bort den: det är där tavlan börjar. På en telefon anpassas den första vyn så att mallen ryms mellan verktygsfältet och högerkanten.
+
 Om din arbetsyta använder inloggning och du är offline behöver servern vara tillgänglig för att starta en tavla från en mall. Knapparna är inaktiverade och ett meddelande förklarar varför.
 
 ## Lägg till en mall på den tavla du arbetar med
@@ -57,7 +59,7 @@ Ramar tar med sig allt som finns inuti dem, och kopplingslinjer behålls när b�
 
 **Category** är en lista, inte ett fritextfält. Den innehåller de åtta inbyggda kategorierna och **Custom**. Det är de enda kategorier en mall kan ha.
 
-Gäster kan använda mallar men inte spara dem. Om du är gäst visas **Guests cannot save templates.** (Gäster kan inte spara mallar.) och **Save template** är inaktiverad.
+Gäster kan använda mallar men inte spara dem. Tavlans meny döljer **Save board as template** för gäster. Om du når ett sparformulär från en annan malåtgärd visas **Guests cannot save templates.** (Gäster kan inte spara mallar.) och **Save template** är inaktiverad.
 
 ## Dela en mall
 

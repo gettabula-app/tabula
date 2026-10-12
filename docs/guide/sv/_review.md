@@ -70,7 +70,6 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | Route (connector) | Linjetyp | Termen finns inte i ordlistan; kontrollera om linjetyp beskriver valet mellan rak, rätvinklig och böjd. |
 | routing style | linjedragning | This term is not in the glossary; it describes the connector's straight, elbow or curved path. |
 | screen reader | skärmläsare | This term is not in the glossary; please check the accessibility wording. |
-| seat limit | begränsning av antalet platser | Term saknas i ordlistan; kontrollera om ”licensplatser” är mer träffsäkert. |
 | session | session | Ordlistan markerar termen som osäker och nämner workshop som alternativ. |
 | session bar | sessionsrad | Termen finns inte i ordlistan; kontrollera om rad är rätt ord för fältet längst ned. |
 | session summary | sessionsammanfattning | Term saknas i ordlistan; kontrollera om detta är appens etablerade benämning. |

@@ -4,7 +4,7 @@ Du kan spara en tavla som en bild, en fil som du kan öppna igen eller text. Du 
 
 ## Exportera
 
-Öppna tavlans meny (knappen **Menu** (Meny) med tre punkter längst upp till höger). Avsnittet **Export** (Exportera) visar alla format. Om du har markerat objekt heter rubriken **Export selection** (Exportera markering), och PNG, SVG och JSON innehåller bara de objekten (samt allt inuti markerade ramar och kopplingslinjer mellan exporterade objekt).
+Öppna tavlans meny (knappen **Menu** (Meny) med tre punkter längst upp till höger). Avsnittet **Export** (Exportera) visar alla format. Om du har markerat objekt heter rubriken **Export selection** (Exportera markering), och PNG, SVG och JSON innehåller de objekten, innehållet i markerade ramar eller grupper och kopplingslinjer mellan exporterade objekt.
 
 | Objekt | Resultat |
 |---|---|
@@ -28,7 +28,7 @@ En `.drift`-fil innehåller hela tavlan, inklusive kommentarer, omröstningar oc
 
 ### JSON-ögonblicksbild
 
-En textfil med tavlans inställningar, objekt, sessionssteg, kommentarer och omröstningar. Den innehåller inte redigeringshistoriken. Om du har markerat objekt innehåller filen bara de objekten.
+En textfil med tavlans inställningar, objekt, sessionssteg, kommentarer och omröstningar. Den innehåller inte redigeringshistoriken. Om du har markerat objekt innehåller filen de markerade objekten, synliga underordnade objekt i markerade ramar eller grupper, kopplingslinjer mellan objekt som ingår och markerade kopplingslinjer vars bundna ändar ingår. Dolda objekt utelämnas, och en markerad ram eller grupp som omger ett objekt följer inte med om den inte själv är markerad.
 
 ### Markdown-sammanfattning
 

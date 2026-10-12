@@ -51,7 +51,7 @@ En sökbar lista över alla med ett konto: namn, e-postadress, roll, senaste akt
 - **Sign out everywhere** avslutar alla personens sessioner utan att inaktivera kontot. Du kan använda den på dig själv.
 - **Remove** tar bort kontot, loggar ut personen och tar bort personens åtkomst.
 
-Rollerna förklaras i [Dela, roller och team](sharing.md). I en hostad arbetsyta med en begränsning av antalet platser kan det nekas att aktivera en person eller befordra en gäst om alla platser används.
+Rollerna förklaras i [Dela, roller och team](sharing.md). Om en hostad arbetsyta har en gräns för hur många medlemmar den rymmer och den är full, nekas du att aktivera en person eller befordra en gäst tills någon har tagits bort eller inaktiverats. Gäster räknas inte mot gränsen.
 
 ## Team
 
@@ -81,7 +81,7 @@ Aktiva [personliga åtkomsttoken](ai-tools.md) för AI-verktyg i hela arbetsytan
 
 Fliken **AI** (Artificiell intelligens) aktiverar AI-funktioner för arbetsytan och ställer in vad de använder: funktionerna, modellen, om personer får använda egna nycklar, om gäster ingår, timgränserna och arbetsytans nyckel. Till skillnad från **Access tokens** (Åtkomsttoken) visas fliken **AI** alltid i en arbetsyta med inloggning, även om servern ännu inte kan lagra nycklar.
 
-AI-funktionerna är under utveckling. Att aktivera dem och välja funktioner ändrar inte vad personer kan göra ännu.
+När du aktiverar AI och väljer funktioner blir de tillgängliga för personer som kan redigera en tavla, så länge det finns en användbar nyckel (arbetsytans nyckel, en personlig nyckel där du tillåter sådana, eller planens krediter i en hostad arbetsyta). Utan nyckel visas inte AI-knappen. Se [AI-fältet](ai-bar.md) för vad personer ser.
 
 Fliken har följande inställningar. Som standard är allt avstängt, alla funktioner är valda, personliga nycklar är avstängda, gäster tillåts och gränserna är 20 körningar per person och 200 per arbetsyta varje timme.
 
@@ -117,7 +117,7 @@ Information om egna nycklar finns i [Din AI-nyckel](ai-keys.md).
 
 ## Chatt
 
-Fliken **Chat** (Chatt) visas när servern har aktiverat chatt. Varje inställning sparas direkt när du ändrar den.
+Fliken **Chat** (Chatt) visas när chatten är på. Den är på som standard i arbetsytor med inloggning, om inte den som driver servern har stängt av den. Varje inställning sparas direkt när du ändrar den.
 
 - **Workspace channel** (Arbetsytans kanal): om alla utom gäster ska ha en gemensam chatt för hela arbetsytan. Stäng av den så försvinner kanalen från chattsidan tills du aktiverar den igen. Inget tas bort.
 - **Viewers** (Läsare): om personer med skrivskyddad åtkomst till en tavla får skriva i dess chatt. De kan alltid läsa den.

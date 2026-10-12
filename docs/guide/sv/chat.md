@@ -1,13 +1,13 @@
 # Chatt
 
-En chatt är ett pågående samtal. Varje tavla har en egen, varje team har en och hela arbetsytan kan ha en. Den visas bara om arbetsytan har inloggning och den som driver Tabula-servern har aktiverat chatt. Om du inte ser knappen eller länken **Chat** (Chatt) är funktionen inte tillgänglig för dig.
+En chatt är ett pågående samtal. Varje tavla har en egen, varje team har en och hela arbetsytan kan ha en. Den visas i arbetsytor med inloggning, där den är på som standard; den som driver Tabula-servern kan stänga av den. På en server utan inloggning finns ingen chatt. Om du inte ser knappen eller länken **Chat** (Chatt) är funktionen inte tillgänglig för dig.
 
 Kommentarer är knutna till en plats på tavlan och används för att diskutera en viss sak. Chatten hör till hela tavlan, teamet eller arbetsytan och används för att prata medan ni arbetar.
 
 ## Var du kan chatta
 
-- **Chatt på tavlan**: alla som kan öppna tavlan. Den finns i panelen till höger på tavlan, bredvid kommentarerna.
-- **Teamchatt**: teamets medlemmar, inklusive gäster som tillhör det. Arbetsytans ägare och administratörer kan läsa alla teams chattar och ta bort meddelanden, men de kan bara skriva i team de tillhör. När ett team arkiveras går det bara att läsa chatten.
+- **Chatt på tavlan**: personerna med konto som kan öppna tavlan. Personer som har anslutit med en anslutningskod har ingen chatt. Den finns i panelen till höger på tavlan, bredvid kommentarerna. På en telefon som är smalare än 380 px öppnar du den med **Chat** i tavlans **Menu**; en punkt på knappen **Menu** visar olästa meddelanden.
+- **Teamchatt**: teamets medlemmar. Personer som har anslutit till en tavla med en anslutningskod har ingen chatt. Arbetsytans ägare och administratörer kan läsa alla teams chattar och ta bort meddelanden, men de kan bara skriva i team de tillhör. När ett team arkiveras går det bara att läsa chatten.
 - **Chatt för arbetsytan**: alla i arbetsytan utom gäster. En administratör kan stänga av den (se [Administratörspanelen](admin.md)).
 
 Chatt för team och arbetsytor finns på sidan **Chat page** (chattsidan). Chatten på tavlan visas också där medan den är aktiv.
@@ -86,13 +86,15 @@ Välj åtgärdsknappen på ett meddelande (de tre punkterna) och välj **React**
 
 ## Vem kan skriva
 
-Alla som kan öppna tavlan kan läsa chatten. Ägare, redigerare och kommentatörer kan skriva. Personer som bara kan visa tavlan får skriva endast om en administratör för arbetsytan har tillåtit det. Rutan är inaktiverad och visar orsaken när du inte kan skriva: läsåtkomst, en skrivskyddad arbetsyta eller förlorad åtkomst till tavlan.
+Alla med konto som kan öppna tavlan kan läsa chatten; personer som har anslutit med en anslutningskod kan inte det. Ägare, redigerare och kommentatörer kan skriva. Personer som bara kan visa tavlan får skriva endast om en administratör för arbetsytan har tillåtit det. Rutan är inaktiverad och visar orsaken när du inte kan skriva: läsåtkomst, en skrivskyddad arbetsyta eller förlorad åtkomst till tavlan.
 
 ## Aviseringar
 
 Under **Chat notifications** (Chattaviseringar) i tavlans meny (eller **Notifications** (Aviseringar) längst ned i kanallistan på chattsidan) kan du välja om du vill få ett mejl när någon nämner dig. Det är aktiverat tills du stänger av det.
 
 Mejlet berättar vem som nämnde dig, på vilken tavla, i vilket team eller på vilken arbetsyta, och visar meddelandets första ord samt en länk. Det skickas bara om du inte har haft Tabula öppet på 10 minuter, och inte för ett meddelande som du har läst eller som har tagits bort eller ändrats så att det inte längre nämner dig. Du får högst ett mejl per samtal var tionde minut och 20 om dagen. Att redigera ett meddelande skickar aldrig mejlet igen.
+
+**Konfiguration av e-post:** Med standardvärdet `TABULA_MAIL=log` levereras inga mejl om omnämnanden. Reläet skriver i stället ut innehållet i processens utdata, inklusive meddelandets första 140 tecken. Om din installation ska leverera mejl om omnämnanden, ställ in `TABULA_MAIL=smtp` eller `TABULA_MAIL=webhook` med avsikt.
 
 ## Offline
 

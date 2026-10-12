@@ -18,7 +18,7 @@ Välj **Share** (Dela) högst upp till höger på en tavla (eller synkronisering
 
 ### Anslut till en tavla med en kod
 
-Servern kan aktivera anslutningskoder (de är avstängda som standard; fråga serveransvarig). Då ser en **Owner** (Ägare) eller **Editor** (Redigerare) **Join code** (Anslutningskod) i dialogrutan **Share**. Välj gästens roll (**Commenter** (Kommentatör) eller **Editor**), hur länge koden ska gälla (3 timmar som standard, högst 24 timmar) och hur många personer som kan använda den (100 som standard, högst 1 000), och skapa sedan koden. Koden visas en gång tillsammans med en länk att kopiera. Håll den privat, eftersom alla som har den kan ansluta tills den upphör att gälla eller återkallas.
+Anslutningskoder är till för arbetsytor med inloggning: servern måste köras med konton och ha anslutningskoder påslagna (de är avstängda som standard; fråga serveransvarig). Då ser en **Owner** (Ägare) eller **Editor** (Redigerare) **Join code** (Anslutningskod) i dialogrutan **Share**. Välj gästens roll (**Commenter** (Kommentatör) eller **Editor**), hur länge koden ska gälla (3 timmar som standard, högst 24 timmar) och hur många personer som kan använda den (100 som standard, högst 1 000), och skapa sedan koden. Koden visas en gång tillsammans med en länk att kopiera. Håll den privat, eftersom alla som har den kan ansluta tills den upphör att gälla eller återkallas.
 
 En gäst öppnar länken, anger ett visningsnamn och ansluter till just den tavlan utan konto. Gästen kommer inte åt något annat i arbetsytan. Gäster märks som **Guest** (Gäst) bredvid sina namn i närvaron och i kommentarer. Välj **Revoke** (Återkalla) för en kod om du vill avsluta den och alla gästsessioner som skapats med den. Om servern stänger av anslutningskoder loggas gästerna ut.
 
@@ -35,9 +35,9 @@ När du lägger till ett team får alla medlemmar i det teamet rollen, såvida d
 
 ### Låt en gäst ansluta med en kod
 
-Arbetsytor kan aktivera **Join code** i dialogrutan Share för tavlans redigerare och ägare. Serveransvarig aktiverar funktionen med `TABULA_JOIN_CODES=on`; den är avstängd som standard. Skapa en kod för en **Commenter** eller **Editor** och välj sedan när den upphör att gälla (högst 24 timmar) och hur många gånger den kan användas. Koden visas en gång tillsammans med en länk som du kan kopiera. Skicka den bara till personer som du vill ska få tillgång till tavlan.
+Arbetsytor kan aktivera **Join code** i dialogrutan Share för tavlans redigerare och ägare. Serveransvarig aktiverar funktionen med `TABULA_JOIN_CODES=on`, och den fungerar bara på en server som körs med konton (inloggning); den är avstängd som standard. Skapa en kod för en **Commenter** eller **Editor** och välj sedan när den upphör att gälla (högst 24 timmar) och hur många gånger den kan användas. Koden visas en gång tillsammans med en länk som du kan kopiera. Skicka den bara till personer som du vill ska få tillgång till tavlan.
 
-Gästen öppnar **Join with a code** (Anslut med en kod), anger ett visningsnamn och ansluter utan konto. Gästens session upphör att gälla samtidigt som koden, och åtkomsten gäller bara den tavlan. En kommentatör kan läsa och kommentera. En redigerare kan redigera och lägga till bilder inom tavlans vanliga bildbegränsningar. De kan inte öppna andra tavlor eller använda arbetsytans, administratörens, chattens, AI-verktygens eller MCP:s API:er. Läs mer om säkerhet och begränsningar under [anslutningskoder](../join-codes.md).
+Gästen öppnar **Join with a code** (Anslut med en kod), anger ett visningsnamn och ansluter utan konto. Gästens session upphör att gälla samtidigt som koden, och åtkomsten gäller bara den tavlan. En kommentatör kan läsa och kommentera. En redigerare kan redigera och lägga till bilder inom tavlans vanliga bildbegränsningar. De kan inte öppna andra tavlor eller använda arbetsytans, administratörens, chattens, AI-verktygens eller MCP:s API:er. Om anslutningskoder stängs av på servern, om arbetsytan återställs från en säkerhetskopia eller flyttas till en annan volym upphör gästsessionerna också och alla koder återkallas. När en gästs kod har upphört att gälla eller återkallats förblir tavlan öppen för att titta på men tar inte längre emot ändringar, och bannern erbjuder **Sign in** (Logga in), som avslutar gästsessionen. Visningsnamnet ska vara 1 till 40 tecken; ett tomt eller för långt namn nekas med ett meddelande.
 
 ![Dialogrutan Dela den här tavlan med teamet Design som redigerare och Ana som kommentatör, med raden Lägg till en person eller ett team nedanför](images/share-roles.png)
 
@@ -55,7 +55,7 @@ Om länken har upphört att gälla begär du en ny. Den första personen som log
 
 Om du vill logga ut öppnar du tavlans meny och väljer **Sign out** (Logga ut) under **Account**, eller väljer **Sign out** i startskärmens övre verktygsfält. **Sign out everywhere** (Logga ut överallt) avslutar alla dina sessioner på alla enheter.
 
-Under **Your name and colour** (Ditt namn och din färg) i tavlans meny kan du ändra namnet som visas bredvid pekaren. Om du har ett konto sparas namnet på kontot. Färgen sparas på den här enheten.
+Under **Your name and colour** (Ditt namn och din färg) i tavlans meny kan du ändra namnet som visas bredvid pekaren. Om du har ett konto sparas namnet på kontot. Färgen sparas på den här enheten. Om du ansluter med en gästlänk kommer ditt namn från anslutningsformuläret; tavlans meny döljer **Your name and colour** och **Save board as template**. Gästnamn har märket **Guest** (Gäst) bredvid sig i pekaretiketter och kommentarer.
 
 ## Roller
 
@@ -127,7 +127,7 @@ Alla medlemmar kan välja **Leave team** (Lämna teamet). Då förlorar du åtko
 2. Välj **Expires after** (Upphör efter): 1, 7, 14 eller 30 dagar.
 3. Välj **Create invite link** (Skapa inbjudningslänk) och sedan **Copy** (Kopiera).
 
-Alla med länken som bekräftar sin e-postadress kan ansluta till teamet. På inbjudningssidan visas teamnamnet och knappen **Join team** (Gå med i teamet). Om arbetsytan har en platsgräns och alla platser används avvisas inbjudan tills en plats blir ledig.
+Alla med länken som bekräftar sin e-postadress kan ansluta till teamet. På inbjudningssidan visas teamnamnet och knappen **Join team** (Gå med i teamet). Om arbetsytan har en gräns för hur många medlemmar den rymmer och den är full, avvisas inbjudan tills någon har tagits bort eller inaktiverats. Gäster räknas inte mot gränsen.
 
 ### Arbetsytans medlemmar
 

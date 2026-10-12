@@ -127,7 +127,7 @@ På en pekskärm lyfts ett kort på tavlan när du håller ned det i ungefär en
 
 ## Kanbanmallar
 
-Mallpanelen och sidan Mallar erbjuder fyra kanbanmallar: **Kanban**, **Sprint board** (Sprinttavla), **Bug triage** (Buggprioritering) och **Personal tasks** (Personliga uppgifter). Mallarnas etiketter läggs till bland tavlans etiketter efter namn, så befintliga etiketter återanvänds. Ansvariga, typer av ansvariga, förfallodatum, kortlänkar och spårarlänkar ingår aldrig i en mall.
+Mallpanelen och sidan Mallar erbjuder fyra kanbanmallar: **Kanban**, **Sprint board** (Sprinttavla), **Bug triage** (Buggprioritering) och **Personal tasks** (Personliga uppgifter). Mallarnas etiketter läggs till bland tavlans etiketter efter namn, så befintliga etiketter återanvänds. Ansvariga, typer av ansvariga, förfallodatum, kortlänkar och spårarlänkar ingår aldrig i en mall. Spårarlänkar finns bara där din server har spåraren aktiverad och du har åtkomst till den; om du inte ser några länkåtgärder i kanbanmenyn är spåraren inte tillgänglig för dig.
 
 När du sparar ett urval som innehåller en kanban som en egen mall, eller kopierar och klistrar in en kanban, följer dess kolumner och kort med. När mallen sparas tas ansvariga, typer av ansvariga, förfallodatum, kortlänkar och spårarlänkar bort.
 
