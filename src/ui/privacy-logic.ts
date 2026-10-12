@@ -32,7 +32,7 @@ export const PRIVACY_COPY = {
   stayOnHeading: 'Stays on either way',
   operationalLead: 'We need these to run, back up and fix your workspace.',
   selfAlsoHeading: 'Also sent when this is on',
-  selfAlsoLead: 'Operating data.',
+  selfAlsoLead: 'Operating data goes with it, so we can see how the software runs on your server.',
   neverHeading: 'What is never sent',
   neverSent: [
     'Anything you write or upload: board, card and ticket titles and text, comments, chat, file names and contents, search text, AI prompts and answers.',

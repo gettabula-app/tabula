@@ -10,7 +10,7 @@ describe('Privacy panel copy and rules', () => {
     expect(privacyStayOnHeading('hosted')).toBe('Stays on either way');
     expect(privacyStayOnLead('hosted')).toBe('We need these to run, back up and fix your workspace.');
     expect(privacyStayOnHeading('self')).toBe('Also sent when this is on');
-    expect(privacyStayOnLead('self')).toBe('Operating data.');
+    expect(privacyStayOnLead('self')).toBe('Operating data goes with it, so we can see how the software runs on your server.');
     expect(PRIVACY_COPY.analyticsText).toBe('Sends counts and durations of feature use for this workspace to Tabula so we can see what is used and improve it. Never includes anything from your boards, comments or chat, and no names, email addresses or identifiers of people.');
     expect(privacySharingState(true)).toBe('On');
     expect(privacySharingState(false)).toBe('Off');
