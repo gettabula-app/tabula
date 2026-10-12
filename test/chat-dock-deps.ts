@@ -20,6 +20,7 @@ export function stubDeps(entries: ChatChannelEntry[] = []) {
     onBadge: (fn: () => void) => { badgeListeners.add(fn); return () => badgeListeners.delete(fn); },
     hasUnlisted: () => unlisted,
     watch: (signal: AbortSignal) => { watches.push(signal); },
+    navigate: vi.fn<(hash: string) => void>(),
     mount: (opts: ConversationOptions) => {
       const conv = { setOpen: vi.fn<(open: boolean) => void>(), focusComposer: vi.fn<() => void>(), refresh: vi.fn<() => void>() };
       mounts.push({ opts, conv });

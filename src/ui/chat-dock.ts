@@ -3,7 +3,7 @@ import { h, icon } from './dom';
 import type { ChatChannelEntry } from '../api';
 import { channelUnread, fetchChannels, hasUnlisted, onChatBadge, openChat, totalUnread, watchChat, type BoardChat } from '../chat';
 import { mountConversation, type Conversation, type ConversationOptions } from './chat';
-import { badgeText, type ChannelKind } from './chat-logic';
+import { badgeText, channelHash, type ChannelKind } from './chat-logic';
 import { channelKey, dockChannels, hereLine, pickChannel, splitChips, type DockChannel } from './chat-dock-channels';
 import { popover } from './common';
 import { dockInset, loadDock, nextDock, saveDock, type DockEvent, type DockMode, type DockPrefs } from './chat-dock-state';
@@ -35,10 +35,18 @@ export interface DockDeps {
   hasUnlisted(listed: ReadonlySet<string>): boolean;
   watch(signal: AbortSignal): void;
   mount(opts: ConversationOptions): Conversation;
+  /** Goes to a hash page (the full Chat page). */
+  navigate(hash: string): void;
+}
+
+/** Leave a path route (the tracker) for a hash page such as `#/chat`: the path goes back to `/` and the router runs once. */
+function navigateHashPage(hash: string) {
+  window.history.pushState(null, '', '/' + hash);
+  window.dispatchEvent(new Event('popstate'));
 }
 
 const realDeps = (): DockDeps => ({
-  fetchChannels, openChat, unread: channelUnread, totalUnread, onBadge: onChatBadge, hasUnlisted, watch: watchChat, mount: mountConversation,
+  fetchChannels, openChat, unread: channelUnread, totalUnread, onBadge: onChatBadge, hasUnlisted, watch: watchChat, mount: mountConversation, navigate: navigateHashPage,
 });
 
 /** A channel list that has not been refetched for this long is not asked for again on a badge change. */
@@ -106,7 +114,13 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const title = h('h2', { class: 'chat-dock-title' }, 'Chat', context);
   const expand = button('Full size', 'expand', 'expand');
   const compact = button('Compact', 'collapse', 'compact');
-  const head = h('header', { class: 'chat-dock-head' }, title, expand, compact, button('Minimise to a bubble', 'minus', 'minimise'), button('Close chat', 'close', 'close'));
+  const page = h('button', { class: 'icon-btn chat-dock-btn', type: 'button', 'aria-label': 'Open the full Chat page', 'data-tip': 'Open the full Chat page' }, icon('share', 18));
+  page.addEventListener('click', () => {
+    const now = chosen();
+    dispatch('close');
+    deps.navigate(now ? channelHash(now.kind, now.ref) : '#/chat');
+  });
+  const head = h('header', { class: 'chat-dock-head' }, title, page, expand, compact, button('Minimise to a bubble', 'minus', 'minimise'), button('Close chat', 'close', 'close'));
   const panel = h('section', { class: 'chat-dock tray', 'aria-label': 'Chat', role: 'complementary' }, head, body);
   const bubbleCount = h('u', { class: 'chat-bubble-count', 'aria-hidden': 'true', hidden: true });
   const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: () => dispatch('open') }, icon('chat', 22), bubbleCount);
@@ -131,12 +145,28 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const isShown = () => prefs.mode === 'open' || prefs.mode === 'compact';
 
   const channels = () => dockChannels(entries, board?.ctx.boardId ?? null);
-  /** The channel on screen: the one remembered, else the open board, else the busiest. Waits for the list when the remembered one is not the open board. */
+  /**
+   * The channel on screen. It is chosen once, when the dock opens (mention, then most unread, then the last one open, then the
+   * workspace or the open board) and then stays: a new message only raises a badge, and a chip opened by hand stays until the dock
+   * is closed. It is chosen again only when it is gone (a board that closed) or the dock was closed. Waits for the channel list.
+   */
+  let openKey: string | null = null;
   const chosen = (): DockChannel | null => {
     const list = channels();
-    const attachedKey = list.find((c) => c.attached)?.key ?? null;
-    if (!loaded && prefs.channel && prefs.channel !== attachedKey) return null;
-    return pickChannel(list, prefs.channel, (c) => deps.unread(c.kind, c.ref));
+    const kept = openKey ? list.find((c) => c.key === openKey) : undefined;
+    if (kept) return kept;
+    if (!isShown()) return null;
+    // Before the list arrives the open board can be shown at once when nothing says otherwise: no unread anywhere and nothing else was last open.
+    const attached = list.find((c) => c.attached);
+    const early = !loaded && !!attached && (prefs.channel === null || prefs.channel === attached.key) && deps.totalUnread().unread === 0;
+    if (!loaded && !early) return null;
+    const pick = pickChannel(list, prefs.channel, (c) => deps.unread(c.kind, c.ref));
+    openKey = pick?.key ?? null;
+    if (pick && prefs.channel !== pick.key) {
+      prefs = { ...prefs, channel: pick.key };
+      saveDock(userId, prefs, opts.storage);
+    }
+    return pick;
   };
 
   // ---------------------------------------------------------------- chips and presence
@@ -293,6 +323,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   function dispatch(event: DockEvent): DockMode {
     const before = prefs.mode;
     prefs = nextDock(prefs, event);
+    if (prefs.mode === 'closed') openKey = null; // the next opening chooses again
     saveDock(userId, prefs, opts.storage);
     paint();
     syncWatch();
@@ -312,6 +343,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     dispatch,
     channel: () => chosen()?.key ?? null,
     select(channel) {
+      openKey = channel;
       dock.setChannel(channel);
       render();
     },
