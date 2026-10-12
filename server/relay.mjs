@@ -37,6 +37,8 @@ import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs
 import { saveDelay, saveMaxWaitMs } from './save-delay.mjs';
 import { renameSyncRetry } from './fs-retry.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
+import { createSyncGuard } from './sync-guard.mjs';
+import { syncValidateMode } from './sync-validate.mjs';
 import { scrubText } from './ai/errors.mjs';
 import { openAiConfig } from './ai/routes.mjs';
 import { createOpenRun } from './ai/run.mjs';
@@ -154,6 +156,22 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const log = (...a) => {
   if (process.env.QUIET !== '1') console.log(new Date().toISOString(), ...a);
 };
+
+// TABULA_SYNC_VALIDATE=off|report|enforce (default off), read once: a bad value stops the server at startup.
+const syncGuard = createSyncGuard({ mode: syncValidateMode(process.env), log });
+
+/** The validator's view of the socket's person (server/sync-validate.mjs ctx). No user id (open mode) means no identity. */
+function syncContext(ws, room) {
+  const writerRole = ws.role;
+  const mayEdit = ws.canWrite === true && (writerRole === 'owner' || writerRole === 'editor' || !directory);
+  return {
+    writer: ws.userId ? { id: ws.userId, name: typeof ws.userName === 'string' ? ws.userName : '', role: writerRole ?? undefined, guest: ws.guest === true } : null,
+    // open mode has no member list: any owner id is as good as another
+    isBoardMember: (id) => (directory ? typeof id === 'string' && directory.boardRole(parseRoom(room.name)?.boardId, id) !== null : true),
+    canEditObject: () => mayEdit,
+    createdByPolicy: 'member',
+  };
+}
 
 // An interrupted restore is finished or undone before anything opens the data directory (docs/backups.md). A journal
 // that cannot be trusted stops the start: guessing could mix old and new data.
@@ -516,7 +534,7 @@ snapshotBarrier?.onRelease(() => {
 
 // Hoisted on purpose: the API is created above this line and asks for it per request. /api/health reports the same numbers.
 function liveStats() {
-  return { rooms: rooms.size, connections: [...rooms.values()].reduce((n, r) => n + r.conns.size, 0) };
+  return { rooms: rooms.size, connections: [...rooms.values()].reduce((n, r) => n + r.conns.size, 0), ...(syncGuard.enabled ? { syncValidate: syncGuard.stats() } : {}) };
 }
 
 // Every open room to its file; the one place both shutdown and a restore do it.
@@ -712,14 +730,17 @@ class Room {
   guarded(ws, apply) {
     const user = directory.getUser(ws.userId);
     const actor = { id: ws.userId, role: ws.role, name: user?.name ?? ws.userName ?? '' };
+    // nests inside the sync validator's hold (server/sync-guard.mjs): its own updates join the outer list
+    const outer = this.held;
     this.held = [];
     let undone = [];
     try {
       undone = this.guard.run(actor, apply);
     } finally {
       const held = this.held;
-      this.held = null;
-      if (held.length) this.broadcastUpdate(held.length === 1 ? held[0] : Y.mergeUpdates(held));
+      this.held = outer;
+      if (outer) outer.push(...held);
+      else if (held.length) this.broadcastUpdate(held.length === 1 ? held[0] : Y.mergeUpdates(held));
     }
     if (undone.length) {
       const enc = encoding.createEncoder();
@@ -943,10 +964,14 @@ class Room {
         const apply = () => syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
         // A state vector (step 1) changes nothing, so only step 2 and updates go through the guard.
         const syncType = decoding.peekVarUint(dec);
-        if (this.kind === 'board' && trackerGuard && config.tracker && directory && ws.userId
-          && syncType !== syncProtocol.messageYjsSyncStep1) this.trackerGuarded(ws, apply);
-        else if (this.guard && ws.userId && syncType !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
-        else apply();
+        const guardedApply = () => {
+          if (this.kind === 'board' && trackerGuard && config.tracker && directory && ws.userId
+            && syncType !== syncProtocol.messageYjsSyncStep1) this.trackerGuarded(ws, apply);
+          else if (this.guard && ws.userId && syncType !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
+          else apply();
+        };
+        if (syncGuard.enabled && syncType !== syncProtocol.messageYjsSyncStep1) syncGuard.run(this, ws, syncContext(ws, this), guardedApply);
+        else guardedApply();
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
         const update = decoding.readVarUint8Array(dec);
