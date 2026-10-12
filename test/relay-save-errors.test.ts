@@ -7,6 +7,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // An unreadable room stays closed and its file stays in place. A failed save is retried without ending the process.
 // The relay runs as a child process with short timers.
@@ -21,7 +22,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(what: string, ok: () => boolean, ms = 10_000) {
   const t0 = Date.now();
   while (!ok()) {
-    if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${what}\n${relayOutput()}`);
+    if (Date.now() - t0 > budget(ms)) throw new Error(`timed out waiting for ${what}\n${relayOutput()}`);
     await sleep(25);
   }
 }

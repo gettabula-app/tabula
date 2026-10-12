@@ -8,6 +8,7 @@ import * as decoding from 'lib0/decoding';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // docs/comment-authz.md over real sockets, in accounts mode: the relay corrects what a person's rules forbid, tells
 // only that person (message type 5), and every client converges on the corrected threads.
@@ -33,7 +34,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn: () => boolean, ms = 5000) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(20);
   }
 };

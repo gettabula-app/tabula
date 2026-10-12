@@ -10,6 +10,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // Every board has a sibling comments room (`<boardId>~comments`). The relay runs as a child process,
 // once in open mode and once in accounts mode, exactly as `npm start` would.
@@ -34,7 +35,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn: () => boolean, ms = 5000) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(20);
   }
 };

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { openDirectory } from '../server/directory.mjs';
 import { createHarness, type Account } from './mcp-harness';
 import { makePng } from './image-fixtures';
+import { budget } from './wait-budget';
 
 // docs/images.md, History and garbage collection, in a running relay: a few moments after start it removes the images no
 // board shows any more (after their grace period) and writes one audit row.
@@ -26,7 +27,7 @@ const corrupt = png(9);
 const h = createHarness({ accounts: true, dir, env: { TABULA_TEST_ASSET_GC_DELAY_MS: '300' } });
 let owner: Account;
 const until = async (check: () => boolean, ms = 15_000) => {
-  const end = Date.now() + ms;
+  const end = Date.now() + budget(ms);
   while (!check()) {
     if (Date.now() > end) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 50));

@@ -7,6 +7,7 @@ import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { freePort } from './free-port';
 import { RELAY_START_MS } from './relay-timing';
+import { budget } from './wait-budget';
 
 // Shared by the black-box MCP tests: a relay child process, the HTTP API as a signed-in person, raw JSON-RPC to /mcp.
 // Settings are passed under both the TABULA_ and the MIRA_ spelling and the CSRF header under both names, so the
@@ -35,7 +36,7 @@ export const until = async (fn: () => boolean | Promise<boolean>, ms = 30_000) =
   while (!(await fn())) {
     const died = relayDied();
     if (died) throw new Error(died);
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(20);
   }
 };

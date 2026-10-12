@@ -12,6 +12,7 @@ import { createLiveRuns } from '../server/ai/live.mjs';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
+import { budget } from './wait-budget';
 
 // Shared by the POST /api/ai/run tests (docs/ai.md, "Running a feature"). The API runs in this process behind a real
 // HTTP server. Usually a fake provider takes the place of the network; proxy tests may use the Anthropic SDK against a
@@ -52,7 +53,7 @@ export const deferred = <T = void>() => {
 export const until = async (fn: () => boolean, ms = 5000) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 10));
   }
 };

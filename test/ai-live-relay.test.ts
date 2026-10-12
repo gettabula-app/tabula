@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import * as decoding from 'lib0/decoding';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // docs/ai.md, "Live runs": the relay as `npm start` runs it in open mode tells every socket on a board about its AI runs
 // (message type 6): a patch per change, and a snapshot for a socket that joins while runs are open. The provider is a
@@ -79,7 +80,7 @@ function connect(board: string): Promise<Socket> {
 const until = async (fn: () => boolean, ms = 8000) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 10));
   }
 };

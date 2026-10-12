@@ -5,6 +5,7 @@ import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { envFor, harness, type Harness } from './backup-harness';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 type Relay = { proc: ChildProcess; port: number; out: () => string; exited: Promise<void> };
 
@@ -16,7 +17,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(check: () => boolean | Promise<boolean>, ms: number, reason: string) {
   const started = Date.now();
   while (!(await check())) {
-    if (Date.now() - started > ms) throw new Error(reason);
+    if (Date.now() - started > budget(ms)) throw new Error(reason);
     await sleep(20);
   }
 }

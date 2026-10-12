@@ -12,6 +12,7 @@ import { MSG_WORKSPACE, onWorkspaceHint, resyncRooms } from '../src/sync';
 import { RELAY_START_MS } from './relay-timing';
 import { startRelayProcess } from './start-relay';
 import { createFakeCloudControlPlane } from './fake-cloud-control-plane';
+import { budget } from './wait-budget';
 
 // docs/cloud.md. The relay runs as a child process exactly as `npm start` would, next to a fake control plane.
 
@@ -37,7 +38,7 @@ const threadValue = (id: string) => {
 async function until(fn: () => boolean, ms = 5000) {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(20);
   }
 }

@@ -8,6 +8,7 @@ import { Worker } from 'node:worker_threads';
 import { waitForCopy } from '../server/backup.mjs';
 import { COPY_JOB, copyDatabase } from '../server/backup-copy-worker.mjs';
 import { CREDS, HOUR, KEY, harness, type Engine, type Harness } from './backup-harness';
+import { budget } from './wait-budget';
 
 // docs/backups.md, When it runs. The two SQLite steps of the database copy (VACUUM INTO, then the second pass on the
 // copy) run in a worker thread, so the event loop of the server is not held while a large database is copied.
@@ -25,7 +26,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(test: () => boolean, ms = 5000) {
   const t0 = Date.now();
   while (!test()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(5);
   }
 }

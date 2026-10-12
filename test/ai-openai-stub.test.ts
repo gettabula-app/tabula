@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startOpenAiStub } from '../scripts/lib/openai-stub.mjs';
+import { budget } from './wait-budget';
 
 const KEY = 'sk-test-' + crypto.randomBytes(12).toString('hex');
 const MODEL = 'gpt-stub';
@@ -9,7 +10,7 @@ const FENCE = String.fromCharCode(96).repeat(3);
 const ANSWERS = { generate: { text: 'generated' }, cluster: { groups: [{ title: 'Theme', ids: ['a', 'b'] }] } };
 const stubs: Array<{ server: Server; base: string; calls: any[]; setMode(mode: string): void }> = [];
 const waitFor = async (condition: () => boolean, timeoutMs = 10_000) => {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + budget(timeoutMs);
   while (!condition()) {
     if (Date.now() >= deadline) throw new Error('timed out waiting for local stub request');
     await new Promise((resolve) => setTimeout(resolve, 20));

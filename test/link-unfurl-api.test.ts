@@ -15,6 +15,7 @@ import { isPublicLinkAddress } from '../server/link-guard.mjs';
 import { createAssetHandlers } from '../server/asset-routes.mjs';
 import { createAssetStore, createUploadLimiter } from '../server/assets.mjs';
 import { SECRET, makePng } from './image-fixtures';
+import { budget } from './wait-budget';
 
 // docs/link-cards.md, "Fetching a preview" (slice 2a: the route, who may ask, the limits, the cache, the setting). The API runs
 // in this process behind a real HTTP server; "the web" is local HTTP servers, reached through an injected resolver and an
@@ -482,7 +483,7 @@ describe('open mode', () => {
 async function until(fn: () => boolean, ms = 5000) {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 10));
   }
 }

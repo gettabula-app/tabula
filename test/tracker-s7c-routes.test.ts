@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startRelayProcess } from './start-relay';
 import { createFakeCloudControlPlane } from './fake-cloud-control-plane';
+import { budget } from './wait-budget';
 
 const OWNER = 'tracker-s7c-owner@example.com';
 const TOKEN = 'f'.repeat(48);
@@ -22,7 +23,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(fn: () => boolean, timeoutMs = 20_000) {
   const started = Date.now();
   while (!fn()) {
-    if (Date.now() - started > timeoutMs) throw new Error('timed out waiting for a relay observer');
+    if (Date.now() - started > budget(timeoutMs)) throw new Error('timed out waiting for a relay observer');
     await sleep(20);
   }
 }

@@ -7,6 +7,7 @@ import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 let PORT = 0;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-relay-'));
@@ -31,7 +32,7 @@ const client = (room: string) => {
 const until = async (fn: () => boolean, ms = 15_000) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 25));
   }
 };

@@ -8,6 +8,7 @@ import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { CSRF_HEADER } from '../server/auth.mjs';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // docs/history.md. The relay runs as a child process exactly as `npm start` would: once in open mode,
 // once in accounts mode and once as a hosted workspace that can be made read-only.
@@ -25,7 +26,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(fn: () => boolean | Promise<boolean>, ms = 8000) {
   const t0 = Date.now();
   while (!(await fn())) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(40);
   }
 }
