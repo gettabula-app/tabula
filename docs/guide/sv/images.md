@@ -45,7 +45,9 @@ Om kopian på din enhet har försvunnit, eller servern nekade uppladdningen, sl�
 
 I en hostad arbetsyta går det tills vidare inte att ladda upp en bild över 1 MB. Du ser ”This image is over 1 MB, which is the upload limit for now. Use a smaller image.”, och rutan visar ”Not uploaded: over 1 MB”. Om du släpper flera på en gång räknar meddelandet dem (”2 images are over 1 MB and may not upload to this workspace yet. Use smaller images.”). Tabula försöker skicka bilder på cirka 900 KB, så de flesta foton krymps så att de ryms.
 
-Om webbläsaren inte kan behålla en kopia av bilden att ladda upp från (lagringsutrymmet är fullt eller webbplatsdata är blockerad) läggs bilden inte till på tavlan. Du ser ”The image was not added: this browser could not save a copy to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add it again.” (med flera bilder: ”2 images were not added: …”). Inget lämnas kvar på tavlan som aldrig kan laddas upp.
+Vissa webbläsare vägrar lagra bilder, till exempel Safari i ett privat fönster. Där hålls bilden i minnet tills den har laddats upp, så låt fliken vara öppen tills den grå rutan har blivit bilden. Om webbläsaren inte vill behålla någon kopia alls (lagringsutrymmet är fullt eller webbplatsdata är blockerad) läggs bilden inte till på tavlan. Du ser ”The image was not added: this browser could not save a copy to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add it again.” (med flera bilder: ”2 images were not added: …”). Inget lämnas kvar på tavlan som aldrig kan laddas upp.
+
+Två flikar med samma tavla rapporterar inte längre en bild som förlorad när den andra fliken just har laddat upp den.
 
 En grå ruta kan också visa:
 
