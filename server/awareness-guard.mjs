@@ -57,3 +57,22 @@ export function filterAwarenessUpdate(update, { own, others, self = {}, clean })
   }
   return { update: encoding.toUint8Array(enc), dropped, oversized: false };
 }
+
+/**
+ * Token bucket for the awareness frames of one socket. take() is true when the frame may be processed.
+ * @param {{ burst?: number, perSecond?: number, now?: () => number }} [opts]
+ */
+export function createAwarenessBucket({ burst = 40, perSecond = 30, now = Date.now } = {}) {
+  let tokens = burst;
+  let last = now();
+  return {
+    take() {
+      const t = now();
+      tokens = Math.min(burst, tokens + Math.max(0, t - last) * perSecond / 1000);
+      last = t;
+      if (tokens < 1) return false;
+      tokens -= 1;
+      return true;
+    },
+  };
+}

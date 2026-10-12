@@ -9,7 +9,7 @@ import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
-import { filterAwarenessUpdate, MAX_AWARENESS_UPDATE_BYTES } from '../server/awareness-guard.mjs';
+import { createAwarenessBucket, filterAwarenessUpdate, MAX_AWARENESS_UPDATE_BYTES } from '../server/awareness-guard.mjs';
 
 const entry = (clientID: number, clock: number, state: unknown) => {
   const enc = encoding.createEncoder();
@@ -33,6 +33,29 @@ const decode = (u: Uint8Array) => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return import('y-protocols/awareness').then((m) => { m.applyAwarenessUpdate(a, u, 'test'); return seen; });
 };
+
+describe('createAwarenessBucket', () => {
+  it('never limits a sustained 20 frames per second', () => {
+    let t = 0;
+    const b = createAwarenessBucket({ now: () => t });
+    for (let i = 0; i < 2000; i++) { t += 50; expect(b.take()).toBe(true); }
+  });
+  it('limits a 200-frame burst to about the burst size and refills after idle', () => {
+    let t = 0;
+    const b = createAwarenessBucket({ now: () => t });
+    let ok = 0;
+    for (let i = 0; i < 200; i++) if (b.take()) ok++;
+    expect(ok).toBe(40);
+    t += 1000;
+    ok = 0;
+    for (let i = 0; i < 200; i++) if (b.take()) ok++;
+    expect(ok).toBe(30);
+    t += 60_000;
+    ok = 0;
+    for (let i = 0; i < 200; i++) if (b.take()) ok++;
+    expect(ok).toBe(40);
+  });
+});
 
 describe('filterAwarenessUpdate', () => {
   it('drops entries for client ids another socket controls and keeps own and new ones', async () => {
