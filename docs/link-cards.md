@@ -1,6 +1,8 @@
 # Link cards
 
-TAB-135. Status: spec for review. Nothing here is built yet.
+TAB-135. Status: decisions frozen 2026-10-10. Built: slice 1 (the address guard, the pinned fetcher and the head parser, `server/link-guard.mjs`, `server/link-fetch.mjs`, `server/link-parse.mjs`) and slice 2a (the route `POST /api/boards/:id/unfurl` for text fields, the cache, the limits, the workspace setting `GET`/`PUT /api/admin/link-previews`, `TABULA_LINK_PREVIEWS`, `server/link-routes.mjs`). Not built: slice 2b (preview images and icons as assets, the admin switch in the page), slice 3 (the card) and slice 4 (the guide). The sections below say what the finished feature does.
+
+Slice 2a answers: a fetch outcome that fails is `422` with `{ error, message }` and one of the `unfurlError` codes; the other refusals are `400` (`bad_request`, `bad_url`, `credentials_in_url`), `403` (not an owner or editor), `409` `previews_off`, `429` `rate_limited` with `Retry-After`. The user agent names the instance (`TabulaLinkPreview/1.0 (+<instance origin>/docs/link-previews)`) and falls back to `https://gettabula.app/docs/link-previews` when the instance address is unknown or only a development address.
 
 Johan asked for "links with preview, parsed metadata and such". Today a pasted web address becomes a sticky note with the address as its text, and `docs/images.md` decided that pasting a URL fetches nothing, because a server-side fetch is an SSRF hole and a browser-side one leaks every viewer's IP address to a third party. This page specifies how link previews are added without either problem: **one guarded fetch on the relay, at the moment someone adds the link, with the result stored in the board**, so nobody's browser ever contacts the linked site to draw the card.
 

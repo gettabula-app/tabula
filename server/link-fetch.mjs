@@ -12,7 +12,7 @@ export const LINK_ICON_LIMIT = 256 * 1024;
 export const LINK_TIMEOUT_MS = 5000;
 export const LINK_LOOKUP_TIMEOUT_MS = 2000;
 export const LINK_REDIRECT_LIMIT = 3;
-export const LINK_PREVIEW_USER_AGENT = 'TabulaLinkPreview/1.0 (+https://tabula.app/docs/link-previews)';
+export const LINK_PREVIEW_USER_AGENT = 'TabulaLinkPreview/1.0 (+https://gettabula.app/docs/link-previews)';
 
 const REDIRECTS = new Set([301, 302, 303, 307, 308]);
 
@@ -67,6 +67,8 @@ function userAgentFor(instanceUrl = process.env.TABULA_BASE_URL) {
   try {
     const base = new URL(instanceUrl);
     if (base.protocol !== 'http:' && base.protocol !== 'https:') return LINK_PREVIEW_USER_AGENT;
+    // a development default is not an identity a site owner could look up
+    if (base.hostname === 'localhost' || base.hostname === '127.0.0.1' || base.hostname === '[::1]') return LINK_PREVIEW_USER_AGENT;
     return `TabulaLinkPreview/1.0 (+${base.origin}/docs/link-previews)`;
   } catch {
     return LINK_PREVIEW_USER_AGENT;

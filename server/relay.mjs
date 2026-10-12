@@ -42,6 +42,7 @@ import { createLiveRuns } from './ai/live.mjs';
 import { createAssetStore, createJsonAssetIndex, createUploadLimiter } from './assets.mjs';
 import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
+import { createLinkUnfurl, createOpenLinkRoutes } from './link-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
@@ -431,6 +432,8 @@ if (assets) {
   setInterval(sweep, 24 * 60 * 60 * 1000).unref();
 }
 const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: assets.handlers, clientIp }) : null;
+// link previews in open mode exist only with TABULA_LINK_PREVIEWS=on (docs/link-cards.md); accounts mode wires its own in api.mjs
+const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpenLinkRoutes({ linkUnfurl: createLinkUnfurl({ config, log: console.error }), clientIp }) : null;
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
@@ -1216,6 +1219,8 @@ async function onRequest(req, res) {
         await openAiRun.handle(req, res); // streams for minutes and writes through the room: no barrier lease
       } else if (/^\/api\/ai\/runs\/[A-Za-z0-9_-]{1,64}\/resolve$/.test(url.pathname) && req.method === 'POST') {
         await runOpenWriter(() => openAiRun.resolve(req, res, url.pathname.split('/')[4]));
+      } else if (openLinks && (await openLinks(req, res, url))) {
+        // answered: a link preview of open mode (it writes nothing to a board, so no barrier lease)
       } else if (openAssets && (await runOpenWriter(() => openAssets(req, res, url)))) {
         // answered: an image upload or download of open mode
         noteOpenWrite(req, res);
