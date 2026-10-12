@@ -12,7 +12,7 @@ What the tool can do depends on the level you give the token.
 - **Read and comment**: also add comments and reply to them. Comments are marked with your name followed by the token name, so people can tell them from comments you typed.
 - **Read and edit**: also create, change and delete objects on the board. These edits appear live for everyone on the board.
 
-An AI tool cannot share boards, change roles, delete boards, manage teams or see the member list.
+AI apps that read MCP resources also see your boards as resources (`board://` followed by the board id), with exactly the access the board tools give them. An AI tool cannot share boards, change roles, delete boards, manage teams or see the member list.
 
 Two safeguards apply to every token:
 

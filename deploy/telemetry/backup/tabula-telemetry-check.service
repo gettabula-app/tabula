@@ -1,0 +1,9 @@
+[Unit]
+Description=Tabula telemetry weekly restic check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tabula-telemetry/deploy/telemetry/backup/check.sh
+TimeoutStartSec=3h

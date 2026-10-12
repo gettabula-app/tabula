@@ -22,6 +22,14 @@
       "workspace": { "type": "string", "pattern": "^(?:ws_[A-Za-z0-9_-]{8,64}|[A-Za-z0-9_-]{16,64})$", "maxLength": 67 }
     }
   },
+  "fleetEnvelope": {
+    "fields": {
+      "schema": { "type": "int", "min": 1, "max": 1 },
+      "kind": { "type": "enum", "values": ["fleet"] },
+      "hour": { "type": "int", "min": 0, "max": 9007199254740991, "multipleOf": 3600000 },
+      "workspace": { "type": "string", "pattern": "^(?:ws_[A-Za-z0-9_-]{8,64}|[A-Za-z0-9_-]{16,64})$", "maxLength": 67 }
+    }
+  },
   "metrics": {
     "http_requests_total": {
       "kind": "counter",
@@ -177,13 +185,31 @@
       "kind": "counter",
       "source": "control_plane",
       "labels": {
-        "reason": { "type": "enum", "values": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"] }
+        "reason": { "type": "enum", "values": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_event", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"] }
       },
       "min": 0,
       "max": 9007199254740991
     }
   },
   "events": {
+    "workspace_hour": {
+      "kind": "event",
+      "source": "control_plane",
+      "fields": {
+        "state": { "type": "enum", "values": ["pending_checkout", "provisioning", "trialing", "active", "past_due", "read_only", "suspended", "deleting", "deleted", "failed", "other"] },
+        "machine": { "type": "enum", "values": ["started", "stopped", "other"] },
+        "plan": { "type": "enum", "values": ["paid", "comp", "other"] },
+        "seats_paid": { "type": "int", "min": 0, "max": 100000, "optional": true },
+        "seats_used": { "type": "int", "min": 0, "max": 100000, "optional": true },
+        "guests_used": { "type": "int", "min": 0, "max": 100000, "optional": true },
+        "members_used": { "type": "int", "min": 0, "max": 100000, "optional": true },
+        "backup_state": { "type": "enum", "values": ["off", "unsupported", "ok", "failing", "stale", "never", "unreachable", "unknown"] },
+        "backup_age_hours": { "type": "int", "min": 0, "max": 87600, "optional": true },
+        "disk_used_bytes": { "type": "int", "min": 0, "max": 9007199254740991, "optional": true },
+        "disk_total_bytes": { "type": "int", "min": 0, "max": 9007199254740991, "optional": true },
+        "app_version": { "type": "string", "pattern": "^(?:v\\d+(?:\\.\\d+){0,2}|[0-9a-f]{7,12})$", "maxLength": 64, "optional": true }
+      }
+    },
     "workspace_day": {
       "kind": "event",
       "source": "control_plane",
@@ -262,5 +288,5 @@
       "at": { "type": "int", "min": 0, "max": 9007199254740991 }
     }
   },
-  "droppedReasons": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"]
+  "droppedReasons": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_event", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"]
 }

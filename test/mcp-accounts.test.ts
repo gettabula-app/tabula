@@ -135,7 +135,7 @@ describe('the endpoint', () => {
     expect((await h.rpc(token, { jsonrpc: '2.0', method: 'notifications/cancelled', params: {} })).status).toBe(202);
     expect((await h.rpc(token, { jsonrpc: '2.0', id: 9, result: {} })).status).toBe(202);
 
-    const unknown = await h.call(token, 'resources/list');
+    const unknown = await h.call(token, 'prompts/list');
     expect(unknown.status).toBe(200);
     expect(unknown.body.error.code).toBe(-32601);
     expect((await h.rpc(token, 'not json')).body.error.code).toBe(-32700);

@@ -11,6 +11,7 @@ import { TEMPLATE_CATEGORIES } from './templates.mjs';
 import { TOKEN_BOARD_ID_RE } from './tokens.mjs';
 import { clientRateKeyOf } from './client-ip.mjs';
 import { createWindowLimiter, TICKET_CREATES_PER_WINDOW } from './limiter.mjs';
+import { parseBoardResourceUri } from './mcp-resource-uri.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { requireTrackerGateOpen } from './tracker/shared.mjs';
 import {
@@ -581,6 +582,17 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     }
   }
   const byTitleThenId = (a, b) => (a.title < b.title ? -1 : a.title > b.title ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const boardsForActor = (actor, query = '') => directory
+    ? directory.listBoardsFor(actor.user)
+      .filter((b) => (!actor.boardIds || actor.boardIds.includes(b.id)) && (!query || b.title.toLowerCase().includes(query)))
+      .sort(byTitleThenId)
+    : [];
+  const boardPage = (actor, { query = '', cursor, limit }) => {
+    const matching = boardsForActor(actor, query);
+    if (cursor > matching.length) throw new OpsError('invalid_input', 'The cursor is not valid for this result set.', 'cursor');
+    const page = matching.slice(cursor, cursor + limit);
+    return { page, more: cursor + page.length < matching.length };
+  };
   const trackerActor = (actor) => ({
     type: 'mcp_token', tokenId: actor.tokenId, ownerUserId: actor.userId, user: actor.user, tracker: actor.tracker,
   });
@@ -867,12 +879,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         const query = args.query === undefined ? '' : check.text(args.query, 'query', 0, 100).toLowerCase();
         const limit = args.limit === undefined ? 50 : check.integer(args.limit, 'limit', 1, 100);
         const cursor = args.cursor === undefined ? 0 : decodeOffsetCursor(check.text(args.cursor, 'cursor', 1, 500));
-        const matching = directory
-          .listBoardsFor(actor.user)
-          .filter((b) => (!actor.boardIds || actor.boardIds.includes(b.id)) && (!query || b.title.toLowerCase().includes(query)))
-          .sort(byTitleThenId);
-        if (cursor > matching.length) throw new OpsError('invalid_input', 'The cursor is not valid for this result set.', 'cursor');
-        const page = matching.slice(cursor, cursor + limit);
+        const { page, more } = boardPage(actor, { query, cursor, limit });
         const boards = page.map((b) => ({
           id: b.id,
           title: cleanForModel(b.title, 200).text,
@@ -881,7 +888,6 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           teamName: b.teamId ? cleanForModel(directory.getTeam(b.teamId)?.name, 100).text || null : null,
           updatedAt: b.updatedAt,
         }));
-        const more = cursor + page.length < matching.length;
         return fenced({ boards, nextCursor: more ? encodeOffsetCursor(cursor + page.length) : null, truncated: more });
       },
     },
@@ -2520,6 +2526,20 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     return typeof requested === 'string' && SUPPORTED_VERSIONS.includes(requested) ? requested : LATEST_VERSION;
   }
 
+  function resourceFailure(id, err) {
+    if (err instanceof OpsError) {
+      const details = {
+        error: err.code,
+        message: err.message,
+        ...(err.path ? { path: err.path } : {}),
+        ...(err.floor ? { floor: err.floor } : {}),
+      };
+      return { status: 200, body: rpcError(id, -32602, err.message, details) };
+    }
+    log('mcp: resource request failed', err?.message);
+    return { status: 200, body: rpcError(id, -32603, 'Internal error') };
+  }
+
   /** @returns {{ status: number, body?: object, headers?: object }} */
   async function dispatch(actor, message) {
     const { id, method } = message;
@@ -2529,7 +2549,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         status: 200,
         body: rpcResult(id, {
           protocolVersion: negotiate(params.protocolVersion),
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: false }, resources: { listChanged: false, subscribe: false } },
           serverInfo: { name: MCP_SERVER_NAME, version: SERVER_VERSION },
           instructions: INSTRUCTIONS,
         }),
@@ -2537,6 +2557,54 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     }
     if (method === 'ping') return { status: 200, body: rpcResult(id, {}) };
     if (method === 'tools/list') return { status: 200, body: rpcResult(id, { tools: toolList(actor) }) };
+    if (method === 'resources/list') {
+      const params = message.params === undefined ? {} : message.params;
+      if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+        return { status: 200, body: rpcError(id, -32602, 'params must be an object') };
+      }
+      try {
+        const cursor = params.cursor === undefined ? 0 : decodeOffsetCursor(check.text(params.cursor, 'cursor', 1, 500));
+        if (open || !directory) return { status: 200, body: rpcResult(id, { resources: [] }) };
+        const { page, more } = boardPage(actor, { cursor, limit: 50 });
+        const resources = page.map((b) => ({
+          uri: `board://${b.id}`,
+          name: cleanForModel(b.title, 200).text,
+          description: 'Board',
+          mimeType: 'application/json',
+          annotations: { lastModified: new Date(b.updatedAt).toISOString() },
+        }));
+        return {
+          status: 200,
+          body: rpcResult(id, { resources, ...(more ? { nextCursor: encodeOffsetCursor(cursor + page.length) } : {}) }),
+        };
+      } catch (err) {
+        return resourceFailure(id, err);
+      }
+    }
+    if (method === 'resources/read') {
+      const params = message.params === undefined ? {} : message.params;
+      if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+        return { status: 200, body: rpcError(id, -32602, 'params must be an object') };
+      }
+      const boardId = parseBoardResourceUri(params.uri);
+      if (!boardId) {
+        return {
+          status: 200,
+          body: rpcError(id, -32602, 'uri must match board://<board-id>, where board-id is 1 to 64 letters, digits, underscores or dashes.'),
+        };
+      }
+      try {
+        const boardTool = tools.find((tool) => tool.name === 'get_board');
+        const result = boardTool.run(actor, { boardId });
+        return {
+          status: 200,
+          body: rpcResult(id, { contents: [{ uri: `board://${boardId}`, mimeType: 'application/json', text: result.text }] }),
+        };
+      } catch (err) {
+        return resourceFailure(id, err);
+      }
+    }
+    if (method === 'resources/templates/list') return { status: 200, body: rpcResult(id, { resourceTemplates: [] }) };
     if (method === 'tools/call') {
       const params = message.params;
       if (typeof params !== 'object' || params === null || typeof params.name !== 'string') {
