@@ -1306,7 +1306,7 @@ describe('API in cloud mode', () => {
       const invitesBefore = s.directory.listInvites(team.id).length;
       const full = await make(owner.cookie);
       expect(full.status).toBe(409);
-      expect(full.body).toMatchObject({ error: 'seat_limit', message: expect.stringContaining('All 2 seats are in use') });
+      expect(full.body).toMatchObject({ error: 'seat_limit', message: expect.stringContaining('reached its member limit') });
       expect(s.directory.listInvites(team.id)).toHaveLength(invitesBefore);
 
       expect((await make(member.cookie)).status).toBe(403);
@@ -1335,7 +1335,7 @@ describe('API in cloud mode', () => {
       expect(blocked.asked.status).toBe(200);
       expect(blocked.mails).toBe(1);
       expect(blocked.verified.status).toBe(409);
-      expect(blocked.verified.body).toMatchObject({ error: 'seat_limit', message: expect.stringContaining('no free seat') });
+      expect(blocked.verified.body).toMatchObject({ error: 'seat_limit', message: expect.stringContaining('reached its member limit') });
       expect(blocked.verified.headers.get('set-cookie')).toBeNull();
       expect(s.directory.getUserByEmail('new@example.com')).toBeNull();
       expect(s.directory.listInvites(team.id)[0].uses).toBe(0);
@@ -1381,7 +1381,7 @@ describe('API in cloud mode', () => {
 
       const enable = await s.patchMember(owner.cookie, off.user.id, { disabled: false });
       expect(enable.status).toBe(409);
-      expect(enable.body).toMatchObject({ error: 'seat_limit', message: expect.stringContaining('All 2 seats are in use') });
+      expect(enable.body).toMatchObject({ error: 'seat_limit', message: expect.stringContaining('reached its member limit') });
       for (const role of ['member', 'admin', 'owner']) {
         const res = await s.patchMember(owner.cookie, guest.user.id, { role });
         expect(res.status).toBe(409);

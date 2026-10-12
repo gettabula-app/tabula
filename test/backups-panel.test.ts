@@ -332,39 +332,26 @@ describe('the list', () => {
 describe('backups that are off', () => {
   const off = { 'GET /api/admin/backups': refuse(409, 'backups_off') };
 
-  it('says so calmly on a hosted workspace and offers billing, never a price page or an address of ours', async () => {
-    await open(owner(hosted()), { ...off, 'POST /api/billing/portal': json({ url: 'https://billing.example.test/session/abc' }) });
+  it('says so calmly on a hosted workspace without a button, a price or an address of ours', async () => {
+    await open(owner(hosted()), off);
     expect(panel().querySelectorAll('h3').map(textOf)).toEqual(['Not set up']);
-    expect(textOf(need(panel(), '.backups-lead'))).toContain('This workspace has no backups yet.');
+    expect(textOf(need(panel(), '.backups-lead'))).toBe('Backups are not set up for this workspace yet.');
     expect(alerts()).toEqual([]);
     expect(panel().querySelectorAll('a')).toEqual([]);
     expect(panel().querySelectorAll('[href]')).toEqual([]);
-    expect(textOf(panel())).not.toMatch(/TABULA_BACKUP|price|pricing|\$|€|£/i);
-    const add = control(panel(), 'Add backups');
-    expect(add.tagName).toBe('BUTTON');
-    expect(add.classList.contains('primary')).toBe(true);
+    expect(panel().querySelectorAll('button')).toEqual([]);
+    expect(textOf(panel())).not.toMatch(/TABULA_BACKUP|price|pricing|\$|€|£|billing/i);
+    expect(hasControl(panel(), 'Add backups')).toBe(false);
     expect(hasControl(panel(), 'How to turn on backups')).toBe(false);
+    expect(asked('POST', '/api/billing/portal')).toHaveLength(0);
     expect(browser.location.assign).not.toHaveBeenCalled();
-    add.click();
-    await flush();
-    expect(asked('POST', '/api/billing/portal')).toHaveLength(1);
-    expect(browser.location.assign).toHaveBeenCalledWith('https://billing.example.test/session/abc');
   });
 
   it('on a workspace provided free says so instead of offering billing (TAB-226)', async () => {
     await open(owner({ ...hosted()!, billing: false }), off);
     expect(hasControl(panel(), 'Add backups')).toBe(false);
-    expect(textOf(panel())).toContain("This workspace is provided free (education or internal). There's nothing to bill.");
+    expect(textOf(panel())).toContain('This workspace is provided free of charge. There is nothing to bill.');
     expect(asked('POST', '/api/billing/portal')).toHaveLength(0);
-  });
-
-  it('does not follow a billing address that is not https', async () => {
-    await open(owner(hosted()), { ...off, 'POST /api/billing/portal': json({ url: 'http://billing.example.test/x' }) });
-    control(panel(), 'Add backups').click();
-    await flush();
-    expect(browser.location.assign).not.toHaveBeenCalled();
-    expect(need(root, '.admin-status').textContent).toBe('Something went wrong. Try again.');
-    expect(control(panel(), 'Add backups').disabled).toBe(false);
   });
 
   it('says so on a self-hosted server and links to the guide, not to billing', async () => {
@@ -1123,7 +1110,7 @@ describe('the Overview of a hosted workspace', () => {
   it('offers no Manage billing on a workspace provided free, and says why', async () => {
     await openOverview(owner({ ...hosted()!, billing: false }));
     expect(hasControl(panel(), 'Manage billing')).toBe(false);
-    expect(textOf(panel())).toContain("This workspace is provided free (education or internal). There's nothing to bill.");
+    expect(textOf(panel())).toContain('This workspace is provided free of charge. There is nothing to bill.');
   });
 });
 
