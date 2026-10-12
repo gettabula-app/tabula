@@ -1179,6 +1179,12 @@ const CSP = [
   ...(ALLOW_FRAMING ? [] : ["frame-ancestors 'none'"]),
 ].join('; ');
 
+// HSTS only when this instance is served over https (config.secureCookies is true exactly when TABULA_BASE_URL is https).
+// Never over http, so local development is not pinned to https. No includeSubDomains and no preload: tenants share the
+// parent domain, and one tenant must not pin its sibling subdomains. Set once per request in onRequest, so every path
+// (static, docs, API JSON, OAuth, 404) carries it.
+const HSTS = config.secureCookies ? 'max-age=31536000' : null;
+
 const DOCS = path.join(DIST, 'docs');
 
 function sendFile(res, file, status, cache) {
@@ -1333,6 +1339,7 @@ function noteOpenWrite(req, res) {
 async function onRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://x');
+    if (HSTS) res.setHeader('strict-transport-security', HSTS);
     const runOpenWriter = (fn) => {
       const method = String(req.method).toUpperCase();
       return snapshotBarrier && !['GET', 'HEAD', 'OPTIONS'].includes(method) ? snapshotBarrier.runWriter(fn) : fn();
