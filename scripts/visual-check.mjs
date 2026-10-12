@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-corner, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -3226,6 +3226,35 @@ const STATES = {
     if (result.small.length) throw new Error(`emoji-picker: controls smaller than 44x44: ${JSON.stringify(result.small)}`);
     if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
     if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
+  },
+  // the Add emoji button sits inside the note, bottom-left, inset from its edges (a note big enough on screen to hold it)
+  async 'emoji-corner'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+      const app = window.__board;
+      app.scope = null;
+      app.setSelection(['seed-note-1']);
+      app.zoomToSelection();
+    });
+    await page.waitForTimeout(180);
+    await page.evaluate(() => window.__board.zoomTo(1.2));
+    await page.evaluate(() => window.__board.editor.start('seed-note-1'));
+    await page.locator('.edit-bar.show').waitFor();
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(() => {
+      const note = document.querySelector('.text-editor').getBoundingClientRect();
+      const bar = document.querySelector('.edit-bar.show');
+      const button = document.querySelector('.edit-emoji').getBoundingClientRect();
+      const box = bar.getBoundingClientRect();
+      return { side: bar.dataset.side, left: box.left - note.left, bottom: note.bottom - box.bottom, button: [button.width, button.height], noteSize: [note.width, note.height] };
+    });
+    console.log(`emoji-corner ${JSON.stringify(r)}`);
+    if (r.side !== 'corner') throw new Error(`emoji-corner: the button is ${r.side}, not in the corner (note ${r.noteSize.map(Math.round)})`);
+    if (r.left < 0 || r.left > 24 || r.bottom < 0 || r.bottom > 24) throw new Error(`emoji-corner: the button is not in the bottom-left corner area (${Math.round(r.left)} px from the left, ${Math.round(r.bottom)} px from the bottom)`);
+    const min = env.width <= 500 ? 43.5 : 31.5; // touch keeps 44 px; a mouse gets 32 px in the corner
+    if (r.button[0] < min || r.button[1] < min) throw new Error(`emoji-corner: the button is ${r.button.map(Math.round)}, under ${Math.round(min)} px`);
   },
   async 'emoji-keyboard'(env) {
     await emojiKeyboard(env, null);
