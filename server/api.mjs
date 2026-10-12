@@ -227,7 +227,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, notifications = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, notifications = null, boardPresence = () => [], joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -797,6 +797,19 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     : null;
 
   const trackerBackupCheck = checkTrackerData ?? checkTrackerDataReal;
+  function presenceFor(user, boardRows = directory.listBoardsFor(user)) {
+    if (!user || user.role === 'guest') return [];
+    const allowed = new Set(boardRows.filter((board) => directory.boardRole(board.id, user.id) !== null).map((board) => board.id));
+    let rows = [];
+    try {
+      rows = boardPresence(user, allowed) ?? [];
+    } catch (err) {
+      log('boards presence: could not read live rooms', err?.message);
+    }
+    return Array.from(rows).filter((row) => row && allowed.has(row.boardId)
+      && directory.boardRole(row.boardId, user.id) !== null);
+  }
+
   const readinessBackupStatus = () => ({ ...backupStatus(), ...backupExport?.status?.() });
   const trackerAdminRoutes = config.authEnabled && config.tracker
     ? createTrackerAdminRoutes({
@@ -1085,6 +1098,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       return [200, { team: { id: team.id, name: team.name }, role }];
     }),
 
+    compile('GET', 'boards/presence', {}, ({ user }) => [200, { presence: presenceFor(user) }]),
     compile('GET', 'boards', {}, ({ user }) => [200, directory.listBoardsFor(user).map((b) => boardView(b, b.role))]),
     compile('POST', 'boards', { body: true }, ({ user, body }) => {
       if (typeof body.id !== 'string' || !BOARD_ID_RE.test(body.id)) throw badRequest('id must be 1 to 64 letters, digits, - or _');

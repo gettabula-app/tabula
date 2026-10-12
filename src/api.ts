@@ -332,6 +332,21 @@ export interface ServerBoard {
   updatedAt: number;
 }
 
+export interface BoardPresencePerson {
+  userId: string;
+  name: string;
+  colour: string | null;
+  joinedAt: number;
+  guest?: true;
+}
+
+export interface BoardPresence {
+  boardId: string;
+  count: number;
+  people: BoardPresencePerson[];
+  me?: true;
+}
+
 export interface Share {
   principalType: PrincipalType;
   principalId: string;
@@ -821,6 +836,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     acceptInvite: (token: string) => call<InvitePreview>('POST', `/api/invites/${seg(token)}/accept`),
 
     boards: () => call<ServerBoard[]>('GET', '/api/boards'),
+    boardsPresence: () => call<{ presence: BoardPresence[] }>('GET', '/api/boards/presence'),
     createBoard: (board: { id: string; title?: string; teamId?: string }) =>
       call<ServerBoard>('POST', '/api/boards', board),
     updateBoard: (id: string, patch: { title?: string; teamId?: string | null }) =>
