@@ -126,7 +126,8 @@ describe('registry', () => {
     expect(registry.verify('tt_000000000000_' + 'a'.repeat(43))).toBeNull();
     const { id, token } = issueToken(file, { workspace: WORKSPACE, label: 'goated' });
     expect(fs.readFileSync(file, 'utf8')).not.toContain(token.split('_').slice(2).join('_'));
-    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    // POSIX permission bits do not exist on Windows (a file reads as 0o666); the registry mode is enforced and checked on Linux and macOS.
+    expect(process.platform === 'win32' || (fs.statSync(file).mode & 0o777) === 0o600).toBe(true);
     expect(registry.verify(token)).toEqual({ id, workspace: WORKSPACE });
     expect(registry.verify(`${token}x`)).toBeNull();
     expect(registry.verify('nonsense')).toBeNull();
