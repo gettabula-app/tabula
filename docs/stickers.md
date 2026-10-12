@@ -141,7 +141,7 @@ Updated for TAB-101: the sets are hosted by Tabula (`docs/icons-selfhost.md`), s
 - **Placed stickers.** The body is in the board document, persisted in IndexedDB. A placed sticker renders offline with no fetch, and PNG and SVG export work offline.
 - **Stickers drawer.** Search, browsing and placing a new sticker read `/icons/` on the relay. The service worker keeps every index and shard the device fetched in the `tabula-icons-v1` cache (cache first; the manifest is network first), so anything seen once works offline. A "Download for offline" row stores the three sticker sets (6.8 MB to send, about 42 MB stored) on purpose, and shows when an update is available.
 - **Reactions.** The 16 bodies are in one file (`pin.<hash>.json`, about 6 KB), so the picker costs one request, and the service worker keeps it. A test requires the pinned names to equal `REACTIONS`.
-- **Service worker.** `public/sw.js` has an `/icons/` branch and a cache that outlives app versions; `VERSION` is `tabula-v2`. The Iconify rule stays for sets that are not hosted.
+- **Service worker.** `public/sw.js` has an `/icons/` branch and a cache that outlives app versions; `VERSION` is stamped per build (`tabula-<hash>`). The Iconify rule stays for sets that are not hosted.
 
 ## Tests
 

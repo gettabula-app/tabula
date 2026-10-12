@@ -397,7 +397,7 @@ EXISTING (one line each):
 - `src/ui/stickers.ts`: preview filling for the grid and the reaction picker, the offline row.
 - `src/ui/topbar.ts`: the footer credit (the plan named `home.ts`; the footer lives in `pageFooter`).
 - `src/styles.css`: the offline row, progress bar, credits and link button, theme variables only.
-- `public/sw.js`: the `/icons/` branch, the `tabula-icons-v1` cache and the activate filter; `VERSION` is `tabula-v2`.
+- `public/sw.js`: the `/icons/` branch, the `tabula-icons-v1` cache and the activate filter; `VERSION` is stamped per build (`tabula-<hash>`).
 - `server/relay.mjs`: `serveIcons` (gzip mapping, cache headers, 404).
 - `vite.config.ts`: dev proxy for `/icons`. `scripts/dev.mjs`: builds icons when missing.
 - `Dockerfile`: the build stage moves `dist/icons` aside and the final stage copies it as its own layer; `ARG ICON_SETS`.

@@ -10,7 +10,7 @@ let PORT = 0;
 let root = '';
 let relay: ChildProcess;
 
-type Res = { status: number; body: string };
+type Res = { status: number; body: string; headers: http.IncomingHttpHeaders };
 
 // http.request sends the path exactly as given, unlike fetch, which normalises dot segments first.
 const get = (rawPath: string) =>
@@ -18,7 +18,7 @@ const get = (rawPath: string) =>
     const req = http.request({ host: '127.0.0.1', port: PORT, path: rawPath, method: 'GET' }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') }));
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
     });
     req.on('error', reject);
     req.end();
@@ -31,6 +31,7 @@ beforeAll(async () => {
   fs.mkdirSync(path.join(root, 'dist-old'));
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>APP SHELL</title>');
   fs.writeFileSync(path.join(dist, 'assets', 'deep', 'a.js'), 'NESTED OK');
+  fs.writeFileSync(path.join(dist, 'assets', 'app.abc123.js'), 'console.log(1)');
   fs.writeFileSync(path.join(root, 'dist-old', 'x.txt'), 'SIBLING SECRET');
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"OUTSIDE SECRET"}');
   const started = await startRelayProcess({
@@ -97,5 +98,39 @@ describe('relay: static files stay inside dist', () => {
     }
     // the relay is still up
     expect((await get('/assets/deep/a.js')).status).toBe(200);
+  });
+});
+
+describe('relay: the SPA fallback is for navigations only', () => {
+  it('answers a missing file under /assets/ with a 404 that is not html and is never stored', async () => {
+    for (const p of ['/assets/foo.abc123.js', '/assets/missing.css', '/assets/deep/nope.woff2', '/other.png']) {
+      const r = await get(p);
+      expect(r.status).toBe(404);
+      expect(r.body).not.toContain('APP SHELL');
+      expect(r.headers['cache-control']).toBe('no-store');
+      expect(String(r.headers['content-type'])).toMatch(/^text\/plain/);
+    }
+  });
+
+  it('serves an existing asset as itself with the immutable header', async () => {
+    const r = await get('/assets/app.abc123.js');
+    expect(r.status).toBe(200);
+    expect(r.body).toBe('console.log(1)');
+    expect(r.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+  });
+
+  it('falls back to index.html with no-cache for app routes and extensionless paths', async () => {
+    for (const p of ['/b/some-board', '/t/x', '/unknown-route', '/', '/assets/', '/assets']) {
+      const r = await get(p);
+      expect(r.status).toBe(200);
+      expect(r.body).toContain('APP SHELL');
+      expect(r.headers['cache-control']).toBe('no-cache');
+    }
+  });
+
+  it('keeps index.html itself no-cache', async () => {
+    const r = await get('/index.html');
+    expect(r.status).toBe(200);
+    expect(r.headers['cache-control']).toBe('no-cache');
   });
 });

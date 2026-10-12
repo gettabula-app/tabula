@@ -5,7 +5,9 @@
 //    Font files are cached on this device only; they are never re-served elsewhere.
 //  - Our own icon sets (/icons/): the manifest and the licence list network first, every hashed file cache first
 //    into ICONS, which outlives app versions (a new VERSION must not drop megabytes of downloaded icons).
-const VERSION = 'tabula-v2';
+// The build replaces the token in dist/sw.js with a hash of the release (vite.config.ts); served unbuilt (dev) it stays 'dev'.
+const BUILD = '__TABULA_BUILD__';
+const VERSION = `tabula-${BUILD.startsWith('__') ? 'dev' : BUILD}`;
 const SHELL = `${VERSION}-shell`;
 const RUNTIME = `${VERSION}-runtime`;
 const ICONS = 'tabula-icons-v1';
@@ -22,6 +24,19 @@ self.addEventListener('activate', (event) => {
       .then(() => self.clients.claim()),
   );
 });
+
+// Whether a response may be stored. Only a real success (never a 404/500/OAuth error page, never an opaque
+// third-party response whose status is hidden), and a script, style, font or image must not be HTML: a server that
+// answers a missing file with the app shell would otherwise have that HTML kept under the file's URL.
+const EXPECTED_TYPE = { script: /javascript|ecmascript/, style: /text\/css/, font: /font|octet-stream/, image: /^image\// };
+function cacheable(req, res) {
+  if (!res || res.type === 'opaque' || res.type === 'opaqueredirect' || res.type === 'error') return false;
+  if (!res.ok || res.status < 200 || res.status > 299) return false;
+  const type = (res.headers.get('content-type') || '').toLowerCase();
+  const expected = EXPECTED_TYPE[req.destination];
+  if (expected) return expected.test(type);
+  return req.destination === 'document' || !/text\/html/.test(type);
+}
 
 // Only a 200 JSON (or the licence text) is stored: a 404 or an HTML page must never be kept as an icon file.
 const isJson = (res) => res.status === 200 && /json|text\/plain/.test(res.headers.get('content-type') || '');
@@ -69,8 +84,10 @@ self.addEventListener('fetch', (event) => {
       event.respondWith(
         fetch(req)
           .then((res) => {
-            const copy = res.clone();
-            caches.open(SHELL).then((c) => c.put('/', copy));
+            if (cacheable(req, res)) {
+              const copy = res.clone();
+              caches.open(SHELL).then((c) => c.put('/', copy));
+            }
             return res;
           })
           .catch(() => caches.match('/')),
@@ -79,7 +96,7 @@ self.addEventListener('fetch', (event) => {
     }
     event.respondWith(
       caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-        if (res.ok) {
+        if (cacheable(req, res)) {
           const copy = res.clone();
           caches.open(SHELL).then((c) => c.put(req, copy));
         }
@@ -94,7 +111,7 @@ self.addEventListener('fetch', (event) => {
       caches.open(RUNTIME).then(async (cache) => {
         const hit = await cache.match(req);
         const net = fetch(req).then((res) => {
-          if (res.ok || res.type === 'opaque') cache.put(req, res.clone());
+          if (cacheable(req, res)) cache.put(req, res.clone());
           return res;
         }).catch(() => hit || Response.error());
         return hit || net;
