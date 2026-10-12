@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { deniedReason, denyOnce, type DeniedReason } from '../src/sync';
+import { deniedReason, denyOnce, retryableReason, retryDelayMs, RETRY_BASE_MS, RETRY_MAX_MS, type DeniedReason } from '../src/sync';
 
 describe('deniedReason', () => {
   it.each([
@@ -8,6 +8,10 @@ describe('deniedReason', () => {
     [4404, 'not_found'],
     [4410, 'access_removed'],
     [4503, 'restoring'],
+    [1009, 'too_large'],
+    [4413, 'too_large'],
+    [4429, 'rate_limited'],
+    [4430, 'too_many_connections'],
   ])('maps close code %i', (code, reason) => {
     expect(deniedReason(code)).toBe(reason);
   });
@@ -54,5 +58,25 @@ describe('denyOnce and the restoring close code', () => {
     });
     expect(conn.denied).toBeNull();
     expect(both[0].disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('the relay sync limits on the client', () => {
+  it('stops both rooms on 4413, 4429 and 4430 instead of reconnecting at once', () => {
+    for (const code of [1009, 4413, 4429, 4430]) {
+      const conn: { denied: DeniedReason | null } = { denied: null };
+      const both = [{ disconnect: vi.fn<() => void>(), shouldConnect: true }, { disconnect: vi.fn<() => void>(), shouldConnect: true }];
+      const seen: DeniedReason[] = [];
+      denyOnce(conn, both, code, (r) => seen.push(r));
+      expect(seen).toHaveLength(1);
+      for (const room of both) expect(room.shouldConnect).toBe(false);
+    }
+  });
+  it('retries only the limits that pass, from 30 s doubling to 5 minutes', () => {
+    expect(retryableReason('rate_limited')).toBe(true);
+    expect(retryableReason('too_many_connections')).toBe(true);
+    expect(retryableReason('too_large')).toBe(false);
+    expect(retryableReason('access_removed')).toBe(false);
+    expect([0, 1, 2, 3, 4, 10].map(retryDelayMs)).toEqual([RETRY_BASE_MS, 60_000, 120_000, 240_000, RETRY_MAX_MS, RETRY_MAX_MS]);
   });
 });

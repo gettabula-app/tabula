@@ -7,17 +7,19 @@ import { parseSize } from './config.mjs';
 const MiB = 1024 * 1024;
 
 // --- frame size (Room.onMessage, before anything is decoded or applied) ---
-// The WebSocket maxPayload stays at the owner limit. Images are board assets, not document content, so a legitimate
-// update is small; the biggest ones are a pasted or imported board, which only an owner (or open mode, where everyone is
-// the owner) does at that size. Editors and commenters get a quarter of it.
-export const MAX_FRAME_BYTES_OWNER = 32 * MiB;
-export const MAX_FRAME_BYTES_OTHER = 8 * MiB;
+// The WebSocket maxPayload is the owner limit. Images are board assets, not document content, so a legitimate update is
+// small. Measured (docs/capacity.md): a 5,000-object board with 200-character texts encodes to 2.4 MiB, a drawing-heavy one
+// (2,000 objects plus 2,000 strokes of 500 points) to 16.5 MiB. Sync step 2 of a board created offline is its whole state
+// in one frame, so owners keep 4x the heaviest board measured; editors and commenters (a reconnect sends only a diff) get
+// 16 MiB, more than 6x the large ordinary board.
+export const MAX_FRAME_BYTES_OWNER = 64 * MiB;
+export const MAX_FRAME_BYTES_OTHER = 16 * MiB;
 export const CLOSE_FRAME_TOO_BIG = 1009; // the standard "message too big" code
 
 // --- document size (checked on the encoded state, see createDocSizeGuard) ---
-// A very large board is a few MiB encoded; 64 MiB leaves an order of magnitude of room. TABULA_SYNC_MAX_DOC_BYTES
+// A very large board is a few MiB encoded and the heaviest measured one 16.5 MiB; 128 MiB leaves 7x over that. TABULA_SYNC_MAX_DOC_BYTES
 // overrides it (bytes, or a K/M/G suffix; 0 turns the cap off).
-export const DEFAULT_MAX_DOC_BYTES = 64 * MiB;
+export const DEFAULT_MAX_DOC_BYTES = 128 * MiB;
 // The encoded size is measured again only after this much update traffic has been accepted since the last measurement.
 export const DOC_RECHECK_BYTES = 1 * MiB;
 // A room over its cap still takes small frames (deleting content to get back under, typing) and refuses bigger ones.

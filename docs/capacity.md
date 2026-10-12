@@ -121,9 +121,9 @@ Bounds on the `/sync` WebSocket, chosen so real editing never reaches them (draw
 
 | Limit | Default | Over the limit | Setting |
 | --- | --- | --- | --- |
-| Frame size, owners (and open mode) | 32 MiB | socket closed, code 1009 `message_too_big` | `TABULA_SYNC_MAX_FRAME_OWNER` |
-| Frame size, editors and commenters | 8 MiB | same | `TABULA_SYNC_MAX_FRAME_OTHER` |
-| Document size (encoded state) | 64 MiB, 0 = off | an update bigger than 8 KiB is refused and its socket closed, code 4413 `document_too_large`; smaller frames (deleting, typing) still pass so the board can be cleaned up | `TABULA_SYNC_MAX_DOC_BYTES` |
+| Frame size, owners (and open mode) | 64 MiB | socket closed, code 1009 `message_too_big` | `TABULA_SYNC_MAX_FRAME_OWNER` |
+| Frame size, editors and commenters | 16 MiB | same | `TABULA_SYNC_MAX_FRAME_OTHER` |
+| Document size (encoded state) | 128 MiB, 0 = off | an update bigger than 8 KiB is refused and its socket closed, code 4413 `document_too_large`; smaller frames (deleting, typing) still pass so the board can be cleaned up | `TABULA_SYNC_MAX_DOC_BYTES` |
 | SyncStep1 frames per socket | burst 20, 5 per second | frame dropped | none |
 | Update frames per socket | burst 500, 200 per second | frame dropped | none |
 | Sustained over the frame rate | 10 s without a 1 s break | socket closed, code 4429 `rate_limited` | none |
@@ -132,3 +132,7 @@ Bounds on the `/sync` WebSocket, chosen so real editing never reaches them (draw
 | `/sync` upgrades per client address | 120 per minute | HTTP 429 with `Retry-After: 60` before the handshake | `TABULA_SYNC_UPGRADES_PER_MINUTE` |
 
 The client address is the one every other limit uses (`server/client-ip.mjs`, `TABULA_TRUST_PROXY`). Schools share an address, which is why the address numbers are wide. The counters are in memory, bounded (the upgrade map holds at most 10,000 addresses and fails open for a new one beyond that), and reset on restart. The document size is measured on the encoded state at most once per 1 MiB of accepted updates, and early only when one frame could cross the cap; it is a soft cap, not an exact one: a room can pass it by up to that margin, and a board already over it keeps working for small edits. A client that is closed with 4413 or 4429 reconnects like after any close.
+
+**Measured sizes behind the numbers** (Yjs `encodeStateAsUpdate` of generated boards, one transaction, so also the size of the step 2 frame that sends the whole board): 2,000 stickies with 100-character text, 0.79 MiB; 5,000 objects (the MCP board limit) with 200-character text, 2.4 MiB; 5,000 objects with 4,000-character text each, 20.6 MiB; 500 strokes of 2,000 points, 15.3 MiB; 2,000 objects plus 2,000 strokes of 500 points, 16.5 MiB (the heaviest realistic board). A pen stroke adds a point every 2 screen pixels, so one stroke is about 16 KiB and ordinary editing frames are bytes to kilobytes. An editor reconnecting after offline work sends only what the relay lacks. A whole board in one frame (created offline, imported or pasted) is an owner's action and fits under 64 MiB.
+
+**Close codes the browser understands.** `1009` and `4413` (too large): the app stops syncing this board, keeps the local copy and says "This board is too large to sync" with a Reload button. `4429` (rate limit) and `4430` (too many connections): the app stops, keeps local edits, says so, and reconnects by itself after 30 s, then 60 s, 120 s and so on up to 5 minutes (two minutes of stable connection reset the wait). None of them removes local data.

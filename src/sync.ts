@@ -132,7 +132,19 @@ export async function writeLocalBoard(id: string, fill: (target: { doc: Y.Doc; s
 export type SyncStatus = 'local' | 'connecting' | 'live' | 'denied';
 
 /** Why the relay refused or dropped the connection (accounts mode close codes). `restoring`: a restore has taken the workspace over (docs/backups.md). */
-export type DeniedReason = 'unauthenticated' | 'no_access' | 'not_found' | 'access_removed' | 'restoring';
+export type DeniedReason = 'unauthenticated' | 'no_access' | 'not_found' | 'access_removed' | 'restoring'
+  | 'too_large' | 'rate_limited' | 'too_many_connections';
+
+/**
+ * The relay's sync limits (docs/capacity.md, "Sync limits"). These stop the connection like a denial so the provider does not
+ * reconnect at once and resend the same frame into the same limit; local data stays. `too_large` waits for the person
+ * (reload); the other two try again by themselves after RETRY_BASE_MS, doubling each time up to RETRY_MAX_MS.
+ */
+export const RETRY_BASE_MS = 30_000;
+export const RETRY_MAX_MS = 300_000;
+export const retryableReason = (reason: DeniedReason): boolean => reason === 'rate_limited' || reason === 'too_many_connections';
+/** Wait before the nth (0-based) automatic retry. */
+export const retryDelayMs = (attempt: number): number => Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.max(0, attempt));
 
 export function deniedReason(code: number): DeniedReason | null {
   switch (code) {
@@ -141,6 +153,9 @@ export function deniedReason(code: number): DeniedReason | null {
     case 4404: return 'not_found';
     case 4410: return 'access_removed';
     case 4503: return 'restoring';
+    case 1009: case 4413: return 'too_large';
+    case 4429: return 'rate_limited';
+    case 4430: return 'too_many_connections';
     default: return null;
   }
 }
@@ -398,6 +413,8 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     },
     resync: () => resyncRooms(conn, [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null)),
     destroy: () => {
+      clearTimeout(retryTimer);
+      clearTimeout(stableTimer);
       provider?.destroy();
       awareness.destroy();
       idb.destroy();
@@ -413,11 +430,25 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     statusListeners.forEach((l) => l(s));
   };
   // Either room can be refused; the first refusal stops both.
+  let retryTimer = 0;
+  let stableTimer = 0;
+  let retries = 0;
   const onClose = (event: CloseEvent | null) => {
     const rooms = [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null);
     denyOnce(conn, rooms, event?.code, (reason) => {
       setStatus('denied');
       deniedListeners.forEach((l) => l(reason));
+      if (!retryableReason(reason)) return;
+      // a limit that passes: try again later, slower each time, and keep every local edit meanwhile
+      retryTimer = window.setTimeout(() => {
+        conn.denied = null;
+        retries++;
+        setStatus('connecting');
+        for (const room of rooms) {
+          room.shouldConnect = true;
+          room.connect();
+        }
+      }, retryDelayMs(retries));
     });
   };
 
@@ -430,6 +461,9 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     provider.on('status', ({ status }: { status: string }) => {
       if (conn.denied) return;
       setStatus(status === 'connected' ? 'live' : 'connecting');
+      // two quiet minutes connected end the backoff
+      clearTimeout(stableTimer);
+      if (status === 'connected' && retries > 0) stableTimer = window.setTimeout(() => { retries = 0; }, 120_000);
     });
     provider.on('connection-close', onClose);
     onWorkspaceHint(provider, hinted);
