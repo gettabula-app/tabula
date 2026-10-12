@@ -12,10 +12,10 @@ export const HINT_COALESCE_MS = 150;
 const READ_ONLY_BANNER = 'This workspace is read-only.';
 
 /** Said where Manage billing would be on a workspace provided free (`billing: false`). */
-export const FREE_WORKSPACE_TEXT = "This workspace is provided free (education or internal). There's nothing to bill.";
+export const FREE_WORKSPACE_TEXT = 'This workspace is provided free of charge. There is nothing to bill.';
 
 const ERROR_TEXT = new Map([
-  ['seat_limit', 'All seats are in use. Remove or disable someone, or ask the workspace owner to add seats.'],
+  ['seat_limit', 'This workspace has reached its member limit. Remove or disable a member to make room, or ask the workspace owner to write to us for a larger workspace.'],
   ['read_only', 'This workspace is read-only right now. Ask the workspace owner to check billing.'],
   ['no_billing', FREE_WORKSPACE_TEXT],
 ]);

@@ -13,6 +13,7 @@ import {
   OAUTH_REQUEST_INVALID,
   scopeOptions,
   titleText,
+  verifiedBadge,
   type OAuthScope,
 } from './oauth-consent-logic';
 
@@ -76,6 +77,7 @@ function consentPage(
   const workspace = typeof location !== 'undefined' && typeof location.host === 'string' ? location.host : '';
   const heading = h('h1', { tabindex: '-1' }, titleText(request.clientName, request.clientNameIsClaim, workspace));
   const host = hostPresentation(request.redirectHost, request.redirectUri, request.verified === true);
+  const badge = verifiedBadge(request.provider, host.verified);
   const alert = h('p', { class: 'oauth-consent-error', 'aria-live': 'polite' }, notice);
   const boards = Array.isArray(request.boards) ? request.boards : [];
   const pickerAvailable = request.pickerAvailable === true && boards.length > 0;
@@ -263,7 +265,7 @@ function consentPage(
     h('section', { class: 'oauth-consent-destination' },
       h('h2', null, 'You will be sent back to'),
       h('code', { class: 'oauth-consent-host' }, host.label),
-      host.verified ? h('span', { class: 'oauth-consent-badge' }, 'Verified host') : null,
+      badge ? h('span', { class: 'oauth-consent-badge' }, badge) : null,
       host.warning ? h('p', { class: 'oauth-consent-warning' }, host.warning) : null,
       h('details', null,
         h('summary', null, 'Show full redirect URI'),

@@ -123,7 +123,7 @@ describe('canManageBilling', () => {
 describe('freeWorkspaceNote', () => {
   it('speaks to the owner of a workspace provided free, and to nobody else', () => {
     const free = workspace({ billing: false });
-    expect(freeWorkspaceNote(meWith('owner', free))).toBe("This workspace is provided free (education or internal). There's nothing to bill.");
+    expect(freeWorkspaceNote(meWith('owner', free))).toBe('This workspace is provided free of charge. There is nothing to bill.');
     expect(freeWorkspaceNote(meWith('admin', free))).toBeNull();
     expect(freeWorkspaceNote(meWith('owner', workspace()))).toBeNull();
     expect(freeWorkspaceNote(meWith('owner'))).toBeNull();
@@ -165,7 +165,7 @@ describe('cloudErrorMessage', () => {
   it('prefers the server text and falls back to a readable one', () => {
     expect(cloudErrorMessage(new ApiError(409, 'seat_limit', 'All 3 seats are in use.'))).toBe('All 3 seats are in use.');
     expect(cloudErrorMessage(new ApiError(409, 'seat_limit', 'seat_limit'))).toBe(
-      'All seats are in use. Remove or disable someone, or ask the workspace owner to add seats.',
+      'This workspace has reached its member limit. Remove or disable a member to make room, or ask the workspace owner to write to us for a larger workspace.',
     );
     expect(cloudErrorMessage(new ApiError(402, 'read_only', 'read_only'))).toBe('This workspace is read-only right now. Ask the workspace owner to check billing.');
     expect(cloudErrorMessage(new ApiError(402, 'read_only', 'The workspace is locked.'))).toBe('The workspace is locked.');

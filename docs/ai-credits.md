@@ -1,5 +1,7 @@
 # AI credits on hosted workspaces
 
+> **Status: hosted AI credits (phase 2) are designed here and not built; no hosted workspace has them.** The proxy contract below is the design the instance side already implements behind the `aiCredits` limit, which the control plane does not set for any workspace today.
+
 Hosted workspaces can route AI runs through the Tabula credits proxy when their current limits include `aiCredits: true`. The proxy is a separate service that speaks the Anthropic Messages API; it owns credit metering and returns Anthropic-shaped responses.
 
 ## Key precedence

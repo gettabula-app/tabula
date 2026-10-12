@@ -1,6 +1,6 @@
 # Groups
 
-TAB-106. Status: spec for review. Nothing here is built yet.
+TAB-106. Status: built. This page is the specification the implementation follows; the tests are listed at the end.
 
 People want to treat several things as one: move a diagram without picking up each box, duplicate a header with its icon and its note, lock a legend, put a cluster above everything else. Tabula has frames, which are labelled rectangles that carry what is inside them, and nothing that is only a bundle. The README lists groups as not built.
 

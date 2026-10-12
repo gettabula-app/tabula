@@ -484,7 +484,10 @@ describe('OAuth instance secret and configuration', () => {
     expect(loadConfig(env({})).mcp).toMatchObject({ mode: 'accounts', oauth: false });
     expect(() => loadConfig(env({ MCP_OAUTH: 'yes' }))).toThrow(/TABULA_MCP_OAUTH must be on or off/);
     expect(loadConfig(env({ MCP_OAUTH: 'on', BASE_URL: 'https://tabula.example', OAUTH_REDIRECT_HOSTS: 'claude.ai,claude.com', OAUTH_REDIRECT_SCHEMES: 'com.example.app' })).mcp)
-      .toMatchObject({ oauth: true, issuer: 'https://tabula.example', redirectHosts: ['claude.ai', 'claude.com'], redirectSchemes: ['com.example.app'] });
+      .toMatchObject({ oauth: true, issuer: 'https://tabula.example', redirectKnown: true, redirectHosts: ['claude.ai', 'claude.com'], redirectSchemes: ['com.example.app'] });
+    expect(loadConfig(env({ MCP_OAUTH: 'on', BASE_URL: 'https://tabula.example', OAUTH_REDIRECTS: 'none' })).mcp)
+      .toMatchObject({ oauth: true, redirectKnown: false });
+    expect(() => loadConfig(env({ OAUTH_REDIRECTS: 'maybe' }))).toThrow(/TABULA_OAUTH_REDIRECTS must be known or none/);
     const warnings: string[] = [];
     const invalidIssuer = loadConfig(env({ MCP_OAUTH: 'on', BASE_URL: 'https://tabula.example/workspace' }), (message) => warnings.push(message));
     expect(invalidIssuer.mcp).toMatchObject({ oauth: false, issuer: null });

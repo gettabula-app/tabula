@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clientIpOf } from '../server/client-ip.mjs';
+import { clientIpOf, clientIpReport } from '../server/client-ip.mjs';
 import { loadConfig } from '../server/config.mjs';
 
 // TAB-71: the client address every rate limit counts by. Without TABULA_TRUST_PROXY=1 nothing a client sends is believed;
@@ -65,5 +65,28 @@ describe('TABULA_CLIENT_IP_HEADER', () => {
     const { config, warnings } = load({ TABULA_CLIENT_IP_HEADER: 'fly-client-ip' });
     expect(config.trustProxy).toBe(false);
     expect(warnings.join('\n')).toContain('TABULA_CLIENT_IP_HEADER is ignored without TABULA_TRUST_PROXY=1');
+  });
+});
+
+describe('clientIpReport', () => {
+  const headers = { 'x-forwarded-for': '203.0.113.7, 172.19.4.2, fdaa:0:1::5', 'fly-client-ip': '203.0.113.7' };
+
+  it('keeps the connection and every hop in the internal variant', () => {
+    const report = clientIpReport(req(headers, 'fdaa:0:1::9'), fly);
+    expect(report.seen).toEqual({ connection: 'fdaa:0:1::9', xForwardedFor: '203.0.113.7, 172.19.4.2, fdaa:0:1::5', flyClientIp: '203.0.113.7' });
+  });
+
+  it('leaves the connection and platform hops out of the admin variant and counts them', () => {
+    const report = clientIpReport(req(headers, 'fdaa:0:1::9'), fly, { admin: true });
+    expect(report).toEqual({
+      address: '203.0.113.7', trustProxy: true, header: 'fly-client-ip',
+      seen: { xForwardedFor: '203.0.113.7', flyClientIp: '203.0.113.7', internalHops: 2 },
+    });
+    expect(JSON.stringify(report)).not.toMatch(/fdaa|172\.19|connection/);
+  });
+
+  it('reports nothing invented when there is no X-Forwarded-For', () => {
+    const report = clientIpReport(req({}, '198.51.100.4'), { trustProxy: false }, { admin: true });
+    expect(report).toEqual({ address: '198.51.100.4', trustProxy: false, header: null, seen: { xForwardedFor: null, flyClientIp: null, internalHops: 0 } });
   });
 });
