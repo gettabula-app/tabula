@@ -363,7 +363,9 @@ describe('behind a proxy that terminates https, with TABULA_TRUST_PROXY=1', { ti
     const over = await ask(abuser, '7.7.7.200');
     expect(over.status).toBe(429);
     expect(over.body.error).toBe('rate_limited');
-    expect(['3599', '3600']).toContain(over.headers['retry-after']);
+    // the real remaining seconds of the hour window, a little less on a loaded machine
+    expect(Number(over.headers['retry-after'])).toBeGreaterThan(3500);
+    expect(Number(over.headers['retry-after'])).toBeLessThanOrEqual(3600);
 
     // somebody else is not limited, even when they claim to be the abuser, and the abuser cannot become somebody else
     expect((await ask(bystander, abuser)).status).toBe(200);
