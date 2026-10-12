@@ -32,9 +32,33 @@ När din arbetsyta använder inloggning grupperas tavlorna:
 
 Tabellen har kolumnen **Access** (Åtkomst). En bricka visas bara när din åtkomst är begränsad: **View only** (Endast visning) eller **Can comment** (Kan kommentera). Utan bricka kan du redigera.
 
+Tabellen har också en kolumn **Here now** (Här nu). Den visar vem som har tavlan öppen just nu, för tavlor du kan öppna:
+
+- Varje annan person är en liten ruta med sin initial och markörfärg. De tre första personerna visas, sedan **+N** för resten. Personerna visas i den ordning de kom.
+- Om du också har tavlan öppen i en annan flik följer en ruta **You** (Du) efter de andra. När ingen annan är där är cellen tom: din egen närvaro ensam visar ingenting, och inte heller en nolla.
+- Peka på rutorna för att se allas namn. Personer som anslöt med en anslutningskod är markerade med **(guest)**.
+- På en telefon följs rutorna av en kort text, till exempel ”Lin and 5 more”. När raden inte har plats för ett namn utelämnas texten.
+- När någon lämnar finns rutan kvar i ungefär tre sekunder, så att en kort återanslutning inte får den att flimra.
+- Du ser bara personer på tavlor du kan öppna. AI-verktyg visas aldrig. Personer som anslöt med en anslutningskod ser inte kolumnen.
+- Den uppdateras direkt via chattanslutningen. Om chatten är avstängd på din server kontrollerar sidan igen var 15:e sekund.
+
 Ägare och administratörer ser också knapparna **Members** (Medlemmar) och **New team** (Nytt team). Andra personer, förutom gäster, ser **New team**. Information om team och roller finns i [Dela, roller och team](sharing.md).
 
 Om din arbetsyta har ett banderollmeddelande visas det allra högst upp. Om det inte går att nå servern visas meddelandet **You are offline. Showing the last list from this device.** (Du är offline. Visar den senaste listan från den här enheten.) och knappar som behöver servern inaktiveras.
+
+## Aviseringar
+
+I arbetsytor med inloggning sitter en klocka i det övre fältet på sidan Boards, bredvid ditt namn. En bricka på klockan räknar det som inte har lästs än. Den får en röd kontur när någon har nämnt dig. Öppna klockan för att se listan, nyaste först:
+
+- **Chattomnämnanden**: någon nämnde dig i en tavel-, team- eller arbetsytechatt.
+- **Svar**: någon svarade på en kommentar av dig.
+- **Delningar**: någon delade en tavla direkt med dig.
+- **Teamanslutningar**: någon du bjöd in gick med i teamet, också när personen loggade in via din inbjudningslänk.
+- **Spåraren**: ärenden som tilldelats dig, kommenterats och flyttats, om din arbetsyta har spåraren.
+
+Varje rad säger vem, vad och var, med de första orden i ett meddelande eller en kommentar, och när. Välj en rad för att gå dit. Välj bocken på en rad, eller **Mark all as read** (Markera alla som lästa), för att markera som läst. Att läsa en chatt rensar dess omnämnanden. **All** (Alla) och **Mentions** (Omnämnanden) filtrerar listan, **Show older** (Visa äldre) läser in fler, och listan går 90 dagar tillbaka. **Notification settings** (Aviseringsinställningar) öppnar dina chattaviseringsinställningar.
+
+Ett objekt försvinner från listan, och från räkningen, när du inte längre kan öppna det det pekar på, till exempel när en tavla inte längre delas med dig. Räkningen uppdateras direkt medan chatten är på, och varje minut när chatten är av. I öppet läge, utan inloggning, finns ingen klocka.
 
 ## Öppna en tavla
 
