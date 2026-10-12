@@ -1267,6 +1267,25 @@ async function railShortWindow(env, height) {
   if (height === 720 && result.overflow) throw new Error('rail-short: the rail scrolls at 720px high; the compact rail should fit');
 }
 
+
+/** The Privacy admin tab with a mocked API (hosted or self-hosted) and the report preview open. */
+async function privacyPanel(page, base, mode) {
+  const json = (route, body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  const hosted = mode === 'hosted';
+  await page.route('**/api/admin/privacy/preview', (route) => json(route, {
+    builtAt: Date.UTC(2026, 9, 12, 9, 0), note: 'Nothing has been sent',
+    preview: { schema: 1, workspace: hosted ? 'wks_demo' : 'ins_0123456789abcdef0123456789abcdef', metrics: [{ name: 'entities_total', labels: { kind: 'boards' }, value: 12 }, { name: 'data_bytes', value: 4821033 }] },
+  }));
+  await page.route('**/api/admin/privacy', (route) => json(route, {
+    enabled: hosted, locked: null, mode, lastBuiltAt: Date.UTC(2026, 9, 12, 9, 0), lastChangedBy: { name: 'Visual QA', at: Date.UTC(2026, 9, 11, 16, 30) },
+    categories: ['feature_counts'], operational: ['performance', 'error_codes', 'seats and guests', 'version', 'disk', 'backup state', 'health', 'workspace_scale', 'last activity'],
+  }));
+  await page.goto(`${base}/#/admin/privacy`);
+  await page.locator('.privacy-admin .privacy-toggle').waitFor();
+  await page.getByRole('button', { name: 'Show what would be sent', exact: true }).click();
+  await page.locator('.privacy-json').waitFor();
+}
+
 const STATES = {
   async 'tracker-fullscreen'({ page, base }) {
     await page.goto(`${base}/?debug&trackerMock=1#/t/all`);
@@ -4420,6 +4439,8 @@ const STATES = {
     await page.goto(`${base}/#/admin`);
     await waitForAdminPanel(page);
   },
+  async 'privacy-hosted'({ page, base }) { await privacyPanel(page, base, 'hosted'); },
+  async 'privacy-self'({ page, base }) { await privacyPanel(page, base, 'self'); },
   async 'admin-tokens'({ page, base }) {
     const json = (route, body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     await page.route('**/api/me', async (route) => {
@@ -4711,7 +4732,7 @@ const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
-const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
+const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'privacy-hosted': ['accounts'], 'privacy-self': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
 const statesFor = (mode) => Object.keys(STATES).filter((s) => !STATE_MODES[s] || STATE_MODES[s].includes(mode));
 
 // ---------------------------------------------------------------- relay
