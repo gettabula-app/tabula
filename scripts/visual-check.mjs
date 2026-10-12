@@ -1196,6 +1196,56 @@ async function dockShown(page) {
   if (await expand.isVisible()) await expand.click();
 }
 
+async function keyboardRing(env, objectId, { zoom, image = false } = {}) {
+  const page = env.page;
+  await openSeedBoard(env);
+  await page.keyboard.press('Escape');
+  if (image) {
+    await page.evaluate(() => {
+      const app = window.__board;
+      app.store.transact(() => app.store.create({ id: 'kb-image', type: 'image', x: 700, y: 620, w: 260, h: 170, z: 'zz', rotation: 0, updatedAt: 1, alt: 'Team photo' }));
+    });
+  }
+  if (zoom) await page.evaluate((z) => { const app = window.__board; app.setSelection([]); app.zoomTo(z); }, zoom);
+  await page.evaluate((id) => { const app = window.__board; app.r.setCamera({ x: 0, y: 0 }); const o = app.store.get(id); if (o) { const b = app.r.contentBounds([id]); const s = app.r.size(); const z = app.r.cam.zoom; app.r.setCamera({ x: b.x + b.w / 2 - s.w / 2 / z, y: b.y + b.h / 2 - s.h / 2 / z }); } }, objectId);
+  await page.locator('.canvas-focus').focus();
+  // walk to the object in reading order
+  for (let i = 0; i < 60; i++) {
+    const at = await page.evaluate(() => document.querySelector('.canvas-focus').getAttribute('aria-activedescendant') ?? '');
+    if (at.endsWith(`-${objectId}`)) break;
+    await page.keyboard.press(i === 0 ? 'Home' : 'PageDown');
+  }
+  await page.waitForFunction((id) => {
+    const at = document.querySelector('.canvas-focus').getAttribute('aria-activedescendant') ?? '';
+    const ring = document.querySelector('.canvas-ring');
+    if (!at.endsWith(`-${id}`) || !ring || ring.hidden) return false;
+    const b = ring.getBoundingClientRect();
+    return b.width > 8 && b.height > 8 && b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight;
+  }, objectId, { timeout: 10_000 });
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const r = await page.evaluate((id) => {
+    const app = window.__board;
+    const ring = document.querySelector('.canvas-ring');
+    const style = getComputedStyle(ring);
+    const rb = ring.getBoundingClientRect();
+    const root = app.r.root.getBoundingClientRect();
+    const ob = app.r.contentBounds([id]);
+    const a = app.r.toScreen({ x: ob.x, y: ob.y });
+    const z = app.r.toScreen({ x: ob.x + ob.w, y: ob.y + ob.h });
+    return {
+      zoom: Number(app.r.cam.zoom.toFixed(2)), border: parseFloat(style.borderTopWidth), shadow: style.boxShadow, line: ring.classList.contains('is-line'),
+      offsetLeft: Number((root.left + a.x - rb.left).toFixed(1)), offsetTop: Number((root.top + a.y - rb.top).toFixed(1)),
+      offsetRight: Number((rb.right - (root.left + z.x)).toFixed(1)), offsetBottom: Number((rb.bottom - (root.top + z.y)).toFixed(1)),
+    };
+  }, objectId);
+  console.log(`canvas-keyboard ${objectId} ${JSON.stringify(r)}`);
+  if (r.border !== 2) throw new Error(`canvas-keyboard: the ring line is ${r.border} px, not 2 px`);
+  if (!/inset/.test(r.shadow) || !/2px/.test(r.shadow)) throw new Error(`canvas-keyboard: the inner gap is not 2 px (${r.shadow})`);
+  // a straight connector line is thinner than the ring's minimum box, which grows evenly around it (4 px or more)
+  for (const k of ['offsetLeft', 'offsetTop', 'offsetRight', 'offsetBottom']) if (r.line ? r[k] < 3.5 : Math.abs(r[k] - 4) > 1) throw new Error(`canvas-keyboard: the ring is ${r[k]} px from the object (${k}), not 4 px, at zoom ${r.zoom}`);
+  return { noPark: true };
+}
+
 const STATES = {
   async 'tracker-fullscreen'({ page, base }) {
     await page.goto(`${base}/?debug&trackerMock=1#/t/all`);
@@ -3354,6 +3404,14 @@ const STATES = {
     if (r.ratio < 3) throw new Error(`canvas-keyboard: the ring is ${r.ratio}:1 against the canvas, under 3:1`);
     return { noPark: true };
   },
+  // The ring on other kinds and at other zooms (docs/canvas-keyboard.md): 2 px of ink and a 2 px gap, 4 px out, whatever the zoom
+  async 'canvas-keyboard-sticky'(env) { return keyboardRing(env, 'seed-note-1'); },
+  async 'canvas-keyboard-shape'(env) { return keyboardRing(env, 'seed-rect'); },
+  async 'canvas-keyboard-connector'(env) { return keyboardRing(env, 'seed-conn-1'); },
+  async 'canvas-keyboard-image'(env) { return keyboardRing(env, 'kb-image', { image: true }); },
+  async 'canvas-keyboard-zoom25'(env) { return keyboardRing(env, 'seed-note-1', { zoom: 0.25 }); },
+  async 'canvas-keyboard-zoom200'(env) { return keyboardRing(env, 'seed-note-1', { zoom: 2 }); },
+  async 'canvas-keyboard-frame47'(env) { return keyboardRing(env, 'seed-frame-bad', { zoom: 0.47 }); },
   async 'emoji-keyboard'(env) {
     await emojiKeyboard(env, null);
   },

@@ -14,6 +14,8 @@ export const OUTLINE_WINDOW = 300;
 const VIEW_MARGIN = 24;
 /** The ring's outer edge is this far from the object: 2 px of paper gap, then 2 px of ink (docs/canvas-keyboard.md, The focus ring). */
 export const RING_OFFSET = 4;
+/** The thinnest box (screen px) the ring draws around a connector's line. */
+const LINE_MIN = 16;
 
 const ARROWS: Record<string, NavDirection> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 let serial = 0;
@@ -73,7 +75,8 @@ export function mountCanvasFocus(app: BoardApp, anchor: HTMLElement): CanvasFocu
     for (const o of app.store.shown()) {
       if (app.flow.isHidden(o as never)) continue;
       objects.set(o.id, o);
-      const b = objBounds(get, o, layout, (obj) => app.store.geometry(obj));
+      // a connector's visible extent includes its arrowheads and label, which the renderer already measures
+      const b = isConnector(o) ? app.r.contentBounds([o.id]) : objBounds(get, o, layout, (obj) => app.store.geometry(obj));
       if (!b) continue;
       const base = { id: o.id, cx: b.x + b.w / 2, cy: b.y + b.h / 2, w: b.w, h: b.h, parent: o.parent ?? null };
       if (isConnector(o)) items.push({ ...base, connector: { from: o.from.kind === 'bound' ? o.from.id : null, to: o.to.kind === 'bound' ? o.to.id : null } });
@@ -118,9 +121,16 @@ export function mountCanvasFocus(app: BoardApp, anchor: HTMLElement): CanvasFocu
       ring.hidden = true;
       return;
     }
-    const a = app.r.toScreen({ x: item.cx - item.w / 2, y: item.cy - item.h / 2 });
-    const b = app.r.toScreen({ x: item.cx + item.w / 2, y: item.cy + item.h / 2 });
-    // 4 px outside the object (a connector's line gets a rounded box around its bounds), never smaller than a fingertip of ink
+    let a = app.r.toScreen({ x: item.cx - item.w / 2, y: item.cy - item.h / 2 });
+    let b = app.r.toScreen({ x: item.cx + item.w / 2, y: item.cy + item.h / 2 });
+    if (item.connector) {
+      // a straight line has no height to ring: its box is at least this thick, centred on it
+      const grow = (lo: number, hi: number) => (hi - lo < LINE_MIN ? (LINE_MIN - (hi - lo)) / 2 : 0);
+      const gx = grow(a.x, b.x), gy = grow(a.y, b.y);
+      a = { x: a.x - gx, y: a.y - gy };
+      b = { x: b.x + gx, y: b.y + gy };
+    }
+    // 4 px outside the object; a connector's line gets a rounded box around its bounds
     const out = RING_OFFSET;
     ring.hidden = false;
     ring.classList.toggle('is-line', !!item.connector);
