@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as Y from 'yjs';
 import { RestoreError } from '../server/restore.mjs';
 import { HOUR, MIN, T0, docBytes, harness, type Harness } from './backup-harness';
 import { audits, backedUp, backupNow, becomeB, databaseOf, filesOf, forge, ownerOf, rig, seedA, setting } from './restore-harness';
+
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
 
 // docs/backups.md, Restoring, "One board, as a copy".
 

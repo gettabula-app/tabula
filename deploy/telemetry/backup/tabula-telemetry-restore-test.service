@@ -1,0 +1,9 @@
+[Unit]
+Description=Tabula telemetry monthly restore test
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tabula-telemetry/deploy/telemetry/backup/restore-test.sh
+TimeoutStartSec=3h

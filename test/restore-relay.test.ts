@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import * as Y from 'yjs';
@@ -6,6 +6,9 @@ import { SimulatedCrash } from '../server/restore.mjs';
 import { CREDS, HOUR, KEY, MIN, harness, type Harness } from './backup-harness';
 import { backedUp, backupNow, becomeB, CONFIRM, filesOf, ownerOf, raw, rig, seedA } from './restore-harness';
 import { createRelayKit, sleep, until } from './drill/drill-kit';
+
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
 
 // docs/backups.md, Restoring. The relay as a child process, exactly as `npm start` runs it, next to the fake S3: a whole
 // restore over HTTP, the maintenance window, the exit code, the start that follows, and recovery from a swap that was cut off.

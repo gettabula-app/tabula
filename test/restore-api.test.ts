@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -10,6 +10,9 @@ import { loadConfig } from '../server/config.mjs';
 import { setRestoreGate } from '../server/tracker/gate.mjs';
 import { HOUR, MIN, harness, type Harness } from './backup-harness';
 import { audits, backupNow, becomeB, filesOf, rig, seedA, setting, type Rig } from './restore-harness';
+
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
 
 // docs/backups.md, Restoring, and docs/admin.md. The owner-only routes in process, with the real restore engine.
 

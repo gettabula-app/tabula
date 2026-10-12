@@ -1,10 +1,13 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { RestoreError, SimulatedCrash, createRestore, recoverOnStart } from '../server/restore.mjs';
 import { HOUR, MIN, harness, type Harness } from './backup-harness';
 import { audits, backedUp, backupNow, becomeB, CONFIRM, filesOf, ownerOf, raw, rig, roomy, seedA } from './restore-harness';
+
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
 
 // docs/backups.md, Restoring, "If the server stops in the middle". A crash is injected at every boundary of the swap
 // (the engine calls a hook before and after each rename and each journal write) and again at every boundary of the

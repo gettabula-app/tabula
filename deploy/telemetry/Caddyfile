@@ -1,0 +1,24 @@
+# Plain HTTP on two container ports; compose publishes them on loopback (or a tunnel address) only. Nothing here is public.
+{
+	admin off
+	auto_https off
+}
+
+# Grafana (operators, over the tunnel)
+:8480 {
+	reverse_proxy grafana:3000
+}
+
+# Ingest door: only the report endpoint and the health check are routed; /metrics and everything else is a 404.
+:8481 {
+	@ingest path /v1/telemetry /healthz
+	handle @ingest {
+		request_body {
+			max_size 300KB
+		}
+		reverse_proxy collector:8481
+	}
+	handle {
+		respond "not found" 404
+	}
+}

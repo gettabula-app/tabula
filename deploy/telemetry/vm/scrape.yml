@@ -1,0 +1,14 @@
+# VictoriaMetrics scrapes only the stack's own health. Workspace data arrives through the collector (import API), not scrapes.
+global:
+  scrape_interval: 1m
+scrape_configs:
+  - job_name: collector
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["collector:8481"]
+  - job_name: victoriametrics
+    static_configs:
+      - targets: ["victoriametrics:8428"]
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]

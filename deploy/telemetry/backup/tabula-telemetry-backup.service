@@ -1,0 +1,9 @@
+[Unit]
+Description=Tabula telemetry nightly backup (restic to the Storage Box)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/tabula-telemetry/deploy/telemetry/backup/backup.sh
+TimeoutStartSec=3h
