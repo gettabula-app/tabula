@@ -62,7 +62,15 @@ function newDir() {
 const hosted = (workspace: string) => ({ TABULA_CLOUD_TOKEN: TOKEN, TABULA_CLOUD_URL: controlUrl, TABULA_CLOUD_WORKSPACE_ID: workspace });
 
 /** Starts a relay; resolves when it listens ('started') or when it exits first ('exited', with its output). */
-async function launch(dir: string, env: Record<string, string>, { auth = true } = {}): Promise<{ started: Run } | { exited: Ended }> {
+async function launch(dir: string, env: Record<string, string>, options: { auth?: boolean } = {}): Promise<{ started: Run } | { exited: Ended }> {
+  // A port taken between the probe and the relay's bind (another test process) shows up as an exit with EADDRINUSE: retry it on a fresh port.
+  for (let attempt = 1; ; attempt++) {
+    const result = await launchOnce(dir, env, options);
+    if (!('exited' in result) || attempt >= 3 || !/EADDRINUSE/.test(`${result.exited.out}${result.exited.err}`)) return result;
+  }
+}
+
+async function launchOnce(dir: string, env: Record<string, string>, { auth = true } = {}): Promise<{ started: Run } | { exited: Ended }> {
   const port = await freePort();
   const base = { ...(process.env as Record<string, string>) };
   for (const k of ['TABULA_FLY_VOLUME_ID', 'TABULA_ADOPT_VOLUME', 'TABULA_CLOUD_TOKEN', 'TABULA_CLOUD_URL', 'TABULA_CLOUD_WORKSPACE_ID', 'QUIET']) delete base[k];

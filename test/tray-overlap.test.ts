@@ -60,7 +60,7 @@ describe('quick bar and properties sheet beside an open tray (phone width)', () 
   });
 
   it('uses the poll card and tray widths that set the overlap range', () => {
-    expect(pollCss).toMatch(/\.poll-card\s*\{[^}]*left:\s*var\(--rail-clear, 76px\)[^}]*right:\s*calc\(16px \+ var\(--safe-right\)\)[^}]*max-width:\s*560px/);
+    expect(pollCss).toMatch(/\.poll-card\s*\{[^}]*left:\s*var\(--rail-clear, 76px\)[^}]*right:\s*calc\(16px \+ var\(--safe-right\)(?: \+ var\(--dock-inset, 0px\))?\)[^}]*max-width:\s*560px/);
     expect(commentsCss).toMatch(/\.side-tray\s*\{[^}]*right:\s*calc\(12px \+ var\(--safe-right\)\)[^}]*width:\s*min\(336px/);
   });
 });

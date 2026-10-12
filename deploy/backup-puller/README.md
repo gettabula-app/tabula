@@ -21,6 +21,8 @@ Start from [`puller.example.json`](./puller.example.json). The config file has e
 | `concurrency` | Number of workspaces to pull at once. |
 | `keepDaily`, `keepWeekly` | Daily and weekly manifest retention counts. |
 | `objectGraceDays` | Days an object must remain unseen before local deletion; default `35`. |
+| `deletedGraceDays` | Days a workspace must remain explicitly `deleted` before its local copy is purged; default `30`, allowed range `1`–`3650`. Immediate erasure uses `--purge <slug> --yes`. |
+| `workspacesMaxAgeHours` | Maximum age of `workspacesFile` before automatic purges are skipped; default `48`, allowed range `1`–`8760`. |
 | `metricsFile` | Atomic Prometheus text exposition file. |
 | `requestTimeoutSeconds` | Timeout for regular requests. The first request to a stopped workspace is allowed 60 seconds. |
 
@@ -35,6 +37,16 @@ node pull.mjs --config /etc/tabula-backup/puller.json --dry-run
 Exit status is `0` when every workspace succeeded or was intentionally skipped, `1` if one or more workspace pulls failed, and `2` for a config or input error. A failed workspace does not stop the others. Dry run lists planned fetches and deletions and does not write files, state or metrics.
 
 The puller writes `<stateDir>/<slug>.json` with attempt/success timestamps, a short error code, local file and byte totals, files and bytes added by the last attempt, and the newest manifest name. `<stateDir>/<slug>.seen.json` tracks the last successful complete listing time for each object key.
+
+## Deleted workspaces and erasure
+
+Only a workspace whose control-plane state is exactly `deleted` starts the `deletedGraceDays` timer. The default grace period is 30 days. A workspace seen again in any other state has its timer reset and is retained. A deleted workspace remains unpulled during the grace period; after the period, the puller renames its store directory to a same-filesystem `.purging-*` tombstone, removes that tree, then removes its state files. If `workspacesFile` is older than `workspacesMaxAgeHours`, automatic purges are skipped, pulls continue, and the run exits 1. A workspace directory missing from `workspaces.json` is reported as an orphan and counted for alerting, but is never purged from absence alone. An empty or unreadable workspace list stops the run with a configuration error.
+
+For immediate operator erasure, run `node pull.mjs --config /etc/tabula-backup/puller.json --purge <slug> --yes`. The command works even if the slug is no longer listed. `--purge` refuses a listed live workspace unless `--force` is also given; a listed `deleted` workspace can be purged directly. Without `--yes`, it prints the paths it would remove and exits with status 2. A successful purge does not read the pull master or contact the workspace.
+
+On a backup pull host, automatic workspace purges stop while `workspaces.json` is stale. An operator purge (`--purge <slug> --yes`) requires `--force` when the list is stale, unreadable or invalid, or lists the workspace as live. If the file is absent, the purge is allowed without `--force`. Freshness currently uses the file's mtime, which measures when the list was copied, not when the control plane wrote it. Planned follow-up: the control plane will write `generatedAt`, and the puller will check that value with mtime as the fallback.
+
+Prometheus exposes `tabula_backup_pending_purge{workspace}` while a workspace is in its grace period, `tabula_backup_purged_total` as a persisted count, and `tabula_backup_orphan_workspaces` as the number of unlisted store directories. Purged workspaces have no per-workspace metric series. Fly volume snapshots of the instance side are separate from this pull host's copy and are not erased by these puller operations.
 
 ## Retention
 
@@ -53,7 +65,8 @@ The puller atomically writes these metrics, with one `workspace="<slug>"` sample
 - `tabula_backup_files`
 - `tabula_backup_has_manifest`
 - `tabula_backup_last_run_ok`
-- Global: `tabula_backup_puller_last_run_timestamp_seconds` and `tabula_backup_workspaces_total`
+- Global: `tabula_backup_puller_last_run_timestamp_seconds`, `tabula_backup_workspaces_total`, `tabula_backup_purged_total`, `tabula_backup_orphan_workspaces`, `tabula_backup_workspace_list_age_seconds`, and `tabula_backup_purge_leftovers`
+- `tabula_backup_pending_purge{workspace}` is present with value `1` only during a deleted workspace's grace period.
 
 When a workspace has never had a successful pull, its age is emitted as `1e12`; a workspace with no manifest has `tabula_backup_has_manifest 0`. Intentional state skips count as a successful run for `tabula_backup_last_run_ok`.
 

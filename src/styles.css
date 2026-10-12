@@ -364,17 +364,17 @@ select.input {
 .props .arrange { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--tray-line); }
 
 /* zoom & minimap */
-.zoom-tray { position: absolute; right: calc(12px + var(--safe-right)); bottom: calc(12px + var(--safe-bottom)); display: flex; align-items: center; gap: 2px; padding: 4px; }
+.zoom-tray { position: absolute; right: calc(12px + var(--safe-right) + var(--dock-inset, 0px)); bottom: calc(12px + var(--safe-bottom)); display: flex; align-items: center; gap: 2px; padding: 4px; }
 .zoom-label { min-width: 54px; height: 36px; border: 0; border-radius: var(--radius-sm); background: transparent; font-weight: 600; }
 .zoom-label:hover { background: var(--tray-hover); }
-.minimap { position: absolute; right: calc(12px + var(--safe-right)); bottom: calc(64px + var(--safe-bottom)); padding: 6px; display: none; }
+.minimap { position: absolute; right: calc(12px + var(--safe-right) + var(--dock-inset, 0px)); bottom: calc(64px + var(--safe-bottom)); padding: 6px; display: none; }
 .minimap.show { display: block; }
 .minimap canvas { display: block; width: 220px; height: 140px; cursor: pointer; border-radius: var(--radius-xs); background: var(--tray-2); }
 
 /* facilitation bar */
 /* The bar is as wide as its content, centred, and never wider than the space between the rail and the zoom tray. Groups wrap inside it. */
 .flowbar {
-  position: absolute; left: 0; right: 0; bottom: calc(12px + var(--safe-bottom)); margin: 0 auto; width: fit-content; max-width: calc(100% - 456px - var(--safe-left) - var(--safe-right));
+  position: absolute; left: 0; right: var(--dock-inset, 0px); bottom: calc(12px + var(--safe-bottom)); margin: 0 auto; width: fit-content; max-width: calc(100% - 456px - var(--dock-inset, 0px) - var(--safe-left) - var(--safe-right));
   display: none; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; box-shadow: none;
 }
 :root:not([data-theme='default']) .flowbar.tray { box-shadow: 0 0 0 1px var(--tray-line); }
@@ -556,7 +556,7 @@ select.input {
 kbd { font: 600 12px var(--ui); padding: 2px 6px; border-radius: var(--radius-xs); background: var(--tray-2); border: 1px solid var(--tray-line); }
 
 .toast {
-  position: fixed; left: 50%; bottom: calc(76px + var(--safe-bottom)); z-index: 70; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  position: fixed; left: calc((100% - var(--dock-inset, 0px)) / 2); bottom: calc(76px + var(--safe-bottom)); z-index: 70; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
   padding: 10px 16px; border-radius: var(--radius-md); border-left: 4px solid var(--signal); background: var(--tray); color: var(--tray-text);
   box-shadow: 0 0 0 1px var(--tray-line); font-weight: 500;
   /* left: 50% would shrink the box to half the window: a long notice wrapped to four lines on a phone */
@@ -735,7 +735,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 }
 
 /* quick actions */
-.quickbar { position: absolute; left: 0; top: 0; display: none; align-items: center; gap: 2px; padding: 4px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); overflow-x: auto; scrollbar-width: none; z-index: 12; will-change: transform; }
+.quickbar { position: absolute; left: 0; top: 0; display: none; align-items: center; gap: 2px; padding: 4px; max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right) - var(--dock-inset, 0px)); overflow-x: auto; scrollbar-width: none; z-index: 12; will-change: transform; }
 .quickbar.show { display: flex; }
 /* TAB-239: a bar wider than its room scrolls sideways and fades out at the edge that has more behind it */
 .quickbar[data-more='right'] { -webkit-mask-image: linear-gradient(to right, var(--ink) calc(100% - 28px), transparent); mask-image: linear-gradient(to right, var(--ink) calc(100% - 28px), transparent); }
