@@ -14,12 +14,12 @@ export interface DockChannel {
 
 export const channelKey = (kind: ChannelKind, ref: string): string => `${kind}/${ref}`;
 
-const byRecent = (a: ChatChannelEntry, b: ChatChannelEntry) => (b.lastAt ?? 0) - (a.lastAt ?? 0) || a.name.localeCompare(b.name);
-const byName = (a: ChatChannelEntry, b: ChatChannelEntry) => a.name.localeCompare(b.name);
+/** Chip order never follows activity: a new message must not make the chips jump under someone's hand. */
+const byName = (a: ChatChannelEntry, b: ChatChannelEntry) => a.name.localeCompare(b.name) || a.ref.localeCompare(b.ref);
 
 /**
- * The channels the dock offers, in chip order: the board that is open ("This board"), the workspace, the person's teams (live
- * first, then archived), teams they may read without belonging to, then other boards with recent chat. The open board is
+ * The channels the dock offers, in a fixed chip order: the board that is open ("This board"), the workspace, the person's teams
+ * (live first, then archived, each by name), teams they may read without belonging to, then other boards with recent chat. The open board is
  * listed once even when the server also lists it.
  */
 export function dockChannels(entries: readonly ChatChannelEntry[], attachedBoardId: string | null): DockChannel[] {
@@ -28,25 +28,21 @@ export function dockChannels(entries: readonly ChatChannelEntry[], attachedBoard
   if (attachedBoardId) out.push({ key: channelKey('board', attachedBoardId), kind: 'board', ref: attachedBoardId, label: 'This board', attached: true });
   out.push(...entries.filter((e) => e.kind === 'workspace').map(of));
   const teams = entries.filter((e) => e.kind === 'team' && e.member !== false);
-  out.push(...teams.filter((e) => !e.archived).sort(byRecent).map(of), ...teams.filter((e) => e.archived).sort(byRecent).map(of));
+  out.push(...teams.filter((e) => !e.archived).sort(byName).map(of), ...teams.filter((e) => e.archived).sort(byName).map(of));
   out.push(...entries.filter((e) => e.kind === 'team' && e.member === false).sort(byName).map(of));
-  out.push(...entries.filter((e) => e.kind === 'board' && e.ref !== attachedBoardId).sort(byRecent).map(of));
+  out.push(...entries.filter((e) => e.kind === 'board' && e.ref !== attachedBoardId).sort(byName).map(of));
   return out;
 }
 
 /**
- * Which channel to show: the one remembered when it is still offered, else the open board, else the one with a mention or the
- * most unread, else the first.
+ * Which channel the dock opens on, chosen only when it opens: one with a mention, else the one with most unread, else the one last
+ * open in this browser, else the open board, else the workspace, else the first. Never used to switch what someone is reading.
  */
 export function pickChannel(
   channels: readonly DockChannel[],
-  preferred: string | null,
+  lastOpen: string | null,
   unreadOf: (c: DockChannel) => { unread: number; mentions: number },
 ): DockChannel | null {
-  const remembered = preferred ? channels.find((c) => c.key === preferred) : undefined;
-  if (remembered) return remembered;
-  const attached = channels.find((c) => c.attached);
-  if (attached) return attached;
   let best: DockChannel | null = null;
   let score = 0;
   for (const c of channels) {
@@ -57,7 +53,8 @@ export function pickChannel(
       score = s;
     }
   }
-  return best ?? channels[0] ?? null;
+  if (best) return best;
+  return channels.find((c) => c.key === lastOpen) ?? channels.find((c) => c.attached) ?? channels.find((c) => c.kind === 'workspace') ?? channels[0] ?? null;
 }
 
 /** The chips that fit, always including the current channel, and the rest for the "+N" list. */
