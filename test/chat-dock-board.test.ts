@@ -154,6 +154,23 @@ describe('board chat in the dock', () => {
     expect(focus).toHaveBeenCalled();
   });
 
+  it('disposing the dock right after an Esc leaves no pending timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const { dock, button, overlay } = await setup();
+      button.click();
+      const panel = overlay.querySelector('.chat-dock') as FakeElement;
+      const used = Object.assign(new FakeEvent('keydown'), { key: 'Escape' });
+      used.preventDefault();
+      panel.dispatchEvent(used);
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+      dock.destroy();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('focus never falls to the page: closing from inside goes to the Chat button, minimising goes to the bubble', async () => {
     const { dock, button, overlay } = await setup();
     button.click();
