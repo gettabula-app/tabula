@@ -323,6 +323,12 @@ No keys, secrets or certificates are in the repo, and the CLI never signed anyth
 
 macOS runner minutes cost more than Linux on GitHub-hosted runners; check the current rates for a private repository. **Unverified**
 
+## Known dependency advisories
+
+Dependabot alerts in `desktop/src-tauri/Cargo.lock` are checked against the target they apply to before anything is bumped, with `cargo tree -i <crate> --target <triple>` (macOS and Windows print "nothing to print" when the crate is not compiled there).
+
+- **`glib` 0.18.5 (GHSA-wrw7-89jp-8q8g, alert #14, 2026-10).** An unsoundness in `glib::VariantStrIter`, fixed in glib 0.20.0. It is in the graph **only for Linux targets**, through Tauri's GTK3 stack (`gtk 0.18` via `muda`, `wry` and `webkit2gtk 2.0.2`). It is not compiled for `aarch64-apple-darwin` or `x86_64-pc-windows-msvc`, and we ship no Linux build, so nothing we ship contains it. It cannot be bumped alone: glib 0.20 does not work with gtk 0.18, so the fix is upstream (Tauri and wry moving to a newer gtk-rs). **Before any Linux build is made or shipped, check Tauri's release notes for that move and update the lock file; until then the alert is dismissed as "vulnerable code is not used".**
+
 ## Open questions
 
 1. Is the desktop app for hosted workspaces (accounts mode)? Decides whether phase 3 exists.

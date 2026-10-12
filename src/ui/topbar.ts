@@ -1,10 +1,18 @@
 import { h, icon } from './dom';
-import { chatAvailable, signOut, type AuthState } from '../auth';
+import { authState, chatAvailable, signOut, type AuthState } from '../auth';
 import { onChatBadge, totalUnread, watchChat } from '../chat';
 import type { Me } from '../api';
 import { aiToolsAvailable } from './tokens-logic';
 import { openTokensDialog } from './tokens';
 import { openIconCredits } from './icon-credits';
+import { navigateTrackerPath } from '../route';
+import { popover } from './common';
+import { openProfileDialog } from './profile-dialog';
+import { openAiKeyDialog } from './ai';
+import { openChatNotifications } from './chat-prefs';
+import { canChangeProfile } from './share-logic';
+import { getUser, saveUser } from '../sync';
+import { currentChatDock } from './chat-dock';
 
 export type TopbarPage = 'boards' | 'templates' | 'chat';
 
@@ -13,7 +21,7 @@ export function accountMe(auth: AuthState): Me | null {
   return auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
 }
 
-async function signOutAndLeave() {
+export async function signOutAndLeave() {
   // The local session is cleared even when the server cannot be reached.
   await signOut().catch(() => undefined);
   location.hash = '#/signin';
@@ -27,6 +35,16 @@ async function signOutAndLeave() {
 function chatLink(current: TopbarPage): HTMLElement {
   const badge = h('span', { class: 'topbar-badge', 'aria-hidden': 'true' });
   const a = h('a', { class: current === 'chat' ? 'topbar-link on' : 'topbar-link', href: '#/chat', 'aria-current': current === 'chat' ? 'page' : undefined }, 'Chat', badge);
+  // On a page that is not the Chat page the link opens the chat dock where you are; the address still opens the Chat page in a new tab.
+  a.addEventListener('click', (e) => {
+    if (current === 'chat' || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const dock = currentChatDock();
+    if (!dock) return;
+    e.preventDefault();
+    dock.noteOpener(a);
+    dock.dispatch('open');
+    dock.focusComposer();
+  });
   const life = new AbortController();
   const paint = () => {
     const t = totalUnread();
@@ -48,6 +66,44 @@ function chatLink(current: TopbarPage): HTMLElement {
   return a;
 }
 
+/** The Tracker link, for a workspace that has it. The real route is a path, so the click is routed in the app and the href still opens in a new tab. */
+function trackerLink(): HTMLElement {
+  return h('a', {
+    class: 'topbar-link', href: '/t/all',
+    onclick: (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      navigateTrackerPath({ kind: 'view', view: 'all' });
+    },
+  }, 'Tracker');
+}
+
+/**
+ * The person's name is the account menu button: their name and colour, AI tool access, their own AI key and chat notifications
+ * (each only where the server offers it), then Sign out. The top bar no longer carries AI tool access or a Sign out button.
+ */
+function accountButton(me: Me): HTMLElement {
+  const name = me.user.name || me.user.email;
+  const button = h('button', { class: 'topbar-me topbar-me-btn', type: 'button', 'aria-label': `${name}, account menu`, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, name);
+  button.addEventListener('click', () => openAccountMenu(button, me));
+  return button;
+}
+
+/** The account menu, anchored to its button. Shared by the top bar; Esc closes it and focus goes back to the button. */
+export function openAccountMenu(anchor: HTMLElement, me: Me) {
+  const item = (label: string, fn: () => void) =>
+    h('button', { class: 'menu-item', type: 'button', onclick: () => { pop.close(); fn(); } }, h('span', null, label));
+  const pop = popover(anchor, h('div', { class: 'menu account-menu' },
+    canChangeProfile(authState().mode) ? item('Your name and colour', () => openProfileDialog(getUser(), (u) => saveUser(u))) : null,
+    aiToolsAvailable(me) ? item('AI tool access', () => openTokensDialog(me)) : null,
+    me.ai?.personalKeys ? item('Your AI key', () => openAiKeyDialog()) : null,
+    me.chat ? item('Chat notifications', () => openChatNotifications()) : null,
+    h('hr', { class: 'menu-sep' }),
+    item('Sign out', () => { void signOutAndLeave(); }),
+  ), { side: 'bottom', label: 'Account menu' });
+  return pop;
+}
+
 /** Top bar of the home and templates pages: wordmark, page links, and in accounts mode the user and Sign out. */
 export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
   const admin = me?.user.role === 'owner' || me?.user.role === 'admin';
@@ -58,14 +114,13 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
     h('a', { class: 'topbar-mark', href: '#/' }, 'Tabula'),
     h('nav', { class: 'topbar-nav', 'aria-label': 'Main' },
       link('boards', 'Boards', '#/'),
+      me?.tracker === true ? trackerLink() : null,
       link('templates', 'Templates', '#/templates'),
       me && chatAvailable() ? chatLink(current) : null,
       admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null,
-      me && aiToolsAvailable(me) ? h('button', { class: 'topbar-link', type: 'button', onclick: () => openTokensDialog(me) }, 'AI tool access') : null,
       h('a', { class: 'topbar-link', href: '/docs/' }, 'Help')),
     me ? h('div', { class: 'topbar-end' },
-      h('span', { class: 'topbar-me' }, me.user.name || me.user.email),
-      h('button', { class: 'btn ghost', onclick: signOutAndLeave }, 'Sign out')) : null);
+      accountButton(me)) : null);
 }
 
 /** Filter box shared by the board lists and the template grid. */

@@ -203,9 +203,26 @@ select.input {
 /* TAB-272: when constrained, only the tools scroll; Undo and Redo stay in the sibling block below it. */
 .rail-tools { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: inherit; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 /* a rail that scrolls fades the edge with more behind it (the tools scroll when the window is short and the scrollbar is hidden) */
-.rail-tools[data-more-y='down'] { -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 20px), transparent); }
-.rail-tools[data-more-y='up'] { -webkit-mask-image: linear-gradient(to top, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to top, var(--ink) calc(100% - 20px), transparent); }
-.rail-tools[data-more-y='both'] { -webkit-mask-image: linear-gradient(to bottom, transparent, var(--ink) 20px, var(--ink) calc(100% - 20px), transparent); mask-image: linear-gradient(to bottom, transparent, var(--ink) 20px, var(--ink) calc(100% - 20px), transparent); }
+.rail-tools[data-more-y='down'] { -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 12px), transparent); }
+.rail-tools[data-more-y='up'] { -webkit-mask-image: linear-gradient(to top, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to top, var(--ink) calc(100% - 12px), transparent); }
+.rail-tools[data-more-y='both'] { -webkit-mask-image: linear-gradient(to bottom, transparent, var(--ink) 12px, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to bottom, transparent, var(--ink) 12px, var(--ink) calc(100% - 12px), transparent); }
+/* A short window on a mouse or trackpad: tools 30 px, icons 18 px, 1 px gaps, tighter dividers, and the rail starts at 64 px with a 12 px bottom margin, so it needs about 626 px and does not scroll at 720. Touch keeps 44 px targets and the cue below. */
+@media (max-height: 720px) and (pointer: fine) {
+  .rail { top: calc(64px + var(--safe-top)); max-height: calc(100% - 76px - var(--safe-top) - var(--safe-bottom)); }
+  .rail, .rail-tools, .rail-end { gap: 1px; }
+  .rail .rail-btn { width: 30px; height: 30px; }
+  .rail .rail-btn svg { width: 18px; height: 18px; }
+  .rail hr { margin: 2px 0; }
+}
+/* While the tools overflow: a chevron between them and Undo/Redo, and a 2 px track with a thumb at the rail's inner edge. */
+.rail-more { flex: none; display: grid; place-items: center; width: 100%; height: 28px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); }
+.rail-more:hover { background: var(--tray-hover); }
+.rail-more[hidden], .rail-track[hidden] { display: none; }
+.rail-more[data-dir='up'] svg { transform: rotate(180deg); }
+.rail-track { position: absolute; right: 2px; width: 2px; border-radius: 1px; background: var(--tray-line); pointer-events: none; }
+.rail-track-thumb { display: block; width: 100%; border-radius: 1px; background: color-mix(in srgb, var(--tray-text) 40%, transparent); }
+.rail-tools { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { .rail-tools { scroll-behavior: auto; } }
 .rail-end { display: flex; flex: none; flex-direction: column; align-items: center; gap: inherit; }
 /* Tall desktop rails fit their contents; flatten the wrappers there to preserve the original flow. */
 @media (min-width: 861px) and (min-height: 981px) {
@@ -310,6 +327,8 @@ select.input {
 .link-btn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .link-btn:hover { color: var(--tray-text); }
 .home-foot .link-btn:hover { color: var(--ink); }
+/* a quiet link is still a 24 px target */
+.home-foot .link-btn { display: inline-block; min-height: 24px; line-height: 24px; vertical-align: middle; }
 .offline-row { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--tray-line); font-size: 12px; line-height: 1.4; color: var(--tray-muted); }
 .offline-row[hidden] { display: none; }
 .offline-text { margin: 0 0 8px; }

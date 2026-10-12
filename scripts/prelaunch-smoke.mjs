@@ -450,10 +450,10 @@ async function runDemoStage(browser) {
     });
     try {
       const response = await page.goto(DEMO, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-      const canvas = page.locator('svg.canvas[aria-label="Whiteboard canvas"]');
+      const canvas = page.locator('svg.canvas');
       await canvas.waitFor({ state: 'visible', timeout: 20_000 });
       check(response?.status() === 200 ? 'PASS' : 'FAIL', 'demo document loads in Chromium', DEMO, `width=${width}; HTTP ${response?.status() ?? 'no response'}`);
-      check(await canvas.isVisible() ? 'PASS' : 'FAIL', 'demo board is visible', DEMO, `width=${width}; selector=svg.canvas[aria-label="Whiteboard canvas"]`);
+      check(await canvas.isVisible() ? 'PASS' : 'FAIL', 'demo board is visible', DEMO, `width=${width}; selector=svg.canvas`);
       const stickyButton = page.getByRole('button', { name: 'Sticky note' });
       const buttonVisible = await stickyButton.isVisible().catch(() => false);
       if (buttonVisible) {

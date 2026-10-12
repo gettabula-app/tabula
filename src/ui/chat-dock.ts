@@ -3,10 +3,10 @@ import { h, icon } from './dom';
 import type { ChatChannelEntry } from '../api';
 import { channelUnread, fetchChannels, hasUnlisted, onChatBadge, openChat, totalUnread, watchChat, type BoardChat } from '../chat';
 import { mountConversation, type Conversation, type ConversationOptions } from './chat';
-import { badgeText, type ChannelKind } from './chat-logic';
+import { badgeText, channelHash, type ChannelKind } from './chat-logic';
 import { channelKey, dockChannels, hereLine, pickChannel, splitChips, type DockChannel } from './chat-dock-channels';
 import { popover } from './common';
-import { dockInset, loadDock, nextDock, saveDock, type DockEvent, type DockMode, type DockPrefs } from './chat-dock-state';
+import { dockInset, loadDock, nextDock, saveDock, sheetDragMinimises, type DockEvent, type DockMode, type DockPrefs } from './chat-dock-state';
 
 /** What a board page offers the dock: its own chat (with object links) and who is on it. */
 export interface DockBoard {
@@ -35,10 +35,18 @@ export interface DockDeps {
   hasUnlisted(listed: ReadonlySet<string>): boolean;
   watch(signal: AbortSignal): void;
   mount(opts: ConversationOptions): Conversation;
+  /** Goes to a hash page (the full Chat page). */
+  navigate(hash: string): void;
+}
+
+/** Leave a path route (the tracker) for a hash page such as `#/chat`: the path goes back to `/` and the router runs once. */
+function navigateHashPage(hash: string) {
+  window.history.pushState(null, '', '/' + hash);
+  window.dispatchEvent(new Event('popstate'));
 }
 
 const realDeps = (): DockDeps => ({
-  fetchChannels, openChat, unread: channelUnread, totalUnread, onBadge: onChatBadge, hasUnlisted, watch: watchChat, mount: mountConversation,
+  fetchChannels, openChat, unread: channelUnread, totalUnread, onBadge: onChatBadge, hasUnlisted, watch: watchChat, mount: mountConversation, navigate: navigateHashPage,
 });
 
 /** A channel list that has not been refetched for this long is not asked for again on a badge change. */
@@ -67,6 +75,10 @@ export interface ChatDock {
   /** Called with the dock's inset in px whenever it changes (the board refits its camera insets). */
   onInset(fn: (inset: number) => void): () => void;
   inset(): number;
+  /** Hides the dock on a page that must stay chrome-free (consent, sign-in) or is the chat itself; the dock keeps its state. */
+  setSuppressed(on: boolean): void;
+  /** The control that opened the dock (the Chat link), so focus can go back to it when the dock closes. */
+  noteOpener(el: HTMLElement | null): void;
   /** Focuses the message box of what is shown, once the dock is. */
   focusComposer(): void;
   destroy(): void;
@@ -98,27 +110,84 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const chips = h('nav', { class: 'chat-dock-chips', 'aria-label': 'Chat channels' });
   const here = h('div', { class: 'chat-dock-here', hidden: true });
   const status = h('p', { class: 'chat-dock-status', role: 'status', hidden: true });
-  const body = h('div', { class: 'chat-dock-body' }, chips, here, status, conversationHost);
+  const top = h('div', { class: 'chat-dock-top' }, chips, here);
+  const body = h('div', { class: 'chat-dock-body' }, top, status, conversationHost);
   const button = (label: string, name: Parameters<typeof icon>[0], event: DockEvent) =>
     h('button', { class: 'icon-btn chat-dock-btn', type: 'button', 'aria-label': label, 'data-tip': label, onclick: () => dispatch(event) }, icon(name, 18));
   const context = h('span', { class: 'chat-dock-context' });
   const title = h('h2', { class: 'chat-dock-title' }, 'Chat', context);
   const expand = button('Full size', 'expand', 'expand');
   const compact = button('Compact', 'collapse', 'compact');
-  const head = h('header', { class: 'chat-dock-head' }, title, expand, compact, button('Minimise to a bubble', 'minus', 'minimise'), button('Close chat', 'close', 'close'));
+  const page = h('button', { class: 'icon-btn chat-dock-btn', type: 'button', 'aria-label': 'Open the full Chat page', 'data-tip': 'Open the full Chat page' }, icon('share', 18));
+  page.addEventListener('click', () => {
+    const now = chosen();
+    dispatch('close');
+    deps.navigate(now ? channelHash(now.kind, now.ref) : '#/chat');
+  });
+  const head = h('header', { class: 'chat-dock-head' }, title, page, expand, compact, button('Minimise to a bubble', 'minus', 'minimise'), button('Close chat', 'close', 'close'));
   const panel = h('section', { class: 'chat-dock tray', 'aria-label': 'Chat', role: 'complementary' }, head, body);
   const bubbleCount = h('u', { class: 'chat-bubble-count', 'aria-hidden': 'true', hidden: true });
-  const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: () => dispatch('open') }, icon('chat', 22), bubbleCount);
+  const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: (e: MouseEvent) => { dispatch('open'); if (e.detail === 0) dock.focusComposer(); } }, icon('chat', 22), bubbleCount);
   // Esc inside the dock closes it and gives focus back to the Chat button; a message box, a menu or an edit uses its own Esc first.
+  panel.setAttribute('tabindex', '-1');
+  // The message box stops its keys from travelling up, so its Esc is seen here in the capture phase; once it has let go of focus (the
+  // event is done by the next task), focus stays in the dock and the next Esc closes it from here.
   panel.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (e.key !== 'Escape') return;
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (e.defaultPrevented && isShown() && (!active || active === document.body)) panel.focus({ preventScroll: true });
+    });
+  }, true);
+  panel.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    // a menu, an edit or the message box used this Esc: the capture listener above keeps focus in the dock
+    if (e.defaultPrevented) return;
     e.preventDefault();
     dispatch('close');
-    board?.ctx.returnFocus?.()?.focus();
+    opener()?.focus();
   });
-  const el = h('div', { class: 'chat-dock-host' }, panel, bubble);
+  // On a phone the open dock is a bottom sheet: a scrim behind it, a handle that minimises it (a tap, or a drag down), and the sheet
+  // rides above the soft keyboard (--dock-kb, --dock-vh from the visual viewport).
+  const scrim = h('div', { class: 'chat-dock-scrim', 'aria-hidden': 'true', hidden: true, onclick: () => dispatch('minimise') });
+  const handle = h('button', { class: 'chat-dock-handle', type: 'button', 'aria-label': 'Minimise chat', 'data-tip': 'Minimise chat' }, h('span', { 'aria-hidden': 'true' }));
+  handle.addEventListener('click', () => { if (!dragged) dispatch('minimise'); });
+  let dragged = false;
+  let dragFrom: number | null = null;
+  handle.addEventListener('pointerdown', (e) => { dragFrom = e.clientY; dragged = false; handle.setPointerCapture?.(e.pointerId); });
+  handle.addEventListener('pointermove', (e) => {
+    if (dragFrom === null) return;
+    const dy = Math.max(0, e.clientY - dragFrom);
+    if (dy > 6) dragged = true;
+    panel.style.transform = dy ? `translateY(${dy}px)` : '';
+  });
+  const endDrag = (e: PointerEvent) => {
+    if (dragFrom === null) return;
+    const dy = e.clientY - dragFrom;
+    dragFrom = null;
+    panel.style.transform = '';
+    if (dragged && sheetDragMinimises(dy)) dispatch('minimise');
+    setTimeout(() => { dragged = false; });
+  };
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+  panel.prepend(handle);
+  const el = h('div', { class: 'chat-dock-host' }, scrim, panel, bubble);
+  const publishViewport = () => {
+    const vv = window.visualViewport;
+    const lift = vv ? Math.max(0, window.innerHeight - (vv.offsetTop + vv.height)) : 0;
+    el.style.setProperty('--dock-kb', `${Math.round(lift)}px`);
+    el.style.setProperty('--dock-vh', `${Math.round(vv ? vv.height : window.innerHeight)}px`);
+  };
+  window.visualViewport?.addEventListener('resize', publishViewport);
+  window.visualViewport?.addEventListener('scroll', publishViewport);
+  publishViewport();
   overlay.append(el);
 
+  let suppressed = false;
+  let lastOpener: HTMLElement | null = null;
+  /** What gets focus when the dock closes from inside: the open board's Chat button, else the control that last opened it. */
+  const opener = (): HTMLElement | null => board?.ctx.returnFocus?.() ?? (lastOpener?.isConnected ? lastOpener : null);
   let board: { ctx: DockBoard; offPresence: (() => void) | null } | null = null;
   let entries: ChatChannelEntry[] = [];
   let loaded = false;
@@ -127,15 +196,32 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   let refetchTimer: ReturnType<typeof setTimeout> | null = null;
   let watchLife: AbortController | null = null;
   let mounted: { key: string; abort: AbortController; conv: Conversation } | null = null;
-  const isShown = () => prefs.mode === 'open' || prefs.mode === 'compact';
+  let focusWanted = false;
+  const isShown = () => !suppressed && (prefs.mode === 'open' || prefs.mode === 'compact');
 
   const channels = () => dockChannels(entries, board?.ctx.boardId ?? null);
-  /** The channel on screen: the one remembered, else the open board, else the busiest. Waits for the list when the remembered one is not the open board. */
+  /**
+   * The channel on screen. It is chosen once, when the dock opens (mention, then most unread, then the last one open, then the
+   * workspace or the open board) and then stays: a new message only raises a badge, and a chip opened by hand stays until the dock
+   * is closed. It is chosen again only when it is gone (a board that closed) or the dock was closed. Waits for the channel list.
+   */
+  let openKey: string | null = null;
   const chosen = (): DockChannel | null => {
     const list = channels();
-    const attachedKey = list.find((c) => c.attached)?.key ?? null;
-    if (!loaded && prefs.channel && prefs.channel !== attachedKey) return null;
-    return pickChannel(list, prefs.channel, (c) => deps.unread(c.kind, c.ref));
+    const kept = openKey ? list.find((c) => c.key === openKey) : undefined;
+    if (kept) return kept;
+    if (!isShown()) return null;
+    // Before the list arrives the open board can be shown at once when nothing says otherwise: no unread anywhere and nothing else was last open.
+    const attached = list.find((c) => c.attached);
+    const early = !loaded && !!attached && (prefs.channel === null || prefs.channel === attached.key) && deps.totalUnread().unread === 0;
+    if (!loaded && !early) return null;
+    const pick = pickChannel(list, prefs.channel, (c) => deps.unread(c.kind, c.ref));
+    openKey = pick?.key ?? null;
+    if (pick && prefs.channel !== pick.key) {
+      prefs = { ...prefs, channel: pick.key };
+      saveDock(userId, prefs, opts.storage);
+    }
+    return pick;
   };
 
   // ---------------------------------------------------------------- chips and presence
@@ -200,6 +286,11 @@ export function mountChatDock(overlay: HTMLElement, opts: {
         conv = deps.mount({ chat, id: `${now.kind}-${now.ref}`, panel: conversationHost, signal: abort.signal, meId: userId, meName: userName, workspace: now.kind === 'workspace' });
       }
       mounted = { key: now.key, abort, conv };
+      if (focusWanted) {
+        focusWanted = false;
+        const active = document.activeElement;
+        if (!active || active === document.body || active === panel) conv.focusComposer();
+      }
     }
     mounted?.conv.setOpen(isShown() && !!now && mounted.key === now.key);
     const attachedLabel = board && now?.attached ? ` · ${board.ctx.label}` : now ? ` · ${now.label}` : '';
@@ -242,12 +333,12 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     bubbleCount.textContent = badgeText(t.unread);
     bubbleCount.hidden = t.unread === 0;
     bubbleCount.classList.toggle('mention', t.mentions > 0);
-    bubble.setAttribute('aria-label', t.unread ? `Chat, ${t.unread} unread${t.mentions ? `, ${t.mentions} mentioning you` : ''}` : 'Chat');
+    bubble.setAttribute('aria-label', t.unread ? `Chat, ${t.unread} unread${t.mentions ? ', you were mentioned' : ''}` : 'Chat');
   }
 
   /** Keeps the chat socket up while the dock is a panel or a bubble (the bubble counts), and the channel list loaded while it is a panel. */
   function syncWatch() {
-    const watching = prefs.mode !== 'closed';
+    const watching = prefs.mode !== 'closed' && !suppressed;
     if (watching && !watchLife) {
       watchLife = new AbortController();
       deps.watch(watchLife.signal);
@@ -272,7 +363,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   /** The room the dock takes from the board, published as --dock-inset on the page for the chrome to read. */
   const insetListeners = new Set<(inset: number) => void>();
   const publishInset = () => {
-    const inset = dockInset(prefs.mode, window.innerWidth);
+    const inset = suppressed ? 0 : dockInset(prefs.mode, window.innerWidth);
     document.documentElement.style.setProperty('--dock-inset', `${inset}px`);
     document.documentElement.dataset.dockInset = String(inset);
     insetListeners.forEach((fn) => fn(inset));
@@ -282,8 +373,10 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   function paint() {
     publishInset();
     el.dataset.mode = prefs.mode;
+    el.hidden = suppressed;
+    scrim.hidden = !isShown();
     panel.hidden = !isShown();
-    bubble.hidden = prefs.mode !== 'bubble';
+    bubble.hidden = suppressed || prefs.mode !== 'bubble';
     expand.hidden = prefs.mode !== 'compact';
     compact.hidden = prefs.mode !== 'open';
     paintBubble();
@@ -291,11 +384,17 @@ export function mountChatDock(overlay: HTMLElement, opts: {
 
   function dispatch(event: DockEvent): DockMode {
     const before = prefs.mode;
+    // focus inside the dock must not be lost when the dock goes away: it goes to what opened it, or to the bubble
+    const hadFocus = isShown() && !!document.activeElement && panel.contains(document.activeElement);
     prefs = nextDock(prefs, event);
+    if (prefs.mode === 'closed') openKey = null; // the next opening chooses again
+    if (!isShown()) focusWanted = false;
     saveDock(userId, prefs, opts.storage);
     paint();
     syncWatch();
     render();
+    if (hadFocus && prefs.mode === 'bubble') bubble.focus();
+    else if (hadFocus && prefs.mode === 'closed') opener()?.focus();
     if (prefs.mode !== before) listeners.forEach((fn) => fn(prefs.mode));
     return prefs.mode;
   }
@@ -311,6 +410,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     dispatch,
     channel: () => chosen()?.key ?? null,
     select(channel) {
+      openKey = channel;
       dock.setChannel(channel);
       render();
     },
@@ -327,7 +427,17 @@ export function mountChatDock(overlay: HTMLElement, opts: {
       insetListeners.add(fn);
       return () => insetListeners.delete(fn);
     },
-    inset: () => dockInset(prefs.mode, window.innerWidth),
+    inset: () => (suppressed ? 0 : dockInset(prefs.mode, window.innerWidth)),
+    noteOpener(el) {
+      lastOpener = el;
+    },
+    setSuppressed(on) {
+      if (suppressed === on) return;
+      suppressed = on;
+      paint();
+      syncWatch();
+      render();
+    },
     attachBoard(ctx) {
       board?.offPresence?.();
       const mine = { ctx, offPresence: ctx.presence?.onChange(() => paintHere()) ?? null };
@@ -343,10 +453,18 @@ export function mountChatDock(overlay: HTMLElement, opts: {
       };
     },
     focusComposer() {
-      mounted?.conv.focusComposer();
+      // the conversation may not be drawn yet (the channel list is still loading): focus waits in the dock and moves to the message box
+      // once it is there, unless the person has gone elsewhere
+      if (mounted) mounted.conv.focusComposer();
+      else if (isShown()) {
+        focusWanted = true;
+        panel.focus({ preventScroll: true });
+      }
     },
     destroy() {
       window.removeEventListener('resize', publishInset);
+      window.visualViewport?.removeEventListener('resize', publishViewport);
+      window.visualViewport?.removeEventListener('scroll', publishViewport);
       document.documentElement.style.removeProperty('--dock-inset');
       delete document.documentElement.dataset.dockInset;
       offBadge();

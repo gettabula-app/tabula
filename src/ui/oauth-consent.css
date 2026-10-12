@@ -48,7 +48,7 @@
 .oauth-consent-board-list { max-height: 16rem; overflow: auto; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--canvas); overscroll-behavior: contain; }
 .oauth-consent-board { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 6px 10px; cursor: pointer; }
 .oauth-consent-board + .oauth-consent-board { border-top: 1px solid var(--rule); }
-.oauth-consent-board:has(:focus-visible), .oauth-consent-mode:has(:focus-visible) { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 6px; }
+.oauth-consent-board:has(:focus-visible), .oauth-consent-mode:has(:focus-visible) { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: var(--radius-sm); }
 .oauth-consent-board-name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .oauth-consent-board-role { flex: none; padding: 2px 7px; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--graphite); font-size: 11px; white-space: nowrap; }
 .oauth-consent-board input:disabled { cursor: default; }

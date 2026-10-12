@@ -286,6 +286,35 @@ describe('applyVolume', () => {
     expect(lines).toEqual([expect.stringMatching(/^volume: adopted volume a{32} \(restored-copy\)/)]);
   });
 
+  it('an adopted disk with tracker data is closed to tracker writes until recovery and the readiness check, a disk without it is not', () => {
+    const adopt = (seed: (directory: ReturnType<typeof rig>['directory']) => void) => {
+      const { d, directory } = rig();
+      seed(directory);
+      directory.setSetting('tracker.reconcile_done', '1');
+      directory.setSetting('tracker.fts_ready', '1');
+      writeMarker(d, marker());
+      const plan = planVolume({ dataDir: d, env: { TABULA_FLY_VOLUME_ID: 'vol_2' }, workspaceId: 'ws_a', now: T0 });
+      expect(applyVolume({ dataDir: d, plan, directory })).toBe(true);
+      return directory;
+    };
+
+    const withCounter = adopt((directory) => {
+      directory.db.prepare('INSERT INTO ticket_counters (scope, prefix, next_number, updated_at) VALUES (?, ?, ?, ?)').run('trk_1', 'TAB', 42, T0);
+    });
+    expect(JSON.parse(String(withCounter.getSetting('tracker.restore_gate')))).toEqual({ since: T0, reason: 'volume', floor: 'pending' });
+    expect(withCounter.getSetting('tracker.reconcile_done')).toBeNull();
+    expect(withCounter.getSetting('tracker.fts_ready')).toBeNull();
+
+    const untouched = adopt(() => {});
+    expect(untouched.getSetting('tracker.restore_gate')).toBeNull();
+    expect(untouched.getSetting('tracker.reconcile_done')).toBe('1');
+
+    const initialCounter = adopt((directory) => {
+      directory.db.prepare('INSERT INTO ticket_counters (scope, prefix, next_number, updated_at) VALUES (?, ?, ?, ?)').run('trk_1', 'TAB', 1, T0);
+    });
+    expect(initialCounter.getSetting('tracker.restore_gate')).toBeNull();
+  });
+
   it('operator adoption purges OAuth clients in the same database transaction as grant invalidation', () => {
     const { d, directory } = rig();
     const owner = directory.getUserByEmail('ana@example.com')!;

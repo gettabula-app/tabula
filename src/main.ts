@@ -28,7 +28,9 @@ import { mayChange } from './template-share';
 import type { CustomTemplate } from './custom-templates';
 import { applyImported, type ImportedBoard } from './exporters';
 import { toast } from './ui/common';
-import { syncChatDock } from './ui/chat-dock';
+import { trackerEnabled } from './tracker-gate';
+import { currentChatDock, syncChatDock } from './ui/chat-dock';
+import { dockHiddenOn } from './ui/chat-dock-state';
 import { commentNoticeText } from './comments';
 import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
@@ -40,6 +42,7 @@ import { createWorkspaceBanner } from './ui/workspace';
 import { installTooltips } from './ui/tooltip';
 import {
   dispatchTrackerRoute,
+  navigateAppHash,
   navigateTrackerPath,
   needsSignIn,
   onTrackerRoute,
@@ -134,9 +137,6 @@ async function refreshBoardCache() {
 const isNewBoard = (id: string, opts: { template?: string; imported?: ImportedBoard; teamId?: string }) =>
   Boolean(opts.teamId || opts.template || opts.imported) || !cachedServerBoards().some((b) => b.id === id);
 
-function trackerEnabled(auth: AuthState): boolean {
-  return (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
-}
 
 function replaceResolvedTrackerPath(target: import('./tracker-route').TrackerPathRoute, resolvedKey: string | undefined) {
   if (!resolvedKey) return;
@@ -175,7 +175,8 @@ function registerTrackerRouteHost(): () => void {
     const shell = mountTrackerShell(host, {
       store, api: trackerRouteApi, viewerId, trackerId: 'workspace', windowId: 'workspace',
       initialTab: view as TrackerView, initialViewId: viewId, initialTicketKey: key ?? undefined,
-      fullScreen: true, boardName: 'Tracker', layoutWidth: window.innerWidth,
+      fullScreen: true, routeMode: true, account: me, boardName: 'Tracker', layoutWidth: window.innerWidth,
+      onBoards: () => navigateAppHash('#/'),
       onFullscreenChange: (fullScreen) => { if (!fullScreen) history.back(); },
       onTabChange: (tab, nextViewId) => {
         navigateTrackerPath(nextViewId
@@ -298,6 +299,9 @@ async function isDeletedBoard(id: string, auth: AuthState, role: ServerBoard['ro
   }
 }
 
+/** The page being shown, for the chat dock: it stays away from sign-in, consent and the Chat page. */
+let routeName = '';
+
 async function route() {
   if (DEMO) {
     if (location.hash !== '#/b/demo') {
@@ -328,6 +332,8 @@ async function route() {
   const seq = ++routeSeq;
   const auth = authState();
   const r = resolveRoute(location.hash, auth.mode, location.pathname, location.search);
+  routeName = r.name;
+  currentChatDock()?.setSuppressed(dockHiddenOn(r.name));
   const trackerScreen = r.name === 'tracker' && (trackerEnabled(auth) || trackerBoardMockVisual);
   const keepTrackerStore = trackerScreen;
   const preserveBoard = trackerScreen && current !== null && currentBoardId !== null;
@@ -377,8 +383,11 @@ async function route() {
   // Tracker paths share the same public app shell as boards. Feature access is decided from /api/me, and ticket
   // existence/access is left to the tracker data call so the shell never distinguishes those cases.
   if (r.name === 'tracker' && !trackerEnabled(auth) && !trackerBoardMockVisual) {
+    // No tracker here: the Boards page, with one line saying why, and the address says Boards too.
+    history.replaceState(null, '', '/#/');
     root.className = 'home-root';
     renderHome(root, nav, auth);
+    toast('The tracker is not turned on for this workspace.');
     return;
   }
 
@@ -626,7 +635,8 @@ async function boot() {
   syncMentions();
   const syncDock = () => {
     const a = authState();
-    syncChatDock(overlay, (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.id : null, chatAvailable(), (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.name : undefined);
+    const dock = syncChatDock(overlay, (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.id : null, chatAvailable(), (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.name : undefined);
+    dock?.setSuppressed(dockHiddenOn(routeName));
   };
   syncDock();
   onAuth((s) => {
@@ -658,7 +668,9 @@ if (trackerMockVisual) {
     const api = mock.createMockTrackerApi(seed.createTrackerVisualSeed());
     const store: TrackerStore = createTrackerStore(api);
     const shell = mountTrackerShell(root, {
-      store, api, viewerId: 'visual-user', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true,
+      store, api, viewerId: 'visual-user', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true, routeMode: true,
+      account: { user: { id: 'visual-user', name: 'Johan Saldes', email: 'johan@example.test', role: 'owner' }, teams: [], mcp: true, mcpOauth: false, tracker: true } as never,
+      onBoards: () => undefined,
       onTabChange: (tab) => { navigateTrackerPath({ kind: 'view', view: tab }, 'replace'); },
       onTicketChange: (key) => {
         if (key) navigateTrackerPath({ kind: 'ticket', key });

@@ -51,7 +51,7 @@ A searchable list of everyone with an account: name, email, role, last activity,
 - **Sign out everywhere** ends all of their sessions without disabling them. You can use it on yourself.
 - **Remove** deletes the account, signs the person out and removes their access.
 
-The role names are explained in [Sharing, roles and teams](sharing.md#roles). On a hosted workspace with a seat limit, enabling a person or promoting a guest can be refused when the workspace has reached its member limit.
+The role names are explained in [Sharing, roles and teams](sharing.md#roles). If a hosted workspace has a limit on how many members it can hold and it is full, enabling a person or promoting a guest is refused until someone is removed or disabled. Guests do not count towards this limit.
 
 ## Teams
 
@@ -81,7 +81,7 @@ Active [personal access tokens](ai-tools.md) for AI tools, across the workspace:
 
 The **AI** tab turns AI features on for the workspace and sets what they use: the features, the model, whether people may use their own keys, whether guests are included, the hourly limits, and the workspace key. Unlike **Access tokens**, the **AI** tab is always listed in a workspace with sign-in, even if your server cannot store keys yet.
 
-Turning AI on and choosing features makes those features available to people who can edit a board, as long as a usable key exists (the workspace key, a personal key where you allow them, or plan credits on a hosted workspace). Without a key the AI button does not appear. See [AI bar](ai-bar.md) for what people see.
+Turning AI on and choosing features makes those features available to people who can edit a board, as long as a usable key exists (the workspace key or a personal key where you allow them). Without a key the AI button does not appear. See [AI bar](ai-bar.md) for what people see.
 
 The tab has these settings. The defaults are off, with every feature selected, no personal keys, guests allowed, and 20 runs per person and 200 per workspace each hour.
 

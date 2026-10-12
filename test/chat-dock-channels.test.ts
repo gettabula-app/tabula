@@ -12,27 +12,39 @@ const team = (ref: string, name: string, over: Partial<Parameters<typeof entry>[
 const board = (ref: string, name: string, lastAt: number) => entry({ kind: 'board', ref, name, lastAt });
 
 describe('the channels the dock offers', () => {
-  it('lists the open board first, then the workspace, teams, other teams and other boards, the open board once', () => {
+  it('lists the open board first, then the workspace, teams, other teams and other boards in a fixed order, the open board once', () => {
     const list = dockChannels([
       board('b2', 'Roadmap', 5), board('b1', 'Retro', 9), team('t2', 'Zed', { archived: true }), team('t1', 'Alpha', { lastAt: 3 }), ws,
-      team('t3', 'Guest read', { member: false }),
+      team('t3', 'Guest read', { member: false }), team('t0', 'Beta', { lastAt: 99 }),
     ], 'b1');
-    expect(list.map((c) => c.key)).toEqual(['board/b1', 'workspace/main', 'team/t1', 'team/t2', 'team/t3', 'board/b2']);
+    expect(list.map((c) => c.key)).toEqual(['board/b1', 'workspace/main', 'team/t1', 'team/t0', 'team/t2', 'team/t3', 'board/b2']);
     expect(list[0]).toMatchObject({ label: 'This board', attached: true });
     expect(list.filter((c) => c.ref === 'b1')).toHaveLength(1);
+  });
+
+  it('keeps the chip order when activity changes: a new message never reorders the chips', () => {
+    const before = dockChannels([ws, team('t1', 'Alpha', { lastAt: 1 }), team('t2', 'Beta', { lastAt: 2 })], null).map((c) => c.key);
+    const after = dockChannels([ws, team('t1', 'Alpha', { lastAt: 50 }), team('t2', 'Beta', { lastAt: 2 })], null).map((c) => c.key);
+    expect(after).toEqual(before);
   });
 
   it('without an open board starts with the workspace', () => {
     expect(dockChannels([team('t1', 'Alpha'), ws], null).map((c) => c.key)).toEqual(['workspace/main', 'team/t1']);
   });
 
-  it('picks the remembered channel, else the open board, else the one with a mention, else the first', () => {
-    const list = dockChannels([ws, team('t1', 'Alpha'), team('t2', 'Beta')], 'b1');
+  it('chooses the channel to open: a mention, then most unread, then the last one open, then the open board or the workspace', () => {
     const none = () => ({ unread: 0, mentions: 0 });
-    expect(pickChannel(list, 'team/t2', none)?.key).toBe('team/t2');
-    expect(pickChannel(list, 'team/gone', none)?.key).toBe('board/b1');
+    const withBoard = dockChannels([ws, team('t1', 'Alpha'), team('t2', 'Beta')], 'b1');
     const noBoard = dockChannels([ws, team('t1', 'Alpha'), team('t2', 'Beta')], null);
-    expect(pickChannel(noBoard, null, (c) => (c.ref === 't2' ? { unread: 1, mentions: 1 } : { unread: 5, mentions: 0 }))?.key).toBe('team/t2');
+    const counts = (m: Record<string, { unread: number; mentions: number }>) => (c: { key: string }) => m[c.key] ?? { unread: 0, mentions: 0 };
+    // a mention beats more unread
+    expect(pickChannel(noBoard, null, counts({ 'team/t1': { unread: 9, mentions: 0 }, 'team/t2': { unread: 1, mentions: 1 } }))?.key).toBe('team/t2');
+    // more unread beats the last channel
+    expect(pickChannel(noBoard, 'team/t1', counts({ 'team/t2': { unread: 2, mentions: 0 } }))?.key).toBe('team/t2');
+    // nothing unread: the last one open
+    expect(pickChannel(noBoard, 'team/t2', none)?.key).toBe('team/t2');
+    // the last one open is gone: the open board, or the workspace
+    expect(pickChannel(withBoard, 'team/deleted', none)?.key).toBe('board/b1');
     expect(pickChannel(noBoard, null, none)?.key).toBe('workspace/main');
     expect(pickChannel([], null, none)).toBeNull();
   });
@@ -106,7 +118,7 @@ describe('the dock with channels', () => {
     dock.dispatch('open');
     await flush();
     expect(stub.watches).toHaveLength(1);
-    expect(chipLabels()).toEqual(['Workspace', 'Retro team', 'Design']);
+    expect(chipLabels()).toEqual(['Workspace', 'Design', 'Retro team']);
     expect(stub.opened).toEqual([expect.objectContaining({ kind: 'workspace', ref: 'main' })]);
     expect(stub.mounts).toHaveLength(1);
     expect(stub.mounts[0].opts).toMatchObject({ id: 'workspace-main', workspace: true, meId: 'u1', meName: 'Ana' });
@@ -123,17 +135,17 @@ describe('the dock with channels', () => {
     expect(dock.channel()).toBe('board/b1');
     const first = ctx.signal()!;
     expect(first.aborted).toBe(false);
-    const chip = (host.querySelectorAll('.chat-chip') as FakeElement[]).find((c) => c.getAttribute('aria-label') === 'Retro team')!;
+    const chip = (host.querySelectorAll('.chat-chip') as FakeElement[]).find((c) => c.getAttribute('aria-label') === 'Design')!;
     chip.click();
     expect(first.aborted).toBe(true);
-    expect(stub.opened.at(-1)).toMatchObject({ kind: 'team', ref: 't1' });
+    expect(stub.opened.at(-1)).toMatchObject({ kind: 'team', ref: 't2' });
     expect(stub.mounts.at(-1)!.opts.workspace).toBe(false);
-    expect(JSON.parse(store.get('driftboard:chat-dock:u1')!).channel).toBe('team/t1');
-    expect(dock.channel()).toBe('team/t1');
-    expect((host.querySelector('.chat-chip.on') as FakeElement).getAttribute('aria-label')).toBe('Retro team');
+    expect(JSON.parse(store.get('driftboard:chat-dock:u1')!).channel).toBe('team/t2');
+    expect(dock.channel()).toBe('team/t2');
+    expect((host.querySelector('.chat-chip.on') as FakeElement).getAttribute('aria-label')).toBe('Design');
   });
 
-  it('comes back to the remembered channel after a reload, and falls back when it is gone', async () => {
+  it('comes back to the last channel open after a reload when nothing is unread, and falls back when it is gone', async () => {
     const remembered = await setup(undefined, 'team/t2');
     remembered.dock.dispatch('open');
     await remembered.flush();
@@ -215,7 +227,7 @@ describe('the dock with channels', () => {
     expect(bubble.hidden).toBe(false);
     expect(count.hidden).toBe(false);
     expect(textOf(count)).toBe('5');
-    expect(bubble.getAttribute('aria-label')).toBe('Chat, 5 unread, 1 mentioning you');
+    expect(bubble.getAttribute('aria-label')).toBe('Chat, 5 unread, you were mentioned');
     expect(count.classList.contains('mention')).toBe(true);
     stub.setUnread('team', 't1', { unread: 120, mentions: 0 });
     expect(textOf(count)).toBe('99+');
@@ -233,5 +245,34 @@ describe('the dock with channels', () => {
     dock.dispatch('open');
     dock.dispatch('minimise');
     expect(stub.watches).toHaveLength(1);
+  });
+
+  it('chooses once, when the dock opens: unread picks the channel, a new message never switches it, a chip chosen by hand stays until the dock is closed', async () => {
+    const { dock, stub, flush } = await setup();
+    stub.setUnread('team', 't1', { unread: 2, mentions: 0 });
+    dock.dispatch('open');
+    await flush();
+    expect(dock.channel()).toBe('team/t1'); // most unread
+    stub.setUnread('team', 't2', { unread: 9, mentions: 3 });
+    expect(dock.channel()).toBe('team/t1'); // someone is reading it: only the badge moves
+    dock.select('workspace/main');
+    dock.dispatch('minimise');
+    dock.dispatch('open');
+    expect(dock.channel()).toBe('workspace/main'); // by hand, and a bubble is not closed
+    dock.dispatch('close');
+    dock.dispatch('open');
+    await flush();
+    expect(dock.channel()).toBe('team/t2'); // closed: chosen again, now the mention
+  });
+
+  it('opens the full Chat page on the channel being read and closes the dock', async () => {
+    const { dock, stub, host, flush } = await setup();
+    dock.dispatch('open');
+    await flush();
+    dock.select('team/t1');
+    const open = (host.querySelectorAll('.chat-dock-btn') as FakeElement[]).find((b) => b.getAttribute('aria-label') === 'Open the full Chat page')!;
+    open.click();
+    expect(stub.deps.navigate).toHaveBeenCalledWith('#/chat/team/t1');
+    expect(dock.mode()).toBe('closed');
   });
 });
