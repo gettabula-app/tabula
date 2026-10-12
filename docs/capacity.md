@@ -114,3 +114,21 @@ Any other value stops the relay at startup. The comments guard runs first and re
 | 20,000-character text edit (200 messages) | 35 us | 42 us | 105 us | +7 us / +8 us | +10 us |
 
 In `report` mode a keystroke costs about 4 microseconds and the largest message stays well under 50 ms over the apply itself, which on this machine is the larger part (about 80 to 140 ms for 5,000 objects). `enforce` roughly doubles the apply of a very large message because the undo manager records every new item.
+
+## Sync limits (`server/sync-caps.mjs`)
+
+Bounds on the `/sync` WebSocket, chosen so real editing never reaches them (drawing, typing, multi-object drags, a large board paste or import). Images are board assets, not document content, so a legitimate update is small. Each number is a named constant; the ones in the last column can be changed with an environment variable (sizes take bytes or a K/M/G suffix; a bad value stops the relay at start with a message naming the variable).
+
+| Limit | Default | Over the limit | Setting |
+| --- | --- | --- | --- |
+| Frame size, owners (and open mode) | 32 MiB | socket closed, code 1009 `message_too_big` | `TABULA_SYNC_MAX_FRAME_OWNER` |
+| Frame size, editors and commenters | 8 MiB | same | `TABULA_SYNC_MAX_FRAME_OTHER` |
+| Document size (encoded state) | 64 MiB, 0 = off | an update bigger than 8 KiB is refused and its socket closed, code 4413 `document_too_large`; smaller frames (deleting, typing) still pass so the board can be cleaned up | `TABULA_SYNC_MAX_DOC_BYTES` |
+| SyncStep1 frames per socket | burst 20, 5 per second | frame dropped | none |
+| Update frames per socket | burst 500, 200 per second | frame dropped | none |
+| Sustained over the frame rate | 10 s without a 1 s break | socket closed, code 4429 `rate_limited` | none |
+| Sockets per signed-in person (all rooms, all tabs) | 40 | the new socket is closed, code 4430 `too_many_connections` | `TABULA_SYNC_MAX_SOCKETS_PER_USER` |
+| Sockets per client address (guests, and everyone in open mode) | 400 | same | `TABULA_SYNC_MAX_SOCKETS_PER_ADDRESS` |
+| `/sync` upgrades per client address | 120 per minute | HTTP 429 with `Retry-After: 60` before the handshake | `TABULA_SYNC_UPGRADES_PER_MINUTE` |
+
+The client address is the one every other limit uses (`server/client-ip.mjs`, `TABULA_TRUST_PROXY`). Schools share an address, which is why the address numbers are wide. The counters are in memory, bounded (the upgrade map holds at most 10,000 addresses and fails open for a new one beyond that), and reset on restart. The document size is measured on the encoded state at most once per 1 MiB of accepted updates, and early only when one frame could cross the cap; it is a soft cap, not an exact one: a room can pass it by up to that margin, and a board already over it keeps working for small edits. A client that is closed with 4413 or 4429 reconnects like after any close.

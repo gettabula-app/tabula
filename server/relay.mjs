@@ -59,6 +59,10 @@ import { trackerGateState } from './tracker/gate.mjs';
 import { createTrackerRestoreRecovery } from './tracker/restore-recovery.mjs';
 import { OpsError } from './board-ops.mjs';
 import { analyticsChoice } from './telemetry/report.mjs';
+import {
+  CLOSE_DOC_TOO_LARGE, CLOSE_FRAME_TOO_BIG, CLOSE_RATE_LIMITED, CLOSE_TOO_MANY_SOCKETS, createConnectionCounter,
+  createDocSizeGuard, createSyncFrameLimiter, createUpgradeLimiter, frameLimitFor, loadSyncCaps,
+} from './sync-caps.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -488,6 +492,12 @@ const restore = createRestore({
 // Images on a board (docs/images.md): the files are shared by both modes; the index of who may read which is the directory
 // database with accounts and a small JSON file without.
 const clientIp = (req) => clientRateKeyOf(req, config);
+
+// Bounds on /sync sockets and frames (server/sync-caps.mjs, docs/capacity.md "Sync limits").
+const syncCaps = loadSyncCaps(process.env);
+const syncUserSockets = createConnectionCounter(syncCaps.maxSocketsPerUser);
+const syncAddressSockets = createConnectionCounter(syncCaps.maxSocketsPerAddress);
+const syncUpgrades = createUpgradeLimiter({ max: syncCaps.upgradesPerMinute });
 const assets = config.assets
   ? (() => {
       const dir = path.join(DATA_DIR, 'assets');
@@ -629,6 +639,7 @@ class Room {
     this.deferredMessages = [];
     this.trackerGuardTimer = null;
     this.trackerGuardObjects = new Set();
+    this.sizeGuard = createDocSizeGuard({ max: syncCaps.maxDocBytes, measure: () => Y.encodeStateAsUpdate(this.doc).length });
 
     try {
       let saved;
@@ -954,7 +965,35 @@ class Room {
   }
 
 
-  onMessage(ws, data) {
+  // Frame policy of one /sync message before it is decoded: size by role, then the per-socket rate. False drops the frame
+  // (the socket may already have been closed).
+  admitFrame(ws, data) {
+    const bytes = data.byteLength ?? data.length ?? 0;
+    if (bytes > frameLimitFor(syncCaps, ws, config.authEnabled)) {
+      log(`room ${this.name}: frame of ${bytes} bytes refused, socket closed`);
+      ws.close(CLOSE_FRAME_TOO_BIG, 'message_too_big');
+      return false;
+    }
+    let kind = null;
+    try {
+      const dec = decoding.createDecoder(new Uint8Array(data));
+      if (decoding.readVarUint(dec) === MSG_SYNC) kind = decoding.peekVarUint(dec) === syncProtocol.messageYjsSyncStep1 ? 'step1' : 'update';
+    } catch {
+      return true; // malformed: the handler below logs it
+    }
+    if (kind === null) return true;
+    ws.syncLimiter ??= createSyncFrameLimiter();
+    const verdict = ws.syncLimiter.take(kind);
+    if (verdict === 'ok') return true;
+    if (verdict === 'close') {
+      log(`room ${this.name}: sync frames over the rate limit for too long, socket closed`);
+      ws.close(CLOSE_RATE_LIMITED, 'rate_limited');
+    }
+    return false;
+  }
+
+  onMessage(ws, data, replay = false) {
+    if (!replay && !this.admitFrame(ws, data)) return;
     if (snapshotBarrier?.active && !snapshotBarrier.writesAllowed && ws.canWrite === true) {
       try {
         const peek = decoding.createDecoder(new Uint8Array(data));
@@ -976,9 +1015,19 @@ class Room {
         if (ws.canWrite !== true && decoding.peekVarUint(dec) !== syncProtocol.messageYjsSyncStep1) return;
         const enc = encoding.createEncoder();
         encoding.writeVarUint(enc, MSG_SYNC);
+        const syncType = decoding.peekVarUint(dec);
+        const frameBytes = data.byteLength ?? data.length ?? 0;
+        if (syncType !== syncProtocol.messageYjsSyncStep1) {
+          // A document at its size cap takes only small frames (deleting content, typing) until it is back under.
+          if (!this.sizeGuard.admit(frameBytes)) {
+            log(`room ${this.name}: update of ${frameBytes} bytes refused, the document is at its size cap`);
+            ws.close(CLOSE_DOC_TOO_LARGE, 'document_too_large');
+            return;
+          }
+          this.sizeGuard.accepted(frameBytes);
+        }
         const apply = () => syncProtocol.readSyncMessage(dec, enc, this.doc, ws);
         // A state vector (step 1) changes nothing, so only step 2 and updates go through the guard.
-        const syncType = decoding.peekVarUint(dec);
         const guardedApply = () => {
           if (this.kind === 'board' && trackerGuard && config.tracker && directory && ws.userId
             && syncType !== syncProtocol.messageYjsSyncStep1) this.trackerGuarded(ws, apply);
@@ -1028,7 +1077,7 @@ class Room {
   releaseDeferredMessages() {
     const queued = this.deferredMessages;
     this.deferredMessages = [];
-    for (const { ws, data } of queued) this.onMessage(ws, data);
+    for (const { ws, data } of queued) this.onMessage(ws, data, true);
     if (this.pendingBarrierSave) this.scheduleSave();
   }
 }
@@ -1512,7 +1561,7 @@ async function onRequest(req, res) {
 
 const sourceGate = createSourceGate(config.sourcePolicy, { log });
 const server = http.createServer(onRequest);
-const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
+const wss = new WebSocketServer({ noServer: true, maxPayload: Math.max(syncCaps.maxFrameOwner, syncCaps.maxFrameOther) });
 // The /chat socket (docs/chat.md): small JSON frames only, so a much smaller limit than the Yjs rooms.
 const chatWss = chatHub ? new WebSocketServer({ noServer: true, maxPayload: (await import('./chat-hub.mjs')).MAX_CLIENT_FRAME }) : null;
 
@@ -1687,6 +1736,14 @@ server.on('upgrade', (req, socket, head) => {
   } catch {
     pathname = null;
   }
+  const upgradeAddress = clientIp(req);
+  if (pathname !== '/chat' && !syncUpgrades.allow(upgradeAddress)) {
+    log('sync: too many upgrades from one address');
+    socket.on('error', () => socket.destroy());
+    socket.write('HTTP/1.1 429 Too Many Requests\r\nRetry-After: 60\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+    socket.destroy();
+    return;
+  }
   if (pathname === '/chat') {
     if (!chatWss) {
       socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
@@ -1738,10 +1795,21 @@ server.on('upgrade', (req, socket, head) => {
 
     if (!config.authEnabled) {
       ws.canWrite = true;
+      const release = syncAddressSockets.acquire(upgradeAddress);
+      if (!release) {
+        ws.close(CLOSE_TOO_MANY_SOCKETS, 'too_many_connections');
+        return;
+      }
       const room = openRoom(ws, name);
-      if (!room) return;
+      if (!room) {
+        release();
+        return;
+      }
       ws.on('message', (data) => room.onMessage(ws, data));
-      ws.on('close', () => room.leave(ws));
+      ws.on('close', () => {
+        release();
+        room.leave(ws);
+      });
       room.join(ws);
       return;
     }
@@ -1783,8 +1851,17 @@ server.on('upgrade', (req, socket, head) => {
     ws.checkedAt = Date.now();
     ws.sessionRevoked = false;
     ws.denied = false;
+    // Accounts count per person; guests (whose ids are throwaway) count per client address like open mode.
+    const release = (ws.guest ? syncAddressSockets : syncUserSockets).acquire(ws.guest ? upgradeAddress : ws.userId);
+    if (!release) {
+      ws.close(CLOSE_TOO_MANY_SOCKETS, 'too_many_connections');
+      return;
+    }
     const room = openRoom(ws, name);
-    if (!room) return;
+    if (!room) {
+      release();
+      return;
+    }
     track(ws);
     if (ws.guest) armGuestExpiry(ws);
     ws.on('message', (data) => {
@@ -1792,6 +1869,7 @@ server.on('upgrade', (req, socket, head) => {
       if (!ws.denied) room.onMessage(ws, data);
     });
     ws.on('close', () => {
+      release();
       if (ws.guestExpiryTimer) clearTimeout(ws.guestExpiryTimer);
       ws.guestExpiryTimer = null;
       untrack(ws);
