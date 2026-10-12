@@ -60,15 +60,19 @@ function feedHarness(over: { chatOn: boolean; hidden?: boolean; alive?: boolean;
     return [{ boardId: 'b1', count: 1, people: [person('a', 'Ana')] }];
   });
   let frame: (f: Record<string, unknown>) => void = () => {};
+  const watched: boolean[] = [];
+  let shown: () => void = () => {};
   const keepSocket = vi.fn<(signal: AbortSignal) => void>();
   const source = createPresenceFeed({
     store, alive: () => state.alive, chatOn: over.chatOn, fetchList, keepSocket,
+    watch: (on) => watched.push(on),
+    onVisibility: (fn) => { shown = fn; return () => { shown = () => {}; }; },
     onFrame: (fn) => { frame = fn; return () => { state.cleared++; }; },
     hidden: () => state.hidden,
     setTimer: (fn, ms) => { expect(ms).toBe(POLL_MS); state.tick = fn; return 1; },
     clearTimer: () => { state.tick = () => {}; },
   });
-  return { store, source, state, fetchList, keepSocket, frame: (f: Record<string, unknown>) => frame(f) };
+  return { store, source, state, fetchList, keepSocket, watched, visibility: () => shown(), frame: (f: Record<string, unknown>) => frame(f) };
 }
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -85,6 +89,30 @@ describe('the feed', () => {
     expect(h.fetchList).toHaveBeenCalledTimes(1); // no polling beside the socket
     stop();
     expect(h.state.cleared).toBe(1);
+  });
+
+  it('tells the server to watch while the page is visible, stops while it is hidden, and refreshes on return', async () => {
+    const h = feedHarness({ chatOn: true });
+    const stop = h.source.subscribe(() => {});
+    await settle();
+    expect(h.watched).toEqual([true]);
+    h.state.hidden = true;
+    h.visibility();
+    expect(h.watched).toEqual([true, false]);
+    h.state.hidden = false;
+    h.visibility();
+    await settle();
+    expect(h.watched).toEqual([true, false, true]);
+    expect(h.fetchList).toHaveBeenCalledTimes(2);
+    stop();
+    expect(h.watched.at(-1)).toBe(false);
+  });
+
+  it('does not ask the server for presence when chat is off', async () => {
+    const h = feedHarness({ chatOn: false });
+    const stop = h.source.subscribe(() => {});
+    stop();
+    expect(h.watched).toEqual([]);
   });
 
   it('polls while the page is visible when chat is off, and not while it is hidden', async () => {

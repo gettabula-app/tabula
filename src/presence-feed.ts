@@ -61,6 +61,10 @@ export interface FeedDeps {
   onFrame: (fn: (f: Record<string, unknown>) => void) => () => void;
   /** Keeps the chat socket up while the page is open (no-op without chat). */
   keepSocket?: (signal: AbortSignal) => void;
+  /** Tells the server whether this page wants presence (chat socket only): on while visible, off while hidden or gone. */
+  watch?: (on: boolean) => void;
+  /** Calls `fn` when the page is shown or hidden; returns the unsubscribe. */
+  onVisibility?: (fn: () => void) => () => void;
   fetchList: () => Promise<unknown[]>;
   pollMs?: number;
   hidden?: () => boolean;
@@ -78,6 +82,7 @@ export function createPresenceFeed(deps: FeedDeps): PresenceSource {
       const life = new AbortController();
       let timer: unknown;
       let offFrame: (() => void) | undefined;
+      let offVisibility: (() => void) | undefined;
       const pull = async () => {
         if (life.signal.aborted) return;
         if (!deps.alive()) { stop(); return; }
@@ -92,10 +97,22 @@ export function createPresenceFeed(deps: FeedDeps): PresenceSource {
         life.abort();
         if (timer !== undefined) clearTimer(timer);
         offFrame?.();
+        offVisibility?.();
+        if (deps.chatOn) deps.watch?.(false);
       };
       void pull();
       if (deps.chatOn) {
         deps.keepSocket?.(life.signal);
+        if (!hidden()) deps.watch?.(true);
+        offVisibility = (deps.onVisibility ?? ((fn) => {
+          if (typeof document === 'undefined') return () => {};
+          document.addEventListener('visibilitychange', fn);
+          return () => document.removeEventListener('visibilitychange', fn);
+        }))(() => {
+          if (life.signal.aborted) return;
+          if (hidden()) deps.watch?.(false);
+          else { deps.watch?.(true); void pull(); }
+        });
         offFrame = deps.onFrame((f) => {
           if (!deps.alive()) { stop(); return; }
           applyPresenceFrame(deps.store, f);

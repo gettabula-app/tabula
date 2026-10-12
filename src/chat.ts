@@ -258,6 +258,14 @@ function connect() {
 /** The Boards page's presence frames (`presence.snapshot`, `presence.update`, `presence.clear`) come over the same socket. */
 const presenceListeners = new Set<(f: Record<string, unknown>) => void>();
 
+/** The Boards page wants presence: the server sends none until it is told (`presence.watch`), and tells again after each reconnect. */
+let presenceWatching = false;
+
+export function setPresenceWatch(on: boolean): void {
+  presenceWatching = on;
+  sendFrame({ t: on ? 'presence.watch' : 'presence.unwatch' });
+}
+
 export function onPresenceFrame(fn: (f: Record<string, unknown>) => void): () => void {
   presenceListeners.add(fn);
   return () => presenceListeners.delete(fn);
@@ -280,6 +288,7 @@ function onFrame(f: Record<string, unknown>) {
     const reconnect = helloSeen;
     helloSeen = true;
     signedOut = false;
+    if (presenceWatching) sendFrame({ t: 'presence.watch' });
     workspaceReadOnly = f.readOnly === true;
     unread.clear();
     for (const c of Array.isArray(f.channels) ? f.channels : []) {

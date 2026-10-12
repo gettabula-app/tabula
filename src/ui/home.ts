@@ -11,7 +11,7 @@ import { importedBoardName, readBoardFile, type ImportedBoard } from '../exporte
 import { storedWhere } from '../desktop-env';
 import { ApiError, api, type BoardRole, type Me, type ServerBoard, type Team } from '../api';
 import { cacheServerBoards, cachedServerBoards, chatAvailable, setSignedOut, type AuthState } from '../auth';
-import { boardUnread, onChatBadge, onPresenceFrame, watchChat } from '../chat';
+import { boardUnread, onChatBadge, onPresenceFrame, setPresenceWatch, watchChat } from '../chat';
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 import { createWorkspaceBanner } from './workspace';
 import { accountMe, createTopbar, pageFooter, searchField } from './topbar';
@@ -143,6 +143,7 @@ function startPresence(alive: () => boolean) {
     chatOn: chatAvailable(),
     onFrame: onPresenceFrame,
     keepSocket: watchChat,
+    watch: setPresenceWatch,
     fetchList: async () => (await api.presence()).presence,
   }));
 }
