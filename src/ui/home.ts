@@ -230,14 +230,13 @@ function sharedSection(v: AccountView, boards: ServerBoard[], heading: string) {
 
 function serverBoardList(v: AccountView, boards: ServerBoard[], label: string) {
   if (!boards.length) return emptyLine('No boards yet. Create the first one.');
-  for (const b of boards) if (b.here) boardsPresence.set(b.id, b.here);
   return boardTable(label, [...boards].sort((a, b) => b.updatedAt - a.updatedAt).map((b) => {
     const title = b.title || UNTITLED;
     return {
       id: b.id, title, updatedAt: b.updatedAt, role: b.role, chat: true, here: true,
       actions: [b.role === 'owner' ? deleteButton(`Delete ${title}`, 'Delete board', v.down, () => confirmDeleteBoard(v, b.id, title)) : null],
     };
-  }), 'access', v.me.user.id);
+  }), 'access');
 }
 
 function deviceSection(v: AccountView, local: BoardEntry[], teams: Team[]) {
@@ -294,7 +293,7 @@ function boardChatBadge(boardId: string): HTMLElement | null {
 }
 
 /** Rows on hairlines under a labelled 2px rule. `access` adds the role column, `device` makes room for Add to workspace. */
-export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 'device', meId: string | null = null) {
+export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 'device') {
   return h('div', { class: `board-table ${kind}` },
     h('div', { class: 'board-head', 'aria-hidden': 'true' },
       h('span', null, 'Name'),
@@ -307,7 +306,7 @@ export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'acc
       return h('li', { class: 'board-row' },
       link,
       h('span', { class: 'board-sub' },
-        r.here ? presenceCell(boardsPresence, r.id, meId, () => link) : null,
+        r.here ? presenceCell(boardsPresence, r.id, () => link) : null,
         h('span', { class: 'board-edited' }, h('span', { class: 'board-lbl' }, 'Edited '), fmtAgo(r.updatedAt)),
         r.role ? h('span', { class: 'board-access' }, ACCESS[r.role] ? h('span', { class: 'badge' }, ACCESS[r.role]) : null) : null),
       h('span', { class: 'board-actions' }, ...r.actions));

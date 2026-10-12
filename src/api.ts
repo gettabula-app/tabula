@@ -328,8 +328,6 @@ export interface ServerBoard {
   role: BoardRole;
   createdAt: number;
   updatedAt: number;
-  /** Who else has the board open now (the server filters to what the viewer may see). Absent where the server does not say. */
-  here?: { userId: string; name: string; colour?: string | null; joinedAt: number }[];
 }
 
 export interface Share {

@@ -37,10 +37,10 @@ async function open(width: number): Promise<Page> {
       import { boardTable } from '/src/ui/home.ts';
       import { boardsPresence } from '/src/presence.ts';
       const U = (userId, name, joinedAt, colour) => ({ userId, name, joinedAt, colour });
-      boardsPresence.set('crowd', [U('a', 'Ana', 1, '#326DD3'), U('b', 'Ben', 2, '#D3332D'), U('c', 'Cy', 3, '#1B8151'), U('d', 'Di', 4, '#A06A00'), U('me', 'Me', 5)]);
-      boardsPresence.set('pair', [U('a', 'Ana', 1, '#326DD3')]);
+      boardsPresence.set('crowd', { boardId: 'crowd', count: 4, me: true, people: [U('a', 'Ana', 1, '#326DD3'), U('b', 'Ben', 2, '#D3332D'), U('c', 'Cy', 3, '#1B8151'), U('d', 'Di', 4, '#A06A00')] });
+      boardsPresence.set('pair', { boardId: 'pair', count: 1, people: [U('a', 'Ana', 1, '#326DD3')] });
       const row = (id, title) => ({ id, title, updatedAt: Date.now() - 3600000, role: 'editor', chat: false, here: true, actions: [] });
-      document.getElementById('host').append(boardTable('Team', [row('crowd', 'Crowded'), row('pair', 'Pair'), row('empty', 'Alone')], 'access', 'me'));
+      document.getElementById('host').append(boardTable('Team', [row('crowd', 'Crowded'), row('pair', 'Pair'), row('empty', 'Alone')], 'access'));
       window.__store = boardsPresence;
       window.__ready = true;
     `,
@@ -71,7 +71,7 @@ describe.skipIf(!available)('here now', () => {
     const heights = await page.evaluate(() => [...document.querySelectorAll('.board-row')].map((r) => r.getBoundingClientRect().height));
     expect(new Set(heights).size).toBe(1);
     const grown = await page.evaluate(() => {
-      (window as any).__store.set('empty', [{ userId: 'z', name: 'Zed', joinedAt: 9 }]);
+      (window as any).__store.set('empty', { boardId: 'empty', count: 1, people: [{ userId: 'z', name: 'Zed', joinedAt: 9 }] });
       return [...document.querySelectorAll('.board-row')].map((r) => r.getBoundingClientRect().height);
     });
     expect(grown).toEqual(heights);
@@ -121,7 +121,7 @@ describe.skipIf(!available)('here now', () => {
     const bg = await crowd.evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
     expect(bg[0]).toBe('rgb(50, 109, 211)');
     expect(bg[1]).toBe('rgb(211, 51, 45)');
-    await page.evaluate(() => (window as any).__store.set('empty', [{ userId: 'q', name: 'Quinn', joinedAt: 1 }]));
+    await page.evaluate(() => (window as any).__store.set('empty', { boardId: 'empty', count: 1, people: [{ userId: 'q', name: 'Quinn', joinedAt: 1 }] }));
     const plain = page.locator('.board-row', { hasText: 'Alone' }).locator('.here-sq');
     const [ink, paper] = await plain.evaluate((e) => [getComputedStyle(e).backgroundColor, getComputedStyle(e).color]);
     const root = await page.evaluate(() => [getComputedStyle(document.body).color]);

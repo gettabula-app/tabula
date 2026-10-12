@@ -10,7 +10,7 @@ const colourStyle = (s: HereSquare) => (s.colour ? `--u:${s.colour}` : '');
  * height stay put; empty when nobody else is on the board. It redraws in place when the store says the list changed, and
  * stops watching once it is off the page. The cluster is not a control: a click on it goes to the row's link.
  */
-export function presenceCell(store: PresenceStore, boardId: string, meId: string | null, link: () => HTMLElement | null): HTMLElement {
+export function presenceCell(store: PresenceStore, boardId: string, link: () => HTMLElement | null): HTMLElement {
   const cell = h('span', { class: 'board-here nobody' });
   cell.addEventListener('click', (e) => {
     const target = link();
@@ -20,7 +20,7 @@ export function presenceCell(store: PresenceStore, boardId: string, meId: string
   });
 
   function paint() {
-    const view = presenceView(store.get(boardId), meId);
+    const view = presenceView(store.get(boardId));
     if (!view) {
       cell.classList.add('nobody');
       cell.removeAttribute('role');
@@ -41,9 +41,9 @@ export function presenceCell(store: PresenceStore, boardId: string, meId: string
       const chip = h('i', { class: s.colour ? '' : 'plain' });
       if (s.colour) chip.setAttribute('style', colourStyle(s));
       const row = h('span', { class: 'here-tip-row' }, chip);
-      row.append(document.createTextNode(s.name));
+      row.append(document.createTextNode(s.guest ? `${s.name} (guest)` : s.name));
       return row;
-    }));
+    }), view.unnamed > 0 ? h('span', { class: 'here-tip-row' }, `and ${view.unnamed} more`) : null);
     const parts: Node[] = view.squares.map(square);
     if (view.you) parts.push(h('span', { class: 'here-sq you', 'aria-hidden': 'true' }, 'You'));
     if (view.more > 0) parts.push(h('span', { class: 'here-more', 'aria-hidden': 'true' }, `+${view.more}`));

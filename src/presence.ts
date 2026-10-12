@@ -1,14 +1,16 @@
-// Who is on which board right now, for the Boards page (proto/designer-preview/presence/SPEC.md, Behaviour). The source of
-// the live data is injected (the server endpoint lands separately); this holds the state the rows draw from:
-// - a person who arrives shows at once, one who leaves is kept for LEAVE_MS so a reload or a brief reconnect does not flicker;
-// - while the page is hidden, updates wait and are applied together when it is visible again.
-import type { PresenceUser } from './ui/presence-logic';
+// Who is on which board right now, for the Boards page (proto/designer-preview/presence/SPEC.md, Behaviour; the server side is
+// .manager/design-boards-presence.md). The live data comes from a source injected by the page; this holds what the rows draw from:
+// - a summary that grows shows at once; one that shrinks (a person left) is shown as it was for LEAVE_MS, then the latest
+//   one replaces it, so a reload or a brief reconnect does not flicker;
+// - while the page is hidden, summaries wait and the latest per board is applied together when it is visible again;
+// - a snapshot replaces everything (after a reconnect), a clear removes one board.
+import type { PresenceSummary } from './ui/presence-logic';
 
 export const LEAVE_MS = 3000;
 
-/** Pushes the full list of people on a board each time it changes. Returns what to call to stop. */
+/** Pushes each board's summary when it changes (`null`: nobody else is there now). Returns what to call to stop. */
 export interface PresenceSource {
-  subscribe(push: (boardId: string, users: PresenceUser[]) => void): () => void;
+  subscribe(push: (boardId: string, summary: PresenceSummary | null) => void): () => void;
 }
 
 interface Deps {
@@ -21,9 +23,13 @@ interface Deps {
 }
 
 interface BoardState {
-  shown: Map<string, PresenceUser>;
-  leaving: Map<string, unknown>;
+  shown: PresenceSummary | null;
+  /** The latest summary that arrived while a shrink was being held back. */
+  next: PresenceSummary | null;
+  timer: unknown;
 }
+
+const sizeOf = (s: PresenceSummary | null) => (s ? Math.max(s.count, s.people.length) : 0);
 
 export function createPresenceStore(deps: Deps = {}) {
   const leaveMs = deps.leaveMs ?? LEAVE_MS;
@@ -32,56 +38,71 @@ export function createPresenceStore(deps: Deps = {}) {
   const clearTimer = deps.clearTimer ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
   const boards = new Map<string, BoardState>();
   const watchers = new Map<string, Set<() => void>>();
-  /** The latest list per board that arrived while hidden. */
-  const held = new Map<string, PresenceUser[]>();
+  /** The latest summary per board that arrived while hidden. */
+  const held = new Map<string, PresenceSummary | null>();
   let offVisible: (() => void) | null = null;
 
   const stateOf = (id: string): BoardState => {
     let s = boards.get(id);
-    if (!s) boards.set(id, (s = { shown: new Map(), leaving: new Map() }));
+    if (!s) boards.set(id, (s = { shown: null, next: null, timer: undefined }));
     return s;
   };
   const notify = (id: string) => { for (const cb of Array.from(watchers.get(id) ?? [])) cb(); };
+  const same = (a: PresenceSummary | null, b: PresenceSummary | null) => JSON.stringify(a) === JSON.stringify(b);
 
-  function apply(id: string, users: readonly PresenceUser[]) {
+  function apply(id: string, summary: PresenceSummary | null) {
     const s = stateOf(id);
-    const now = new Set<string>();
-    for (const u of users) {
-      now.add(u.userId);
-      s.shown.set(u.userId, u);
-      const timer = s.leaving.get(u.userId);
-      if (timer !== undefined) { clearTimer(timer); s.leaving.delete(u.userId); }
+    if (sizeOf(summary) >= sizeOf(s.shown)) {
+      // nobody left (or someone arrived): show it now and forget a pending shrink
+      if (s.timer !== undefined) { clearTimer(s.timer); s.timer = undefined; }
+      s.next = null;
+      if (same(s.shown, summary)) return;
+      s.shown = summary;
+      notify(id);
+      return;
     }
-    for (const userId of s.shown.keys()) {
-      if (now.has(userId) || s.leaving.has(userId)) continue;
-      s.leaving.set(userId, setTimer(() => {
-        s.leaving.delete(userId);
-        s.shown.delete(userId);
-        notify(id);
-      }, leaveMs));
-    }
-    notify(id);
+    s.next = summary;
+    if (s.timer !== undefined) return;
+    s.timer = setTimer(() => {
+      s.timer = undefined;
+      s.shown = s.next;
+      s.next = null;
+      notify(id);
+    }, leaveMs);
+  }
+
+  function set(id: string, summary: PresenceSummary | null) {
+    if (hidden()) { held.set(id, summary); return; }
+    apply(id, summary);
   }
 
   function catchUp() {
     if (hidden()) return;
-    const waiting = [...held];
+    const waiting = Array.from(held);
     held.clear();
-    for (const [id, users] of waiting) apply(id, users);
+    for (const [id, summary] of waiting) apply(id, summary);
   }
 
-  function set(id: string, users: readonly PresenceUser[]) {
-    if (hidden()) { held.set(id, [...users]); return; }
-    apply(id, users);
+  function stopTimers() {
+    for (const s of boards.values()) {
+      if (s.timer !== undefined) clearTimer(s.timer);
+      s.timer = undefined;
+      s.next = null;
+    }
   }
 
   return {
     /** What a board's row draws now. */
-    get(id: string): PresenceUser[] {
-      return [...(boards.get(id)?.shown.values() ?? [])];
+    get(id: string): PresenceSummary | null {
+      return boards.get(id)?.shown ?? null;
     },
-    /** The list changed (or the first value arrived). */
     set,
+    /** A full list after a (re)connect: boards it does not mention have nobody else on them. */
+    replaceAll(list: readonly PresenceSummary[]) {
+      const ids = new Set(list.map((b) => b.boardId));
+      for (const b of list) set(b.boardId, b);
+      for (const id of boards.keys()) if (!ids.has(id)) set(id, null);
+    },
     /** Redraw when `id` changes. Returns what to call to stop. */
     watch(id: string, cb: () => void): () => void {
       let set = watchers.get(id);
@@ -100,15 +121,12 @@ export function createPresenceStore(deps: Deps = {}) {
         offVisible?.();
         offVisible = null;
         held.clear();
-        for (const s of boards.values()) {
-          for (const timer of s.leaving.values()) clearTimer(timer);
-          s.leaving.clear();
-        }
+        stopTimers();
       };
     },
     /** Forget everything (leaving the page). */
     reset() {
-      for (const s of boards.values()) for (const timer of s.leaving.values()) clearTimer(timer);
+      stopTimers();
       boards.clear();
       held.clear();
     },
