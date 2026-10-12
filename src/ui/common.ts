@@ -10,7 +10,7 @@ const visibleHeight = () => Math.min(window.innerHeight, window.visualViewport ?
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
 /** Floating panel anchored to an element; closes on outside click or Escape. */
-export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; fitBelow?: boolean; className?: string; label?: string; onClose?: () => void; avoidAnchor?: boolean } = {}) {
+export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; fitBelow?: boolean; className?: string; label?: string; onClose?: () => void; avoidAnchor?: boolean; trap?: boolean } = {}) {
   closePopover();
   const label = opts.label ?? (anchor.getAttribute('aria-label') || anchor.textContent?.trim() || 'Options');
   const trackerSurface = opts.className?.split(/\s+/u).includes('trk-pop') === true;
@@ -63,7 +63,7 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     if (e.key === 'Escape') {
       e.stopPropagation();
       close();
-    } else if (e.key === 'Tab' && focusIsIn(el)) trapTab(e, el);
+    } else if (e.key === 'Tab' && opts.trap !== false && focusIsIn(el)) trapTab(e, el);
   };
   const close = () => {
     const giveBack = focusIsIn(el);

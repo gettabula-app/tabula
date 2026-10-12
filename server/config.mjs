@@ -79,6 +79,27 @@ function parseOAuthRedirectSchemes(raw) {
   return entries;
 }
 
+function parseAuthLimit(raw, name, fallback) {
+  const text = String(raw ?? '').trim();
+  if (text === '') return fallback;
+  const value = Number(text);
+  if (!/^\d+$/.test(text) || !Number.isSafeInteger(value) || value < 1 || value > 100_000) {
+    throw new Error(`${name} must be a whole number from 1 to 100000`);
+  }
+  return value;
+}
+
+/** TABULA_SLOW_REQUEST_MS: log API requests slower than this many ms (default 300; 0 turns the line off). */
+function slowMs(raw) {
+  const value = Number(String(raw ?? '').trim());
+  return String(raw ?? '').trim() !== '' && Number.isInteger(value) && value >= 0 && value <= 600_000 ? value : 300;
+}
+
+/** TABULA_AUTH_IP_LIMIT: sign-in link requests per hour from one client address (default 300; a school shares one address). */
+const parseAuthIpLimit = (raw) => parseAuthLimit(raw, 'TABULA_AUTH_IP_LIMIT', 300);
+/** TABULA_AUTH_EMAIL_LIMIT: sign-in link requests per hour for one email address from all clients together (default 30). */
+const parseAuthEmailLimit = (raw) => parseAuthLimit(raw, 'TABULA_AUTH_EMAIL_LIMIT', 30);
+
 // null when off. Accounts mode: per-user access tokens. Open mode: one shared token with a fixed scope.
 function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
   const dailyWrites = parseMcpDailyWrites(env);
@@ -162,6 +183,15 @@ function loadChat(env, authEnabled, warn) {
     return false;
   }
   return mode === 'on';
+}
+
+// Link previews (docs/link-cards.md). The operator's switch: `off` is a kill switch no setting can override, `on` turns the
+// feature on where it is otherwise off (self-hosted accounts mode, open mode), and unset leaves it to the workspace setting
+// (default on for hosted workspaces, off elsewhere).
+function loadLinkPreviews(env) {
+  const raw = (env.TABULA_LINK_PREVIEWS ?? '').trim();
+  if (raw && raw !== 'on' && raw !== 'off') throw new Error(`TABULA_LINK_PREVIEWS must be on or off (got "${raw.slice(0, 20)}")`);
+  return { forced: raw || null };
 }
 
 // Tracker tools (docs/mcp.md). The directory migration runs independently; this switch only exposes the feature.
@@ -361,6 +391,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const assets = loadAssets(env, authEnabled);
   const chat = loadChat(env, authEnabled, warn);
   const tracker = loadTracker(env);
+  const linkPreviews = loadLinkPreviews(env);
   const telemetry = loadTelemetry(env, Boolean(cloud));
   const joinCodeMode = (env.TABULA_JOIN_CODES ?? '').trim() || 'off';
   if (joinCodeMode !== 'on' && joinCodeMode !== 'off') throw new Error(`TABULA_JOIN_CODES must be on or off (got "${joinCodeMode.slice(0, 20)}")`);
@@ -375,6 +406,10 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     authEnabled,
     ownerEmail,
     baseUrl,
+    authIpLimit: parseAuthIpLimit(env.TABULA_AUTH_IP_LIMIT),
+    baseUrlSet: Boolean((env.TABULA_BASE_URL || '').trim()),
+    slowRequestMs: slowMs(env.TABULA_SLOW_REQUEST_MS),
+    authEmailLimit: parseAuthEmailLimit(env.TABULA_AUTH_EMAIL_LIMIT),
     origin,
     secureCookies,
     trustProxy: env.TABULA_TRUST_PROXY === '1',
@@ -392,6 +427,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     ...(joinCodes ? { joinCodes: true } : {}),
     ...(chat ? { chat: true } : {}),
     tracker,
+    linkPreviews,
     telemetry,
     ...(cloud ? { cloud } : {}),
     ...(mcp ? { mcp } : {}),

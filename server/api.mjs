@@ -6,11 +6,14 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
-import { SeatLimitError } from './auth.mjs';
+import { InviteExhaustedError, SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
+import { authMailUnavailable } from './mail-health.mjs';
 import { createTelemetryCollector } from './telemetry/collector.mjs';
 import { createDataBytes } from './telemetry/data-bytes.mjs';
+import { createLastReport } from './telemetry/last-report.mjs';
+import { analyticsChoice, appVersionLabel, dropFeatureSeries, workspaceIdValid } from './telemetry/report.mjs';
 import {
   MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
 } from './templates.mjs';
@@ -20,12 +23,15 @@ import { FEATURE_SPECS } from './ai/features.mjs';
 import { createAiRoutes } from './ai/routes.mjs';
 import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
+import { LinkRouteError, createLinkUnfurl } from './link-routes.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
+import { createNotifications } from './notifications.mjs';
+import { createNotificationRoutes } from './notifications-routes.mjs';
 import { createBackupExport } from './backup-export.mjs';
 import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
 import { boardAccessForDirectory } from './tracker/access.mjs';
-import { clientIpOf, clientIpReport } from './client-ip.mjs';
+import { clientRateKeyOf, clientIpReport } from './client-ip.mjs';
 import { createWindowLimiter } from './limiter.mjs';
 import { MAX_OAUTH_BOARD_IDS, OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
 import { knownRedirect } from './oauth-known-clients.mjs';
@@ -45,6 +51,7 @@ const MAX_BODY = 64 * 1024;
 // A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
 // every route's `maxBody`, and compile() refuses a route that breaks that.
 const DRAIN_LIMIT = 2 * TEMPLATE_BODY_LIMIT;
+const INVITE_EXHAUSTED = 'This invitation has been used up. Ask the person who invited you for a new link.';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
@@ -72,6 +79,13 @@ class HttpError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+/** The words for a sign-in request refused by the limiter, with the real wait (a school shares one network address). */
+function rateLimitedMessage({ scope, retryAfterSec }) {
+  const minutes = Math.ceil(retryAfterSec / 60);
+  const wait = retryAfterSec < 60 ? 'Try again in a moment.' : `Try again in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`;
+  return `${scope === 'ip' ? 'Too many sign-in requests from your network.' : 'Too many sign-in requests for this email address.'} ${wait}`;
 }
 
 const badRequest = (message) => new HttpError(400, 'bad_request', message);
@@ -225,7 +239,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -262,13 +276,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const telemetryConfig = config.telemetry ?? { defaultEnabled: Boolean(cloud), forced: null };
   const getTelemetrySetting = (key) => (typeof directory.getSetting === 'function' ? directory.getSetting(key) : null);
-  const telemetryEnabled = () => {
-    if (telemetryConfig.forced) return telemetryConfig.forced === 'on';
-    const saved = getTelemetrySetting('telemetry.enabled');
-    if (saved === '1') return true;
-    if (saved === '0') return false;
-    return telemetryConfig.defaultEnabled === true;
-  };
+  const telemetryEnabled = () => analyticsChoice(config.telemetry, getTelemetrySetting, Boolean(cloud));
   const TELEMETRY_CATEGORIES = ['feature_counts'];
   const TELEMETRY_OPERATIONAL = [
     'performance', 'error_codes', 'seats and guests', 'version', 'disk', 'backup state', 'health',
@@ -299,6 +307,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ? false
     : Boolean(hostedWorkspaceId()) || telemetryEnabled();
 
+  // A workspace id outside the report schema's pattern makes the scrubber reject every report, so none is ever built. Say so once
+  // (the id itself is not logged) and in the Privacy preview, instead of leaving a route that answers 503 for ever.
+  const telemetryIdProblem = hostedWorkspaceId() !== null && !workspaceIdValid(hostedWorkspaceId());
+  if (telemetryIdProblem && telemetryCollectionEnabled()) {
+    log('api: TABULA_CLOUD_WORKSPACE_ID does not fit the telemetry report schema (ws_ followed by 8 to 64 letters, digits, - or _): no telemetry report can be built for this workspace');
+  }
+
   eventLoopDelay = telemetryCollectionEnabled() ? monitorEventLoopDelay({ resolution: 20 }) : null;
   eventLoopDelay?.enable();
 
@@ -328,7 +343,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     return {
       schema: 1,
       hour: Math.floor(current / 3_600_000) * 3_600_000,
-      app_version: config.version ? (config.version.startsWith('v') ? config.version : `v${config.version}`) : 'v0.1.0',
+      app_version: appVersionLabel(config.version),
       schema_directory: report?.disk?.schema ?? report?.build?.schema ?? 0,
       schema_chat: chatReport?.disk?.schema ?? chatReport?.build?.schema ?? 0,
       node_major: Number(process.versions.node.split('.')[0]),
@@ -371,6 +386,110 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   const dataBytesOnDisk = createDataBytes({ dir: dataDir, now });
+  // the directory is measured in the background; the first measurement starts now so the first report has it
+  void dataBytesOnDisk.refresh();
+
+  // The report of the last finished hour, for the control plane to pull (docs/telemetry-design.md, "How reports leave an instance"). The
+  // collector forgets an hour the moment the next one starts, so the report is built while the hour is still running: every few seconds
+  // in its last minute, the latest build kept, so a late timer or a failed build costs a few seconds of that hour, not the hour. A build
+  // that crossed the boundary (it would carry the next hour's label and an empty hour) is thrown away. It is held in memory only: a
+  // restart loses it, and an owner turning product analytics off removes the feature series from it at once.
+  const TELEMETRY_HOUR_MS = 3_600_000;
+  const TELEMETRY_CAPTURE_WINDOW_MS = 60_000;
+  const TELEMETRY_CAPTURE_EVERY_MS = 10_000;
+  const telemetryHourOf = (at) => Math.floor(at / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS;
+  // `pendingTelemetry` is the latest build of the hour that is still running (never handed out: a pull inside the hour would take a partial
+  // hour, and the collector on the other side drops a second report for the same workspace and hour); it becomes `completedTelemetry`
+  // once the hour has ended.
+  let pendingTelemetry = null;
+  let completedTelemetry = null;
+  let lastTelemetryCaptureAt = null;
+
+  // The last report is also kept in one small file on the data volume (docs/telemetry-design.md, "A machine that stops"), so a hosted
+  // machine that stops between hours can still hand it over after its next start. One report per hour: the first one kept for an hour wins,
+  // as it does at the collector.
+  const lastReport = cloud ? createLastReport({ dir: dataDir, workspace: hostedWorkspaceId, log }) : null;
+  if (lastReport && !telemetryCollectionEnabled()) lastReport.remove();
+  const TELEMETRY_RETAIN_MS = 72 * TELEMETRY_HOUR_MS; // the collector's own window for a late report
+  const keepStored = (report) => {
+    if (!lastReport || !report) return;
+    const stored = lastReport.read();
+    if (stored && stored.hour === report.hour) return;
+    lastReport.write(report);
+  };
+
+  const settleTelemetry = () => {
+    if (pendingTelemetry && pendingTelemetry.hour < telemetryHourOf(now())) {
+      completedTelemetry = pendingTelemetry;
+      pendingTelemetry = null;
+      keepStored(completedTelemetry);
+    }
+  };
+
+  /** On a graceful stop: the hour that is running is written to the file as it stands (labelled with its hour), so it is not lost with the process. */
+  function flushTelemetry() {
+    if (!lastReport) return;
+    try {
+      if (maintenance() || !telemetryCollectionEnabled()) return;
+      settleTelemetry();
+      const pinned = telemetryHourOf(now());
+      collectTelemetryGauges();
+      const clean = telemetryCollector.snapshot().clean;
+      if (!clean || clean.hour !== pinned || telemetryHourOf(now()) !== pinned) return;
+      keepStored(telemetryEnabled() ? clean : dropFeatureSeries(clean));
+    } catch (err) {
+      log(`api: could not flush the telemetry report: ${String(err?.message ?? err).slice(0, 120)}`);
+    }
+  }
+
+  function captureTelemetryHour() {
+    settleTelemetry();
+    if (!telemetryCollectionEnabled()) {
+      pendingTelemetry = null;
+      completedTelemetry = null;
+      return;
+    }
+    const pinned = telemetryHourOf(now());
+    collectTelemetryGauges();
+    const clean = telemetryCollector.snapshot().clean;
+    if (!clean || clean.hour !== pinned || telemetryHourOf(now()) !== pinned) return;
+    pendingTelemetry = telemetryEnabled() ? clean : dropFeatureSeries(clean);
+  }
+
+  /** Called every few seconds: in the last minute of an hour it builds the report again every ten seconds. */
+  function telemetryTick() {
+    try {
+      if (maintenance()) return; // a restore has closed or is swapping the directory
+      settleTelemetry();
+      tickWindow();
+    } catch (err) {
+      log(`api: telemetry capture failed: ${String(err?.message ?? err).slice(0, 120)}`);
+    }
+  }
+
+  function tickWindow() {
+    const at = now();
+    if (at - telemetryHourOf(at) < TELEMETRY_HOUR_MS - TELEMETRY_CAPTURE_WINDOW_MS) return;
+    if (lastTelemetryCaptureAt !== null && at - lastTelemetryCaptureAt >= 0 && at - lastTelemetryCaptureAt < TELEMETRY_CAPTURE_EVERY_MS) return;
+    lastTelemetryCaptureAt = at;
+    captureTelemetryHour();
+  }
+
+  /**
+   * The report to hand out: the newest finished hour, from memory or from the file (the same hour from the file first), and only within the
+   * collector's 72 hours. Never an hour that is still running (a pull inside it would take a partial hour).
+   */
+  function telemetryToHandOut() {
+    settleTelemetry();
+    const current = telemetryHourOf(now());
+    const finished = [lastReport?.read() ?? null, completedTelemetry].filter((report) => report && report.hour < current);
+    const best = finished.reduce((a, b) => (b.hour > a.hour ? b : a), finished[0]);
+    if (!best) return { none: 'no_report_yet' };
+    if (current - best.hour > TELEMETRY_RETAIN_MS) return { none: 'stale_report' };
+    return { report: telemetryEnabled() ? best : dropFeatureSeries(best) };
+  }
+  // only a hosted workspace has a control plane to pull the report (the internal route below), so only it builds one
+  if (cloud) setInterval(telemetryTick, 5_000).unref?.();
 
   function privacyState() {
     const auditActions = new Set(['telemetry.enabled', 'telemetry.disabled', 'telemetry.settings', 'settings.telemetry']);
@@ -451,8 +570,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     window.count++;
   }
 
-  const clientIp = (req) => clientIpOf(req, config);
+  const clientIp = (req) => clientRateKeyOf(req, config);
   const oauthDecisionLimiter = createWindowLimiter(10, now);
+  // refused control-token attempts on the internal routes, per address (the control plane's own calls are never counted: only a refusal is)
+  const internalAuthFailures = createWindowLimiter(30, now);
+  const internalAuthLogged = createWindowLimiter(1, now);
   const oauthScopeRank = (scope) => OAUTH_SCOPES.indexOf(scope) + 1;
   const oauthLowerScope = (a, b) => oauthScopeRank(a) <= oauthScopeRank(b) ? a : b;
   // What a role on a board allows a connected app to do there: editors and owners write, commenters comment, the rest read.
@@ -749,6 +871,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   };
 
   const chatOn = Boolean(config.chat && chat);
+  // a directory without a database (a test stub, the backup-export routes) has no notification list
+  const notificationStore = config.authEnabled && typeof directory?.db?.prepare === 'function'
+    ? notifications ?? createNotifications({
+        directory,
+        trackerEnabled: config.tracker === true,
+        chatStore: chat?.store ?? null,
+        chatAccess: chat?.access ?? null,
+        roomAccess,
+        hub: chat?.hub ?? null,
+        now,
+      })
+    : null;
+  const notificationRoutes = notificationStore
+    ? createNotificationRoutes({ notifications: notificationStore, compile, errors: { badRequest } })
+    : [];
   const chatRoutes = chatOn
     ? createChatRoutes({
         directory,
@@ -760,6 +897,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit,
         requireAdmin,
         notifier: chat.notifier ?? null,
+        notifications: notificationStore,
         emit,
         errors: { HttpError, badRequest, forbidden, notFound, conflict },
       })
@@ -775,11 +913,26 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     : [];
 
   const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, notFound, conflict }, cloud, ...ai });
+  // Link previews (docs/link-cards.md): the workspace setting is read on every request, so an admin's change applies at once.
+  const linkUnfurl = createLinkUnfurl({ config, getSetting: directory.getSetting, hosted: Boolean(cloud), now, log, assets: assets?.store ?? null, ...link });
   const backupExport = backupConfig?.target === 'dir' && typeof backupConfig.pullTokenSha256 === 'string'
     ? createBackupExport({ backupConfig, dataDir, now, log })
     : null;
 
   const trackerBackupCheck = checkTrackerData ?? checkTrackerDataReal;
+  function presenceFor(user, boardRows = directory.listBoardsFor(user)) {
+    if (!user || user.role === 'guest') return [];
+    const allowed = new Set(boardRows.filter((board) => directory.boardRole(board.id, user.id) !== null).map((board) => board.id));
+    let rows = [];
+    try {
+      rows = boardPresence(user, allowed) ?? [];
+    } catch (err) {
+      log('boards presence: could not read live rooms', err?.message);
+    }
+    return Array.from(rows).filter((row) => row && allowed.has(row.boardId)
+      && directory.boardRole(row.boardId, user.id) !== null);
+  }
+
   const readinessBackupStatus = () => ({ ...backupStatus(), ...backupExport?.status?.() });
   const trackerAdminRoutes = config.authEnabled && config.tracker
     ? createTrackerAdminRoutes({
@@ -804,15 +957,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // ------------------------------------------------------------ handlers
 
   const routes = [
+    ...notificationRoutes,
+
     compile('GET', 'admin/privacy', {}, ({ user }) => {
       requireAdmin(user);
       return [200, privacyState()];
     }),
-    compile('GET', 'admin/privacy/preview', {}, ({ user }) => {
+    compile('GET', 'admin/privacy/preview', {}, async ({ user }) => {
       requireAdmin(user);
+      await dataBytesOnDisk.ready();
       collectTelemetryGauges();
       const result = telemetryCollector.snapshot();
-      return [200, { preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: 'Nothing has been sent' }];
+      return [200, { ...(telemetryIdProblem ? { problem: 'workspace_id' } : {}), preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: cloud ? 'Collected by Tabula once an hour, as shown' : 'Nothing has been sent' }];
     }),
     compile('PUT', 'admin/privacy', { body: true, readOnlyOk: true }, ({ user, body }) => {
       requireOwner(user);
@@ -826,10 +982,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         if (body.enabled) persistTelemetryInstallId();
         audit(user, body.enabled ? 'telemetry.enabled' : 'telemetry.disabled', {});
       });
+      void cloud?.pushUsageNow?.();
       if (hostedWorkspaceId()) {
-        if (!body.enabled) telemetryCollector.resetProductAnalytics();
+        if (!body.enabled) {
+          telemetryCollector.resetProductAnalytics();
+          // the finished hour held feature counts too: they are taken out of it for good (a later opt-in must not bring them back)
+          if (completedTelemetry) completedTelemetry = dropFeatureSeries(completedTelemetry);
+          if (pendingTelemetry) pendingTelemetry = dropFeatureSeries(pendingTelemetry);
+          // the stored one too, so the file never holds feature series after an opt-out
+          const stored = lastReport?.read();
+          if (stored) lastReport.write(dropFeatureSeries(stored));
+        }
       } else {
         telemetryCollector.reset();
+        completedTelemetry = null;
+        pendingTelemetry = null;
       }
       if (!telemetryCollectionEnabled()) {
         eventLoopDelay?.disable();
@@ -872,7 +1039,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ...(config.mcp ? { mcp: true } : {}),
         mcpOauth: config.mcp?.oauth === true,
         ...(assets ? { images: true } : {}),
+        ...(linkUnfurl.enabled() ? { linkPreviews: true } : {}),
         ...(chatOn ? { chat: true } : {}),
+        ...(notificationStore ? { notifications: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
         ...(trackerCanAccess(user) ? { tracker: true } : {}),
         ...aiApi.meFlag(user),
@@ -892,10 +1061,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const { email, invite, oauthRequest } = body;
       if (typeof email !== 'string' || email.length > 320) throw badRequest('email must be a string');
       if (invite != null && (typeof invite !== 'string' || invite.length > 256)) throw badRequest('invite must be a string');
+      const mailUnavailable = authMailUnavailable(mailer.mailHealth?.status());
+      if (mailUnavailable) throw new HttpError(mailUnavailable.status, mailUnavailable.code, mailUnavailable.message);
       const result = await auth.requestLogin({ email, invite: invite ?? undefined, oauthRequest, ip: clientIp(req) });
       if (result.limited) {
-        res.setHeader('retry-after', '3600');
-        throw new HttpError(429, 'rate_limited', 'Too many sign-in requests. Try again later.');
+        res.setHeader('retry-after', String(result.retryAfterSec));
+        throw new HttpError(429, 'rate_limited', rateLimitedMessage(result));
       }
       return [200, { ok: true }];
     }),
@@ -904,10 +1075,14 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       try {
         result = typeof body.token === 'string' ? auth.verifyLogin(body.token, { userAgent: req.headers['user-agent'] }) : null;
       } catch (err) {
+        if (err instanceof InviteExhaustedError) throw new HttpError(409, 'invite_exhausted', INVITE_EXHAUSTED);
         if (!(err instanceof SeatLimitError)) throw err;
         throw conflict('seat_limit', 'This workspace has reached its member limit. Ask an admin to remove or disable a member, or the workspace owner to write to us for a larger workspace, then open this link again.');
       }
-      if (!result) throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
+      if (!result) {
+        log('auth verify invalid_token');
+        throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
+      }
       res.setHeader('set-cookie', auth.sessionCookie(result.sessionToken, result.maxAgeMs));
       directory.audit(result.user.id, 'auth.login', {});
       if (cloud) emit('usage-changed');
@@ -1003,15 +1178,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const role = body.role === undefined ? 'member' : oneOf(body.role, TEAM_ROLES, 'role');
       const days = body.days === undefined ? 7 : body.days;
       if (!Number.isInteger(days) || days < 1 || days > 30) throw badRequest('days must be a whole number from 1 to 30');
+      // No limit unless the creator sets one: one link has to be enough for a whole class.
+      const maxUses = body.maxUses === undefined || body.maxUses === null ? null : body.maxUses;
+      if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000)) throw badRequest('maxUses must be null or a whole number from 1 to 1000');
       if (cloud && !cloud.seatsAvailable()) throw seatLimited();
       const invite = directory.transaction(() => {
-        const created = directory.createInvite({ teamId: team.id, role, createdBy: user.id, ttlMs: days * DAY_MS });
-        audit(user, 'invite.create', { teamId: team.id, inviteId: created.id, role, days });
+        const created = directory.createInvite({ teamId: team.id, role, createdBy: user.id, ttlMs: days * DAY_MS, maxUses });
+        audit(user, 'invite.create', { teamId: team.id, inviteId: created.id, role, days, maxUses });
         return created;
       });
       return [
         201,
-        { id: invite.id, url: `${config.baseUrl}/#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt },
+        { id: invite.id, url: `${config.baseUrl}/?invite=1#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt, maxUses, uses: 0 },
       ];
     }),
     compile('GET', 'teams/:id/invites', {}, ({ user, params }) => {
@@ -1034,26 +1212,41 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     compile('GET', 'invites/:token', { public: true }, ({ params }) => {
       const invite = directory.findInvite(params.token);
       const team = invite ? directory.getTeam(invite.teamId) : null;
+      if (!invite && params.token && directory.inviteExhausted(params.token)) throw new HttpError(404, 'invite_exhausted', INVITE_EXHAUSTED);
       if (!invite || !team) throw notFound('This invite is not valid');
       return [200, { team: { id: team.id, name: team.name }, role: invite.role }];
     }),
     compile('POST', 'invites/:token/accept', {}, ({ user, params }) => {
       const invite = directory.findInvite(params.token);
       const team = invite ? directory.getTeam(invite.teamId) : null;
+      if (!invite && directory.inviteExhausted(params.token)) throw new HttpError(404, 'invite_exhausted', INVITE_EXHAUSTED);
       if (!invite || !team) throw notFound('This invite is not valid');
       let role = directory.getTeamRole(team.id, user.id);
       if (role === null || (role === 'member' && invite.role === 'admin')) {
+        const joined = role === null;
         role = invite.role;
         directory.transaction(() => {
           directory.addTeamMember(team.id, user.id, role);
-          directory.recordInviteUse(invite.id);
+          // The use is taken in one statement; if someone else took the last one meanwhile, the membership rolls back.
+          if (!directory.recordInviteUse(invite.id)) throw new HttpError(409, 'invite_exhausted', INVITE_EXHAUSTED);
+          if (joined && invite.createdBy) {
+            notificationStore?.record({
+              userId: invite.createdBy,
+              kind: 'team_joined',
+              actorId: user.id,
+              teamId: team.id,
+              ref: invite.id,
+            }, { notify: false });
+          }
           audit(user, 'invite.accept', { teamId: team.id, inviteId: invite.id, role });
         });
+        if (joined && invite.createdBy) notificationStore?.ping(invite.createdBy);
         emit('access-changed', { userId: user.id });
       }
       return [200, { team: { id: team.id, name: team.name }, role }];
     }),
 
+    compile('GET', 'boards/presence', {}, ({ user }) => [200, { presence: presenceFor(user) }]),
     compile('GET', 'boards', {}, ({ user }) => [200, directory.listBoardsFor(user).map((b) => boardView(b, b.role))]),
     compile('POST', 'boards', { body: true }, ({ user, body }) => {
       if (typeof body.id !== 'string' || !BOARD_ID_RE.test(body.id)) throw badRequest('id must be 1 to 64 letters, digits, - or _');
@@ -1115,10 +1308,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const role = oneOf(body.role, SHARE_ROLES, 'role');
       const exists = principalType === 'team' ? directory.getTeam(principalId) : directory.getUser(principalId);
       if (!exists || !canSee(visiblePrincipals(user), principalType, principalId)) throw notFound('Unknown user or team');
+      const wasShared = directory.listShares(board.id).some((s) => s.principalType === principalType && s.principalId === principalId);
+      let notificationCreated = false;
       directory.transaction(() => {
         directory.shareBoard(board.id, { principalType, principalId, role });
+        if (principalType === 'user' && principalId !== user.id && !wasShared) {
+          notificationCreated = notificationStore?.record({
+            userId: principalId,
+            kind: 'board_shared',
+            actorId: user.id,
+            boardId: board.id,
+          }, { notify: false }).created === true;
+        }
         audit(user, 'board.share', { boardId: board.id, principalType, principalId, role });
       });
+      if (notificationCreated) notificationStore?.ping(principalId);
       emit('access-changed', { boardId: board.id });
       const share = directory.listShares(board.id).find((s) => s.principalType === principalType && s.principalId === principalId);
       return [201, share];
@@ -1334,6 +1538,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         {
           ...directory.adminStats(),
           live: { rooms: live.rooms, connections: live.connections },
+          mail: mailer.mailHealth?.status() ?? { refusedRecently: 0, reason: null },
           instance: { authEnabled: true, baseUrl: config.baseUrl, mail: config.mail.mode, version: config.version ?? VERSION },
           ...(cloud ? { trialEndsAt: cloud.limits().trialEndsAt, state: cloud.limits().state } : {}),
         },
@@ -1789,6 +1994,55 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ]
       : []),
 
+    // ---------------------------------------------------------- link previews (docs/link-cards.md)
+
+    compile('POST', 'boards/:id/unfurl', { body: true }, async ({ req, res, params, user, body }) => {
+      // v1 decision (docs/link-cards.md): a server-side fetch is never made on behalf of a join-code guest, whatever the guest's role
+      if (user.guest) throw new HttpError(403, 'guests_cannot_preview', 'Guests cannot add link previews');
+      const { role } = boardFor(user, params.id);
+      if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can add link cards');
+      // the asker going away (a closed tab) stops the fetch, unless someone else is waiting for the same address
+      const gone = new AbortController();
+      const onClose = () => { if (!res.writableEnded) gone.abort(); };
+      res.on('close', onClose);
+      try {
+        return [200, await linkUnfurl.unfurl({
+          url: body.url,
+          refresh: body.refresh === true,
+          boardId: params.id,
+          userId: user.id,
+          acceptLanguage: req.headers['accept-language'],
+          signal: gone.signal,
+          rateKeys: { person: `user:${user.id}`, workspace: 'workspace' },
+        })];
+      } catch (err) {
+        if (err instanceof LinkRouteError) {
+          if (err.retryAfter) res.setHeader('retry-after', String(err.retryAfter));
+          throw new HttpError(err.status, err.code, err.message);
+        }
+        throw err;
+      } finally {
+        res.off('close', onClose);
+      }
+    }),
+    compile('GET', 'admin/link-previews', {}, ({ user }) => {
+      requireAdmin(user);
+      return [200, linkUnfurl.state()];
+    }),
+    compile('PUT', 'admin/link-previews', { body: true }, ({ user, body }) => {
+      requireAdmin(user);
+      for (const key of Object.keys(body)) {
+        if (key !== 'enabled') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+      }
+      if (typeof body.enabled !== 'boolean') throw badRequest('enabled must be a boolean');
+      if (config.linkPreviews?.forced === 'off') throw conflict('link_previews_locked', 'TABULA_LINK_PREVIEWS=off turns link previews off for this server');
+      directory.transaction(() => {
+        directory.setSetting('linkPreviews.enabled', body.enabled ? '1' : '0');
+        audit(user, body.enabled ? 'linkPreviews.enabled' : 'linkPreviews.disabled', {});
+      });
+      return [200, linkUnfurl.state()];
+    }),
+
     // ---------------------------------------------------------- AI settings and keys (docs/ai.md)
 
     ...aiApi.routes,
@@ -1820,6 +2074,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'internal/backup-status', { internal: true }, () => [200, backupStatus()]),
           // TAB-200: which volume this is and its last adoption (docs/cloud.md, "Volumes"); ids only.
           compile('GET', 'internal/volume', { internal: true }, () => [200, volumeStatus()]),
+          // The last finished hour's telemetry report, exactly as the Privacy tab previews it (already scrubbed, at most 256 KB, no content and
+          // no new identifier): 200 with the report as the body; 204 when collection is off (TABULA_TELEMETRY=off); 503 until the first hour has
+          // finished. Bearer token only, like the routes around it. The control plane forwards it; the instance sends nothing itself.
+          compile('GET', 'internal/telemetry', { internal: true }, () => {
+            if (!telemetryCollectionEnabled()) return [204];
+            const out = telemetryToHandOut();
+            if (out.none) throw new HttpError(503, out.none, out.none === 'stale_report' ? 'The last report is older than an hour' : 'No hour has finished yet');
+            return [200, out.report];
+          }),
           // TAB-225: which build this is and which schema it and its files are on (docs/migrations.md); never a secret.
           compile('GET', 'internal/version', { internal: true }, () => [200, versionReport()]),
           compile('GET', 'admin/updates', {}, ({ user }) => {
@@ -1913,6 +2176,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     if (read && area === 'assets' && tail.length === 1) return true;
     if (read && guest.boardRole === 'editor' && area === 'versions' && (tail.length === 0 || (tail.length === 2 && tail[1] === 'state'))) return true;
     // An editor may add images to this board only; the asset store applies the same per-file and per-board quotas.
+    // The unfurl path is let through only so the route can answer a guest with its own clear code; the route refuses every guest.
+    if (method === 'POST' && area === 'unfurl' && tail.length === 0) return true;
     return method === 'POST' && guest.boardRole === 'editor' && area === 'assets' && tail.length === 0;
   }
 
@@ -1941,6 +2206,17 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     if (route.internal) {
       // Bearer token only: no cookie, no CSRF header (a browser cannot send this one).
       if (!cloud.tokenOk(req.headers.authorization)) {
+        // A refused attempt counts against its address: past thirty a minute it is answered 429 without a look at the token, and the first
+        // refusal of each minute leaves one log line (the address and the route, never the header or any part of a token).
+        const from = clientIp(req);
+        const wait = internalAuthFailures.wait(from);
+        if (wait) {
+          res.setHeader('retry-after', String(wait));
+          throw new HttpError(429, 'rate_limited', 'Too many refused requests. Try again later.');
+        }
+        if (internalAuthFailures.hit(from) === 0 && internalAuthLogged.hit(from) === 0) {
+          log(`api: internal route ${route.template ?? 'unknown'} refused a request without a valid control token (address ${from})`);
+        }
         res.setHeader('www-authenticate', 'Bearer');
         throw new HttpError(401, 'unauthenticated', 'A valid bearer token is required');
       }
@@ -1956,6 +2232,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     };
 
     let session = route.public || route.internal ? null : signedIn();
+    if (typeof res.once === 'function' && config.slowRequestMs > 0) res.once('finish', () => {
+      // For the operator reading logs after a slow moment: route pattern, status and time only, never a path with ids or a user.
+      const ms = Math.max(0, now() - requestStartedAt);
+      if (ms >= config.slowRequestMs) log(`slow request ${route.method} ${route.template ?? 'other'} ${res.statusCode} ${ms}ms`);
+    });
     if (typeof res.once === 'function') res.once('finish', () => {
       try {
         const responseAt = now();
@@ -2088,5 +2369,5 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     return true;
   }
 
-  return { handle };
+  return { handle, captureTelemetryHour, telemetryTick, flushTelemetry };
 }

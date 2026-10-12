@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { chromium, webkit, type Browser, type BrowserContext, type Page } from 'playwright';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
 
@@ -88,7 +88,7 @@ describe.skipIf(!available)('pending images over IndexedDB', () => {
     await context.close();
   });
 
-  it('says so when the browser refuses to keep the image, instead of queueing an upload with no bytes', async () => {
+  it('keeps the image in memory for the session when the browser refuses to store it', async () => {
     const context = await browser!.newContext();
     const page = await tab(context);
     const outcome = await page.evaluate(async () => {
@@ -96,15 +96,93 @@ describe.skipIf(!available)('pending images over IndexedDB', () => {
       const put = IDBObjectStore.prototype.put;
       IDBObjectStore.prototype.put = function () { throw new DOMException('quota', 'QuotaExceededError'); };
       try {
-        await cache.put({ key: 'pending:q', blob: new Blob([new Uint8Array(10)]), mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: true });
-        return 'stored';
-      } catch (e) {
-        return `refused:${(e as Error).name}`;
+        await cache.put({ key: 'pending:q', blob: new Blob([new Uint8Array(10)], { type: 'image/png' }), mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: true });
+        return (await cache.get('pending:q'))?.blob.size ?? null;
       } finally {
         IDBObjectStore.prototype.put = put;
       }
     });
-    expect(outcome).toBe('refused:StorageError');
+    expect(outcome).toBe(10);
     await context.close();
   });
+
+  it('reads back, as a Blob, what it stored as bytes, and an older Blob record', async () => {
+    const context = await browser!.newContext();
+    const page = await tab(context);
+    const sizes = await page.evaluate(async () => {
+      const { cache } = (window as any).__q;
+      await cache.put({ key: 'new', blob: new Blob([new Uint8Array(7)], { type: 'image/png' }), mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: false });
+      const db: IDBDatabase = await new Promise((resolve) => { const r = indexedDB.open('tabula-assets', 1); r.onsuccess = () => resolve(r.result); });
+      await new Promise<void>((resolve) => { const tx = db.transaction('blobs', 'readwrite'); tx.objectStore('blobs').put({ key: 'old', blob: new Blob([new Uint8Array(5)], { type: 'image/png' }), mime: 'image/png', width: 1, height: 1, boardId: 'b1', pending: false, at: 1 }); tx.oncomplete = () => resolve(); });
+      const fresh = (await cache.backend.getBlob('new')).blob;
+      const old = (await cache.backend.getBlob('old')).blob;
+      return [fresh instanceof Blob, fresh.size, fresh.type, old.size];
+    });
+    expect(sizes).toEqual([true, 7, 'image/png', 5]);
+    await context.close();
+  });
+
+  it.skipIf(!existsSync(webkit.executablePath()))('stores and reads an image in WebKit with a fresh, non-persistent context (where it rejects a Blob)', async () => {
+    const wk = await webkit.launch();
+    try {
+      const context = await wk.newContext();
+      const page = await tab(context);
+      const result = await page.evaluate(async () => {
+        const { cache, queue, log } = (window as any).__q;
+        await cache.put({ key: 'pending:w', blob: new Blob([new Uint8Array(1000)], { type: 'image/png' }), mime: 'image/png', width: 4, height: 3, boardId: 'b1', pending: true });
+        const stored = await cache.backend.getBlob('pending:w');
+        await queue.enqueue({ id: 'pending:w', boardId: 'b1', objectId: 'o1', hash: 'x' });
+        await queue.run('b1');
+        return { size: stored?.blob.size ?? null, ...log };
+      });
+      expect(result).toEqual({ size: 1000, uploads: 1, lost: 0, applied: 1 });
+      await context.close();
+    } finally {
+      await wk.close();
+    }
+  });
+
+  // IndexedDB missing, throwing on open, erroring on open, or never answering (Q&A's matrix): an added image still uploads, from memory.
+  const BLOCKED: Record<string, string> = {
+    undefined: "Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true });",
+    throws: "Object.defineProperty(window, 'indexedDB', { value: { open() { throw new Error('blocked'); } }, configurable: true });",
+    errors: "Object.defineProperty(window, 'indexedDB', { value: { open() { const req = {}; setTimeout(() => req.onerror?.(new Event('error')), 10); return req; } }, configurable: true });",
+    hangs: "Object.defineProperty(window, 'indexedDB', { value: { open() { return {}; } }, configurable: true });",
+  };
+  for (const [mode, script] of Object.entries(BLOCKED)) {
+    it(`uploads an added image from memory when IndexedDB ${mode}`, async () => {
+      const context = await browser!.newContext();
+      await context.addInitScript(script);
+      const page = await tab(context);
+      const started = Date.now();
+      const result = await page.evaluate(async () => {
+        const { cache, queue, log } = (window as any).__q;
+        await cache.put({ key: 'pending:m', blob: new Blob([new Uint8Array(500)], { type: 'image/png' }), mime: 'image/png', width: 4, height: 3, boardId: 'b1', pending: true });
+        await queue.enqueue({ id: 'pending:m', boardId: 'b1', objectId: 'o1', hash: 'x' });
+        await queue.run('b1');
+        return { ...log, left: await queue.pending('b1') };
+      });
+      expect(result).toEqual({ uploads: 1, lost: 0, applied: 1, left: 0 });
+      expect(Date.now() - started).toBeLessThan(6000); // an open that never answers waits two seconds, once
+      await context.close();
+    });
+
+    it(`opens a board when IndexedDB ${mode}, without a copy on the device`, async () => {
+      const context = await browser!.newContext();
+      await context.addInitScript(script);
+      const page = await context.newPage();
+      await page.route('**/__blank', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8">' }));
+      await page.goto(`${base}__blank`);
+      await page.addScriptTag({ type: 'module', content: "import { openBoard } from '/src/sync.ts'; window.__openBoard = openBoard; window.__ready = true;" });
+      await page.waitForFunction('window.__ready === true');
+      const opened = await page.evaluate(async () => {
+        const conn = await (window as any).__openBoard('probe', { id: 'u1', name: 'Tester', color: '#326DD3' });
+        const ok = typeof conn.store.cache.size === 'number';
+        conn.destroy();
+        return ok;
+      });
+      expect(opened).toBe(true);
+      await context.close();
+    }, 20_000);
+  }
 });

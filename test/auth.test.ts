@@ -33,8 +33,8 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => new Promise((resolve) => s.close(resolve))));
 });
 
-function setup(env: Record<string, string> = {}) {
-  const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, PORT: '8787', ...env });
+function setup(env: Record<string, string> = {}, notifications: unknown = null) {
+  const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, TABULA_AUTH_IP_LIMIT: '20', PORT: '8787', ...env });
   const d = openDirectory(':memory:');
   opened.push(d);
   const sent: Mail[] = [];
@@ -44,7 +44,7 @@ function setup(env: Record<string, string> = {}) {
     },
   };
   const clock = { t: T0 };
-  const auth = createAuth({ directory: d, config, mailer, now: () => clock.t });
+  const auth = createAuth({ directory: d, config, mailer, now: () => clock.t, notifications: notifications as never });
   return { d, auth, sent, config, clock };
 }
 
@@ -134,14 +134,25 @@ describe('requestLogin', () => {
     expect(c.sent[0].text).not.toContain('com//');
   });
 
+  it('keeps a valid invite in the verify fragment for recovery when sessionStorage is unavailable', async () => {
+    const c = setup();
+    const owner = c.d.createUser({ email: OWNER, role: 'owner' })!;
+    const classTeam = c.d.createTeam({ name: 'Class', creatorId: owner.id })!;
+    const invite = c.d.createInvite({ teamId: classTeam.id, role: 'member', createdBy: owner.id, ttlMs: 7 * DAY })!;
+
+    await c.auth.requestLogin({ email: 'pupil@example.com', invite: invite.token, ip: '1.1.1.1' });
+
+    expect(c.sent[0].text).toContain(`invite=${invite.token}`);
+  });
+
   it('does not let a mail failure, sync or async, show through', async () => {
     const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER });
     const d = openDirectory(':memory:');
     opened.push(d);
     d.createUser({ email: 'known@example.com', role: 'member' });
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const lines: string[] = [];
 
-    const failing = createAuth({ directory: d, config, mailer: { send: () => Promise.reject(new Error('smtp down')) }, now: () => T0 });
+    const failing = createAuth({ directory: d, config, mailer: { send: () => Promise.reject(new Error('smtp down')) }, now: () => T0, log: (line) => lines.push(line) });
     const throwing = createAuth({
       directory: d,
       config,
@@ -151,13 +162,15 @@ describe('requestLogin', () => {
         },
       },
       now: () => T0,
+      log: (line) => lines.push(line),
     });
 
     expect(await failing.requestLogin({ email: 'known@example.com', ip: '1.1.1.1' })).toEqual({ ok: true });
     expect(await failing.requestLogin({ email: 'unknown@example.com', ip: '1.1.1.1' })).toEqual({ ok: true });
     expect(await throwing.requestLogin({ email: 'known@example.com', ip: '1.1.1.2' })).toEqual({ ok: true });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(errors).toHaveBeenCalledTimes(2);
+    expect(lines).toEqual(['auth request mail_failed reason=network', 'auth request mail_failed reason=network']);
+    expect(lines.join(' ')).not.toContain('known@example.com');
   });
 });
 
@@ -306,6 +319,36 @@ describe('invites', () => {
     expect(c.auth.authenticate(cookie(c, result.sessionToken))).not.toBeNull();
   });
 
+  it('tell the inviter when a new person joins through the link, once, and not for a person already in the team', async () => {
+    const record = vi.fn<(...args: unknown[]) => void>();
+    const ping = vi.fn<(...args: unknown[]) => void>();
+    const c = setup({}, { record, ping });
+    c.d.createUser({ email: OWNER, role: 'owner' });
+    const { team: crew, owner } = team(c);
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, now: T0 });
+    const result = await signIn(c, 'pupil@example.com', invite.token);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith({ userId: owner.id, kind: 'team_joined', actorId: result.user.id, teamId: crew.id, ref: invite.id }, { notify: false });
+    expect(ping).toHaveBeenCalledWith(owner.id);
+    await signIn(c, 'pupil@example.com', invite.token);
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the inviter a team_joined row in the real notification list after a new person signs in through the link', async () => {
+    const { createNotifications } = await import('../server/notifications.mjs');
+    const c = setup();
+    c.d.createUser({ email: OWNER, role: 'owner' });
+    const store = createNotifications({ directory: c.d, now: () => T0 });
+    const real = createAuth({ directory: c.d, config: c.config, mailer: { send: async (m: Mail) => { c.sent.push(m); } }, now: () => T0, notifications: store });
+    const { team: crew, owner } = team(c);
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, now: T0 });
+    await real.requestLogin({ email: 'pupil@example.com', invite: invite.token, ip: '1.1.1.1' });
+    const joined = real.verifyLogin(lastToken(c))!;
+    const listed = store.list({ user: owner, limit: 10 });
+    expect(listed.items.map((i: { kind: string; actor: { id: string } | null }) => [i.kind, i.actor?.id])).toEqual([['team_joined', joined.user.id]]);
+    expect(listed.unread).toBe(1);
+  });
+
   it('send no mail for a new address without a usable invite', async () => {
     const { c, team: crew, owner } = await invited();
     const sentBefore = c.sent.length;
@@ -356,6 +399,26 @@ describe('invites', () => {
 
     await signIn(c, 'm@example.com', adminInvite.token);
     expect(c.d.getTeamRole(crew.id, member.id)).toBe('admin');
+  });
+
+  it('refuse a new sign-in request and a verify once the last use is taken', async () => {
+    const { c, team: crew, owner } = await invited();
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, maxUses: 1, now: T0 });
+    // Two links requested while one use is still free.
+    await c.auth.requestLogin({ email: 'first@example.com', invite: invite.token, ip: '1.1.1.1' });
+    const firstToken = lastToken(c);
+    await c.auth.requestLogin({ email: 'second@example.com', invite: invite.token, ip: '1.1.1.2' });
+    const secondToken = lastToken(c);
+
+    expect(c.auth.verifyLogin(firstToken)).not.toBeNull();
+    expect(c.d.findInvite(invite.token, T0)).toBeNull();
+    // Verify time: the second link cannot create an account any more.
+    expect(c.auth.verifyLogin(secondToken)).toBeNull();
+    expect(c.d.getUserByEmail('second@example.com')).toBeNull();
+    // Request time: no mail for a third address.
+    const before = c.sent.length;
+    await c.auth.requestLogin({ email: 'third@example.com', invite: invite.token, ip: '1.1.1.3' });
+    expect(c.sent.length).toBe(before);
   });
 
   it('stop working at verify time when revoked after the request', async () => {
@@ -423,24 +486,45 @@ describe('invites', () => {
   });
 });
 
+describe('the last use of an invite', () => {
+  it('rolls the whole sign-in back when another sign-in took it between the check and the use', async () => {
+    const { InviteExhaustedError } = await import('../server/auth.mjs');
+    const c = setup();
+    c.d.createUser({ email: OWNER, role: 'owner' });
+    const { team: crew, owner } = team(c);
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, maxUses: 1, now: T0 });
+    await c.auth.requestLogin({ email: 'late@example.com', invite: invite.token, ip: '1.1.1.1' });
+    const token = lastToken(c);
+    // the check passes now; the last use goes to someone else before this sign-in takes it
+    const real = c.d.recordInviteUse;
+    c.d.recordInviteUse = (id: string) => { real(id); return false; };
+    expect(() => c.auth.verifyLogin(token)).toThrow(InviteExhaustedError);
+    c.d.recordInviteUse = real;
+    expect(c.d.getUserByEmail('late@example.com')).toBeNull();
+    expect(c.d.listTeamMembers(crew.id).map((m) => m.email)).toEqual([OWNER]);
+  });
+});
+
 describe('rate limits', () => {
-  it('allow five requests per email per hour, known or not', async () => {
+  it('allow five requests per email per client address per hour, known or not', async () => {
     const c = setup();
     c.d.createUser({ email: 'known@example.com', role: 'member' });
     for (const email of ['known@example.com', 'unknown@example.com']) {
       for (let i = 0; i < 5; i++) {
-        expect(await c.auth.requestLogin({ email, ip: `10.0.${email.length}.${i}` })).toEqual({ ok: true });
+        expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toEqual({ ok: true });
       }
-      expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toEqual({ limited: true });
+      expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toMatchObject({ limited: true, scope: 'pair' });
     }
     expect(await c.auth.requestLogin({ email: 'other@example.com', ip: '10.9.9.9' })).toEqual({ ok: true });
-    expect(c.sent).toHaveLength(5);
+    // another client address has its own allowance for the same email
+    expect(await c.auth.requestLogin({ email: 'known@example.com', ip: '10.8.8.8' })).toEqual({ ok: true });
+    expect(c.sent).toHaveLength(6);
   });
 
   it('is case-insensitive about the address', async () => {
     const c = setup();
-    for (let i = 0; i < 5; i++) await c.auth.requestLogin({ email: `Same@Example.com${' '.repeat(i)}`, ip: `10.0.0.${i}` });
-    expect(await c.auth.requestLogin({ email: 'same@example.com', ip: '10.0.0.9' })).toEqual({ limited: true });
+    for (let i = 0; i < 5; i++) await c.auth.requestLogin({ email: `Same@Example.com${' '.repeat(i)}`, ip: '10.0.0.1' });
+    expect(await c.auth.requestLogin({ email: 'same@example.com', ip: '10.0.0.1' })).toMatchObject({ limited: true });
   });
 
   it('allows twenty requests per IP per hour', async () => {
@@ -448,14 +532,14 @@ describe('rate limits', () => {
     for (let i = 0; i < 20; i++) {
       expect(await c.auth.requestLogin({ email: `u${i}@example.com`, ip: '2.2.2.2' })).toEqual({ ok: true });
     }
-    expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '2.2.2.2' })).toEqual({ limited: true });
+    expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '2.2.2.2' })).toMatchObject({ limited: true });
     expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '3.3.3.3' })).toEqual({ ok: true });
   });
 
   it('shares one bucket between requests without an IP', async () => {
     const c = setup();
     for (let i = 0; i < 20; i++) await c.auth.requestLogin({ email: `u${i}@example.com` });
-    expect(await c.auth.requestLogin({ email: 'late@example.com', ip: undefined })).toEqual({ limited: true });
+    expect(await c.auth.requestLogin({ email: 'late@example.com', ip: undefined })).toMatchObject({ limited: true });
   });
 
   it('use a rolling hour and reset after it', async () => {
@@ -466,16 +550,16 @@ describe('rate limits', () => {
     await ask();
     await ask();
     c.clock.t = T0 + 50 * MIN;
-    expect(await ask()).toEqual({ limited: true });
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
 
     c.clock.t = T0 + HOUR - 1;
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
     c.clock.t = T0 + HOUR;
     expect(await ask()).toEqual({ ok: true });
     expect(await ask()).toEqual({ ok: true });
     expect(await ask()).toEqual({ ok: true });
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
 
     c.clock.t = T0 + 3 * HOUR;
     expect(await ask()).toEqual({ ok: true });
@@ -487,7 +571,7 @@ describe('rate limits', () => {
     for (let i = 0; i < 5; i++) await ask();
     for (let m = 1; m < 60; m += 5) {
       c.clock.t = T0 + m * MIN;
-      expect(await ask()).toEqual({ limited: true });
+      expect(await ask()).toMatchObject({ limited: true });
     }
     c.clock.t = T0 + HOUR + 1;
     expect(await ask()).toEqual({ ok: true });
@@ -730,6 +814,8 @@ describe('loadConfig', () => {
       authEnabled: false,
       ownerEmail: null,
       baseUrl: 'http://localhost:8787',
+      baseUrlSet: false,
+      slowRequestMs: 300,
       origin: 'http://localhost:8787',
       secureCookies: false,
       cookieName: 'tabula_session',
@@ -738,6 +824,8 @@ describe('loadConfig', () => {
       dataDir: path.resolve(import.meta.dirname, '..', 'data'),
       port: 8787,
       trustProxy: false,
+      authIpLimit: 300,
+      authEmailLimit: 30,
       clientIpHeader: 'x-forwarded-for',
       sourcePolicy: { mode: 'off', sources: [] },
       mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Tabula <no-reply@localhost>' },
@@ -747,8 +835,16 @@ describe('loadConfig', () => {
       assets: { maxBytes: 10 * 1024 * 1024, boardQuota: 50 * 1024 * 1024, totalQuota: 0 },
       // the tracker (tickets) is off unless TABULA_TRACKER=on
       tracker: false,
+      // link previews (docs/link-cards.md): no operator switch set; the workspace setting and the hosted default decide
+      linkPreviews: { forced: null },
       telemetry: { defaultEnabled: false, forced: null },
     });
+  });
+
+  it('reads TABULA_LINK_PREVIEWS as the operator switch and refuses other values', () => {
+    expect(loadConfig({ TABULA_LINK_PREVIEWS: 'on' }).linkPreviews).toEqual({ forced: 'on' });
+    expect(loadConfig({ TABULA_LINK_PREVIEWS: ' off ' }).linkPreviews).toEqual({ forced: 'off' });
+    expect(() => loadConfig({ TABULA_LINK_PREVIEWS: 'maybe' })).toThrow(/TABULA_LINK_PREVIEWS must be on or off/);
   });
 
   it('reads the deprecated MIRA_ names, warning once with the names to use instead', () => {

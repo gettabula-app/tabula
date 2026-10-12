@@ -260,7 +260,9 @@ function removeSqliteFiles(file) {
 
 // the two directories the swap moves whole: version history and image files
 const SWAP_DIRS = ['history', 'assets'];
-const isSwapEntry = (name) => typeof name === 'string' && (DB_FILES.includes(name) || ROOM_FILE_RE.test(name) || SWAP_DIRS.includes(name));
+// the stored telemetry report is carried-over state of the old data: a restore moves it aside with the rest, so the restored workspace never hands out the old one's hour
+const TELEMETRY_FILE = 'telemetry-last.json';
+const isSwapEntry = (name) => typeof name === 'string' && (DB_FILES.includes(name) || name === TELEMETRY_FILE || ROOM_FILE_RE.test(name) || SWAP_DIRS.includes(name));
 
 function parseJournal(text) {
   const bad = () => new RestoreError('restore_failed', 'The restore journal (restore.json) is not valid, so the server will not start. Do not delete anything: see docs/backups.md, Restoring.');

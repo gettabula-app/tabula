@@ -32,6 +32,7 @@ const TEXT_ERRORS = {
  * @param {() => ReturnType<typeof import('./chat.mjs').openChat>} deps.store the chat database, opened on first use
  * @param {(user: any, kind: unknown, ref: unknown) => import('./chat-access.mjs').ChatAccess | null} deps.access
  * @param {{ publish: Function, read: Function } | null} deps.hub
+ * @param {any|null} [deps.notifications] the per-person notification store, used to mirror chat read cursors
  * @param {ReturnType<typeof import('./chat-limits.mjs').createChatLimits>} deps.limits
  * @param {Function} deps.compile
  * @param {Function} deps.audit
@@ -40,7 +41,7 @@ const TEXT_ERRORS = {
  * @param {(name: string, payload?: object) => void} [deps.emit] the API's event emitter (access-changed after a setting)
  * @param {{ HttpError: any, badRequest: Function, forbidden: Function, notFound: Function, conflict: Function }} deps.errors
  */
-export function createChatRoutes({ directory, store, access, hub, limits, compile, audit, requireAdmin, notifier = null, emit = () => {}, errors }) {
+export function createChatRoutes({ directory, store, access, hub, limits, compile, audit, requireAdmin, notifier = null, notifications = null, emit = () => {}, errors }) {
   const { HttpError, badRequest, forbidden, notFound, conflict } = errors;
   const hidden = () => notFound('Channel not found');
 
@@ -282,6 +283,11 @@ export function createChatRoutes({ directory, store, access, hub, limits, compil
         hub?.read(user.id, kind, ref, lastId);
       } catch (err) {
         console.error('chat: could not mirror a read marker:', err?.code ?? err?.message ?? 'error');
+      }
+      try {
+        notifications?.markChatReadThrough(user.id, kind, ref, lastId);
+      } catch (err) {
+        console.error('chat: could not sync notification reads:', err?.code ?? err?.message ?? 'error');
       }
       return [200, { kind, ref, lastId }];
     }),

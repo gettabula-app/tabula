@@ -502,6 +502,21 @@ export const MIGRATIONS = [
   { sql: OAUTH_MIGRATION, minReader: 11 },
   // MCP daily usage and request retries add tables only; keep the schema-11 rollback floor.
   { sql: MCP_USAGE_MIGRATION, minReader: 11 },
+  // Per-person notifications reference their source by id and resolve its content only after checking access.
+  { sql: `
+  CREATE TABLE user_notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    board_id TEXT REFERENCES boards(id) ON DELETE CASCADE,
+    team_id TEXT REFERENCES teams(id) ON DELETE CASCADE,
+    ref TEXT,
+    created_at INTEGER NOT NULL,
+    read_at INTEGER
+  );
+  CREATE INDEX user_notifications_inbox ON user_notifications(user_id, read_at, created_at DESC, id);
+  `, minReader: 11 },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -1134,8 +1149,18 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     return invite && inviteActive(invite, now) ? invite : null;
   }
 
+  /** True when the token names a live invite whose uses are all taken (so the screen can say "used up", not "expired"). */
+  function inviteExhausted(token, now = Date.now()) {
+    if (!validToken(token)) return false;
+    const row = get('SELECT * FROM invites WHERE token_hash = ?', hashToken(token));
+    if (!row) return false;
+    const invite = toInvite(row);
+    return !invite.revoked && invite.expiresAt > now && invite.maxUses != null && invite.uses >= invite.maxUses;
+  }
+
+  /** Atomic check-and-increment: true when a use was taken, false when the invite is exhausted, revoked or missing. */
   function recordInviteUse(id) {
-    run('UPDATE invites SET uses = uses + 1 WHERE id = ? AND (max_uses IS NULL OR uses < max_uses)', id);
+    return run('UPDATE invites SET uses = uses + 1 WHERE id = ? AND revoked = 0 AND (max_uses IS NULL OR uses < max_uses)', id) === 1;
   }
 
   function listInvites(teamId, now = Date.now()) {
@@ -1440,6 +1465,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     createInvite,
     findInvite,
     findInviteById,
+    inviteExhausted,
     recordInviteUse,
     listInvites,
     revokeInvite,

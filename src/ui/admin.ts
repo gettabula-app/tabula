@@ -15,6 +15,7 @@ import { fmtAgo } from './common';
 import { h, icon } from './dom';
 import { centredScroll, trackMore } from './scroll-cue';
 import { tokensAdminPanel } from './tokens';
+import { mailRefusalBanner } from './admin-mail-logic';
 import {
   activeOwnerCount, auditActor, auditSentence, countLabel, deviceLabel, disableVerdict, focusTarget, isKnownAuditAction, matchesQuery, overviewTiles, removeVerdict,
   revokeVerdict, roleLock, roleOptions, roleVerdict, visibleAdminTabs, type Actor, type Lookup,
@@ -275,7 +276,9 @@ function overviewView(o: AdminOverview): HTMLElement {
     ['Version', o.instance.version],
     ['Accounts', o.instance.authEnabled ? 'On' : 'Off'],
   ];
+  const mailBanner = mailRefusalBanner(o.mail);
   return h('div', null,
+    mailBanner ? h('p', { class: 'admin-mail-banner', role: 'status' }, mailBanner) : null,
     h('div', { class: 'admin-tiles' }, overviewTiles(o).map((t) => tile(t.label, t.value, t.sub))),
     h('h3', { class: 'admin-sub' }, 'Instance'),
     h('dl', { class: 'admin-facts' }, facts.map(([k, v]) => h('div', { class: 'admin-fact' }, h('dt', null, k), h('dd', null, v)))));

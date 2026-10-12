@@ -85,7 +85,8 @@ function expectUntouched(s: Scenario) {
   expect(s.exits).toEqual([]);
 }
 
-describe('the safety backup', () => {
+// These run a real restore and several backups each; the Windows runners need more than the 60 s default (it timed out four times), so the group gets an explicit limit.
+describe('the safety backup', { timeout: 180_000 }, () => {
   it('is taken first, holds the live state, and is protected for seven days', async () => {
     const s = await scenario();
     const before = await manifestsNow();
@@ -189,7 +190,8 @@ describe('the safety backup', () => {
   });
 });
 
-describe('the protection in the pruning', () => {
+// These run a real restore and several backups each; the Windows runners need more than the 60 s default (it timed out four times), so the group gets an explicit limit.
+describe('the protection in the pruning', { timeout: 180_000 }, () => {
   const keepNothing = { TABULA_BACKUP_KEEP_HOURLY_HOURS: '0', TABULA_BACKUP_KEEP_DAILY_DAYS: '0' };
 
   it('keeps the safety backup for seven days and lets it go afterwards', async () => {
@@ -254,28 +256,29 @@ describe('the protection in the pruning', () => {
     }
   });
 
+  // Two backups before and two after the protection list breaks are enough to show it (each backup is slow on the Windows runners).
   it('stops deleting when the list of protected backups cannot be read', async () => {
     h = await harness({ accounts: true, env: keepNothing });
     seedA(h);
     const engine = h.engine();
     await backupNow(engine);
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 2; i++) {
       h.clock.now += HOUR;
       h.write('b2.yjs', Buffer.from(`change ${i}`));
       await backupNow(engine);
     }
     expect(await engine.listManifests()).toHaveLength(1);
     h.directory!.setSetting('backup.protected', '{broken');
-    for (let i = 4; i <= 6; i++) {
+    for (let i = 3; i <= 4; i++) {
       h.clock.now += HOUR;
       h.write('b2.yjs', Buffer.from(`change ${i}`));
       await backupNow(engine);
     }
-    expect((await engine.listManifests()).length).toBe(4);
+    expect((await engine.listManifests()).length).toBe(3);
     expect(engine.status().prune).toMatchObject({ gcSkipped: 'unreadable_protection', manifestsDeleted: 0, objectsDeleted: 0 });
     h.directory!.setSetting('backup.protected', '{}');
     h.clock.now += HOUR;
-    h.write('b2.yjs', Buffer.from('change 7'));
+    h.write('b2.yjs', Buffer.from('change 5'));
     await backupNow(engine);
     expect(await engine.listManifests()).toHaveLength(1);
   });

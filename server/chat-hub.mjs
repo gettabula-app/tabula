@@ -1,5 +1,5 @@
 // Live chat delivery (docs/chat.md, "Live delivery"): the /chat WebSocket. JSON text frames from the server to the
-// browser; the browser only subscribes, unsubscribes and pings. Writes never come over this socket, they are REST calls
+// browser; the browser subscribes, unsubscribes, watches presence and pings. Writes never come over this socket, they are REST calls
 // (chat-routes.mjs), which call publish() once the row is committed.
 //
 // A socket carries text only for the channels it subscribed to, each checked with the access function when it was made
@@ -25,6 +25,8 @@ export const HUB_LIMITS = Object.freeze({
 /** The relay's WebSocketServer for /chat uses this as maxPayload: client frames are tiny. */
 export const MAX_CLIENT_FRAME = 4096;
 const TICK_MS = 1000;
+const PRESENCE_REFRESH_MS = 60_000;
+const PRESENCE_ROOM_LIMIT = 200;
 // how often the tick asks the directory whether a socket's person still exists and is enabled (as /sync does)
 const RECHECK_MS = 5000;
 const PING_MS = 30_000;
@@ -36,6 +38,11 @@ const REF_MAX = 128;
  * @param {{ getUser(id: string): any }} deps.directory
  * @param {(user: any, kind: unknown, ref: unknown) => { read: boolean } | null} deps.access
  * @param {(user: any) => any[]} deps.summary the unread summary of a person (the hello frame)
+ * @param {(user: any) => Iterable<string>} [deps.presenceBoardIds] board ids the person can currently open
+ * @param {(user: any, boardIds: Set<string>) => any[]} [deps.presenceForUser] current, capped live-room summaries
+ * @param {(user: any, boardId: string) => any | null} [deps.presenceForBoard] current summary for one live room
+ * @param {(boardId: string) => number | null} [deps.presenceActivity] last identity-change time for one room
+ * @param {(user: any, boardId: string) => boolean} [deps.presenceCanRead] re-checks board access before each send
  * @param {(userId: string, kind: string, ref: string) => { unread: number, mentions: number }} deps.channelUnread
  * @param {import('node:events').EventEmitter} [deps.events]
  * @param {boolean} [deps.readOnly] whether the hosted workspace is read-only when the hub starts
@@ -44,17 +51,157 @@ const REF_MAX = 128;
  * @param {Partial<typeof HUB_LIMITS>} [deps.limits]
  * @param {boolean} [deps.timers] false in unit tests: no tick or ping intervals
  */
-export function createChatHub({ auth, directory, access, summary, channelUnread, events = null, readOnly = false, log = () => {}, now = Date.now, limits = {}, timers = true }) {
+export function createChatHub({ auth, directory, access, summary, presenceBoardIds = () => [], presenceForUser = () => [], presenceForBoard = () => null, presenceActivity = () => null, presenceCanRead = () => false, channelUnread, events = null, readOnly = false, log = () => {}, now = Date.now, limits = {}, timers = true }) {
   const LIMITS = { ...HUB_LIMITS, ...limits };
   /** @type {Map<string, Set<any>>} person to sockets */
   const byUser = new Map();
   /** @type {Map<string, Set<any>>} channel key to subscribed sockets */
   const byChannel = new Map();
+  /** @type {Map<string, Set<any>>} board id to sockets watching Boards-page presence */
+  const byPresenceBoard = new Map();
   let knownReadOnly = readOnly === true;
   /** When a person's last socket went away (kept for an hour, for the mention email's "nobody has looked since" test). */
   const lastGone = new Map();
 
   const allSockets = () => [...byUser.values()].flatMap((set) => [...set]);
+
+  function removePresenceSubscriptions(ws) {
+    const state = ws.chat;
+    if (!state) return;
+    for (const boardId of state.presenceBoards) {
+      const watchers = byPresenceBoard.get(boardId);
+      watchers?.delete(ws);
+      if (watchers?.size === 0) byPresenceBoard.delete(boardId);
+    }
+    state.presenceBoards.clear();
+  }
+
+  function canReadPresence(user, boardId) {
+    try {
+      return presenceCanRead(user, boardId) === true;
+    } catch (err) {
+      log('chat: could not check board presence access', err?.message);
+      return false;
+    }
+  }
+
+  function presenceRows(user, boardIds) {
+    let rows = [];
+    try {
+      rows = presenceForUser(user, boardIds) ?? [];
+    } catch (err) {
+      log('chat: could not read board presence', err?.message);
+    }
+    return Array.from(rows).filter((board) => board && typeof board.boardId === 'string'
+      && boardIds.has(board.boardId) && canReadPresence(user, board.boardId));
+  }
+
+  function currentPresence(ws, user) {
+    const boardIds = new Set();
+    try {
+      for (const boardId of presenceBoardIds(user) ?? []) {
+        if (typeof boardId === 'string' && canReadPresence(user, boardId)) boardIds.add(boardId);
+      }
+    } catch (err) {
+      log('chat: could not list boards for presence', err?.message);
+    }
+    const state = ws.chat;
+    removePresenceSubscriptions(ws);
+    state.presenceBoards = boardIds;
+    for (const boardId of boardIds) {
+      let watchers = byPresenceBoard.get(boardId);
+      if (!watchers) byPresenceBoard.set(boardId, (watchers = new Set()));
+      watchers.add(ws);
+    }
+    const rows = new Map(presenceRows(user, boardIds).map((board) => [board.boardId, board]));
+    state.presenceActivityAt = new Map([...rows.keys()].map((boardId) => [boardId, presenceActivity(boardId) ?? now()]));
+    return rows;
+  }
+
+  function refreshPresence(ws, forceSnapshot = false) {
+    const state = ws.chat;
+    if (!state || state.gone || !state.presenceWatching) return;
+    const user = personOf(ws);
+    if (!user) return close(ws, CHAT_CLOSE.unauthenticated, 'unauthenticated');
+    const next = currentPresence(ws, user);
+    const changed = JSON.stringify([...state.presenceSent]) !== JSON.stringify([...next]);
+    state.presenceSent = next;
+    state.presenceRefreshedAt = now();
+    if (forceSnapshot || changed) send(ws, { t: 'presence.snapshot', boards: [...next.values()] });
+  }
+
+  function watchPresence(ws, forceSnapshot = true) {
+    const state = ws.chat;
+    if (!state || state.gone) return;
+    state.presenceWatching = true;
+    refreshPresence(ws, forceSnapshot);
+  }
+
+  function unwatchPresence(ws) {
+    const state = ws.chat;
+    if (!state || state.gone) return;
+    removePresenceSubscriptions(ws);
+    state.presenceWatching = false;
+    state.presenceSent.clear();
+    state.presenceActivityAt.clear();
+    state.presenceRefreshedAt = now();
+  }
+
+  /** A room changed; only its watchers are considered, and each receives a frame only when their view changed. */
+  function publishPresence(boardId) {
+    const watchers = Array.from(byPresenceBoard.get(boardId) ?? []);
+    for (const ws of watchers) {
+      const state = ws.chat;
+      if (!state || state.gone || !state.presenceWatching) continue;
+      const user = personOf(ws);
+      if (!user) {
+        close(ws, CHAT_CLOSE.unauthenticated, 'unauthenticated');
+        continue;
+      }
+      if (!canReadPresence(user, boardId)) {
+        refreshPresence(ws, true);
+        continue;
+      }
+      let after = null;
+      try {
+        after = presenceForBoard(user, boardId) ?? null;
+      } catch (err) {
+        log('chat: could not read one board presence summary', err?.message);
+      }
+      if (after && after.boardId !== boardId) after = null;
+      const before = state.presenceSent.get(boardId);
+      if (JSON.stringify(before) === JSON.stringify(after)) continue;
+      if (!after) {
+        if (!before) continue;
+        state.presenceSent.delete(boardId);
+        state.presenceActivityAt.delete(boardId);
+        if (canReadPresence(user, boardId)) send(ws, { t: 'presence.clear', boardId });
+        continue;
+      }
+
+      const activityAt = presenceActivity(boardId) ?? now();
+      let evicted = null;
+      if (!before && state.presenceSent.size >= PRESENCE_ROOM_LIMIT) {
+        for (const [id, at] of state.presenceActivityAt) {
+          if (evicted === null || at < state.presenceActivityAt.get(evicted)) evicted = id;
+        }
+        if (evicted !== null && activityAt < state.presenceActivityAt.get(evicted)) continue;
+        if (evicted !== null && !canReadPresence(user, evicted)) {
+          refreshPresence(ws, true);
+          continue;
+        }
+      }
+      if (evicted !== null) {
+        state.presenceSent.delete(evicted);
+        state.presenceActivityAt.delete(evicted);
+        send(ws, { t: 'presence.clear', boardId: evicted });
+      }
+      state.presenceSent.set(boardId, after);
+      state.presenceActivityAt.set(boardId, activityAt);
+      if (canReadPresence(user, boardId)) send(ws, { t: 'presence.update', board: after });
+      else refreshPresence(ws, true);
+    }
+  }
 
   /** Sends one frame, or drops a socket that has fallen too far behind. */
   function send(ws, frame) {
@@ -76,6 +223,7 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     const state = ws.chat;
     if (!state || state.gone) return;
     state.gone = true;
+    removePresenceSubscriptions(ws);
     for (const key of state.subs.keys()) {
       const set = byChannel.get(key);
       set?.delete(ws);
@@ -170,6 +318,8 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     }
     if (typeof frame !== 'object' || frame === null) return;
     if (frame.t === 'ping') return send(ws, { t: 'pong' });
+    if (frame.t === 'presence.watch') return watchPresence(ws);
+    if (frame.t === 'presence.unwatch') return unwatchPresence(ws);
     const { kind, ref } = frame;
     if (!CHAT_KINDS.includes(kind) || typeof ref !== 'string' || ref.length > REF_MAX) {
       if (frame.t === 'sub') send(ws, { t: 'denied', kind: typeof kind === 'string' ? kind.slice(0, 20) : null, ref: typeof ref === 'string' ? ref.slice(0, REF_MAX) : null });
@@ -206,6 +356,11 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
       gone: false,
       alive: true,
       checkedAt: now(),
+      presenceWatching: false,
+      presenceBoards: new Set(),
+      presenceSent: new Map(),
+      presenceActivityAt: new Map(),
+      presenceRefreshedAt: 0,
     };
     if (mine) mine.add(ws);
     else byUser.set(userId, new Set([ws]));
@@ -280,6 +435,13 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     for (const ws of Array.from(byUser.get(userId) ?? [])) send(ws, { t: 'read', kind, ref, lastId });
   }
 
+  /** A row in the unified inbox changed: send the access-filtered badge counts to every socket of its recipient. */
+  function notify(userId, counts = {}) {
+    const unread = Number.isSafeInteger(counts.unread) && counts.unread >= 0 ? counts.unread : 0;
+    const unreadMentions = Number.isSafeInteger(counts.unreadMentions) && counts.unreadMentions >= 0 ? counts.unreadMentions : 0;
+    for (const ws of Array.from(byUser.get(userId) ?? [])) send(ws, { t: 'notify', unread, unreadMentions });
+  }
+
   /** Closes every socket (a restore takes the server over, or it stops). */
   function closeAll(code, reason) {
     for (const ws of allSockets()) close(ws, code, reason);
@@ -292,6 +454,9 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
       const targets = userId ? Array.from(byUser.get(userId) ?? []) : allSockets();
       const onlyKey = typeof boardId === 'string' ? channelKey('board', boardId) : null;
       for (const ws of targets) recheck(ws, onlyKey);
+      // Presence follows the same access: a watcher whose view of the boards may have changed gets a fresh snapshot.
+      const watchers = userId && boardId ? allSockets() : targets;
+      for (const ws of watchers) if (ws.chat?.presenceWatching) refreshPresence(ws);
     },
     'session-revoked': ({ userId, sessionId } = {}) => {
       for (const ws of Array.from(byUser.get(userId) ?? [])) {
@@ -320,9 +485,14 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
           close(ws, CHAT_CLOSE.unauthenticated, 'unauthenticated');
           continue;
         }
-        if (t - ws.chat.checkedAt < RECHECK_MS) continue;
-        ws.chat.checkedAt = t;
-        if (!personOf(ws)) close(ws, CHAT_CLOSE.unauthenticated, 'unauthenticated');
+        if (t - ws.chat.checkedAt >= RECHECK_MS) {
+          ws.chat.checkedAt = t;
+          if (!personOf(ws)) {
+            close(ws, CHAT_CLOSE.unauthenticated, 'unauthenticated');
+            continue;
+          }
+        }
+        if (ws.chat.presenceWatching && t - ws.chat.presenceRefreshedAt >= PRESENCE_REFRESH_MS) refreshPresence(ws);
       } catch (err) {
         log('chat: could not check a session', err?.message);
       }
@@ -347,5 +517,5 @@ export function createChatHub({ auth, directory, access, summary, channelUnread,
     if (events) for (const [name, fn] of Object.entries(listeners)) events.off(name, fn);
   }
 
-  return { connect, publish, read, notice, activeSince, closeAll, stop, tick, stats: () => ({ users: byUser.size, sockets: allSockets().length, channels: byChannel.size }) };
+  return { connect, publish, publishPresence, read, notify, notice, activeSince, closeAll, stop, tick, stats: () => ({ users: byUser.size, sockets: allSockets().length, channels: byChannel.size, presenceBoards: byPresenceBoard.size }) };
 }

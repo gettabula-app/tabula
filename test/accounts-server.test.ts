@@ -37,6 +37,7 @@ const startRelay = (dir = dataDir, env: Record<string, string> = {}) => startRel
     HOST: '127.0.0.1',
     TABULA_AUTH: 'on',
     TABULA_OWNER_EMAIL: OWNER,
+    TABULA_AUTH_IP_LIMIT: '20',
     TABULA_MAIL: 'file',
     TABULA_BASE_URL: `http://127.0.0.1:${port}`,
     TABULA_TRUST_PROXY: '1',
@@ -223,7 +224,7 @@ describe('accounts mode server', () => {
       expect(owner.user.role).toBe('owner');
       expect(owner.user.email).toBe(OWNER);
       const me = await api(owner.cookie, 'GET', '/api/me');
-      expect(me.body).toEqual({ user: owner.user, teams: [], mcpOauth: false, images: true, chat: true });
+      expect(me.body).toEqual({ user: owner.user, teams: [], mcpOauth: false, images: true, chat: true, notifications: true });
 
       const second = await signIn(OWNER);
       expect(second.user.id).toBe(owner.user.id);
@@ -283,6 +284,8 @@ describe('accounts mode server', () => {
       expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
       const limited = await api(undefined, 'POST', '/api/auth/request', { email }, { 'x-forwarded-for': ip });
       expect(limited.body.error).toBe('rate_limited');
+      expect(limited.body.message).toMatch(/^Too many sign-in requests for this email address\. Try again in (59|60) minutes\.$/);
+      expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(3500);
 
       // 20 requests from one proxy-reported client are fine even though the left entries differ;
       // the 21st is limited by the rightmost entry, whatever a client prepends.
@@ -293,6 +296,28 @@ describe('accounts mode server', () => {
       }
       const over = await api(undefined, 'POST', '/api/auth/request', { email: emailOf('flood') }, { 'x-forwarded-for': `1.2.3.4, ${client}` });
       expect(over.status).toBe(429);
+      expect((await over.body).message).toMatch(/^Too many sign-in requests from your network\. Try again in (59|60) minutes\.$/);
+    });
+
+    it('does not let another address lock an email out, and answers a 429 the same for known and unknown emails', async () => {
+      const known = emailOf('lockout-known');
+      const unknown = emailOf('lockout-unknown');
+      const attacker = nextIp();
+      await requestLink(known, undefined, nextIp()); // the account's own first request, from its own address
+      const mine = nextIp();
+      const statuses = { known: [] as number[], unknown: [] as number[] };
+      for (let i = 0; i < 6; i++) {
+        statuses.known.push((await requestLink(known, undefined, attacker)).res.status);
+        statuses.unknown.push((await requestLink(unknown, undefined, attacker)).res.status);
+      }
+      expect(statuses.known).toEqual([200, 200, 200, 200, 200, 429]);
+      expect(statuses.unknown).toEqual(statuses.known);
+      const a = await api(undefined, 'POST', '/api/auth/request', { email: known }, { 'x-forwarded-for': attacker });
+      const b = await api(undefined, 'POST', '/api/auth/request', { email: unknown }, { 'x-forwarded-for': attacker });
+      expect(a.body.message).toBe(b.body.message);
+      expect(a.headers.get('retry-after')).toBe(b.headers.get('retry-after'));
+      // the owner of the address still gets through from their own client address
+      expect((await requestLink(known, undefined, mine)).res.status).toBe(200);
     });
 
     it('requires the csrf header and a matching Origin on every state-changing request', async () => {
@@ -484,7 +509,7 @@ describe('accounts mode server', () => {
       const team = await newTeam(owner.cookie, 'Invite crew');
       const created = await api(owner.cookie, 'POST', `/api/teams/${team.id}/invites`, { role: 'member', days: 2 });
       expect(created.status).toBe(201);
-      expect(created.body.url).toBe(`${baseUrl}/#/invite/${created.body.token}`);
+      expect(created.body.url).toBe(`${baseUrl}/?invite=1#/invite/${created.body.token}`);
       expect(created.body.expiresAt).toBeGreaterThan(Date.now() + 47 * 3600_000);
       expect(created.body.expiresAt).toBeLessThan(Date.now() + 49 * 3600_000);
 
@@ -499,9 +524,42 @@ describe('accounts mode server', () => {
       const me = await api(person.cookie, 'GET', '/api/me');
       expect(me.body.teams).toEqual([{ id: team.id, name: 'Invite crew', role: 'member' }]);
 
+      // the inviter hears about it, also for a person who is new to the workspace
+      const heard = await api(owner.cookie, 'GET', '/api/notifications');
+      expect(heard.body.items.filter((i: Body) => i.kind === 'team_joined' && i.actor?.id === person.user.id)).toHaveLength(1);
+
       const invites = await api(owner.cookie, 'GET', `/api/teams/${team.id}/invites`);
       expect(invites.body).toEqual([{ id: created.body.id, role: 'member', expiresAt: created.body.expiresAt, uses: 1, maxUses: null }]);
       expect(JSON.stringify(invites.body)).not.toContain(created.body.token);
+    });
+
+    it('leaves invite uses unlimited by default (one link for a whole class), honours an explicit limit, rejects invalid values', async () => {
+      const team = await newTeam(owner.cookie);
+      const base = `/api/teams/${team.id}/invites`;
+      const def = await api(owner.cookie, 'POST', base, {});
+      expect(def.body).toMatchObject({ maxUses: null, uses: 0 });
+      expect((await api(owner.cookie, 'POST', base, { maxUses: null })).body).toMatchObject({ maxUses: null });
+      const two = await api(owner.cookie, 'POST', base, { maxUses: 2 });
+      expect(two.body).toMatchObject({ maxUses: 2 });
+      expect((await api(owner.cookie, 'POST', base, { maxUses: 1000 })).status).toBe(201);
+      for (const bad of [0, -1, 1001, 1.5, '3', true]) {
+        expect((await api(owner.cookie, 'POST', base, { maxUses: bad })).status).toBe(400);
+      }
+      const list = (await api(owner.cookie, 'GET', base)).body as Body[];
+      expect(list.find((i) => i.id === def.body.id)).toMatchObject({ maxUses: null, uses: 0 });
+      expect(list.find((i) => i.id === two.body.id)).toMatchObject({ maxUses: 2, uses: 0 });
+    });
+
+    it('says an invitation is used up, with its own error, once the last place is taken', async () => {
+      const team = await newTeam(owner.cookie);
+      const made = await api(owner.cookie, 'POST', `/api/teams/${team.id}/invites`, { maxUses: 1 });
+      const token = made.body.token as string;
+      await signIn(emailOf('first'), token);
+      const preview = await api(undefined, 'GET', `/api/invites/${token}`);
+      expect([preview.status, preview.body.error, preview.body.message]).toEqual([404, 'invite_exhausted', 'This invitation has been used up. Ask the person who invited you for a new link.']);
+      const person = await signIn(emailOf('member'), await inviteToken(owner.cookie, (await newTeam(owner.cookie)).id));
+      const accepted = await api(person.cookie, 'POST', `/api/invites/${token}/accept`);
+      expect([accepted.status, accepted.body.error]).toEqual([404, 'invite_exhausted']);
     });
 
     it('validates invite options and keeps invites inside their team', async () => {

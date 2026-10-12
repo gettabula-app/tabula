@@ -255,8 +255,41 @@ function connect() {
   };
 }
 
+/** The Boards page's presence frames (`presence.snapshot`, `presence.update`, `presence.clear`) come over the same socket. */
+const presenceListeners = new Set<(f: Record<string, unknown>) => void>();
+
+/** The Boards page wants presence: the server sends none until it is told (`presence.watch`), and tells again after each reconnect. */
+let presenceWatching = false;
+
+export function setPresenceWatch(on: boolean): void {
+  presenceWatching = on;
+  sendFrame({ t: on ? 'presence.watch' : 'presence.unwatch' });
+}
+
+export function onPresenceFrame(fn: (f: Record<string, unknown>) => void): () => void {
+  presenceListeners.add(fn);
+  return () => presenceListeners.delete(fn);
+}
+
+/** The bell's counts changed on the server (`notify`: the numbers; the page is fetched again). */
+const notifyListeners = new Set<(counts: { unread: number; unreadMentions: number }) => void>();
+
+export function onNotifyFrame(fn: (counts: { unread: number; unreadMentions: number }) => void): () => void {
+  notifyListeners.add(fn);
+  return () => notifyListeners.delete(fn);
+}
+
 function onFrame(f: Record<string, unknown>) {
   const t = f.t;
+  if (typeof t === 'string' && t.startsWith('presence.')) {
+    for (const fn of Array.from(presenceListeners)) fn(f);
+    return;
+  }
+  if (t === 'notify') {
+    const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(0, Math.floor(x)) : 0);
+    for (const fn of Array.from(notifyListeners)) fn({ unread: num(f.unread), unreadMentions: num(f.unreadMentions) });
+    return;
+  }
   if (t === 'pong') {
     if (pongTimer) clearTimeout(pongTimer);
     pongTimer = null;
@@ -268,6 +301,7 @@ function onFrame(f: Record<string, unknown>) {
     const reconnect = helloSeen;
     helloSeen = true;
     signedOut = false;
+    if (presenceWatching) sendFrame({ t: 'presence.watch' });
     workspaceReadOnly = f.readOnly === true;
     unread.clear();
     for (const c of Array.isArray(f.channels) ? f.channels : []) {

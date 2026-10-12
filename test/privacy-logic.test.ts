@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PRIVACY_COPY, privacyCategoryText, privacyEditState, privacyLastChangedBy, privacyModeIntro, privacySharingState, privacySwitchLabel, privacyStayOnHeading, privacyStayOnLead, privacyTimestamp } from '../src/ui/privacy-logic';
+import { PRIVACY_COPY, privacyCategoryText, privacyEditState, privacyLastChangedBy, privacyModeIntro, privacySharingState, privacySwitchLabel, privacyStayOnHeading, privacyStayOnLead, privacyTimestamp, privacyHourlyNote, privacyNoReport, privacyPreviewButton } from '../src/ui/privacy-logic';
 
 describe('Privacy panel copy and rules', () => {
   it('uses the required switch label and describes the hosted and self-hosted defaults', () => {
@@ -53,6 +53,13 @@ describe('Privacy panel copy and rules', () => {
     expect(PRIVACY_COPY.neverHeading).toBe('What is never sent');
     expect(PRIVACY_COPY.noSent).toBe('Nothing has been sent yet.');
     expect(PRIVACY_COPY.previewButton).toBe('Show what would be sent');
+    // hosted workspaces: the hosting service collects the hourly report (CGO-approved wording); a server you run sends nothing yet
+    expect(PRIVACY_COPY.hourlyNoteHosted).toBe('Once an hour, Tabula collects the report shown below from this workspace and keeps it. Turning this off stops product analytics at once, and the report of the current hour is not collected. Operating data stays on either way. Data that was already collected can be deleted on request.');
+    expect(PRIVACY_COPY.noSentHosted).toBe('This is the report for the current hour. Each hour that ends is collected by Tabula as shown here.');
+    expect(PRIVACY_COPY.previewButtonHosted).toBe("Show this hour's report");
+    expect([privacyHourlyNote('hosted'), privacyHourlyNote('self')]).toEqual([PRIVACY_COPY.hourlyNoteHosted, PRIVACY_COPY.hourlyNote]);
+    expect([privacyNoReport('hosted'), privacyNoReport('self')]).toEqual([PRIVACY_COPY.noSentHosted, PRIVACY_COPY.noSent]);
+    expect([privacyPreviewButton('hosted'), privacyPreviewButton('self')]).toEqual(["Show this hour's report", 'Show what would be sent']);
     expect(PRIVACY_COPY.confirmSelfOnTitle).toBe('Send telemetry to Tabula?');
     expect(PRIVACY_COPY.confirmSelfOnText).toBe('This instance will prepare the items listed on this page once an hour for Tabula and send nothing else. You can turn it off at any time.');
     expect(PRIVACY_COPY.cancel).toBe('Cancel');

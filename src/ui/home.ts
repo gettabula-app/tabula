@@ -1,5 +1,8 @@
 import './home.css';
 import './home-teams.css';
+import { boardsPresence } from '../presence';
+import { createPresenceFeed } from '../presence-feed';
+import { presenceCell } from './presence-cell';
 import { h, icon } from './dom';
 import { dialog, fmtAgo, popover, toast } from './common';
 import { deleteBoard, listBoards, relayUrl, touchBoard, type BoardEntry } from '../sync';
@@ -8,7 +11,7 @@ import { importedBoardName, readBoardFile, type ImportedBoard } from '../exporte
 import { storedWhere } from '../desktop-env';
 import { ApiError, api, type BoardRole, type Me, type ServerBoard, type Team } from '../api';
 import { cacheServerBoards, cachedServerBoards, chatAvailable, setSignedOut, type AuthState } from '../auth';
-import { boardUnread, onChatBadge } from '../chat';
+import { boardUnread, onChatBadge, onPresenceFrame, setPresenceWatch, watchChat } from '../chat';
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 import { createWorkspaceBanner } from './workspace';
 import { accountMe, createTopbar, pageFooter, searchField } from './topbar';
@@ -125,6 +128,24 @@ function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boo
   };
   paint();
   refresh();
+  startPresence(() => page?.parentNode === root);
+}
+
+let stopPresence: (() => void) | null = null;
+
+/** "Here now" on the rows: live while this list is on the page, over the chat socket or by polling. */
+function startPresence(alive: () => boolean) {
+  stopPresence?.();
+  boardsPresence.reset();
+  stopPresence = boardsPresence.connect(createPresenceFeed({
+    store: boardsPresence,
+    alive,
+    chatOn: chatAvailable(),
+    onFrame: onPresenceFrame,
+    keepSocket: watchChat,
+    watch: setPresenceWatch,
+    fetchList: async () => (await api.presenceList()).presence,
+  }));
 }
 
 /** Resolves to null when the session has ended: the user is sent to sign-in. */
@@ -231,7 +252,7 @@ function serverBoardList(v: AccountView, boards: ServerBoard[], label: string) {
   return boardTable(label, [...boards].sort((a, b) => b.updatedAt - a.updatedAt).map((b) => {
     const title = b.title || UNTITLED;
     return {
-      id: b.id, title, updatedAt: b.updatedAt, role: b.role, chat: true,
+      id: b.id, title, updatedAt: b.updatedAt, role: b.role, chat: true, here: true,
       actions: [b.role === 'owner' ? deleteButton(`Delete ${title}`, 'Delete board', v.down, () => confirmDeleteBoard(v, b.id, title)) : null],
     };
   }), 'access');
@@ -241,13 +262,15 @@ function deviceSection(v: AccountView, local: BoardEntry[], teams: Team[]) {
   return group('On this device', null, [], boardTable('On this device', local.map((b) => localRow(b, v.refresh, (anchor) => addToWorkspace(anchor, b, v, teams), v.down)), 'device'));
 }
 
-interface BoardRow {
+export interface BoardRow {
   id: string;
   title: string;
   updatedAt: number;
   role?: BoardRole;
   /** A board on the server: its chat's unread count shows beside the title (when chat is on). */
   chat?: boolean;
+  /** Draws the "Here now" cell (boards on the server). */
+  here?: boolean;
   actions: (HTMLElement | null)[];
 }
 
@@ -289,19 +312,24 @@ function boardChatBadge(boardId: string): HTMLElement | null {
 }
 
 /** Rows on hairlines under a labelled 2px rule. `access` adds the role column, `device` makes room for Add to workspace. */
-function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 'device') {
+export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 'device') {
   return h('div', { class: `board-table ${kind}` },
     h('div', { class: 'board-head', 'aria-hidden': 'true' },
       h('span', null, 'Name'),
+      kind === 'access' ? h('span', null, 'Here now') : null,
       h('span', null, 'Edited'),
       kind === 'access' ? h('span', null, 'Access') : null,
       h('span')),
-    h('ul', { class: 'board-list', 'aria-label': label }, ...rows.map((r) => h('li', { class: 'board-row' },
-      h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null),
+    h('ul', { class: 'board-list', 'aria-label': label }, ...rows.map((r) => {
+      const link = h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null);
+      return h('li', { class: 'board-row' },
+      link,
       h('span', { class: 'board-sub' },
+        r.here ? presenceCell(boardsPresence, r.id, () => link) : null,
         h('span', { class: 'board-edited' }, h('span', { class: 'board-lbl' }, 'Edited '), fmtAgo(r.updatedAt)),
         r.role ? h('span', { class: 'board-access' }, ACCESS[r.role] ? h('span', { class: 'badge' }, ACCESS[r.role]) : null) : null),
-      h('span', { class: 'board-actions' }, ...r.actions)))));
+      h('span', { class: 'board-actions' }, ...r.actions));
+    })));
 }
 
 function addToWorkspace(anchor: HTMLElement, b: BoardEntry, v: AccountView, teams: Team[]) {

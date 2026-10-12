@@ -103,6 +103,15 @@ describe('Admin Privacy', () => {
     expect(at('audit')).toBe(hrefs.length - 1);
   });
 
+  it('keeps saying nothing is sent yet on a server you run yourself', async () => {
+    state = settings({ mode: 'self', enabled: false });
+    renderAdmin(root as unknown as HTMLElement, 'privacy', selfOwner);
+    await flush();
+    expect(textOf(panel())).toContain(PRIVACY_COPY.hourlyNote);
+    expect(textOf(panel())).not.toContain('collects the report');
+    expect(textOf(previewButton())).toBe(PRIVACY_COPY.previewButton);
+  });
+
   it('lays out the switch, its description, the state note, then the lists under their subheadings', async () => {
     renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
     await flush();
@@ -140,7 +149,9 @@ describe('Admin Privacy', () => {
     await flush();
     expect(toggle().checked).toBe(true);
     expect(toggle().disabled).toBe(false);
-    expect(textOf(panel())).toContain(PRIVACY_COPY.hourlyNote);
+    expect(textOf(panel())).toContain(PRIVACY_COPY.hourlyNoteHosted);
+    expect(textOf(panel())).not.toContain('Nothing has been sent');
+    expect(textOf(previewButton())).toBe(PRIVACY_COPY.previewButtonHosted);
     expect(textOf(panel())).toContain(PRIVACY_COPY.categories.performance);
     expect(textOf(panel())).toContain(PRIVACY_COPY.categories.error_codes);
     expect(textOf(panel())).toContain(PRIVACY_COPY.categories['backup state']);
@@ -262,9 +273,20 @@ describe('Admin Privacy', () => {
     await flush();
     previewButton().click();
     await flush();
-    expect(textOf(panel())).toContain(PRIVACY_COPY.noSent);
+    expect(textOf(panel())).toContain(PRIVACY_COPY.noSentHosted);
     expect(panel().querySelector('.privacy-json')).toBeNull();
     expect(panel().querySelector('[data-focus=copy]')).toBeNull();
+  });
+
+  it('says plainly that the workspace id is not valid for telemetry when no report can be built', async () => {
+    preview = { preview: null, problem: 'workspace_id', builtAt: Date.UTC(2026, 9, 12, 9, 0), note: 'Collected by Tabula once an hour, as shown' };
+    renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
+    await flush();
+    previewButton().click();
+    await flush();
+    expect(textOf(panel())).toContain(PRIVACY_COPY.workspaceIdInvalid);
+    expect(textOf(panel())).not.toContain(PRIVACY_COPY.noSentHosted);
+    expect(panel().querySelector('.privacy-json')).toBeNull();
   });
 
   it('can retry a failed preview request', async () => {

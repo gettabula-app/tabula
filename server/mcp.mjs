@@ -9,7 +9,7 @@ import { gunzipSync } from 'node:zlib';
 import * as Y from 'yjs';
 import { TEMPLATE_CATEGORIES } from './templates.mjs';
 import { TOKEN_BOARD_ID_RE } from './tokens.mjs';
-import { clientIpOf } from './client-ip.mjs';
+import { clientRateKeyOf } from './client-ip.mjs';
 import { createWindowLimiter, TICKET_CREATES_PER_WINDOW } from './limiter.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { requireTrackerGateOpen } from './tracker/shared.mjs';
@@ -197,7 +197,7 @@ function linkValue(value, path) {
  * @param {{ read(room: string, fn: (doc: any) => any): any, write(room: string, origin: string, fn: (doc: any) => any): any, exists(room: string): boolean }} deps.roomAccess
  * @param {(...args: unknown[]) => void} deps.log
  */
-export function createMcp({ config, directory, cloud = null, canWriteRoom, roomAccess, log, now = Date.now, snapshotBarrier = null, history = null }) {
+export function createMcp({ config, directory, cloud = null, canWriteRoom, roomAccess, notifications = null, log, now = Date.now, snapshotBarrier = null, history = null }) {
   const open = config.mcp.mode === 'open';
   const dailyWriteCap = config.mcp.dailyWrites ?? 2000;
   for (const name of config.mcp.ignored ?? []) log(`${name} is ignored: it only applies in open mode`);
@@ -222,7 +222,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   const utcDay = (timestamp) => new Date(timestamp).toISOString().slice(0, 10);
   const resetsAt = (timestamp) => new Date((Math.floor(timestamp / MCP_DAY_MS) + 1) * MCP_DAY_MS).toISOString();
 
-  const clientIp = (req) => clientIpOf(req, config);
+  const clientIp = (req) => clientRateKeyOf(req, config);
 
   // ------------------------------------------------------------ who is calling
 
@@ -341,9 +341,13 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         authorise(actor, boardId, 'write', 'board');
         return roomAccess.write(boardId, origin, fn, { actor: trackerActor(actor), source: 'mcp' });
       },
-      writeComments(fn) {
+      writeComments(fn, { threadId = null } = {}) {
         authorise(actor, boardId, 'comment', 'comments');
-        return roomAccess.write(commentsRoom, origin, fn);
+        return roomAccess.write(commentsRoom, origin, fn, {
+          notificationActorId: directory ? actor.createdBy : null,
+          commentThreadId: threadId,
+          notifications,
+        });
       },
     };
   }
@@ -1835,7 +1839,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         const body = check.required(args, 'text', '');
         const ctx = makeCtx(actor, boardId);
         const hidden = ctx.readBoard(hiddenIds);
-        const added = ctx.writeComments((doc) => addReply(doc, threadId, { author: authorOf(actor), text: body }, { hidden }, now()));
+        const added = ctx.writeComments((doc) => addReply(doc, threadId, { author: authorOf(actor), text: body }, { hidden }, now()), { threadId });
         return { ...plain({ replyId: added.replyId }), audit: { room: 'comments', boardId, ...added.audit } };
       },
     },

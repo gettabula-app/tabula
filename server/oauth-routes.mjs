@@ -1,6 +1,6 @@
 // OAuth metadata, client registration, authorization, token and revocation endpoints.
 import net from 'node:net';
-import { clientIpOf } from './client-ip.mjs';
+import { clientRateKeyOf } from './client-ip.mjs';
 import { createClientAwareLimiter, createWindowLimiter } from './limiter.mjs';
 import { MAX_OAUTH_CLIENTS, OAUTH_SCOPES, oauthClientFingerprint, redirectUriRegistered } from './oauth.mjs';
 import { KNOWN_LOCALHOST_PATHS, knownRedirect, TOLERATED_PRIVATE_URIS } from './oauth-known-clients.mjs';
@@ -279,7 +279,7 @@ export function createOAuthRoutes({ config, directory, now = Date.now }) {
   const tokenFailureLimits = createClientAwareLimiter(TOKEN_FAILURE_LIMIT, now);
   const refreshGrantLimits = createWindowLimiter(REFRESH_GRANT_LIMIT, now);
   const revokeLimits = createClientAwareLimiter(REVOKE_LIMIT, now);
-  const clientIp = (req) => clientIpOf(req, config);
+  const clientIp = (req) => clientRateKeyOf(req, config);
   const resource = `${issuer}/mcp`;
 
   function auditReuse(grantId, kind) {

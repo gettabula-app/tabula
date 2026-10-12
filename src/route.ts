@@ -17,7 +17,7 @@ export type Route =
   | { name: 'board'; id: string; trackerPosition?: { trackerId: string; key?: string } }
   | { name: 'tracker'; target: Exclude<TrackerPathRoute, { kind: 'board-position' }> }
   | { name: 'signin' }
-  | { name: 'verify'; token: string; oauthRequest?: string }
+  | { name: 'verify'; token: string; oauthRequest?: string; invite?: string }
   | { name: 'oauth-consent'; request: string }
   | { name: 'invite'; token: string }
   | { name: 'join'; code: string }
@@ -59,7 +59,9 @@ export function parseRoute(hash: string): Route {
     if (!token) return { name: 'signin' };
     const oauthRequests = params.getAll('oauthRequest');
     const oauthRequest = oauthRequests.length === 1 && isOAuthEnvelope(oauthRequests[0]) ? oauthRequests[0] : undefined;
-    return { name: 'verify', token, ...(oauthRequest ? { oauthRequest } : {}) };
+    const invites = params.getAll('invite');
+    const inviteToken = invites.length === 1 && /^[A-Za-z0-9_-]{1,256}$/.test(invites[0]) ? invites[0] : undefined;
+    return { name: 'verify', token, ...(oauthRequest ? { oauthRequest } : {}), ...(inviteToken ? { invite: inviteToken } : {}) };
   }
   const oauthConsent = hash.match(/^#\/oauth\/consent(?:\?(.*))?$/);
   if (oauthConsent) {

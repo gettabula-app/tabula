@@ -45,6 +45,8 @@ export interface Me {
   ai?: { personalKeys: true };
   /** Present (true) when team chat is on for this server (docs/chat.md). */
   chat?: boolean;
+  /** The notification list exists on this server (accounts mode); the bell shows only then. */
+  notifications?: boolean;
   /** Present (true) when this server enables tracker frame creation. */
   tracker?: boolean;
   /** Present only when the relay has one-board guest join codes enabled. */
@@ -162,8 +164,10 @@ export interface AdminPrivacy {
 /** GET /api/admin/privacy/preview. The preview is the exact report structure shown to the owner. */
 export interface AdminPrivacyPreview {
   preview: Record<string, unknown> | null;
+  /** Set when no report can be built: 'workspace_id' means the hosted workspace's id does not fit the report schema. */
+  problem?: 'workspace_id';
   builtAt: number;
-  note: 'Nothing has been sent';
+  note: string;
 }
 
 export interface ChatUnread { kind: string; ref: string; lastId: number; unread: number; mentions: number }
@@ -330,6 +334,21 @@ export interface ServerBoard {
   updatedAt: number;
 }
 
+export interface BoardPresencePerson {
+  userId: string;
+  name: string;
+  colour: string | null;
+  joinedAt: number;
+  guest?: true;
+}
+
+export interface BoardPresence {
+  boardId: string;
+  count: number;
+  people: BoardPresencePerson[];
+  me?: true;
+}
+
 export interface Share {
   principalType: PrincipalType;
   principalId: string;
@@ -354,6 +373,8 @@ export interface AdminOverview {
   signIns7d: number;
   live: { rooms: number; connections: number };
   instance: { authEnabled: true; baseUrl: string; mail: 'log' | 'file' | 'webhook' | 'smtp'; version: string };
+  /** Recent service refusals from the per-process mail health state. */
+  mail?: { refusedRecently: number; reason: string | null };
   /** Present only when a control plane runs this instance. */
   trialEndsAt?: string | null;
   /** Present only when a control plane runs this instance. */
@@ -819,6 +840,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     acceptInvite: (token: string) => call<InvitePreview>('POST', `/api/invites/${seg(token)}/accept`),
 
     boards: () => call<ServerBoard[]>('GET', '/api/boards'),
+    boardsPresence: () => call<{ presence: BoardPresence[] }>('GET', '/api/boards/presence'),
     createBoard: (board: { id: string; title?: string; teamId?: string }) =>
       call<ServerBoard>('POST', '/api/boards', board),
     updateBoard: (id: string, patch: { title?: string; teamId?: string | null }) =>
@@ -912,6 +934,11 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     chatUnread: () => call<{ channels: ChatUnread[] }>('GET', '/api/chat/unread'),
     chatReact: (id: number, emoji: string, on: boolean) =>
       call<{ id: number; reactions: { emoji: string; userIds: string[] }[] }>(on ? 'PUT' : 'DELETE', `/api/chat/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
+    /** Who else has each board open (the Boards page's "Here now"): the first value, and the poll without chat. */
+    presenceList: () => call<{ presence: unknown[] }>('GET', '/api/boards/presence'),
+    notifications: (before?: string | null) => call<unknown>('GET', `/api/notifications${before ? `?before=${encodeURIComponent(before)}` : ''}`),
+    notificationCounts: () => call<unknown>('GET', '/api/notifications/unread'),
+    notificationsRead: (body: { ids: string[] } | { all: true }) => call<unknown>('POST', '/api/notifications/read', body),
     chatPrefs: () => call<{ emailMentions: boolean }>('GET', '/api/me/prefs'),
     setChatPrefs: (patch: { emailMentions: boolean }) => call<{ emailMentions: boolean }>('PUT', '/api/me/prefs', patch),
     chatChannels: () => call<{ channels: ChatChannelEntry[] }>('GET', '/api/chat/channels'),

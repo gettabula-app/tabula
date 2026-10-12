@@ -1,5 +1,9 @@
 # Capacity
 
+## Boards-page presence scenario
+
+This is a workload to measure alongside the one-board class run: **N = 100 signed-in Boards-page watchers**, **M = 30 live board rooms**, with a 10-second burst of 10 joins or leaves per second spread across those rooms, followed by one join or leave per second. Each changed room is coalesced for one second and delivered only to its authorized watchers. Measure relay RSS, CPU, event-loop lag, snapshot time and update fan-out; snapshots include at most 200 recent live rooms and eight people per room. This scenario is specified but has not been measured yet.
+
 ## Load test for a class
 
 Run `node scripts/load-class.mjs` or `npm run load:class` from the repository. `USERS` counts the teacher and students together; the default steps are 30, 60 and 100 people, with 60 seconds of activity per step. Set `USERS=5,30`, `SECONDS=10`, `CHAT=off`, `RELAY_NODE_ARGS="--max-old-space-size=380"` or `OUT=/path/to/results.json` to change the run. `OUT` defaults to a JSON file under the operating system's temporary directory; the script prints its path.

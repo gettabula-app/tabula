@@ -329,6 +329,12 @@ describe('OAuth consent panel', () => {
     serve();
     const done = vi.fn<(me: Me, oauthRequest?: string) => void>();
     await renderVerify(root as unknown as HTMLElement, 'login-token', done, ENVELOPE);
+    // the page waits for the person: nothing is spent until the button is pressed
+    expect(apiCalls('POST', '/api/auth/verify')).toHaveLength(0);
+    expect(done).not.toHaveBeenCalled();
+    need(root, 'button').click();
+    await flush();
+    expect(apiCalls('POST', '/api/auth/verify')).toHaveLength(1);
     expect(done).toHaveBeenCalledWith(signedIn, ENVELOPE);
   });
 
