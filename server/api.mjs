@@ -540,7 +540,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // Hosted workspaces (docs/cloud.md). The limit is set by the control plane for free (comp) workspaces only; a paid workspace has none
   // and there is no billing screen to send anyone to, so the message says only what to do. The code stays seat_limit.
   const seatLimited = () =>
-    conflict('seat_limit', 'This workspace has reached its member limit. Remove or disable a member to make room.');
+    conflict('seat_limit', 'This workspace has reached its member limit. Remove or disable a member to make room, or ask the workspace owner to write to us for a larger workspace.');
 
   // A template the caller cannot see does not exist for them (404); one they can see but not change is 403.
   function templateFor(user, id, { change = false } = {}) {
@@ -721,7 +721,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         result = typeof body.token === 'string' ? auth.verifyLogin(body.token, { userAgent: req.headers['user-agent'] }) : null;
       } catch (err) {
         if (!(err instanceof SeatLimitError)) throw err;
-        throw conflict('seat_limit', 'This workspace has reached its member limit. Ask an admin to remove or disable a member to make room, then open this link again.');
+        throw conflict('seat_limit', 'This workspace has reached its member limit. Ask an admin to remove or disable a member, or the workspace owner to write to us for a larger workspace, then open this link again.');
       }
       if (!result) throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
       res.setHeader('set-cookie', auth.sessionCookie(result.sessionToken, result.maxAgeMs));

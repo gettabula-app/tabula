@@ -34,7 +34,7 @@ Counts for the whole workspace:
 
 Below the counts, **Instance** lists the server address, how email is sent, the version, and whether accounts are on.
 
-On a hosted workspace, the owner also sees **Manage billing**. It opens the billing portal in the same tab, where you change the plan and update the payment method. While the workspace is on a free trial, the owner also sees "Free trial until" and the end date beside it. Admins who are not owners do not see it. A workspace that is provided free (for education or internal use) has nothing to bill, so the owner reads "This workspace is provided free (education or internal). There's nothing to bill." here and in the Backups tab instead of the button.
+On a hosted workspace, the owner also sees **Manage billing**. It opens the billing portal in the same tab, where you change the plan and update the payment method. While the workspace is on a free trial, the owner also sees "Free trial until" and the end date beside it. Admins who are not owners do not see it. A workspace that is provided free of charge (a comp workspace) has nothing to bill, so the owner reads "This workspace is provided free of charge. There is nothing to bill." here and in the Backups tab instead of the button.
 
 <!-- screenshot: Overview section with the stat tiles and the Instance list -->
 
@@ -131,7 +131,7 @@ The audit log has a **Chat** filter. It shows changes to these settings, message
 
 The **Backups** section is for the workspace owner. Backups are copies of everything in the workspace, stored away from the server and encrypted before they leave it. Here you see how they are going and bring back one board or the whole workspace.
 
-It is listed for every owner. When backups are off it says **Not set up**. On a hosted workspace it offers **Add backups**, which opens billing in the same tab. On a server you run yourself it links to this page: turn backups on with the settings below, then restart the server.
+It is listed for every owner. When backups are off it says **Not set up**. On a server you run yourself it links to this page: turn backups on with the settings below, then restart the server.
 
 ### Turn backups on
 
@@ -196,7 +196,7 @@ If something fails before the swap, nothing changes and the page says why in pla
 
 Only owners see the **Backups** tab. It sits between **AI** and the audit log. Admins who are not owners do not see it, and its address shows them the **Overview**.
 
-If backups are not turned on, the tab says **Not set up**. On a hosted workspace it has an **Add backups** button that opens billing, the same way **Manage billing** does. On your own server it points to the setup steps and the person who runs the server.
+If backups are not turned on, the tab says **Not set up**. On your own server it points to the setup steps and the person who runs the server.
 
 When backups are on, the tab shows:
 
