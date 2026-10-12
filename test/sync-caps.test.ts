@@ -118,10 +118,15 @@ describe('loadSyncCaps and frameLimitFor', () => {
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_SOCKETS_PER_USER: 'abc' })).toThrow(/TABULA_SYNC_MAX_SOCKETS_PER_USER/);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_OTHER: '0' })).toThrow(/at least 1/);
     expect(() => loadSyncCaps({ TABULA_SYNC_UPGRADES_PER_MINUTE: '0' })).toThrow();
-    expect(frameLimitFor(d, { role: 'editor' }, true)).toBe(MAX_FRAME_BYTES_OTHER);
-    expect(frameLimitFor(d, { role: 'owner' }, true)).toBe(MAX_FRAME_BYTES_OWNER);
-    expect(frameLimitFor(d, {}, false)).toBe(MAX_FRAME_BYTES_OWNER);
-    expect(frameLimitFor(d, { role: 'owner' }, true, 'comments')).toBe(MAX_FRAME_BYTES_COMMENTS);
+    expect(frameLimitFor(d, { role: 'editor', canWrite: true }, true)).toBe(MAX_FRAME_BYTES_OTHER);
+    expect(frameLimitFor(d, { role: 'owner', canWrite: true }, true)).toBe(MAX_FRAME_BYTES_OWNER);
+    expect(frameLimitFor(d, { role: 'viewer', canWrite: false }, true)).toBe(d.maxFrameSmall);
+    expect(frameLimitFor(d, { role: 'commenter', canWrite: false }, true)).toBe(d.maxFrameSmall);
+    expect(frameLimitFor(d, { canWrite: true }, false)).toBe(MAX_FRAME_BYTES_OWNER);
+    expect(frameLimitFor(d, { canWrite: true }, false, 'comments')).toBe(MAX_FRAME_BYTES_COMMENTS);
+    expect(frameLimitFor(d, { role: 'owner', canWrite: true }, true, 'comments')).toBe(MAX_FRAME_BYTES_COMMENTS);
+    expect(frameLimitFor(d, { role: 'viewer', canWrite: false }, true, 'comments')).toBe(d.maxFrameSmall);
+    expect(MAX_FRAME_BYTES_COMMENTS).toBeGreaterThanOrEqual(4 * 1.7 * 1024 * 1024);
     expect(MAX_FRAME_BYTES_OTHER).toBeGreaterThanOrEqual(4 * 20.6 * 1024 * 1024);
   });
 });
@@ -189,7 +194,7 @@ describe('relay sync caps (open mode)', () => {
 
     const closed = closeOf(writer);
     writer.send(updateFrame((d) => d.getText('t').insert(0, 'x'.repeat(300 * 1024))));
-    expect(await closed).toMatchObject({ code: 1009, reason: 'message_too_big' });
+    expect(await closed).toMatchObject({ code: 1009 });
     reader.close();
   });
 
@@ -341,7 +346,7 @@ describe('relay sync caps (classroom and big editor updates)', () => {
     return ws;
   };
 
-  it('accepts a ~21 MiB and a ~17 MiB update from an editor, and refuses a big frame in a comments room', async () => {
+  it('accepts a ~21 MiB and a ~17 MiB update from an editor, and refuses a big frame in a comments room, but takes a 200-thread offline sync', async () => {
     const owner = await signIn(OWNER);
     expect((await api(owner.cookie, 'POST', '/api/boards', { id: 'bigboard' })).status).toBe(201);
     const team = (await api(owner.cookie, 'POST', '/api/teams', { name: 'Big' })).body;
@@ -365,8 +370,29 @@ describe('relay sync caps (classroom and big editor updates)', () => {
 
     const comments = connect(editor.cookie, 'bigboard~comments');
     await new Promise((r) => comments.once('message', r));
+    // 200 threads with one 4,000-character reply each, built with real Yjs docs (non-ASCII text, about 1.7 MB)
+    const offline = updateFrame((d) => {
+      const threads = d.getMap('threads');
+      for (let i = 0; i < 200; i++) {
+        const t = new Y.Map<unknown>([['id', `th${i}`], ['createdAt', 1], ['text', 'hi'], ['anchor', { x: 0, y: 0 }], ['resolved', false]]);
+        const replies = new Y.Map<unknown>();
+        replies.set(`r${i}`, new Y.Map<unknown>([['id', `r${i}`], ['createdAt', 2], ['text', 'é'.repeat(4000)]]));
+        t.set('replies', replies);
+        threads.set(`th${i}`, t);
+      }
+    });
+    expect(offline.length).toBeGreaterThan(1_500_000); // over the old 1 MiB cap
+    const commentsSeen: number[] = [];
+    const commentsWatcher = connect(owner.cookie, 'bigboard~comments');
+    commentsWatcher.on('message', (m: ArrayBuffer) => commentsSeen.push(m.byteLength));
+    await sleep(300);
+    comments.send(offline);
+    for (let i = 0; i < 100 && !commentsSeen.some((n) => n > 500_000); i++) await sleep(50);
+    expect(comments.readyState).toBe(WebSocket.OPEN);
+    expect(commentsSeen.some((n) => n > 500_000)).toBe(true);
+    commentsWatcher.terminate();
     const closed = closeOf(comments);
-    comments.send(updateFrame((d) => d.getText('c').insert(0, 'y'.repeat(2 * 1024 * 1024))));
+    comments.send(updateFrame((d) => d.getText('c').insert(0, 'y'.repeat(9 * 1024 * 1024))));
     expect((await closed).code).toBe(1009);
     sender.terminate(); watcher.terminate();
   }, 60_000);
@@ -394,4 +420,115 @@ describe('relay sync caps (classroom and big editor updates)', () => {
       await sleep(300);
     }
   }, 120_000);
+});
+
+describe('relay receive limits by role (accounts mode)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-caps-tier-'));
+  let proc: ChildProcess;
+  let port = 0;
+  const OWNER = 'owner@example.com';
+  let ipSeq = 0;
+  const api = async (cookie: string | undefined, method: string, p: string, body?: unknown, extra: Record<string, string> = {}) => {
+    const res = await fetch(`http://127.0.0.1:${port}${p}`, {
+      method,
+      headers: { 'x-tabula': '1', ...(cookie ? { cookie } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...extra },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await res.text();
+    return { status: res.status, body: text ? JSON.parse(text) : undefined, headers: res.headers };
+  };
+  const outbox = () => (fs.existsSync(path.join(dir, 'outbox.jsonl')) ? fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8') : '').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  async function signIn(email: string, invite?: string) {
+    const before = outbox().length;
+    const r = await api(undefined, 'POST', '/api/auth/request', { email, invite }, { 'x-forwarded-for': `10.8.${(ipSeq >> 8) & 255}.${ipSeq++ & 255}` });
+    expect(r.status).toBe(200);
+    const token = decodeURIComponent(/token=([^\s&]+)/.exec(outbox()[before].text)![1]);
+    const v = await api(undefined, 'POST', '/api/auth/verify', { token });
+    return { cookie: /tabula_session=[^;]+/.exec(v.headers.getSetCookie()[0])![0], user: v.body.user };
+  }
+  const origin = () => `http://127.0.0.1:${port}`;
+  const connect = (room: string, cookie?: string) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/${room}`, { headers: { Origin: origin(), ...(cookie ? { Cookie: cookie } : {}) } });
+    ws.binaryType = 'arraybuffer';
+    ws.on('error', () => {});
+    return ws;
+  };
+  beforeAll(async () => {
+    const started = await startRelayProcess({
+      envFor: (p) => ({
+        ...(process.env as Record<string, string>), PORT: String(p), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'on',
+        TABULA_OWNER_EMAIL: OWNER, TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${p}`, TABULA_TRUST_PROXY: '1',
+        TABULA_SYNC_MAX_FRAME_SMALL: '64K', TABULA_SYNC_MAX_FRAME_OTHER: '2M', TABULA_SYNC_MAX_FRAME_OWNER: '4M', TABULA_SYNC_MAX_FRAME_COMMENTS: '256K',
+      }),
+    });
+    port = started.port;
+    proc = started.proc;
+  });
+  afterAll(async () => {
+    if (proc && proc.exitCode === null) await new Promise<void>((r) => { proc.once('exit', () => r()); proc.kill('SIGTERM'); });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const text = (n: number) => updateFrame((d) => d.getText('t').insert(0, 'x'.repeat(n)));
+  const sees = async (ws: WebSocket, min: number) => {
+    const seen: number[] = [];
+    ws.on('message', (m: ArrayBuffer) => seen.push(m.byteLength));
+    return async () => { for (let i = 0; i < 100 && !seen.some((n) => n > min); i++) await sleep(50); return seen.some((n) => n > min); };
+  };
+
+  it('rejects a foreign Origin with HTTP 403 before any socket exists, and closes an unauthenticated socket at once', async () => {
+    const status = await new Promise<number | string>((r) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/anything`, { headers: { Origin: 'http://evil.example' } });
+      ws.on('unexpected-response', (_q, res) => r(res.statusCode ?? 0));
+      ws.on('open', () => r('open'));
+      ws.on('error', () => {});
+    });
+    expect(status).toBe(403);
+    const anon = connect('anything');
+    const sent = new Promise<void>((r) => anon.once('open', () => { anon.send(new Uint8Array(4096)); r(); }));
+    const close = await closeOf(anon);
+    await sent;
+    expect([4401, 1009]).toContain(close.code);
+  });
+
+  it('gives viewers the small limit and editors theirs', async () => {
+    const owner = await signIn(OWNER);
+    expect((await api(owner.cookie, 'POST', '/api/boards', { id: 'tierboard' })).status).toBe(201);
+    const team = (await api(owner.cookie, 'POST', '/api/teams', { name: 'Tier' })).body;
+    const share = async (email: string, role: string) => {
+      const invite = (await api(owner.cookie, 'POST', `/api/teams/${team.id}/invites`, { role: 'member' })).body.token;
+      const person = await signIn(email, invite);
+      expect((await api(owner.cookie, 'POST', '/api/boards/tierboard/shares', { principalType: 'user', principalId: person.user.id, role })).status).toBeLessThan(300);
+      return person;
+    };
+    const viewer = await share('viewer@example.com', 'viewer');
+    const editor = await share('editor2@example.com', 'editor');
+    const watcher = connect('tierboard', owner.cookie);
+    const waitWatch = await sees(watcher, 1_000_000);
+    await new Promise((r) => watcher.once('message', r));
+
+    const v = connect('tierboard', viewer.cookie);
+    await new Promise((r) => v.once('message', r));
+    v.send(text(50 * 1024)); // just under 64K: allowed through the socket (and then dropped, a viewer cannot write)
+    await sleep(300);
+    expect(v.readyState).toBe(WebSocket.OPEN);
+    const vClosed = closeOf(v);
+    v.send(text(70 * 1024));
+    expect((await vClosed).code).toBe(1009);
+
+    const e = connect('tierboard', editor.cookie);
+    await new Promise((r) => e.once('message', r));
+    e.send(text(1_500_000));
+    expect(await waitWatch()).toBe(true);
+    expect(e.readyState).toBe(WebSocket.OPEN);
+    const eClosed = closeOf(e);
+    e.send(text(2_300_000));
+    expect((await eClosed).code).toBe(1009);
+
+    const o = connect('tierboard', owner.cookie);
+    await new Promise((r) => o.once('message', r));
+    o.send(text(3_500_000));
+    await sleep(500);
+    expect(o.readyState).toBe(WebSocket.OPEN);
+    for (const w of [watcher, o]) w.terminate();
+  }, 60_000);
 });

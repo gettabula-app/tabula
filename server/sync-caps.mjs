@@ -13,8 +13,12 @@ const MiB = 1024 * 1024;
 // frame, for an editor too, so editors get more than 4x the largest measured (96 MiB) and owners and open mode 128 MiB.
 export const MAX_FRAME_BYTES_OWNER = 128 * MiB;
 export const MAX_FRAME_BYTES_OTHER = 96 * MiB;
-// Comments rooms hold short threads; nobody needs a big frame there, whatever the role.
-export const MAX_FRAME_BYTES_COMMENTS = 1 * MiB;
+// Comments rooms hold threads and replies, not boards: 200 threads with one 4,000-character reply each is about 1.7 MB, so
+// 8 MiB leaves 4x. Whatever the role. Sockets that may not write (viewers, commenters on a board) get the small limit,
+// and a socket still being authorised or refused gets DENIED_FRAME_BYTES.
+export const MAX_FRAME_BYTES_SMALL = 1 * MiB;
+export const DENIED_FRAME_BYTES = 1024;
+export const MAX_FRAME_BYTES_COMMENTS = 8 * MiB;
 export const CLOSE_FRAME_TOO_BIG = 1009; // the standard "message too big" code
 
 // --- document size (checked on the encoded state, see createDocSizeGuard) ---
@@ -75,6 +79,7 @@ export function loadSyncCaps(env = process.env) {
     maxFrameOwner: bytes('TABULA_SYNC_MAX_FRAME_OWNER', MAX_FRAME_BYTES_OWNER),
     maxFrameOther: bytes('TABULA_SYNC_MAX_FRAME_OTHER', MAX_FRAME_BYTES_OTHER),
     maxFrameComments: bytes('TABULA_SYNC_MAX_FRAME_COMMENTS', MAX_FRAME_BYTES_COMMENTS),
+    maxFrameSmall: bytes('TABULA_SYNC_MAX_FRAME_SMALL', MAX_FRAME_BYTES_SMALL),
     maxDocBytes: bytes('TABULA_SYNC_MAX_DOC_BYTES', DEFAULT_MAX_DOC_BYTES, { allowZero: true }),
     maxSocketsPerUser: count('TABULA_SYNC_MAX_SOCKETS_PER_USER', MAX_SOCKETS_PER_USER),
     maxSocketsPerAddress: count('TABULA_SYNC_MAX_SOCKETS_PER_ADDRESS', MAX_SOCKETS_PER_ADDRESS),
@@ -83,9 +88,17 @@ export function loadSyncCaps(env = process.env) {
   };
 }
 
-/** The frame limit for a socket: comments rooms are small; owners (and open mode, which has no roles) get the large board limit. */
-export const frameLimitFor = (caps, ws, authEnabled, kind = 'board') => (kind === 'comments' ? caps.maxFrameComments
-  : !authEnabled || ws.role === 'owner' ? caps.maxFrameOwner : caps.maxFrameOther);
+/**
+ * The frame limit for a socket in a room of this kind. Used twice with the same answer: when the upgrade is handed to the
+ * WebSocketServer whose receive limit matches (so a frame is refused while it arrives, not after it is buffered), and
+ * per frame (a role that changed after connecting tightens it at the next frame).
+ */
+export function frameLimitFor(caps, ws, authEnabled, kind = 'board') {
+  if (kind === 'comments') return ws.canWrite === true || !authEnabled ? caps.maxFrameComments : caps.maxFrameSmall;
+  if (!authEnabled) return caps.maxFrameOwner; // open mode, for trusted networks: everyone is an owner of a board room
+  if (ws.canWrite !== true) return caps.maxFrameSmall;
+  return ws.role === 'owner' ? caps.maxFrameOwner : caps.maxFrameOther;
+}
 
 function bucket(burst, perSecond, now) {
   let tokens = burst;

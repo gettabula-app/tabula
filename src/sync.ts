@@ -145,15 +145,16 @@ export const RETRY_MAX_MS = 300_000;
 export const retryableReason = (reason: DeniedReason): boolean => reason === 'rate_limited' || reason === 'too_many_connections';
 /**
  * A connection that fails or drops without a close code (1006: a refused handshake, a restarting relay, a proxy) is retried by
- * y-websocket at 8 s at most, in step, for everyone. This is slower and spread out: 2 s doubling to 60 s, plus up to 50%
- * random, so a class reloading after a relay restart does not come back in one wave. Two stable minutes reset it.
+ * y-websocket at 8 s at most, in step, for everyone. This is slower and spread out: 2 s doubling to a 60 s ceiling, plus up to 50%
+ * random (also at the ceiling, so the longest wait is 90 s), so a class reloading after a relay restart does not come back in one wave. Two stable minutes reset it.
  */
 export const HANDSHAKE_BACKOFF_BASE_MS = 2_000;
 export const HANDSHAKE_BACKOFF_MAX_MS = 60_000;
 export const HANDSHAKE_STABLE_MS = 120_000;
 export function handshakeBackoffMs(failures: number, rand: () => number = Math.random): number {
   const base = Math.min(HANDSHAKE_BACKOFF_MAX_MS, HANDSHAKE_BACKOFF_BASE_MS * 2 ** Math.max(0, Math.min(failures, 20)));
-  return Math.min(HANDSHAKE_BACKOFF_MAX_MS, Math.round(base * (1 + 0.5 * rand())));
+  // jitter stays at the ceiling: [cap, 1.5 cap) for everyone who got there, so a class does not return in one wave
+  return Math.round(base * (1 + 0.5 * rand()));
 }
 
 /** Wait before the nth (0-based) automatic retry. */

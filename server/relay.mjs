@@ -60,7 +60,7 @@ import { createTrackerRestoreRecovery } from './tracker/restore-recovery.mjs';
 import { OpsError } from './board-ops.mjs';
 import { analyticsChoice } from './telemetry/report.mjs';
 import {
-  CLOSE_DOC_TOO_LARGE, CLOSE_FRAME_TOO_BIG, CLOSE_RATE_LIMITED, CLOSE_TOO_MANY_SOCKETS, createConnectionCounter,
+  CLOSE_DOC_TOO_LARGE, CLOSE_FRAME_TOO_BIG, DENIED_FRAME_BYTES, CLOSE_RATE_LIMITED, CLOSE_TOO_MANY_SOCKETS, createConnectionCounter,
   createDocSizeGuard, createSyncFrameLimiter, createUpgradeLimiter, frameLimitFor, loadSyncCaps,
 } from './sync-caps.mjs';
 
@@ -575,7 +575,7 @@ function saveAllRooms() {
 // edits can arrive between that save and the freeze. The restore engine stops the backups and closes the database next.
 async function enterMaintenance() {
   maintenance = true;
-  for (const ws of wss.clients) {
+  for (const ws of allSyncClients()) {
     ws.removeAllListeners('message');
     ws.denied = true; // the role check that runs every second leaves it alone
     ws.close(CLOSE_RESTORING, 'restoring');
@@ -1562,7 +1562,19 @@ async function onRequest(req, res) {
 
 const sourceGate = createSourceGate(config.sourcePolicy, { log });
 const server = http.createServer(onRequest);
-const wss = new WebSocketServer({ noServer: true, maxPayload: Math.max(syncCaps.maxFrameOwner, syncCaps.maxFrameOther, syncCaps.maxFrameComments) });
+// One WebSocketServer per receive limit: `ws` fixes maxPayload when a socket is created, so the upgrade is handed to the
+// server whose limit fits what the socket may send. A frame over it is refused while it arrives (close 1009), before it is
+// buffered. Sockets that are being refused get the tiny DENIED limit; the role is known before the handshake.
+const syncServers = new Map();
+const syncServerFor = (limit) => {
+  let server = syncServers.get(limit);
+  if (!server) syncServers.set(limit, (server = new WebSocketServer({ noServer: true, maxPayload: limit })));
+  return server;
+};
+const allSyncClients = function* () {
+  for (const server of syncServers.values()) yield* server.clients;
+};
+for (const limit of [DENIED_FRAME_BYTES, syncCaps.maxFrameSmall, syncCaps.maxFrameComments, syncCaps.maxFrameOther, syncCaps.maxFrameOwner]) syncServerFor(limit);
 // The /chat socket (docs/chat.md): small JSON frames only, so a much smaller limit than the Yjs rooms.
 const chatWss = chatHub ? new WebSocketServer({ noServer: true, maxPayload: (await import('./chat-hub.mjs')).MAX_CLIENT_FRAME }) : null;
 
@@ -1789,7 +1801,24 @@ server.on('upgrade', (req, socket, head) => {
       ? syncAccountUpgrades.allow(upgradeSession.user.id)
       : syncAddressUpgrades.allow(upgradeAddress);
   }
-  wss.handleUpgrade(req, socket, head, (ws) => {
+  // The person and the role are known before the handshake (the Origin, session, board role and room checks all run here), so
+  // the socket is created with the receive limit it may use. A refusal still completes the handshake: the browser needs the
+  // close code (4401, 4403, 4404) to show why, and gets a tiny limit while it is closed.
+  let verdict = null;
+  if (config.authEnabled && !maintenance && upgradeAllowed) {
+    try {
+      verdict = authorise(req, parsed.boardId);
+    } catch (err) {
+      log(`room ${name}: could not authorise`, err?.message);
+      verdict = { code: 1011, reason: 'internal_error' };
+    }
+  }
+  const verdictCanWrite = verdict?.session ? canWriteRoom(verdict.role, parsed.kind, verdict.deleted) : false;
+  const receiveLimit = maintenance || !upgradeAllowed ? DENIED_FRAME_BYTES
+    : !config.authEnabled ? frameLimitFor(syncCaps, { canWrite: true }, false, parsed.kind)
+      : verdict?.session ? frameLimitFor(syncCaps, { canWrite: verdictCanWrite, role: verdict.role }, true, parsed.kind)
+        : DENIED_FRAME_BYTES;
+  syncServerFor(receiveLimit).handleUpgrade(req, socket, head, (ws) => {
     ws.binaryType = 'arraybuffer';
     ws.isAlive = true;
     ws.on('pong', () => (ws.isAlive = true));
@@ -1826,14 +1855,8 @@ server.on('upgrade', (req, socket, head) => {
       return;
     }
 
-    let verdict;
-    try {
-      verdict = authorise(req, parsed.boardId);
-    } catch (err) {
-      log(`room ${name}: could not authorise`, err?.message);
-      verdict = { code: 1011, reason: 'internal_error' };
-    }
-    if (!verdict.session) {
+    if (!verdict?.session) {
+      verdict ??= { code: 1011, reason: 'internal_error' };
       ws.close(verdict.code, verdict.reason);
       return;
     }
@@ -1892,7 +1915,7 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 const pinger = setInterval(() => {
-  for (const ws of wss.clients) {
+  for (const ws of allSyncClients()) {
     if (!ws.isAlive) {
       ws.terminate();
       continue;

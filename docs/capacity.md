@@ -123,7 +123,9 @@ Bounds on the `/sync` WebSocket, chosen so real editing never reaches them (draw
 | --- | --- | --- | --- |
 | Frame size, owners (and open mode), board rooms | 128 MiB | socket closed, code 1009 `message_too_big` | `TABULA_SYNC_MAX_FRAME_OWNER` |
 | Frame size, editors, board rooms | 96 MiB | same | `TABULA_SYNC_MAX_FRAME_OTHER` |
-| Frame size, comments rooms (every role) | 1 MiB | same | `TABULA_SYNC_MAX_FRAME_COMMENTS` |
+| Frame size, comments rooms (every role that may write) | 8 MiB (200 threads with a 4,000-character reply each are about 1.7 MB) | same | `TABULA_SYNC_MAX_FRAME_COMMENTS` |
+| Frame size, sockets that may not write the room (viewers and commenters on a board, viewers in comments) | 1 MiB | same | `TABULA_SYNC_MAX_FRAME_SMALL` |
+| Frame size, a socket being refused (no session, no access, over a limit) | 1 KiB | same | none |
 | Document size (encoded state) | 256 MiB, 0 = off | an update bigger than 8 KiB is refused and its socket closed, code 4413 `document_too_large`; smaller frames (deleting, typing) still pass so the board can be cleaned up | `TABULA_SYNC_MAX_DOC_BYTES` |
 | SyncStep1 frames per socket | burst 20, 5 per second | frame dropped | none |
 | Update frames per socket | burst 500, 200 per second | frame dropped | none |
@@ -139,4 +141,6 @@ The client address is the one every other limit uses (`server/client-ip.mjs`, `T
 
 **Close codes the browser understands.** `1009` and `4413` (too large): the app stops syncing this board, keeps the local copy and says "This board is too large to sync" with a Reload button. `4429` (rate limit) and `4430` (too many connections): the app stops, keeps local edits, says so, and reconnects by itself after 30 s, then 60 s, 120 s and so on up to 5 minutes (two minutes of stable connection reset the wait). None of them removes local data.
 
-**Reconnecting without a close code.** A refused handshake, a restarting relay or a proxy drop reaches the browser as close code 1006. The app then waits 2 s doubling to 60 s with up to 50% random added (two stable minutes reset it), per room, instead of y-websocket's own unjittered 8 s maximum, so a class does not return in one wave after a relay restart.
+**Reconnecting without a close code.** A refused handshake, a restarting relay or a proxy drop reaches the browser as close code 1006. The app then waits 2 s doubling to a 60 s ceiling with up to 50% random added, also at the ceiling (so 60 to 90 s there; two stable minutes reset it), per room, instead of y-websocket's own unjittered 8 s maximum, so a class does not return in one wave after a relay restart.
+
+**Receive limits are set before the frame is buffered.** The relay keeps one WebSocket server per limit and hands each upgrade to the one that fits, once the Origin, session, board role and room are known (all before the handshake), so an oversized frame is refused with 1009 while it arrives, not after 128 MiB sit in memory. A foreign Origin gets an HTTP 403 and no socket. A refusal for a missing session or access still completes the handshake, because the browser needs the close code (4401, 4403, 4404) to say why; that socket has a 1 KiB limit. A role that changes after connecting is re-checked at the next frame (and the old receive limit stays for that socket until it reconnects). Open mode has no roles: board rooms get the owner limit and comments rooms the comments limit, so run it only on a trusted network.

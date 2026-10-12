@@ -82,15 +82,18 @@ describe('the relay sync limits on the client', () => {
 });
 
 describe('handshakeBackoffMs', () => {
-  it('starts at 2 s, doubles to 60 s and spreads each wait over up to 50% more', () => {
+  it('starts at 2 s, doubles to a 60 s ceiling and spreads each wait over up to 50% more', () => {
     expect(handshakeBackoffMs(0, () => 0)).toBe(2000);
     expect(handshakeBackoffMs(0, () => 1)).toBe(3000);
     expect(handshakeBackoffMs(1, () => 0)).toBe(4000);
     expect(handshakeBackoffMs(3, () => 0)).toBe(16000);
     for (const n of [5, 6, 10, 50]) {
-      expect(handshakeBackoffMs(n, () => 0)).toBeLessThanOrEqual(HANDSHAKE_BACKOFF_MAX_MS);
-      expect(handshakeBackoffMs(n, () => 1)).toBe(HANDSHAKE_BACKOFF_MAX_MS);
+      expect(handshakeBackoffMs(n, () => 0)).toBe(HANDSHAKE_BACKOFF_MAX_MS);
+      expect(handshakeBackoffMs(n, () => 1)).toBe(HANDSHAKE_BACKOFF_MAX_MS * 1.5);
     }
+    // at the ceiling clients still differ
+    const atCeiling = [0, 0.2, 0.5, 0.9].map((r) => handshakeBackoffMs(8, () => r));
+    expect(new Set(atCeiling).size).toBe(4);
     expect(new Set(Array.from({ length: 20 }, () => handshakeBackoffMs(2))).size).toBeGreaterThan(5);
   });
 });
