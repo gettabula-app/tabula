@@ -25,7 +25,7 @@ The channel list and the open conversation are dark panels, like the chat panel 
 - On a phone the list is one screen and the conversation another. **All channels** (or the browser's Back button) returns to the list.
 - On a team or workspace channel you may be unable to post. The box then says why, for example when the team is archived or the workspace is read-only.
 
-![The Chat page: the channel list on the left with Workspace and the board Design review, and the Design review conversation on the right with the same messages and Open board at the top](images/chat-page.png)
+![The Chat page: the channel list on the left with Workspace and the board Design review, and the Design review conversation on the right with the same messages and Open board at the top. Object chips read "An object on the board. Open the board" here, because no board is open on this page](images/chat-page.png)
 
 The **Chat** link in the top bar shows how many messages you have not read in all your channels. If someone mentioned you, an @ comes before the count. On the **Boards** page, a number beside a board's name shows its unread chat messages.
 
