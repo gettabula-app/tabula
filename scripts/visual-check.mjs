@@ -1338,6 +1338,8 @@ const STATES = {
     const probeError = await addTrackerContrastProbe(page, 'new-issue');
     if (probeError) throw new Error(`tracker-new-issue: ${probeError}`);
     await assertComputedTextContrast(page, 'tracker-new-issue', ['.trk-new-issue .trk-inline-error', '.trk-new-issue .trk-create-reason']);
+    // the probe showed both messages to measure them: put the dialog back as a person sees it before anything went wrong
+    await page.evaluate(() => document.querySelectorAll('.trk-new-issue .trk-inline-error, .trk-new-issue .trk-create-reason').forEach((el) => { el.hidden = true; }));
     return { noPark: true };
   },
   async 'tracker-phone'({ page, base, width }) {

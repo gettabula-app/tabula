@@ -325,6 +325,7 @@
 .trk-board-lane-header h2 { min-width: 0; margin: 0; overflow: hidden; font-size: 14px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .trk-board-lane-count { color: var(--graphite); font-size: 12px; font-variant-numeric: tabular-nums; }
 .trk-board-add { display: grid; width: 36px; min-width: 36px; min-height: 36px; margin-left: auto; place-items: center; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; font-size: 19px; }
+.trk-board-lane-empty { margin: 0; padding: 6px 8px; color: var(--trk-muted); font-size: 13px; }
 .trk-board-lane-cards { display: grid; min-height: 0; gap: 8px; overflow-y: auto; padding: 8px 8px 14px 2px; }
 .trk-board-card { display: grid; min-width: 0; gap: 7px; padding: 9px; border: 1px solid var(--trk-rule); background: var(--paper-hi, var(--paper)); cursor: pointer; }
 .trk-board-card:hover { background: color-mix(in srgb, var(--ink) 3%, var(--trk-ground)); }
@@ -400,6 +401,7 @@
 .trk-new-properties .trk-small-button { display: inline-flex; min-height: 28px; align-items: center; gap: 6px; padding: 0 8px; border: 0; border-radius: var(--radius-sm, 8px); background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); color: var(--trk-text); font-size: 12px; }
 .trk-new-properties .trk-small-button:hover { background: color-mix(in srgb, var(--trk-text) 9%, var(--trk-ground)); }
 .trk-new-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-top: 4px; }
+.trk-new-issue .trk-create-reason { justify-content: flex-end; margin: 0; }
 .trk-new-actions .trk-create-hint { margin-right: auto; color: var(--trk-muted); font-size: 12px; }
 .trk-new-actions .trk-small-button { min-height: 32px; padding: 0 9px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-muted); font-size: 13px; font-weight: 500; }
 .trk-new-actions .trk-small-button:hover:not(:disabled) { background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); color: var(--trk-text); }
@@ -447,7 +449,9 @@
   .trk .trk-list-row { min-height: 64px; grid-template-columns: 44px 44px 58px minmax(0, 1fr) 44px !important; grid-template-rows: 30px 30px; grid-template-areas: 'select state key title priority' 'select state due title assignee'; column-gap: 5px; padding: 2px 8px; }
   .trk-density-compact .trk-list-row { min-height: 64px; }
   .trk-col-priority { display: flex; grid-area: priority; }
-  .trk-col-key { grid-area: key; align-self: end; }
+  /* the select button lives inside the key cell: its children become the row's own grid items, so Select takes the first column and the key its own */
+  .trk-col-key { display: contents; }
+  .trk-col-key > .trk-key-chip { grid-area: key; align-self: end; min-width: 0; }
   .trk-col-title { grid-area: title; }
   .trk-col-state { grid-area: state; justify-content: center; }
   .trk-col-state > span:last-child { display: none; }

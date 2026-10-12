@@ -1042,6 +1042,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         return card;
       });
       const laneBody = h('div', { class: 'trk-board-lane-cards' }, ...cards,
+        cards.length === 0 && !cache.nextCursor ? h('p', { class: 'trk-board-lane-empty' }, 'No issues') : null,
         cache.nextCursor ? h('button', {
           class: 'trk-load-more', type: 'button', disabled: cache.loadingMore,
           onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showBoardError(error instanceof Error ? error.message : 'Could not load more issues.', entry?.query ?? boardQuery(item))),
