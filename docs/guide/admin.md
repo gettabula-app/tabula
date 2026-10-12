@@ -204,6 +204,7 @@ The **Privacy** tab shows what Tabula collects about how this workspace is used,
 - **Show what would be sent** (on a hosted workspace, **Show this hour's report**) opens the exact report your workspace would build, with a **Copy** button. The tab also shows when a report was last prepared and who last changed the setting.
 - On a hosted workspace: each hour that ends, Tabula collects the report your workspace prepared, as **Show this hour's report** displays it. Turning the switch off stops product analytics at once, and the hour prepared before you turned it off is not collected. Operating data stays on.
 - On a server you run yourself, this version only prepares the report. Nothing has been sent yet, and sending starts in a later version. Turning the switch off stops collection at once.
+- If the preview says "This workspace's id is not valid for telemetry, so no report can be built", ask whoever runs this server to check `TABULA_CLOUD_WORKSPACE_ID`. Until it is fixed, no report is built for this workspace.
 - If whoever runs your server has set the environment variable `TABULA_TELEMETRY`, the switch is locked and the tab says so.
 
 Changes to the setting are recorded in the [audit log](#audit-log) under **Privacy**.

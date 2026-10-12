@@ -8,11 +8,11 @@ An access token lets an AI tool such as Claude Code work with your boards on you
 
 What the tool can do depends on the level you give the token.
 
-- **Read only**: list your boards, read a board's contents and read its comments.
+- **Read only**: list your boards, read a board's contents and read its comments. A tool can also search a board for text, export it as Markdown or JSON, and, if you are an owner or editor of the board, read its version history and what changed between versions (the changes, never the text of the objects).
 - **Read and comment**: also add comments and reply to them. Comments are marked with your name followed by the token name, so people can tell them from comments you typed.
 - **Read and edit**: also create, change and delete objects on the board. These edits appear live for everyone on the board.
 
-An AI tool cannot share boards, change roles, delete boards, manage teams or see the member list.
+AI apps that read MCP resources also see your boards as resources (`board://` followed by the board id), with exactly the access the board tools give them. An AI tool cannot share boards, change roles, delete boards, manage teams or see the member list.
 
 Two safeguards apply to every token:
 
