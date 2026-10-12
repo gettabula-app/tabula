@@ -131,7 +131,7 @@ export const UNFURL_ERROR_TEXT: Record<string, string> = {
   not_html: 'This address is not a web page.',
   http_status: 'The site did not return a page.',
   unreachable: 'The site could not be reached.',
-  rate_limited: 'Too many previews right now. Try Refresh later.',
+  rate_limited: 'Too many previews right now. Try again in a moment.',
 };
 
 export interface LinkFields {
