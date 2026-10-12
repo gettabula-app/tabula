@@ -47,6 +47,8 @@ export interface Me {
   chat?: boolean;
   /** Present (true) when this server enables tracker frame creation. */
   tracker?: boolean;
+  /** Present (true) when the server keeps a notification list for the person (the bell on the Boards top bar). */
+  notifications?: boolean;
   /** Present only when the relay has one-board guest join codes enabled. */
   joinCodes?: true;
 }
@@ -914,6 +916,9 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     chatUnread: () => call<{ channels: ChatUnread[] }>('GET', '/api/chat/unread'),
     chatReact: (id: number, emoji: string, on: boolean) =>
       call<{ id: number; reactions: { emoji: string; userIds: string[] }[] }>(on ? 'PUT' : 'DELETE', `/api/chat/messages/${id}/reactions/${encodeURIComponent(emoji)}`),
+    notifications: (before?: string | null) => call<unknown>('GET', `/api/notifications${before ? `?before=${encodeURIComponent(before)}` : ''}`),
+    notificationCounts: () => call<unknown>('GET', '/api/notifications/unread'),
+    notificationsRead: (body: { ids: string[] } | { all: true }) => call<unknown>('POST', '/api/notifications/read', body),
     chatPrefs: () => call<{ emailMentions: boolean }>('GET', '/api/me/prefs'),
     setChatPrefs: (patch: { emailMentions: boolean }) => call<{ emailMentions: boolean }>('PUT', '/api/me/prefs', patch),
     chatChannels: () => call<{ channels: ChatChannelEntry[] }>('GET', '/api/chat/channels'),

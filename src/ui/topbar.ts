@@ -13,6 +13,7 @@ import { openChatNotifications } from './chat-prefs';
 import { canChangeProfile } from './share-logic';
 import { getUser, saveUser } from '../sync';
 import { currentChatDock } from './chat-dock';
+import { notificationsBell } from './notifications';
 
 export type TopbarPage = 'boards' | 'templates' | 'chat';
 
@@ -120,6 +121,7 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
       admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null,
       h('a', { class: 'topbar-link', href: '/docs/' }, 'Help')),
     me ? h('div', { class: 'topbar-end' },
+      me.notifications === true ? notificationsBell() : null,
       accountButton(me)) : null);
 }
 

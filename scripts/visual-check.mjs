@@ -692,6 +692,43 @@ async function sendAiRun(page) {
 }
 
 /** The account menu's "Your AI key" dialog with a stored key and Test key answered by a fixed reply (accounts mode). */
+
+// The notifications bell on the Boards top bar (proto/designer-preview/notifications/SPEC.md): /api/me says the server keeps a list, and
+// /api/notifications* answer from the rows below, so every state of the bell and the panel can be shown without the real feed.
+const NOTIF_ROWS = (now) => [
+  { id: 'n_1', kind: 'chat_mention', at: now - 2 * 60_000, read: false, actor: { id: 'u-maja', name: 'Maja Lind' }, board: { id: 'b1', title: 'Spring campaign board' }, team: null, snippet: 'Can you look at the second column before standup?', target: '#/b/b1' },
+  { id: 'n_2', kind: 'ticket_assigned', at: now - 50 * 60_000, read: false, actor: { id: 'u-omar', name: 'Omar Haddad' }, board: null, team: null, snippet: 'TAB-12 Fix export margins', target: '/t/TAB-12' },
+  { id: 'n_3', kind: 'comment_reply', at: now - 3 * 3_600_000, read: false, actor: { id: 'u-lin', name: 'Lin Chen' }, board: { id: 'b2', title: 'Roadmap 2026' }, team: null, snippet: 'Agreed, moving it to Q2.', target: '#/b/b2' },
+  { id: 'n_4', kind: 'board_shared', at: now - 26 * 3_600_000, read: true, actor: { id: 'u-ben', name: 'Ben Okafor' }, board: { id: 'b3', title: 'Offsite plan' }, team: null, snippet: null, target: '#/b/b3' },
+  { id: 'n_5', kind: 'team_joined', at: now - 3 * 24 * 3_600_000, read: true, actor: { id: 'u-eva', name: 'Eva Berg' }, board: null, team: { id: 't1', name: 'Design team' }, snippet: null, target: '#/' },
+  { id: 'n_6', kind: 'chat_mention', at: now - 6 * 24 * 3_600_000, read: true, actor: { id: 'u-ana', name: 'Ana Lima' }, board: null, team: { id: 't1', name: 'Design team' }, snippet: 'Thanks @you, that fixed it.', target: '#/chat/team/t1' },
+];
+
+async function notifHome({ page, base }, { items, unread, unreadMentions, open = false, fail = false, failAfterFirst = false, filter = 'all', delayMs = 0 }) {
+  const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route('**/api/me', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    return json(route, { ...(await (await route.fetch()).json()), notifications: true });
+  });
+  let served = 0;
+  await page.route('**/api/notifications**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/unread') || path.endsWith('/read')) return json(route, { unread, unreadMentions });
+    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+    served++;
+    if (fail || (failAfterFirst && served > 1)) return json(route, { error: 'down' }, 500);
+    return json(route, { items, nextCursor: null, unread, unreadMentions });
+  });
+  await page.addInitScript((f) => { try { localStorage.setItem('tabula:notifications-filter', f); } catch { /* the filter is a convenience */ } }, filter);
+  await page.goto(`${base}/#/`);
+  await page.locator('.bell').waitFor();
+  if (unread > 0) await page.locator('.bell-badge.show').waitFor();
+  if (open) {
+    await page.locator('.bell').click();
+    await page.locator('.notif').waitFor();
+  }
+}
+
 async function openAiKeyDialogWith({ page, base }, testReply) {
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   await page.route('**/api/me', async (route) => {
@@ -4019,6 +4056,59 @@ const STATES = {
     if (await env.page.evaluate(() => matchMedia('(hover: hover)').matches && innerWidth > 720)) await env.page.locator('.board-here:not(.nobody)').first().hover();
     return { keepFocus: true };
   },
+  async 'notif-closed-0'(env) { await notifHome(env, { items: [], unread: 0, unreadMentions: 0 }); },
+  async 'notif-closed-3'(env) { await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 3, unreadMentions: 0 }); },
+  async 'notif-closed-mention'(env) { await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 3, unreadMentions: 1 }); },
+  async 'notif-closed-99'(env) { await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 120, unreadMentions: 0 }); },
+  async 'notif-open-all'(env) {
+    await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 3, unreadMentions: 1, open: true });
+    await env.page.locator('.notif-row[data-id]').first().waitFor();
+  },
+  async 'notif-open-mentions'(env) {
+    await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 3, unreadMentions: 1, open: true, filter: 'mentions' });
+    await env.page.locator('.notif-row[data-id]').first().waitFor();
+  },
+  async 'notif-open-empty'(env) {
+    await notifHome(env, { items: [], unread: 0, unreadMentions: 0, open: true });
+    await env.page.locator('.notif-empty').waitFor();
+  },
+  async 'notif-open-mentions-empty'(env) {
+    await notifHome(env, { items: NOTIF_ROWS(NOW).filter((i) => i.kind !== 'chat_mention'), unread: 2, unreadMentions: 0, open: true, filter: 'mentions' });
+    await env.page.locator('.notif-empty').waitFor();
+  },
+  async 'notif-loading'(env) {
+    await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 3, unreadMentions: 1, open: true, delayMs: 60_000 });
+    await env.page.locator('.notif-skel').waitFor();
+  },
+  async 'notif-error'(env) {
+    await notifHome(env, { items: [], unread: 0, unreadMentions: 0, open: true, fail: true });
+    await env.page.locator('.notif-error').waitFor();
+  },
+  async 'notif-stale-error'(env) {
+    await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 3, unreadMentions: 1, open: true, failAfterFirst: true });
+    await env.page.locator('.notif-row[data-id]').first().waitFor();
+    await env.page.evaluate(() => window.__notifStore?.notified?.());
+    await env.page.locator('.notif-slim-error').waitFor();
+  },
+  async 'notif-row-hover'(env) {
+    await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 3, unreadMentions: 1, open: true });
+    await env.page.locator('.notif-row[data-id]').first().hover();
+    await env.page.locator('.notif-row[data-id]').first().locator('.notif-check').waitFor();
+    return { keepFocus: true };
+  },
+  async 'notif-row-focus'(env) {
+    await notifHome(env, { items: NOTIF_ROWS(NOW), unread: 3, unreadMentions: 1, open: true });
+    await env.page.locator('.notif-link').nth(1).focus();
+    await env.page.keyboard.press('ArrowDown');
+    return { keepFocus: true };
+  },
+  async 'notif-long-text'(env) {
+    const long = NOTIF_ROWS(NOW).map((i, n) => (n === 0
+      ? { ...i, actor: { id: 'u-w', name: 'Wolfeschlegelsteinhausen B' }, board: { id: 'b1', title: 'A very long board name that goes on and on about the spring campaign and its second column' }, snippet: 'This is a very long excerpt that keeps going well past the width of the panel so that it has to be cut with an ellipsis and never wrap or push anything out' }
+      : i));
+    await notifHome(env, { items: long, unread: 3, unreadMentions: 1, open: true });
+    await env.page.locator('.notif-row[data-id]').first().waitFor();
+  },
   async 'chat-admin'({ page, base }) {
     await page.goto(`${base}/#/admin/chat`);
     await page.getByRole('radio', { name: '1 year' }).waitFor();
@@ -4793,7 +4883,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
-const CHAT_STATES = new Set(['chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays', 'home-presence']);
+const CHAT_STATES = new Set(['chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays', 'home-presence', 'notif-closed-0', 'notif-closed-3', 'notif-closed-mention', 'notif-closed-99', 'notif-open-all', 'notif-open-mentions', 'notif-open-empty', 'notif-open-mentions-empty', 'notif-loading', 'notif-error', 'notif-stale-error', 'notif-row-hover', 'notif-row-focus', 'notif-long-text']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'privacy-hosted': ['accounts'], 'privacy-self': ['accounts'], 'privacy-top': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

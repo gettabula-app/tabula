@@ -271,10 +271,23 @@ export function onPresenceFrame(fn: (f: Record<string, unknown>) => void): () =>
   return () => presenceListeners.delete(fn);
 }
 
+/** The bell's counts changed on the server (`notify`: the numbers; the page is fetched again). */
+const notifyListeners = new Set<(counts: { unread: number; unreadMentions: number }) => void>();
+
+export function onNotifyFrame(fn: (counts: { unread: number; unreadMentions: number }) => void): () => void {
+  notifyListeners.add(fn);
+  return () => notifyListeners.delete(fn);
+}
+
 function onFrame(f: Record<string, unknown>) {
   const t = f.t;
   if (typeof t === 'string' && t.startsWith('presence.')) {
     for (const fn of Array.from(presenceListeners)) fn(f);
+    return;
+  }
+  if (t === 'notify') {
+    const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(0, Math.floor(x)) : 0);
+    for (const fn of Array.from(notifyListeners)) fn({ unread: num(f.unread), unreadMentions: num(f.unreadMentions) });
     return;
   }
   if (t === 'pong') {
