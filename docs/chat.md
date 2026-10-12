@@ -137,10 +137,15 @@ Server to client:
 | `{t:'unread', kind, ref, unread, mentions}` | a message arrived in a channel that is not currently subscribed (counts only, no text) |
 | `{t:'closed', kind, ref}` | access to the channel was lost |
 | `{t:'readonly', on}` | hosted read-only changed, so the composer disables |
+| `{t:'presence.snapshot', boards:[{boardId,count,people,me?}]}` | `presence.watch`, an access change or a changed 60-second refresh (nothing is sent until the page has sent `presence.watch`); replaces the Boards-page presence view |
+| `{t:'presence.update', board:{boardId,count,people,me?}}` | a watched board's visible people changed |
+| `{t:'presence.clear', boardId}` | a watched board has no live connections or fell outside the 200-room snapshot cap |
 
-Client to server: `{t:'sub', kind, ref}`, `{t:'unsub', kind, ref}` and `{t:'ping'}`. A subscription is checked with `chatAccess` when it is made and again when access changes. At most 50 subscriptions per socket and 10 sockets per person.
+Client to server: `{t:'sub', kind, ref}`, `{t:'unsub', kind, ref}`, `{t:'presence.watch'}`, `{t:'presence.unwatch'}` and `{t:'ping'}`. A channel subscription is checked with `chatAccess` when it is made and again when access changes. The presence set contains only boards the account can open; `boardRole` is checked again before each board frame and the set refreshes every 60 seconds. At most 50 channel subscriptions per socket and 10 sockets per person.
 
-Payloads for channels the person is **not** subscribed to are counts only, so a team channel's text never travels to someone who merely has the Boards page open. A browser subscribes to the channel it is looking at, and to nothing else.
+Presence summaries contain distinct people other than the viewer, with up to eight names, their validated awareness colour and earliest live join time; `count` is uncapped. `me:true` means the viewer also has a live sync connection. Guest entries carry `guest:true`. Presence stays in memory, has no cursor or selection fields, and is absent in open mode.
+
+Payloads for channels the person is **not** subscribed to are counts only, so a team channel's text never travels to someone who merely has the Boards page open. A browser subscribes only to the chat channel it is looking at; its separate presence watch covers its accessible board ids.
 
 ### Why not the sync socket
 

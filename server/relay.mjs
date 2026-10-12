@@ -44,6 +44,7 @@ import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
+import { createPresenceRegistry } from './presence.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
 import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
@@ -97,6 +98,7 @@ const trackerSocketBudget = createTrackerSocketBudget();
 
 const CLOSE_UNAUTHENTICATED = 4401;
 const CLOSE_FORBIDDEN = 4403;
+const AWARENESS_COLOUR_RE = /^#[0-9a-f]{6}$/i;
 const GUEST_PRESENCE_COLORS = ['#326DD3', '#D3332D', '#1B8151', '#A06A00', '#7B58DB', '#CE2C7D', '#1C7C85', '#B9501C'];
 const GUEST_AWARENESS_STRING_LIMIT = 256;
 
@@ -237,6 +239,7 @@ const history = createHistory({ dataDir: DATA_DIR, boardState, log });
 
 // Live AI runs, shared by the run routes of both modes and the board rooms below.
 const aiLive = createLiveRuns();
+const presenceRegistry = createPresenceRegistry();
 
 // Accounts mode only. The modules are loaded lazily so open mode never touches node:sqlite.
 const events = new EventEmitter();
@@ -255,6 +258,29 @@ let chatNotifier = null;
 let trackerNotifier = null;
 let trackerGuard = null;
 let joinCodeService = null;
+
+function presenceBoardIdsFor(user) {
+  if (!directory || !user || user.role === 'guest') return [];
+  return directory.listBoardsFor(user)
+    .filter((board) => directory.boardRole(board.id, user.id) !== null)
+    .map((board) => board.id);
+}
+
+function canReadPresence(user, boardId) {
+  return Boolean(directory && user && user.role !== 'guest' && directory.boardRole(boardId, user.id) !== null);
+}
+
+function boardPresenceFor(user, boardIds = presenceBoardIdsFor(user)) {
+  if (!directory || !user || user.role === 'guest') return [];
+  const accessible = new Set([...boardIds].filter((boardId) => canReadPresence(user, boardId)));
+  return presenceRegistry.snapshot(accessible, user.id, (boardId) => canReadPresence(user, boardId));
+}
+
+function boardPresenceForRoom(user, boardId) {
+  if (!canReadPresence(user, boardId)) return null;
+  return presenceRegistry.forBoard(boardId, user.id);
+}
+
 if (config.authEnabled) {
   const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }] = await Promise.all([
     import('./directory.mjs'),
@@ -308,6 +334,11 @@ if (config.authEnabled) {
       directory,
       access,
       summary: (user) => unreadSummary({ directory, store, user, access }),
+      presenceBoardIds: presenceBoardIdsFor,
+      presenceForUser: boardPresenceFor,
+      presenceForBoard: boardPresenceForRoom,
+      presenceActivity: (boardId) => presenceRegistry.activity(boardId),
+      presenceCanRead: canReadPresence,
       channelUnread: (userId, kind, ref) => store().channelUnread(userId, kind, ref),
       events,
       readOnly: cloud?.limits().readOnly === true,
@@ -434,7 +465,7 @@ const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: asse
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
@@ -495,10 +526,15 @@ async function enterMaintenance() {
     clearTimeout(room.saveTimer);
     clearTimeout(room.unloadTimer);
     clearTimeout(room.trackerGuardTimer);
-    if (room.kind === 'board') trackerGuard?.clearTitles(room.name);
+    clearTimeout(room.presenceTimer);
+    if (room.kind === 'board') {
+      presenceRegistry.clear(room.name);
+      trackerGuard?.clearTitles(room.name);
+    }
     room.saveTimer = null;
     room.unloadTimer = null;
     room.trackerGuardTimer = null;
+    room.presenceTimer = null;
     room.doc.destroy();
   }
   rooms.clear();
@@ -518,6 +554,9 @@ class Room {
     this.doc = new Y.Doc({ gc: true });
     /** @type {Map<import('ws').WebSocket, Set<number>>} */
     this.conns = new Map();
+    /** Account-authenticated board connections only; cursor and other awareness fields never enter this map. */
+    this.presenceConnections = new Map();
+    this.presenceTimer = null;
     this.saveTimer = null;
     this.unloadTimer = null;
     this.dirty = false;
@@ -571,6 +610,7 @@ class Room {
         const ids = this.conns.get(conn);
         added.forEach((id) => ids.add(id));
         removed.forEach((id) => ids.delete(id));
+        this.updatePresenceColour(conn);
       }
       const enc = encoding.createEncoder();
       encoding.writeVarUint(enc, MSG_AWARENESS);
@@ -581,6 +621,39 @@ class Room {
 
   broadcast(msg) {
     for (const ws of this.conns.keys()) send(ws, msg);
+  }
+
+  updatePresenceColour(ws) {
+    if (this.kind !== 'board') return;
+    const identity = this.presenceConnections.get(ws);
+    if (!identity) return;
+    let colour = null;
+    for (const clientId of this.conns.get(ws) ?? []) {
+      const candidate = this.awareness.getStates().get(clientId)?.user?.color;
+      if (typeof candidate === 'string' && AWARENESS_COLOUR_RE.test(candidate)) {
+        colour = candidate;
+        break;
+      }
+    }
+    if (identity.colour === colour) return;
+    identity.colour = colour;
+    this.updatePresence();
+  }
+
+  updatePresence() {
+    if (this.kind !== 'board') return false;
+    const changed = presenceRegistry.update(this.name, this.presenceConnections.values());
+    if (changed) this.schedulePresenceUpdate();
+    return changed;
+  }
+
+  schedulePresenceUpdate() {
+    if (!chatHub || this.presenceTimer) return;
+    this.presenceTimer = setTimeout(() => {
+      this.presenceTimer = null;
+      chatHub?.publishPresence(this.name);
+    }, 1000);
+    this.presenceTimer.unref?.();
   }
 
   broadcastUpdate(update) {
@@ -698,6 +771,10 @@ class Room {
   join(ws) {
     clearTimeout(this.unloadTimer);
     this.conns.set(ws, new Set());
+    if (this.kind === 'board' && ws.presenceIdentity) {
+      this.presenceConnections.set(ws, { ...ws.presenceIdentity });
+      this.updatePresence();
+    }
 
     // Start the sync handshake: send our state vector.
     const enc = encoding.createEncoder();
@@ -720,7 +797,9 @@ class Room {
   leave(ws) {
     const ids = this.conns.get(ws);
     this.conns.delete(ws);
+    const hadPresence = this.presenceConnections.delete(ws);
     if (ids?.size) awarenessProtocol.removeAwarenessStates(this.awareness, [...ids], null);
+    if (hadPresence) this.updatePresence();
     if (this.conns.size === 0) {
       if (this.saveTimer) this.save();
       this.releaseIfIdle();
@@ -1493,6 +1572,15 @@ server.on('upgrade', (req, socket, head) => {
     ws.roomKind = parsed.kind;
     ws.role = verdict.role;
     ws.guest = verdict.session.guest === true;
+    const presenceUser = directory.getUser(ws.userId);
+    ws.userName = presenceUser?.name ?? verdict.session.user.name ?? '';
+    ws.presenceIdentity = {
+      userId: ws.userId,
+      name: ws.userName,
+      guest: ws.guest,
+      colour: null,
+      joinedAt: Date.now(),
+    };
     ws.userColor = ws.guest ? guestPresenceColor(ws.userId) : null;
     ws.deleted = verdict.deleted;
     ws.canWrite = canWriteRoom(verdict.role, parsed.kind, verdict.deleted);
