@@ -1625,6 +1625,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'internal/stats', { internal: true }, () => [200, statsReport()]),
           // TAB-71: which address the rate limits see for this request, to check the proxy setup on a deploy
           compile('GET', 'internal/client-ip', { internal: true }, ({ req }) => [200, clientIpReport(req, config)]),
+          // TAB-71: the public-edge check for a signed-in workspace admin; API responses are no-store.
+          compile('GET', 'admin/client-ip', {}, ({ req, user }) => {
+            requireAdmin(user);
+            return [200, clientIpReport(req, config, { admin: true })];
+          }),
           // Backups (docs/backups.md): { enabled: false } when they are off, else the engine's status (never a secret).
           compile('GET', 'internal/backup-status', { internal: true }, () => [200, backupStatus()]),
           // TAB-200: which volume this is and its last adoption (docs/cloud.md, "Volumes"); ids only.
