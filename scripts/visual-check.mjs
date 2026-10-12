@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, chat-dock-compact, chat-dock-bubble, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, canvas-keyboard, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, chat-dock-compact, chat-dock-bubble, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -3306,6 +3306,30 @@ const STATES = {
     if (result.small.length) throw new Error(`emoji-picker: controls smaller than 44x44: ${JSON.stringify(result.small)}`);
     if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
     if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
+  },
+  // The canvas for the keyboard (docs/canvas-keyboard.md, slice 1): Tab-stop, outline, the ring on the current object, its contrast
+  async 'canvas-keyboard'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.keyboard.press('Escape');
+    await page.locator('.canvas-focus').focus();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(450);
+    const r = await page.evaluate(() => {
+      const ring = document.querySelector('.canvas-ring');
+      const target = document.querySelector('.canvas-focus');
+      const parse = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+      const ink = parse(getComputedStyle(ring).outlineColor);
+      const canvas = parse(getComputedStyle(document.querySelector('.board-surface, .board-root') ?? document.body).backgroundColor || 'rgb(238,241,244)');
+      const ratio = (Math.max(lum(ink), lum(canvas)) + 0.05) / (Math.min(lum(ink), lum(canvas)) + 0.05);
+      return { ringShown: !ring.hidden, current: target.getAttribute('aria-activedescendant'), options: document.querySelectorAll('.canvas-outline [role=option]').length, ratio: Number(ratio.toFixed(2)), svgHidden: document.querySelector('svg.canvas').getAttribute('aria-hidden') };
+    });
+    console.log(`canvas-keyboard ${JSON.stringify(r)}`);
+    if (!r.ringShown || !r.current) throw new Error(`canvas-keyboard: no ring or no current object ${JSON.stringify(r)}`);
+    if (r.svgHidden !== 'true') throw new Error('canvas-keyboard: the picture is not hidden from assistive technology');
+    if (r.options < 1) throw new Error('canvas-keyboard: the outline is empty');
+    if (r.ratio < 3) throw new Error(`canvas-keyboard: the ring is ${r.ratio}:1 against the canvas, under 3:1`);
   },
   async 'emoji-keyboard'(env) {
     await emojiKeyboard(env, null);

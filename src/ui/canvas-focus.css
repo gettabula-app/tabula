@@ -1,0 +1,8 @@
+/* The canvas's keyboard stand-in (docs/canvas-keyboard.md): the outline and its help are for assistive technology only. */
+.canvas-focus { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; pointer-events: none; }
+.canvas-outline-help { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.canvas-outline { margin: 0; padding: 0; list-style: none; }
+/* the ring on the current object: 2 px of canvas ink 4 px outside it, over the selection handles; keyboard use only */
+.canvas-ring { position: absolute; left: 0; top: 0; z-index: 6; box-sizing: border-box; pointer-events: none; outline: 2px solid var(--canvas-ink, var(--ink)); outline-offset: 4px; border-radius: 2px; transform-origin: 0 0; }
+.canvas-ring[hidden] { display: none; }
+@media (forced-colors: active) { .canvas-ring { outline-color: Highlight; } }
