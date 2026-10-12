@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, chat-dock-compact, chat-dock-bubble, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, chat-dock-compact, chat-dock-bubble, chat-dock-home, chat-dock-sheet, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -2900,6 +2900,45 @@ const STATES = {
     if (result.innerWidth >= 900 && result.failures.length) throw new Error(`chat-dock-chrome: ${result.failures.join('; ')}`);
   },
   // The dock's other states (docs/chat.md, Dock): compact (one channel, no chips), and the bubble with the unread total.
+  // The dock on the Boards page (no board open): the workspace and the person's teams as chips, the one with most unread first.
+  async 'chat-dock-home'(env) {
+    await resetChatMarker(env);
+    await openSeedBoard(env);
+    const { page, base } = env;
+    const id = await page.evaluate(async () => (await (await fetch('/api/me')).json()).user.id);
+    await page.evaluate((userId) => localStorage.setItem(`driftboard:chat-dock:${userId}`, JSON.stringify({ mode: 'open', size: 'open', channel: null })), id);
+    await page.goto(`${base}/#/`);
+    await page.reload();
+    await page.locator('.chat-dock:not([hidden])').waitFor();
+    await page.locator('.chat-dock .chat-chip').first().waitFor();
+    const first = await page.locator('.chat-dock .chat-chip.on').first().textContent();
+    console.log(`chat-dock-home ${JSON.stringify({ on: first })}`);
+    if (!first) throw new Error('chat-dock-home: no channel is selected');
+  },
+  // The phone sheet (docs/chat.md, Dock): full width, rounded top, a handle, a scrim, nothing of the board's panels in front of it.
+  async 'chat-dock-sheet'(env) {
+    await resetChatMarker(env);
+    await openSeedBoard(env);
+    await dockShown(env.page);
+    const r = await env.page.evaluate(() => {
+      const d = document.querySelector('.chat-dock:not([hidden])').getBoundingClientRect();
+      const composer = document.querySelector('.chat-dock .chat-input')?.getBoundingClientRect();
+      const handle = document.querySelector('.chat-dock-handle');
+      const small = [...document.querySelectorAll('.chat-dock-head .chat-dock-btn, .chat-dock .chat-chip')].filter((b) => b.getClientRects().length).map((b) => b.getBoundingClientRect()).filter((b) => b.width < 43.5 || b.height < 43.5).length;
+      const scrim = document.querySelector('.chat-dock-scrim');
+      const sc = scrim ? getComputedStyle(scrim) : null;
+      const sb = scrim ? scrim.getBoundingClientRect() : null;
+      const scrimOk = !!scrim && sc.display !== 'none' && sc.backgroundColor !== 'rgba(0, 0, 0, 0)' && Math.round(sb.width) === innerWidth && Math.round(sb.height) === innerHeight;
+      return { scrimOk, scrimColour: sc?.backgroundColor, left: d.left, right: d.right, bottom: d.bottom, width: innerWidth, height: innerHeight, composerInside: !!composer && composer.bottom <= innerHeight && composer.top >= d.top, handle: !!handle && getComputedStyle(handle).display !== 'none', small };
+    });
+    console.log(`chat-dock-sheet ${JSON.stringify(r)}`);
+    if (env.width >= 600) return;
+    if (r.left !== 0 || Math.round(r.right) !== r.width || Math.round(r.bottom) !== r.height) throw new Error(`chat-dock-sheet: the sheet is not full width at the bottom ${JSON.stringify(r)}`);
+    if (!r.composerInside) throw new Error('chat-dock-sheet: the message box is not inside the sheet and the screen');
+    if (!r.handle) throw new Error('chat-dock-sheet: no handle');
+    if (!r.scrimOk) throw new Error(`chat-dock-sheet: the scrim does not cover the screen (${r.scrimColour})`);
+    if (r.small) throw new Error(`chat-dock-sheet: ${r.small} header buttons or chips under 44 px`);
+  },
   async 'chat-dock-compact'(env) {
     await resetChatMarker(env);
     await openSeedBoard(env);
@@ -4447,7 +4486,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-bubble', 'esc-trays']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

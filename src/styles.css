@@ -310,6 +310,8 @@ select.input {
 .link-btn { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .link-btn:hover { color: var(--tray-text); }
 .home-foot .link-btn:hover { color: var(--ink); }
+/* a quiet link is still a 24 px target */
+.home-foot .link-btn { display: inline-block; min-height: 24px; line-height: 24px; vertical-align: middle; }
 .offline-row { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--tray-line); font-size: 12px; line-height: 1.4; color: var(--tray-muted); }
 .offline-row[hidden] { display: none; }
 .offline-text { margin: 0 0 8px; }
