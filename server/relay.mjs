@@ -1827,7 +1827,7 @@ server.on('upgrade', (req, socket, head) => {
   }
   // The person and the role are known before the handshake (the Origin, session, board role and room checks all run here), so
   // the socket is created with the receive limit it may use. A refusal still completes the handshake: the browser needs the
-  // close code (4401, 4403, 4404) to show why, and gets a tiny limit while it is closed.
+  // close code (4401, 4403) to show why, and gets a tiny limit while it is closed.
   let verdict = null;
   if (config.authEnabled && !maintenance && upgradeAllowed) {
     try {
