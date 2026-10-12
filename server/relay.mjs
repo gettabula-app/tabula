@@ -1316,7 +1316,17 @@ function serveStatic(req, res, url) {
   }
   const appRoute = url.pathname === '/t' || url.pathname.startsWith('/t/')
     || url.pathname === '/b' || url.pathname.startsWith('/b/');
-  if (appRoute || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
+  const exists = fs.existsSync(file) && !fs.statSync(file).isDirectory();
+  const reqExt = path.extname(rel).toLowerCase();
+  // The SPA fallback is for navigations only. A missing file (a hashed chunk from a newer build, say) must be a 404:
+  // index.html answered as a script with a year-long immutable header gets stored by the service worker for good.
+  if (!appRoute && !exists && reqExt !== '' && reqExt !== '.html') {
+    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', ...NO_STORE });
+    res.end('Not found');
+    return;
+  }
+  const served = exists && !appRoute;
+  if (!served) file = path.join(DIST, 'index.html');
   const ext = path.extname(file);
   if (file === path.join(DIST, 'index.html') && req.method !== 'HEAD' && isShellPath(url.pathname)) {
     const html = withOgTags(fs.readFileSync(file, 'utf8'), ogKind(url.pathname, url.searchParams), config.baseUrlSet ? config.baseUrl : null, config.authEnabled);
@@ -1336,7 +1346,8 @@ function serveStatic(req, res, url) {
     headers['content-security-policy'] = CSP;
     if (!ALLOW_FRAMING) headers['x-frame-options'] = 'DENY';
   }
-  headers['cache-control'] = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : rel.startsWith('/og/') ? 'public, max-age=86400' : 'no-cache';
+  // immutable only for a real file under /assets/ served as itself, never for the index.html fallback
+  headers['cache-control'] = served && rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : rel.startsWith('/og/') ? 'public, max-age=86400' : 'no-cache';
   res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 }

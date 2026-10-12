@@ -345,7 +345,7 @@ src/templates.ts     team exercise templates
 src/uml.ts, src/mermaid.ts, src/fonts.ts, src/exporters.ts
 src/icons.ts         icon manifest, hosted and online sets, previews; icon-search.ts, icon-licences.ts, icon-offline.ts
 src/ui/              rail, library drawer, properties, font picker, session bar, home
-public/sw.js         offline cache for the app, the icon sets, Fontshare and Iconify
+public/sw.js         offline cache for the app, the icon sets, Fontshare and Iconify; caches only ok, correctly typed responses, new version each build
 ```
 
 ## Licence

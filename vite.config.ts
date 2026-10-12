@@ -1,5 +1,6 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import docs from './scripts/vite-docs.mjs';
@@ -26,6 +27,27 @@ function demoBuildPlugin() {
     writeBundle() {
       fs.mkdirSync(outDir, { recursive: true });
       fs.copyFileSync(path.join(ROOT, 'public', 'favicon.svg'), path.join(outDir, 'favicon.svg'));
+    },
+  };
+}
+
+/** Stamps dist/sw.js with a hash of the release so every deploy gets fresh caches and the old ones are deleted. */
+function swVersionPlugin() {
+  let outDir = '';
+  return {
+    name: 'tabula-sw-version',
+    apply: (_config: unknown, env: { mode: string }) => env.mode !== 'demo',
+    configResolved(config: { root: string; build: { outDir: string } }) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    closeBundle() {
+      const sw = path.join(outDir, 'sw.js');
+      if (!fs.existsSync(sw)) return;
+      const src = fs.readFileSync(sw, 'utf8');
+      // index.html names the hashed bundles, so it changes whenever the app does
+      const index = fs.existsSync(path.join(outDir, 'index.html')) ? fs.readFileSync(path.join(outDir, 'index.html')) : '';
+      const build = createHash('sha256').update(src).update(index).digest('hex').slice(0, 10);
+      fs.writeFileSync(sw, src.replace('__TABULA_BUILD__', build));
     },
   };
 }
@@ -64,7 +86,7 @@ const vitePort = Number(process.env.VITE_PORT) || 5173;
 
 // Vite proxies sync and API requests to the selected relay port.
 export default defineConfig({
-  plugins: [docsPages, demoConfigPlugin, demoBuildPlugin()],
+  plugins: [docsPages, demoConfigPlugin, demoBuildPlugin(), swVersionPlugin()],
   // Tracker and board deep links are HTML5 paths and must reach the SPA entry in development too.
   appType: 'spa',
   server: {
