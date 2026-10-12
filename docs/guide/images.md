@@ -45,6 +45,8 @@ If the copy kept on your device is gone, or the server refused the upload, the p
 
 On a hosted workspace a picture over 1 MB cannot be uploaded for now. You see "This image is over 1 MB, which is the upload limit for now. Use a smaller image." and the box reads "Not uploaded: over 1 MB". If you drop several at once, the notice counts them ("2 images are over 1 MB and may not upload to this workspace yet. Use smaller images."). Tabula aims to send pictures of about 900 KB, so most photos are shrunk to fit.
 
+If your browser cannot keep a copy of the picture to upload from (its storage is full, or site data is blocked), the picture is not added to the board. You see "The image was not added: this browser could not save a copy to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add it again." (with several pictures: "2 images were not added: …"). Nothing is left on the board that could never upload.
+
 A grey box can also say:
 
 | Message | What it means |
