@@ -4,6 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
 import { createApi } from '../server/api.mjs';
+import { analyticsChoice } from '../server/telemetry/report.mjs';
 import { SeatLimitError, createAuth } from '../server/auth.mjs';
 import { CloudError, addsSeat, createCloud, validateLimits, validateNotify } from '../server/cloud.mjs';
 import { loadConfig } from '../server/config.mjs';
@@ -83,6 +84,7 @@ function setup(env: Record<string, string> = {}, fetchImpl?: Fetch) {
     setTimeout: timers.setTimeout,
     clearTimeout: timers.clearTimeout,
     log: (message: string) => logs.push(message),
+    telemetryAnalytics: () => analyticsChoice(config.telemetry, directory.getSetting, true),
   });
   return { config, directory, events, timers, fetchFn, logs, cloud };
 }
@@ -507,7 +509,7 @@ describe('createCloud', () => {
       expect(url).toBe('https://cloud.example.com/v1/workspaces/ws_123/usage');
       expect(init.method).toBe('POST');
       expect(init.headers).toMatchObject({ authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' });
-      expect(JSON.parse(init.body as string)).toEqual({ seats: 2, guests: 1 });
+      expect(JSON.parse(init.body as string)).toEqual({ seats: 2, guests: 1, telemetryAnalytics: true });
       await settle();
       expect(c.logs).toEqual([]);
       expect(c.timers.size).toBe(0);
@@ -519,7 +521,7 @@ describe('createCloud', () => {
       changed(c);
       seed(c.directory, 'late@example.com', 'member');
       c.timers.advance(30_000);
-      expect(JSON.parse(c.fetchFn.mock.calls[0][1].body as string)).toEqual({ seats: 2, guests: 0 });
+      expect(JSON.parse(c.fetchFn.mock.calls[0][1].body as string)).toEqual({ seats: 2, guests: 0, telemetryAnalytics: true });
     });
 
     it('pushes again only when the counts differ from the last successful push', async () => {
@@ -540,7 +542,7 @@ describe('createCloud', () => {
       c.timers.advance(30_000);
       await settle();
       expect(c.fetchFn).toHaveBeenCalledTimes(2);
-      expect(JSON.parse(c.fetchFn.mock.calls[1][1].body as string)).toEqual({ seats: 1, guests: 1 });
+      expect(JSON.parse(c.fetchFn.mock.calls[1][1].body as string)).toEqual({ seats: 1, guests: 1, telemetryAnalytics: true });
     });
 
     it('includes an explicitly set update value and re-pushes when only that value changes', async () => {
@@ -550,14 +552,14 @@ describe('createCloud', () => {
       changed(c);
       c.timers.advance(30_000);
       await settle();
-      expect(JSON.parse(c.fetchFn.mock.calls[0][1].body as string)).toEqual({ seats: 1, guests: 0, autoUpgrade: false });
+      expect(JSON.parse(c.fetchFn.mock.calls[0][1].body as string)).toEqual({ seats: 1, guests: 0, autoUpgrade: false, telemetryAnalytics: true });
 
       c.directory.setSetting('updates.auto', '1');
       changed(c);
       c.timers.advance(30_000);
       await settle();
       expect(c.fetchFn).toHaveBeenCalledTimes(2);
-      expect(JSON.parse(c.fetchFn.mock.calls[1][1].body as string)).toEqual({ seats: 1, guests: 0, autoUpgrade: true });
+      expect(JSON.parse(c.fetchFn.mock.calls[1][1].body as string)).toEqual({ seats: 1, guests: 0, autoUpgrade: true, telemetryAnalytics: true });
     });
 
     it('logs a failure, never throws, and tries again at the next change', async () => {
@@ -1644,7 +1646,7 @@ describe('API in cloud mode', () => {
       expect(s.fetchFn).not.toHaveBeenCalled();
       s.timers.advance(1);
       await settle();
-      expect(sentUsage(s)).toEqual([['https://cloud.example.com/v1/workspaces/ws_123/usage', { seats: 2, guests: 0 }]]);
+      expect(sentUsage(s)).toEqual([['https://cloud.example.com/v1/workspaces/ws_123/usage', { seats: 2, guests: 0, telemetryAnalytics: true }]]);
     });
 
     it('follow a removal', async () => {
@@ -1654,7 +1656,7 @@ describe('API in cloud mode', () => {
       expect((await s.call(`/api/members/${member.user.id}`, { method: 'DELETE', cookie: owner.cookie })).status).toBe(204);
       s.timers.advance(30_000);
       await settle();
-      expect(sentUsage(s)[0][1]).toEqual({ seats: 1, guests: 0 });
+      expect(sentUsage(s)[0][1]).toEqual({ seats: 1, guests: 0, telemetryAnalytics: true });
     });
 
     it('follow someone joining through an invite', async () => {
@@ -1664,7 +1666,53 @@ describe('API in cloud mode', () => {
       expect((await s.signIn('new@example.com', invite.token)).verified.status).toBe(200);
       s.timers.advance(30_000);
       await settle();
-      expect(sentUsage(s)[0][1]).toEqual({ seats: 2, guests: 0 });
+      expect(sentUsage(s)[0][1]).toEqual({ seats: 2, guests: 0, telemetryAnalytics: true });
+    });
+
+    it('carries the owner\'s analytics choice on every push, true or false, and re-pushes when only it changes', async () => {
+      const c = setup();
+      seed(c.directory, OWNER, 'owner');
+      c.events.emit('usage-changed');
+      c.timers.advance(30_000);
+      await settle();
+      expect(JSON.parse(c.fetchFn.mock.calls[0][1].body as string)).toEqual({ seats: 1, guests: 0, telemetryAnalytics: true });
+
+      c.directory.setSetting('telemetry.enabled', '0');
+      c.events.emit('usage-changed');
+      c.timers.advance(30_000);
+      await settle();
+      expect(c.fetchFn).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(c.fetchFn.mock.calls[1][1].body as string)).toEqual({ seats: 1, guests: 0, telemetryAnalytics: false });
+
+      c.events.emit('usage-changed');
+      c.timers.advance(30_000);
+      await settle();
+      expect(c.fetchFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('says false when the operator forces collection off, whatever the owner saved', async () => {
+      const c = setup({ TABULA_TELEMETRY: 'off' });
+      seed(c.directory, OWNER, 'owner');
+      c.directory.setSetting('telemetry.enabled', '1');
+      c.events.emit('usage-changed');
+      c.timers.advance(30_000);
+      await settle();
+      expect(JSON.parse(c.fetchFn.mock.calls[0][1].body as string)).toMatchObject({ telemetryAnalytics: false });
+    });
+
+    it('sends at once, without the 30 second wait, when the owner changes the switch', async () => {
+      const s = await serve();
+      const owner = s.person(OWNER, 'owner');
+      await settle();
+      s.fetchFn.mockClear();
+      const off = await s.call('/api/admin/privacy', { method: 'PUT', cookie: owner.cookie, body: { enabled: false } });
+      expect(off.status).toBe(200);
+      await settle();
+      expect(sentUsage(s)).toEqual([['https://cloud.example.com/v1/workspaces/ws_123/usage', { seats: 1, guests: 0, telemetryAnalytics: false }]]);
+      const on = await s.call('/api/admin/privacy', { method: 'PUT', cookie: owner.cookie, body: { enabled: true } });
+      expect(on.status).toBe(200);
+      await settle();
+      expect(sentUsage(s).at(-1)![1]).toMatchObject({ telemetryAnalytics: true });
     });
 
     it('never fail or slow down the request they follow', async () => {

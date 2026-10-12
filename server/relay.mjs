@@ -48,6 +48,7 @@ import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTracker
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
 import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
 import { OpsError } from './board-ops.mjs';
+import { analyticsChoice } from './telemetry/report.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -256,7 +257,7 @@ if (config.authEnabled) {
     joinCodeService = createJoinCodeService({ directory, secret: loadJoinCodeSecret(DATA_DIR) });
   }
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
-  cloud = createCloud({ config: config.cloud, directory, events });
+  cloud = createCloud({ config: config.cloud, directory, events, telemetryAnalytics: () => analyticsChoice(config.telemetry, directory.getSetting, true) });
   auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable, log });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {

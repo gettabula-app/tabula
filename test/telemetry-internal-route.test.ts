@@ -11,16 +11,19 @@ import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
 import { scrubReport } from '../server/telemetry/scrub.mjs';
 import { TELEMETRY_SCHEMA } from '../server/telemetry/schema.mjs';
+import { PRODUCT_ANALYTICS_METRICS } from '../server/telemetry/collector.mjs';
+import { appVersionLabel, dropFeatureSeries } from '../server/telemetry/report.mjs';
 
 // GET /api/internal/telemetry (docs/telemetry-design.md, "How reports leave an instance"): the last finished hour's report, exactly as the
 // Privacy tab previews it, for the control plane's bearer token and nobody else. The instance sends nothing itself.
 
 const TOKEN = 'c'.repeat(40);
+const PRODUCT = [...PRODUCT_ANALYTICS_METRICS] as string[];
 const HOUR = 3_600_000;
 type Role = 'owner' | 'admin' | 'member';
 const worlds: { close: () => Promise<void> }[] = [];
 
-async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now?: () => number } = {}) {
+async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now?: () => number; log?: (line: string) => void } = {}) {
   const hosted = opts.hosted !== false;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-telemetry-route-'));
   const env = {
@@ -42,7 +45,7 @@ async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now
     : null;
   const api = createApi({
     directory, auth, config, cloud: cloud as never, roomExists: () => false, events: new EventEmitter(), dataDir: dir,
-    mailer: { send: async () => {} }, now: opts.now, maintenance: () => state.restoring,
+    mailer: { send: async () => {} }, now: opts.now, maintenance: () => state.restoring, ...(opts.log ? { log: opts.log as unknown as () => void } : {}),
   });
   const server = http.createServer((req, res) => {
     void api.handle(req, res).then((handled: boolean) => { if (!handled) res.writeHead(404).end(); });
@@ -86,12 +89,14 @@ afterEach(async () => {
 
 describe('who may ask', () => {
   it('answers only the control plane\'s bearer token: no token, a wrong one, and a signed-in person are all refused', async () => {
-    const w = await setup();
+    let at = 1_800_000_000_000;
+    const w = await setup({ now: () => at });
     w.api.captureTelemetryHour();
     expect((await w.pull({})).status).toBe(401);
     expect((await w.pull({ authorization: 'Bearer nope' })).status).toBe(401);
     expect((await w.pull({ authorization: `Basic ${TOKEN}` })).status).toBe(401);
     for (const role of ['owner', 'admin', 'member'] as const) {
+      at += 61_000; // each group is counted in its own minute: the refusals here are not the point of this test
       const who = w.signIn(role);
       // a session cookie counts for nothing on an internal route, with or without the CSRF header
       expect((await w.pull({ cookie: who.cookie })).status).toBe(401);
@@ -183,20 +188,115 @@ describe('the owner\'s and the operator\'s switches', () => {
     expect((await w.call(owner, 'GET', '/api/admin/privacy')).body.lastBuiltAt).toBeNull(); // nothing was built
   });
 
-  it('keeps operating data and drops feature counts when the owner turns product analytics off, and does not hand out the hour built before', async () => {
+  it('keeps answering 200 with operating data when the owner turns product analytics off, through the real path (no manual capture in between)', async () => {
     const w = await setup({ now: () => 1_800_000_000_000 });
     const owner = w.signIn('owner');
     w.api.captureTelemetryHour();
     expect((await w.pull()).status).toBe(200);
     expect((await w.call(owner, 'PUT', '/api/admin/privacy', { enabled: false })).status).toBe(200);
-    // the finished hour held feature counts too, so it is gone until the next one is built
-    expect((await w.pull()).body.error).toBe('no_report_yet');
-    w.api.captureTelemetryHour();
-    const after = await w.pull();
+    const after = await w.pull(); // straight away: not a 503 until the next hour
     expect(after.status).toBe(200);
     const names = after.body.metrics.map((m: { name: string }) => m.name);
     expect(names).toContain('entities_total'); // operating data stays on (docs/telemetry-design.md)
-    for (const name of ['chat_messages_total', 'ai_calls_total', 'client_sessions_total', 'ui_events_total', 'mcp_calls_total', 'oauth_events_total', 'tracker_ops_total', 'uploads_total', 'upload_bytes']) expect(names).not.toContain(name);
+    for (const name of PRODUCT) expect(names).not.toContain(name);
+    // a build made while the switch is off is operating-only too
+    w.api.captureTelemetryHour();
+    expect((await w.pull()).status).toBe(200);
+  });
+
+  it('takes feature series out of a report for good, and leaves the operating series and the rest of the report alone', () => {
+    const report = { schema: 1, hour: 5, workspace: 'ws_x', metrics: [{ name: 'chat_messages_total', labels: {}, value: 3 }, { name: 'entities_total', labels: { kind: 'boards' }, value: 2 }, ...PRODUCT.map((name) => ({ name, labels: {}, value: 1 }))], errors: [], events: [], alerts: [] };
+    const out = dropFeatureSeries(report);
+    expect(out.metrics).toEqual([{ name: 'entities_total', labels: { kind: 'boards' }, value: 2 }]);
+    expect(out).toMatchObject({ schema: 1, hour: 5, workspace: 'ws_x' });
+    expect(report.metrics.length).toBe(2 + PRODUCT.length); // the original is untouched
+    expect(dropFeatureSeries(null)).toBeNull();
+  });
+});
+
+describe('capture timing', () => {
+  const startOfHour = (t: number) => t - (t % HOUR);
+
+  it('builds again every ten seconds in the last minute, so a late or missed timer costs seconds, not the hour', async () => {
+    const base = startOfHour(1_800_000_000_000);
+    let at = base + 30 * 60_000;
+    const w = await setup({ now: () => at });
+    w.api.telemetryTick();
+    expect((await w.pull()).status).toBe(503); // not yet the last minute
+    at = base + HOUR - 59_000;
+    w.api.telemetryTick();
+    const first = await w.pull();
+    expect([first.status, first.body.hour]).toEqual([200, base]);
+    // a tick that comes late (here with 1.5 s to go) still builds: the hour is not skipped because an earlier window passed
+    at = base + HOUR - 1_500;
+    w.api.telemetryTick();
+    expect((await w.pull()).body.hour).toBe(base);
+  });
+
+  it('throws away a build that crosses the boundary instead of labelling it with the next hour', async () => {
+    const base = startOfHour(1_800_000_000_000);
+    let at = base + HOUR - 30_000;
+    let step = 0;
+    const w = await setup({ now: () => (at += step) });
+    w.api.telemetryTick();
+    const good = await w.pull();
+    expect([good.status, good.body.hour]).toEqual([200, base]);
+    // the clock now moves with every read, so a build that starts just before the boundary ends after it
+    at = base + HOUR - 700;
+    step = 300;
+    w.api.captureTelemetryHour();
+    step = 0;
+    at = base + HOUR + 60_000;
+    const after = await w.pull();
+    expect(after.status).toBe(200);
+    expect(after.text).toBe(good.text); // still the finished hour, not an empty one labelled with the new hour
+  });
+
+  it('answers 503 stale_report when the stored report is older than the hour before this one, never serving a missed hour as fresh', async () => {
+    const base = startOfHour(1_800_000_000_000);
+    let at = base + HOUR - 5_000;
+    const w = await setup({ now: () => at });
+    w.api.telemetryTick();
+    at = base + HOUR + 10 * 60_000;
+    expect((await w.pull()).status).toBe(200); // the hour just finished: fresh
+    at = base + 2 * HOUR + 5_000; // a whole hour was missed (no build in it)
+    const res = await w.pull();
+    expect([res.status, res.body.error]).toEqual([503, 'stale_report']);
+  });
+});
+
+describe('the release label', () => {
+  it.each([['5.3.1', 'v5.3.1'], ['v5.3.1', 'v5.3.1'], ['2026.10.09-1', 'v2026.10.09'], ['2026.10.09', 'v2026.10.09'], ['1.2', 'v1.2'], ['abc1234', 'abc1234'], ['0123456789ab', '0123456789ab'], ['weird label', 'v0.1.0'], ['', 'v0.1.0']])('writes %s as %s', (label, expected) => {
+    expect(appVersionLabel(label)).toBe(expected);
+  });
+
+  it('keeps a date-style TABULA_VERSION from costing the whole report', async () => {
+    const w = await setup({ env: { TABULA_VERSION: '2026.10.09-1' }, now: () => 1_800_000_000_000 });
+    w.api.captureTelemetryHour();
+    const res = await w.pull();
+    expect([res.status, res.body.app_version]).toEqual([200, 'v2026.10.09']);
+  });
+});
+
+describe('refused control-token attempts', () => {
+  it('counts them per address, answers 429 after thirty a minute, logs once a minute without any credential, and never counts a valid call', async () => {
+    const lines: string[] = [];
+    let at = 1_800_000_000_000;
+    const w = await setup({ now: () => at, log: (line: string) => lines.push(line) });
+    w.api.captureTelemetryHour();
+    const bad = { authorization: 'Bearer secret-attempt-value' };
+    for (let i = 0; i < 30; i++) expect((await w.pull(bad)).status).toBe(401);
+    const limited = await w.pull(bad);
+    expect([limited.status, limited.body.error]).toEqual([429, 'rate_limited']);
+    expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect((await w.pull()).status).toBe(200); // the control plane's own token still works
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('internal route internal/telemetry refused');
+    expect(lines[0]).not.toContain('secret-attempt-value');
+    expect(lines[0]).not.toContain(TOKEN);
+    at += 61_000;
+    expect((await w.pull(bad)).status).toBe(401); // a minute later it is counted afresh, and logged again
+    expect(lines).toHaveLength(2);
   });
 });
 
