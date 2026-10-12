@@ -142,13 +142,13 @@ describe('hosted image preparation', () => {
     expect(await addImages(target, [gif(), gif()])).toBe(1);
     expect(added).toHaveLength(1);
     expect(enqueued).toHaveLength(1);
-    expect(toast).toHaveBeenCalledWith(expect.stringContaining('was not added because this browser would not keep a copy to upload'), 10_000);
+    expect(toast).toHaveBeenCalledWith('The image was not added: this browser could not save a copy to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add it again.', 10_000);
 
     mocks.assetPut.mockRejectedValue(new Error('quota'));
     mocks.toasts.mockClear();
     expect(await addImages(target, [gif(), gif()])).toBe(0);
     expect(added).toHaveLength(1);
-    expect(toast).toHaveBeenCalledWith(expect.stringContaining('2 images were not added'), 10_000);
+    expect(toast).toHaveBeenCalledWith('2 images were not added: this browser could not save copies to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add them again.', 10_000);
     mocks.assetPut.mockReset();
     mocks.assetPut.mockImplementation(async () => {});
   });

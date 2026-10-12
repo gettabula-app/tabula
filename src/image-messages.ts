@@ -23,8 +23,8 @@ export const IMAGE_UPLOAD_MESSAGES = {
   /** The browser would not keep the bytes of an image just added (storage full or blocked), so nothing was added. */
   notKept(count: number): string {
     return count === 1
-      ? 'An image was not added because this browser would not keep a copy to upload. Its storage may be full or blocked. Free up space or allow site data, then add it again.'
-      : `${count} images were not added because this browser would not keep a copy to upload. Its storage may be full or blocked. Free up space or allow site data, then add them again.`;
+      ? 'The image was not added: this browser could not save a copy to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add it again.'
+      : `${count} images were not added: this browser could not save copies to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add them again.`;
   },
   lost(count: number): string {
     return count === 1
