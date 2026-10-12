@@ -1,17 +1,12 @@
 import './chat.css';
-import type { BoardApp } from '../app';
 import type { ChatMessage } from '../api';
-import { authState } from '../auth';
-import { boardUnread, onChatBadge, openBoardChat, type BoardChat, type ChatView } from '../chat';
+import type { BoardChat, ChatView } from '../chat';
 import { USER_COLORS } from '../palette';
-import { layerLabel } from '../layers';
-import type { BaseObj } from '../types';
 import { h, icon } from './dom';
 import { announce } from './announce';
 import { popover, toast } from './common';
-import type { SideTray } from './side-tray';
 import {
-  CHAT_REACTIONS, MAX_MENTIONS, MAX_TEXT, objectBoardHash, objectChip, atBottom, buildRows, canDelete, canEdit, chatOpenKey, colourIndex, composerState, filterPeople, fromTokens,
+  CHAT_REACTIONS, MAX_MENTIONS, MAX_TEXT, objectBoardHash, objectChip, atBottom, buildRows, canDelete, canEdit, colourIndex, composerState, filterPeople, fromTokens,
   initials, insertMention, mentionLabel, mentionQuery, quoteText, reactedWith, reactionChips, segments, textLength, timeLabel, toTokens,
   type ObjectInfo, type OutboxItem, type Person, type Row,
 } from './chat-logic';
@@ -22,22 +17,6 @@ const COMPOSER_MAX_PX = 6 * 20 + 16;
 const OLDER_PX = 48;
 /** The character count shows from here. */
 const COUNT_FROM = MAX_TEXT - 200;
-
-function readFlag(key: string): boolean {
-  try {
-    return localStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeFlag(key: string, on: boolean) {
-  try {
-    localStorage.setItem(key, on ? '1' : '0');
-  } catch {
-    /* storage is unavailable: the tray simply opens closed next time */
-  }
-}
 
 function copyText(text: string) {
   navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Clipboard is not available'));
@@ -790,100 +769,4 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       render();
     },
   };
-}
-
-/**
- * Board chat: the Chat button with its unread badge in the top bar, and the Chat tab of the side tray (docs/chat.md,
- * Interface). Messages are plain text; every node is built with textContent.
- */
-export function mountChat(app: BoardApp, tray: SideTray): { button: HTMLButtonElement } {
-  const boardId = app.conn.id;
-  const signal = app.lifetime.signal;
-  const chat = openBoardChat(boardId, signal);
-  const auth = authState();
-  const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
-  const myId = me?.user.id ?? '';
-  const myName = me?.user.name ?? 'You';
-  const openKey = chatOpenKey(myId, boardId);
-  tray.setAvailable('chat', true);
-  let open = false;
-
-  // ---------------------------------------------------------------- button
-  const badge = h('span', { class: 'chat-count', 'aria-hidden': 'true' });
-  const button = h('button', {
-    class: 'icon-btn chat-toggle', 'aria-label': 'Chat', 'aria-pressed': 'false', 'aria-keyshortcuts': 'M', 'data-tip-key': 'm', onclick: () => tray.toggle('chat'),
-  }, icon('chat', 18), badge);
-
-  let badgeSeen: number | null = null;
-  function paintBadge(v: { unread: number; mentions: number }) {
-    // with the tab closed only counts arrive: say that there is something new, never what
-    if (!open && badgeSeen !== null && v.unread > badgeSeen) {
-      announce(`${v.unread} unread in board chat${v.mentions ? ', you were mentioned' : ''}`, { key: 'chat-badge', delay: 600 });
-    }
-    badgeSeen = v.unread;
-    badge.textContent = v.unread > 99 ? '99+' : String(v.unread);
-    badge.classList.toggle('show', v.unread > 0);
-    badge.classList.toggle('mention', v.mentions > 0);
-    const extra = v.unread ? `, ${v.unread} unread${v.mentions ? `, ${v.mentions} mentioning you` : ''}` : '';
-    button.setAttribute('aria-label', `Chat${extra}`);
-  }
-
-  // ---------------------------------------------------------------- panel
-  // what board chat can do with the board's objects (docs/chat.md, Object link)
-  const objects: ObjectRefs = {
-    selected: () => (app.selection.length === 1 ? app.selection[0] : null),
-    describe(id) {
-      const o = app.store.get(id);
-      if (!o) return undefined;
-      return { label: layerLabel(o), private: app.flow.isHidden(o as BaseObj), hidden: !app.store.isShown(o) };
-    },
-    open: (id) => app.flyToObject(id),
-    onChange(fn) {
-      const offSel = app.on('selection', fn);
-      const offObj = app.on('objects', fn);
-      return () => {
-        offSel();
-        offObj();
-      };
-    },
-  };
-  const conversation = mountConversation({ chat, id: boardId, panel: tray.slot('chat'), signal, meId: myId, meName: myName, onView: paintBadge, objects });
-  let redraw = 0;
-  const offObjects = objects.onChange(() => {
-    if (redraw || !open) return;
-    redraw = requestAnimationFrame(() => {
-      redraw = 0;
-      conversation.refresh();
-    });
-  });
-  signal.addEventListener('abort', () => {
-    offObjects();
-    cancelAnimationFrame(redraw);
-  }, { once: true });
-  const offBadge = onChatBadge(() => {
-    if (!open) paintBadge(boardUnread(boardId));
-  });
-  signal.addEventListener('abort', offBadge, { once: true });
-
-  tray.onChange((tab) => {
-    const now = tab === 'chat';
-    if (now === open) return;
-    open = now;
-    button.classList.toggle('on', open);
-    button.setAttribute('aria-pressed', String(open));
-    writeFlag(openKey, open);
-    conversation.setOpen(open);
-  });
-
-  app.toggleChat = () => {
-    const opening = tray.current() !== 'chat';
-    tray.toggle('chat');
-    if (opening) conversation.focusComposer();
-  };
-  signal.addEventListener('abort', () => {
-    app.toggleChat = null;
-  }, { once: true });
-
-  if (readFlag(openKey)) tray.show('chat');
-  return { button };
 }

@@ -63,6 +63,8 @@ export const ICONS = {
   redo: '<path d="M16 8h4V4"/><path d="M19.5 8.2A8 8 0 1012 20"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
+  expand: '<path d="M14 5h5v5M19 5l-6 6M10 19H5v-5M5 19l6-6"/>',
+  collapse: '<path d="M19 10h-5V5M14 10l6-6M5 14h5v5M10 14l-6 6"/>',
   fit: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   grid: '<path d="M4 4h16v16H4zM4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
