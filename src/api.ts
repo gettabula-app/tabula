@@ -45,6 +45,8 @@ export interface Me {
   ai?: { personalKeys: true };
   /** Present (true) when team chat is on for this server (docs/chat.md). */
   chat?: boolean;
+  /** The notification list exists on this server (accounts mode); the bell shows only then. */
+  notifications?: boolean;
   /** Present (true) when this server enables tracker frame creation. */
   tracker?: boolean;
   /** Present only when the relay has one-board guest join codes enabled. */

@@ -892,6 +892,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         mcpOauth: config.mcp?.oauth === true,
         ...(assets ? { images: true } : {}),
         ...(chatOn ? { chat: true } : {}),
+        ...(notificationStore ? { notifications: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
         ...(trackerCanAccess(user) ? { tracker: true } : {}),
         ...aiApi.meFlag(user),
