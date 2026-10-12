@@ -2,7 +2,7 @@ import './focus.css';
 import type { BoardApp } from '../app';
 import { personColor } from '../palette';
 import { isBox } from '../types';
-import { boxBounds } from '../geometry';
+import { stepViewBounds } from '../step-view';
 import { newId } from '../store';
 import {
   REQUEST_TTL_MS, RequestTracker, buildRequest, cameraToView, isFollowedBy, loadMuted, mutePerson, parseRequest, parseView,
@@ -96,7 +96,7 @@ export function mountFocus(app: BoardApp, parent: HTMLElement) {
     if (req.kind === 'step') {
       const step = app.store.getFlow().steps.find((s) => s.id === req.stepId);
       const frame = step?.frameId ? app.store.get(step.frameId) : undefined;
-      if (isBox(frame)) return app.r.flyTo(boxBounds(frame), 72, 1.2);
+      if (isBox(frame)) return app.r.flyTo(stepViewBounds(frame, app.store.cache.values()), 72, 1.2);
     }
     app.r.flyToCenter({ x: req.x, y: req.y }, req.zoom);
   };

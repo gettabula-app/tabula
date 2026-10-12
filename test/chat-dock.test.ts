@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { stubDeps } from './chat-dock-deps';
+import { entry, stubDeps } from './chat-dock-deps';
 import { installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
 import { DEFAULT_DOCK, SHEET_DRAG_MINIMISE, dockHiddenOn, sheetDragMinimises, dockInset, dockKey, loadDock, nextDock, parseDock, saveDock, type DockEvent, type DockPrefs } from '../src/ui/chat-dock-state';
 
@@ -198,6 +198,42 @@ describe('the dock host', () => {
     (host.querySelector('.chat-dock-handle') as FakeElement).click();
     expect(dock.mode()).toBe('bubble');
     expect((host.querySelector('.chat-dock-handle') as FakeElement).getAttribute('aria-label')).toBe('Minimise chat');
+  });
+
+  it('a request to focus the message box made before the channels have loaded waits in the dock and lands in the box', async () => {
+    const { mod, overlay, host } = await setup();
+    const stub = stubDeps([entry({ kind: 'workspace', ref: 'w', name: 'Workspace' })]);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const list = await stub.deps.fetchChannels();
+    (stub.deps.fetchChannels as ReturnType<typeof vi.fn>).mockImplementation(async () => { await gate; return list; });
+    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage, deps: stub.deps });
+    dock.dispatch('open');
+    dock.focusComposer();
+    const panel = host.querySelector('.chat-dock') as FakeElement;
+    // nothing is drawn yet: focus is already in the dock, not left on the button that opened it
+    expect(stub.mounts).toHaveLength(0);
+    expect(browser!.document.activeElement).toBe(panel);
+    release();
+    await vi.waitFor(() => expect(stub.mounts).toHaveLength(1));
+    expect(stub.mounts[0].conv.focusComposer).toHaveBeenCalledTimes(1);
+  });
+
+  it('a pending focus request is dropped when the person has moved focus elsewhere, or the dock closes', async () => {
+    const { mod, overlay } = await setup();
+    const stub = stubDeps([entry({ kind: 'workspace', ref: 'w', name: 'Workspace' })]);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const list = await stub.deps.fetchChannels();
+    (stub.deps.fetchChannels as ReturnType<typeof vi.fn>).mockImplementation(async () => { await gate; return list; });
+    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage, deps: stub.deps });
+    dock.dispatch('open');
+    dock.focusComposer();
+    dock.dispatch('close');
+    dock.dispatch('open');
+    release();
+    await vi.waitFor(() => expect(stub.mounts).toHaveLength(1));
+    expect(stub.mounts[0].conv.focusComposer).not.toHaveBeenCalled();
   });
 
   it('rides above the soft keyboard: the sheet is lifted by what the keyboard covers', async () => {

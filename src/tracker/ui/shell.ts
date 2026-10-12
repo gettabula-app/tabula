@@ -1,6 +1,8 @@
+import type { Me } from '../../api';
+import { openTrackerMenu } from './account-menu';
 import './tracker.css';
 import { closePopover, dialog, popover, toast } from '../../ui/common';
-import { h } from '../../ui/dom';
+import { h, icon } from '../../ui/dom';
 import { TrackerError, type TrackerFacets, type TrackerListQuery, type TrackerMeta, type TrackerPriority, type TrackerSortField, type TrackerState, type TrackerTicket, type TrackerView } from '../../tracker-types';
 import type { TrackerApi, TrackerStore } from '../../tracker-data';
 import { build, parse, type FilterChip } from './filter';
@@ -106,6 +108,12 @@ export interface TrackerShellOptions {
   initialViewId?: string;
   initialTicketKey?: string;
   fullScreen?: boolean;
+  /** Opened as a page of its own (no board behind it): the strip leads back to Boards instead of to a board. */
+  routeMode?: boolean;
+  /** The signed-in person, for the strip's menu (theme, account links). Without one the strip has no menu button. */
+  account?: Me | null;
+  /** Go to the boards page, for the strip and the menu in route mode. */
+  onBoards?: () => void;
   boardName?: string;
   layoutWidth?: number;
   readOnly?: boolean;
@@ -235,9 +243,21 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   let ticketError = '';
 
   const root = h('section', { class: 'trk trk-shell', tabindex: '0', 'aria-label': 'Tracker', 'data-fullscreen': String(fullScreen) });
+  const routeMode = options.routeMode === true;
+  const menuButton = h('button', {
+    class: 'trk-menu-button', type: 'button', 'aria-label': 'Menu', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+  }, icon('dots', 18));
+  menuButton.hidden = !options.account;
+  menuButton.addEventListener('click', () => {
+    if (options.account) openTrackerMenu(menuButton, { me: options.account, onBoards: () => options.onBoards?.() });
+  });
   const fullscreenStrip = h('div', { class: 'trk-fullscreen-strip', hidden: !fullScreen },
+    routeMode
+      ? h('button', { class: 'trk-small-button trk-back-boards', type: 'button', onclick: () => options.onBoards?.() }, '‹ Boards')
+      : h('button', { class: 'trk-small-button', type: 'button', onclick: () => setFullscreen(false) }, 'Back to board'),
     h('span', { class: 'trk-board-name' }, options.boardName ?? 'Tracker'),
-    h('button', { class: 'trk-small-button', type: 'button', onclick: () => setFullscreen(false) }, 'Back to board'),
+    h('span', { class: 'trk-strip-spacer' }),
+    menuButton,
   );
   const tabs = h('nav', { class: 'trk-tabs', role: 'tablist', 'aria-label': 'Tracker sections' });
   const commandButton = h('button', { class: 'trk-command-trigger', type: 'button', 'aria-label': 'Open command box, Command or Control K' }, '⌘K');
@@ -255,6 +275,14 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   offlineLine, errorBanner, content, live);
   parent.appendChild(root);
   root.dataset.width = String(layoutWidth);
+  // the soft keyboard shrinks the visual viewport, not the layout one: the phone's suggestion sheet rides on top of it (--trk-kb)
+  const publishKeyboard = () => {
+    const vv = window.visualViewport;
+    root.style.setProperty('--trk-kb', `${Math.round(vv ? Math.max(0, window.innerHeight - (vv.offsetTop + vv.height)) : 0)}px`);
+  };
+  window.visualViewport?.addEventListener('resize', publishKeyboard);
+  window.visualViewport?.addEventListener('scroll', publishKeyboard);
+  publishKeyboard();
 
   const announce = (message: string) => { live.textContent = message; };
   const destroyInbox = () => {
@@ -1042,6 +1070,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         return card;
       });
       const laneBody = h('div', { class: 'trk-board-lane-cards' }, ...cards,
+        cards.length === 0 && !cache.nextCursor ? h('p', { class: 'trk-board-lane-empty' }, 'No issues') : null,
         cache.nextCursor ? h('button', {
           class: 'trk-load-more', type: 'button', disabled: cache.loadingMore,
           onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showBoardError(error instanceof Error ? error.message : 'Could not load more issues.', entry?.query ?? boardQuery(item))),
@@ -1312,6 +1341,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       if (debounce !== undefined) clearTimeout(debounce);
       window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOnline);
       window.removeEventListener('resize', onWindowResize);
+      window.visualViewport?.removeEventListener('resize', publishKeyboard);
+      window.visualViewport?.removeEventListener('scroll', publishKeyboard);
       root.remove();
     },
   };

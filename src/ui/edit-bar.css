@@ -13,3 +13,7 @@
 .edit-bar .edit-emoji { width: 44px; height: 44px; }
 .edit-bar .edit-emoji > * { pointer-events: none; }
 .edit-bar :focus-visible { outline-offset: -2px; }
+/* In the note's corner the tray is the button: no padding, so the 8 px gap is measured to the visible edge. A mouse gets 32 px, a finger 44 px. */
+.edit-bar[data-side='corner'] { padding: 0; }
+.edit-bar[data-side='corner'] .edit-emoji { width: 44px; height: 44px; }
+@media (pointer: fine) { .edit-bar[data-side='corner'] .edit-emoji { width: 32px; height: 32px; } }

@@ -2149,7 +2149,7 @@ export class BoardApp {
     if (!o) return;
     if (o.type === 'frame') {
       o.name = `Frame ${[...this.store.cache.values()].filter((x) => x.type === 'frame').length + 1}`;
-      o.z = this.store.bottomZ();
+      o.z = this.store.frameZFor({ x: o.x, y: o.y, w: o.w, h: o.h });
     }
     if (o.type === 'uml-class') o.h = Math.max(o.h, classHeight(o));
     this.createObject(o);
