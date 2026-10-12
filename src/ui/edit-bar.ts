@@ -1,7 +1,7 @@
 import type { BoardApp } from '../app';
 import { h, icon } from './dom';
 import { safeInsets } from './safe-area';
-import { CORNER_TRAY_FINE, placeEditBar } from './edit-bar-layout';
+import { cornerTextInset, placeEditBar } from './edit-bar-layout';
 import './edit-bar.css';
 
 /** A small editing control that follows the text box while the camera moves. */
@@ -36,6 +36,7 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
   const position = () => {
     if (!visible() || !bar.classList.contains('show')) return;
     const box = app.editor.textarea.getBoundingClientRect();
+    const note = app.editor.objectScreenRect() ?? box;
     const safe = safeInsets();
     const width = bar.offsetWidth;
     const height = bar.offsetHeight;
@@ -48,8 +49,10 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
     // never under the top bars (a high note on a phone): they are drawn over the canvas
     const chrome = [...document.querySelectorAll<HTMLElement>('.top-left, .top-right')].map((el) => el.getBoundingClientRect());
     const hits = (x: number, top: number) => chrome.some((r) => x < r.right && x + width > r.left && top < r.bottom && top + height > r.top);
-    const placed = placeEditBar({ box, width, height, edges: { left: leftEdge, right: rightEdge, top: topEdge, bottom: bottomEdge }, hits, cornerTray: fine ? { width: CORNER_TRAY_FINE, height: CORNER_TRAY_FINE } : undefined });
+    const placed = placeEditBar({ box, width, height, edges: { left: leftEdge, right: rightEdge, top: topEdge, bottom: bottomEdge }, hits, note, fine });
     bar.dataset.side = placed.side;
+    // while the button is in the note's corner the text keeps clear of it; the text stays centred in the rest
+    app.editor.setBottomInset(placed.side === 'corner' ? cornerTextInset(fine) : 0);
     bar.style.transform = `translate(${placed.x}px, ${placed.y}px)`;
   };
   const sync = () => {

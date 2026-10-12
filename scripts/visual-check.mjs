@@ -3227,7 +3227,8 @@ const STATES = {
     if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
     if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
   },
-  // the Add emoji button sits inside the note, bottom-left, inset from its edges (a note big enough on screen to hold it)
+  // the Add emoji button sits inside the note, bottom-left, 8 px from its edges (a note big enough on screen to hold it), and the
+  // text keeps clear of it; a note with three lines of text shows that the text does not run under the button
   async 'emoji-corner'(env) {
     const page = env.page;
     await openSeedBoard(env);
@@ -3235,26 +3236,40 @@ const STATES = {
     await page.evaluate(() => {
       const app = window.__board;
       app.scope = null;
+      app.store.transact(() => app.store.update('seed-note-1', { text: 'Reviews were fast, and the new\nhandover note made the\nwhole sprint easier' }));
       app.setSelection(['seed-note-1']);
       app.zoomToSelection();
     });
     await page.waitForTimeout(180);
-    await page.evaluate(() => window.__board.zoomTo(1.2));
+    // a note about 200 px a side on screen
+    await page.evaluate(() => {
+      const app = window.__board;
+      const o = app.store.get('seed-note-1');
+      app.zoomTo(200 / o.w);
+    });
     await page.evaluate(() => window.__board.editor.start('seed-note-1'));
     await page.locator('.edit-bar.show').waitFor();
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(250);
     const r = await page.evaluate(() => {
-      const note = document.querySelector('.text-editor').getBoundingClientRect();
+      const app = window.__board;
+      const a = app.r.toScreen({ x: app.store.get('seed-note-1').x, y: app.store.get('seed-note-1').y });
+      const o = app.store.get('seed-note-1');
+      const z = app.r.cam.zoom;
+      const root = app.r.root.getBoundingClientRect();
+      const note = { left: root.left + a.x, bottom: root.top + a.y + o.h * z, width: o.w * z, height: o.h * z };
       const bar = document.querySelector('.edit-bar.show');
-      const button = document.querySelector('.edit-emoji').getBoundingClientRect();
       const box = bar.getBoundingClientRect();
-      return { side: bar.dataset.side, left: box.left - note.left, bottom: note.bottom - box.bottom, button: [button.width, button.height], noteSize: [note.width, note.height] };
+      const ta = document.querySelector('.text-editor');
+      const range = document.createRange();
+      range.selectNodeContents(ta);
+      return { side: bar.dataset.side, left: box.left - note.left, bottom: note.bottom - box.bottom, button: [box.width, box.height], note: [note.width, note.height].map(Math.round), padBottom: getComputedStyle(ta).paddingBottom };
     });
     console.log(`emoji-corner ${JSON.stringify(r)}`);
-    if (r.side !== 'corner') throw new Error(`emoji-corner: the button is ${r.side}, not in the corner (note ${r.noteSize.map(Math.round)})`);
-    if (r.left < 0 || r.left > 24 || r.bottom < 0 || r.bottom > 24) throw new Error(`emoji-corner: the button is not in the bottom-left corner area (${Math.round(r.left)} px from the left, ${Math.round(r.bottom)} px from the bottom)`);
-    const min = env.width <= 500 ? 43.5 : 31.5; // touch keeps 44 px; a mouse gets 32 px in the corner
+    const min = env.width <= 500 ? 43.5 : 31.5; // a finger gets 44 px, a mouse 32 px
+    if (r.side !== 'corner') throw new Error(`emoji-corner: the button is ${r.side}, not in the corner (note ${r.note})`);
+    if (Math.abs(r.left - 8) > 1 || Math.abs(r.bottom - 8) > 1) throw new Error(`emoji-corner: the gap is ${Math.round(r.left)} px from the left and ${Math.round(r.bottom)} px from the bottom, not 8 px`);
     if (r.button[0] < min || r.button[1] < min) throw new Error(`emoji-corner: the button is ${r.button.map(Math.round)}, under ${Math.round(min)} px`);
+    if (!(parseFloat(r.padBottom) > 0)) throw new Error('emoji-corner: the text area has no bottom padding for the button');
   },
   async 'emoji-keyboard'(env) {
     await emojiKeyboard(env, null);

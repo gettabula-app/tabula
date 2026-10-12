@@ -46,6 +46,7 @@ export class TextEditor {
   private selectionStart = 0;
   private selectionEnd = 0;
   private blurHeld = false;
+  private bottomInset = 0;
 
   constructor(private app: BoardApp) {
     this.ta = document.createElement('textarea');
@@ -91,6 +92,25 @@ export class TextEditor {
 
   get textarea() {
     return this.ta;
+  }
+
+  /** The edited object's own box on screen (a note's whole face, not the text box inside it); null for a connector label. */
+  objectScreenRect(): { left: number; right: number; top: number; bottom: number; width: number; height: number } | null {
+    const o = this.app.store.getPlaced(this.id ?? undefined) as BaseObj | undefined;
+    if (!o || isConnector(o) || (o.rotation ?? 0) !== 0) return null;
+    const a = this.app.r.toScreen({ x: o.x, y: o.y });
+    const b = this.app.r.toScreen({ x: o.x + o.w, y: o.y + o.h });
+    const root = this.app.r.root.getBoundingClientRect();
+    const left = root.left + a.x;
+    const top = root.top + a.y;
+    return { left, top, right: root.left + b.x, bottom: root.top + b.y, width: b.x - a.x, height: b.y - a.y };
+  }
+
+  /** Room kept clear at the bottom of the text (px on screen) for the corner button; 0 when it is elsewhere. */
+  setBottomInset(px: number) {
+    if (this.bottomInset === px) return;
+    this.bottomInset = px;
+    if (this.active) this.reposition();
   }
 
   private rememberSelection() {
@@ -215,6 +235,8 @@ export class TextEditor {
     const centredLayout = centred ? layoutText(ta.value || ' ', box, st, { shrink: true, valign: st.valign }) : null;
     if (centredLayout) fontSize = centredLayout.size;
     const scale = this.setEditorFont(fontSize);
+    // room kept clear at the bottom for the corner button: screen px, so divided by the overlay's scale
+    if (this.bottomInset) ta.style.paddingBottom = `${this.bottomInset / (z * scale)}px`;
     ta.style.lineHeight = centredLayout ? `${centredLayout.lineHeight / scale}px` : '1.3';
     ta.style.paddingTop = centredLayout ? `${Math.max(0, centredLayout.top - box.y) / scale}px` : '0px';
     ta.style.setProperty('--touch-editor-class-padding', `${8 / scale}px`);
