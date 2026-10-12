@@ -5,6 +5,8 @@ Tabula can run in two modes.
 - **Open mode** (default, `TABULA_AUTH=off`): today's behaviour. The relay accepts anyone who knows a board link, and each browser keeps its own board list.
 - **Accounts mode** (`TABULA_AUTH=on`): people sign in with an email link. The server keeps a directory of members, teams, boards and permissions in SQLite, and the relay enforces them on every connection and every update.
 
+**Open mode is for localhost and trusted LAN use only, never the internet.** It has no accounts, no `Origin` check on connections and unlimited rooms: anyone who can reach the port can create boards, fill the disk and edit any board whose link they know. Bind it to this computer with `HOST=127.0.0.1`, or use accounts mode for anything reachable from outside (`TABULA_AUTH=on TABULA_OWNER_EMAIL=you@example.com npm start`). The relay logs a warning at startup when open mode listens on a non-loopback `HOST` (the default `0.0.0.0` counts).
+
 Open mode must keep working unchanged, including every existing test.
 
 ## Configuration

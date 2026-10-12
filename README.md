@@ -82,6 +82,8 @@ A Node program that starts the relay with an IPC channel (`stdio: [..., 'ipc']`)
 
 ### Accounts and teams
 
+> **Open mode is for localhost and trusted networks only, never the internet.** Without `TABULA_AUTH=on` there are no accounts, no `Origin` check on connections and no limit on the number of rooms (boards): anyone who can reach the port can create boards, fill the disk and edit any board whose link they know. Run it on your own computer or a LAN you trust (set `HOST=127.0.0.1` to bind to this computer only). For anything reachable from the internet, run accounts mode: `TABULA_AUTH=on TABULA_OWNER_EMAIL=you@example.com npm start` (details below and in [docs/accounts.md](docs/accounts.md)). The relay logs a warning at startup when open mode listens on a non-loopback `HOST`.
+
 By default Tabula is open: anyone who can reach the relay and knows a board link can edit it. Set `TABULA_AUTH=on` to switch to **accounts mode**: people sign in with an emailed link, the server keeps members, teams, boards and sharing in a SQLite directory (`<DATA_DIR>/directory.sqlite`), and the relay checks the signed-in person's role on every connection and every update (viewers cannot write). Accounts mode needs Node 22.13 or newer.
 
 Tabula was called Mira before: the old `MIRA_*` names of these variables still work, with a deprecation warning at startup, and the `TABULA_` name wins when both are set.
