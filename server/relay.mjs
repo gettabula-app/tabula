@@ -55,6 +55,7 @@ import { KEY_FLOOR_CHANGED_EVENT, createKeyFloorReporter } from './tracker/key-f
 import { trackerGateState } from './tracker/gate.mjs';
 import { createTrackerRestoreRecovery } from './tracker/restore-recovery.mjs';
 import { OpsError } from './board-ops.mjs';
+import { analyticsChoice } from './telemetry/report.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // settings (and secrets such as TABULA_SMTP_URL) may live in a .env file next to where the server starts; real environment variables win
@@ -326,7 +327,7 @@ if (config.authEnabled) {
     joinCodeService = createJoinCodeService({ directory, secret: loadJoinCodeSecret(DATA_DIR) });
   }
   // Hosted workspaces (docs/cloud.md): null unless TABULA_CLOUD_* is set, and then every hook below is inert.
-  cloud = createCloud({ config: config.cloud, directory, events });
+  cloud = createCloud({ config: config.cloud, directory, events, telemetryAnalytics: () => analyticsChoice(config.telemetry, directory.getSetting, true) });
   if (config.tracker) {
     keyFloorReporter = createKeyFloorReporter({
       directory,
@@ -1709,6 +1710,7 @@ async function stopRelay() {
   clearInterval(pinger);
   await closeKeyFloorReporter();
   cloud?.close();
+  api?.flushTelemetry?.(); // the running hour's report goes to its file: one small synchronous write, nothing to wait for
   // A snapshot hold must never turn a shutdown save into a deferred one: the process is about to exit.
   const saveNow = () => (snapshotBarrier ? snapshotBarrier.allowWrites(saveAllRooms) : saveAllRooms());
   let saved = saveNow();
