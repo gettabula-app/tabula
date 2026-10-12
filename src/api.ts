@@ -47,8 +47,6 @@ export interface Me {
   chat?: boolean;
   /** Present (true) when this server enables tracker frame creation. */
   tracker?: boolean;
-  /** Present (true) when the server keeps a notification list for the person (the bell on the Boards top bar). */
-  notifications?: boolean;
   /** Present only when the relay has one-board guest join codes enabled. */
   joinCodes?: true;
 }
