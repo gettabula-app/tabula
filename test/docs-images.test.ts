@@ -27,32 +27,28 @@ describe('guide and README images', () => {
   });
 
   it('points every image at a file that exists in docs/images', () => {
-    for (const r of refs) {
-      expect(fs.existsSync(r.file), `${r.page}: ${path.relative(root, r.file)}`).toBe(true);
-      expect(path.dirname(r.file)).toBe(path.join(root, 'docs', 'images'));
-    }
+    const bad = refs.filter((r) => !fs.existsSync(r.file) || path.dirname(r.file) !== path.join(root, 'docs', 'images')).map((r) => `${r.page}: ${path.relative(root, r.file)}`);
+    expect(bad).toEqual([]);
   });
 
   it('gives every image alt text that says what it shows', () => {
-    for (const r of refs) {
-      expect(r.alt.trim().length, `${r.page}: ${path.basename(r.file)}`).toBeGreaterThanOrEqual(10);
-      expect(r.alt, `${r.page}: ${path.basename(r.file)}`).not.toMatch(/earlier|old layout|screenshot of/i);
-    }
+    const bad = refs.filter((r) => r.alt.trim().length < 10 || /earlier|old layout|screenshot of/i.test(r.alt)).map((r) => `${r.page}: ${path.basename(r.file)}`);
+    expect(bad).toEqual([]);
   });
 
   it('keeps each image under 400 KB', () => {
-    for (const r of refs) expect(fs.statSync(r.file).size, path.basename(r.file)).toBeLessThanOrEqual(MAX_BYTES);
+    expect(refs.filter((r) => fs.statSync(r.file).size > MAX_BYTES).map((r) => path.basename(r.file))).toEqual([]);
   });
 
   it('has a file in docs/images for every image the script writes, and a PNG header on each', () => {
     const script = fs.readFileSync(path.join(root, 'scripts', 'docs-images.mjs'), 'utf8');
     const names = [...script.matchAll(/save\(page, '([\w-]+)'/g)].map((m) => m[1]);
     expect(names).toEqual(expect.arrayContaining(['chat-tray', 'chat-page', 'layers-panel']));
-    for (const name of names) {
+    const bad = names.filter((name) => {
       const file = path.join(root, 'docs', 'images', `${name}.png`);
-      expect(fs.existsSync(file), name).toBe(true);
-      expect(`${name}:${[...fs.readFileSync(file).subarray(1, 4)].map((c) => String.fromCharCode(c)).join('')}`).toBe(`${name}:PNG`);
-    }
+      return !fs.existsSync(file) || fs.readFileSync(file).subarray(1, 4).toString('latin1') !== 'PNG';
+    });
+    expect(bad).toEqual([]);
   });
 
   it('shows the dock and the Chat page in the chat guide', () => {
