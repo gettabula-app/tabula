@@ -6,8 +6,8 @@ import { h, icon } from './dom';
 import { announce } from './announce';
 import { popover, toast } from './common';
 import {
-  CHAT_REACTIONS, MAX_MENTIONS, MAX_TEXT, objectBoardHash, objectChip, atBottom, buildRows, canDelete, canEdit, colourIndex, composerState, filterPeople, fromTokens,
-  initials, insertMention, mentionLabel, mentionQuery, quoteText, reactedWith, reactionChips, segments, textLength, timeLabel, toTokens,
+  CHAT_REACTIONS, MAX_MENTIONS, MAX_TEXT, objectBoardHash, objectChip, atBottom, buildRows, canDelete, canEdit, colourIndex, composerState, emptyStatePeople, filterPeople, fromTokens,
+  initials, insertMention, isOwn, mentionsMe, mentionLabel, mentionQuery, quoteText, reactedWith, reactionChips, segments, textLength, timeLabel, toTokens,
   type ObjectInfo, type OutboxItem, type Person, type Row,
 } from './chat-logic';
 
@@ -77,6 +77,9 @@ export const WORKSPACE_WELCOME = {
   title: 'Workspace chat',
   lines: ['Everyone in this workspace can read this channel.', 'Say hello.'],
 } as const;
+
+/** What any other empty conversation says: a heading and one line. */
+export const EMPTY_STATE = { title: 'No messages yet', hint: 'Say hello, or type @ to mention someone.' } as const;
 
 export interface ConversationOptions {
   chat: BoardChat;
@@ -192,11 +195,45 @@ export function mountConversation(opts: ConversationOptions): Conversation {
     return q;
   }
 
+  /** The colour of a person's square and, in the compact dock, of their name. */
+  const colourOf = (id: string | null) => USER_COLORS[colourIndex(id, USER_COLORS.length)];
+
+  /** Reply and React beside the messages actions: a small toolbar at the top right of the row, shown on hover and focus. */
+  function hoverBar(m: ChatMessage): HTMLElement {
+    const writable = composerState(view.access, { lost: view.lost, signedOut: view.signedOut }).enabled;
+    const bar = h('div', { class: 'chat-hover' });
+    if (writable && view.online) {
+      const react = h('button', { class: 'icon-btn chat-react', type: 'button', 'aria-label': `React to ${m.authorName} at ${timeLabel(m.createdAt)}`, 'aria-haspopup': 'dialog' }, icon('smile', 16));
+      react.addEventListener('click', () => openQuick(react, m));
+      bar.append(react);
+    }
+    if (writable) {
+      bar.append(h('button', {
+        class: 'icon-btn chat-reply', type: 'button', 'aria-label': `Reply to ${m.authorName} at ${timeLabel(m.createdAt)}`,
+        onclick: () => startReply(m),
+      }, icon('reply', 16)));
+    }
+    const more = h('button', {
+      class: 'icon-btn chat-more', type: 'button', 'aria-label': `Message actions, ${m.authorName} at ${timeLabel(m.createdAt)}`, 'aria-haspopup': 'menu',
+    }, icon('dots', 16));
+    more.addEventListener('click', () => openMenu(more, m));
+    bar.append(more);
+    return bar;
+  }
+
   function messageEl(m: ChatMessage, head: boolean): HTMLElement {
-    const el = h('div', { class: `chat-msg${head ? ' head' : ''}${m.deleted ? ' deleted' : ''}` });
+    const own = isOwn(m.authorId, myId);
+    const el = h('div', { class: `chat-msg${head ? ' head' : ''}${m.deleted ? ' deleted' : ''}${own ? ' own' : ''}${mentionsMe(m, myId) ? ' mention' : ''}` });
+    el.style.setProperty('--c', colourOf(m.authorId));
     el.append(head ? avatar(m.authorId, m.authorName) : h('span', { class: 'chat-gutter', 'aria-hidden': 'true' }));
     const main = h('div', { class: 'chat-main' });
-    if (head) main.append(meta(m.authorName, m.createdAt));
+    // a run's later rows keep their name and time for the one-line compact style; they are hidden otherwise and from screen readers (the text says them)
+    const header = meta(m.authorName, m.createdAt);
+    if (!head) {
+      header.classList.add('cont');
+      header.setAttribute('aria-hidden', 'true');
+    }
+    main.append(header);
     if (m.replyTo !== null && !m.deleted) main.append(quoteEl(m.replyTo));
     if (m.deleted) {
       const tomb = h('p', { class: 'chat-tomb' });
@@ -223,13 +260,7 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       if (chips.length) main.append(reactionsEl(m, chips));
     }
     el.append(main);
-    if (!m.deleted && editing?.id !== m.id) {
-      const more = h('button', {
-        class: 'icon-btn chat-more', 'aria-label': `Message actions, ${m.authorName} at ${timeLabel(m.createdAt)}`, 'aria-haspopup': 'menu',
-      }, icon('dots', 16));
-      more.addEventListener('click', () => openMenu(more, m));
-      el.append(more);
-    }
+    if (!m.deleted && editing?.id !== m.id) el.append(hoverBar(m));
     return el;
   }
 
@@ -302,10 +333,16 @@ export function mountConversation(opts: ConversationOptions): Conversation {
 
   function pendingEl(item: OutboxItem, head: boolean): HTMLElement {
     const stuck = item.state === 'blocked' || item.state === 'failed' || (item.state === 'queued' && !view.online && !item.waitUntil);
-    const el = h('div', { class: `chat-msg pending${head ? ' head' : ''}${stuck ? ' failed' : ''}` });
+    const el = h('div', { class: `chat-msg pending own${head ? ' head' : ''}${stuck ? ' failed' : ''}` });
+    el.style.setProperty('--c', colourOf(myId));
     el.append(head ? avatar(myId, myName) : h('span', { class: 'chat-gutter', 'aria-hidden': 'true' }));
     const main = h('div', { class: 'chat-main' });
-    if (head) main.append(meta(myName, item.createdLocal));
+    const header = meta(myName, item.createdLocal);
+    if (!head) {
+      header.classList.add('cont');
+      header.setAttribute('aria-hidden', 'true');
+    }
+    main.append(header);
     if (item.replyTo !== null) main.append(quoteEl(item.replyTo));
     const mentions = [...item.text.matchAll(/@\{([A-Za-z0-9_-]{1,64})\}/g)].map((x) => ({ id: x[1], name: personName(x[1]) }));
     main.append(h('p', { class: 'chat-text' }, ...textNodes(item.text, mentions, myId)));
@@ -391,24 +428,34 @@ export function mountConversation(opts: ConversationOptions): Conversation {
     }
   }
 
+  /** The empty conversation: the colour squares of the people here, a heading and one line. */
+  function emptyBlock(): HTMLElement[] {
+    const people = emptyStatePeople(view.people, myId);
+    const out: HTMLElement[] = [];
+    if (people.length) out.push(h('span', { class: 'chat-empty-people', 'aria-hidden': 'true' }, ...people.map((p) => avatar(p.id, p.name))));
+    if (opts.workspace) {
+      out.push(h('strong', { class: 'chat-welcome-title' }, WORKSPACE_WELCOME.title), ...WORKSPACE_WELCOME.lines.map((line) => h('span', null, line)));
+    } else {
+      out.push(h('strong', { class: 'chat-welcome-title' }, EMPTY_STATE.title), h('span', null, EMPTY_STATE.hint));
+    }
+    return out;
+  }
+
   function paintOlder() {
     older.replaceChildren();
-    const welcome = Boolean(opts.workspace) && !view.lost && !view.messages.length && !view.pending.length && !view.loading && !view.loadingOlder;
-    older.classList.toggle('chat-welcome', welcome);
-    log.classList.toggle('has-welcome', welcome);
+    const empty = !view.lost && !view.messages.length && !view.pending.length && !view.loading && !view.loadingOlder;
+    older.classList.toggle('chat-welcome', empty);
+    log.classList.toggle('has-welcome', empty);
     if (view.loadingOlder) older.append(h('span', null, 'Loading older messages…'));
     else if (view.hasOlder && view.messages.length) older.append(h('button', { class: 'chat-action', onclick: () => void chat.loadOlder() }, 'Load older messages'));
-    else if (!view.messages.length && !view.pending.length && !view.loading) {
-      if (opts.workspace && !view.lost) {
-        older.append(h('strong', { class: 'chat-welcome-title' }, WORKSPACE_WELCOME.title), ...WORKSPACE_WELCOME.lines.map((line) => h('span', null, line)));
-        // the box takes focus the first time the empty channel is shown to someone who may write
-        if (!welcomed && view.access) {
-          welcomed = true;
-          requestAnimationFrame(() => (ta.disabled ? log : ta).focus());
-        }
-      } else older.append(h('span', null, view.lost ? '' : 'No messages yet. Say hello.'));
-    }
-    else if (view.messages.length && !view.hasOlder) older.append(h('span', null, 'Start of the conversation'));
+    else if (empty) {
+      older.append(...emptyBlock());
+      // the box takes focus the first time the empty workspace channel is shown to someone who may write
+      if (opts.workspace && !welcomed && view.access) {
+        welcomed = true;
+        requestAnimationFrame(() => (ta.disabled ? log : ta).focus());
+      }
+    } else if (view.messages.length && !view.hasOlder) older.append(h('span', null, 'Start of the conversation'));
   }
 
   // ---------------------------------------------------------------- scrolling and reading
@@ -595,6 +642,36 @@ export function mountConversation(opts: ConversationOptions): Conversation {
 
   // ---------------------------------------------------------------- message actions
 
+  function startReply(m: ChatMessage) {
+    replyTo = { id: m.id, name: m.authorName, quote: quoteText(m) };
+    paintReplying();
+    paintComposer();
+    ta.focus();
+  }
+
+  /** The six reactions in a small bar by the message. Esc closes it with focus back on the React button; choosing one toggles this person's own. */
+  function openQuick(anchorEl: HTMLElement, m: ChatMessage) {
+    let pop: ReturnType<typeof popover> | null = null;
+    const bar = h('div', { class: 'chat-quick', role: 'group', 'aria-label': 'Quick reactions' }, ...CHAT_REACTIONS.map((emoji) => {
+      const on = reactedWith(m, myId, emoji);
+      return h('button', {
+        class: `icon-btn chat-quick-btn${on ? ' on' : ''}`, type: 'button', 'aria-label': emoji, 'aria-pressed': String(on),
+        onclick: () => {
+          pop?.close();
+          react(m.id, emoji, !on);
+        },
+      }, emoji);
+    }));
+    pop = popover(anchorEl, bar, { side: 'top', className: 'chat-quick-pop', label: 'Quick reactions', onClose: () => anchorEl.isConnected && anchorEl.focus() });
+    bar.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      e.preventDefault();
+      const list = [...bar.querySelectorAll<HTMLButtonElement>('button')];
+      const at = list.indexOf(document.activeElement as HTMLButtonElement);
+      list[(at + (e.key === 'ArrowRight' ? 1 : list.length - 1)) % list.length]?.focus();
+    });
+  }
+
   function openMenu(anchorEl: HTMLElement, m: ChatMessage) {
     const own = m.authorId === myId;
     const item = (label: string, fn: () => void) => h('button', { class: 'menu-item', role: 'menuitem', onclick: fn }, h('span', null, label));
@@ -606,10 +683,7 @@ export function mountConversation(opts: ConversationOptions): Conversation {
       menu.replaceChildren(...[
         writable ? item('Reply', () => {
           pop.close();
-          replyTo = { id: m.id, name: m.authorName, quote: quoteText(m) };
-          paintReplying();
-          paintComposer();
-          ta.focus();
+          startReply(m);
         }) : null,
         writable && view.online ? item('React', () => picker()) : null,
         item('Copy text', () => {

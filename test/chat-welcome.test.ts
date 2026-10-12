@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChatMessage } from '../src/api';
 import type { BoardChat, ChatView } from '../src/chat';
-import { WORKSPACE_WELCOME, mountConversation } from '../src/ui/chat';
+import { EMPTY_STATE, WORKSPACE_WELCOME, mountConversation } from '../src/ui/chat';
 import { FakeElement, installFakeBrowser, textOf, type FakeBrowser } from './fake-dom';
 
 // docs/chat.md: an empty workspace channel shows a centred block of three short lines (no picture) and the message box takes
@@ -64,10 +64,11 @@ describe('the empty workspace channel', () => {
     expect(panel.querySelector('img, svg')).toBeNull();
   });
 
-  it('is not shown in another channel, or once there are messages', () => {
+  it('gives another channel its own heading and one line, and shows nothing once there are messages', () => {
     const other = mount([], false);
-    expect(other.querySelector('.chat-older')!.classList.contains('chat-welcome')).toBe(false);
-    expect(textOf(other.querySelector('.chat-older')!)).toBe('No messages yet. Say hello.');
+    expect(other.querySelector('.chat-older')!.classList.contains('chat-welcome')).toBe(true);
+    expect(textOf(other.querySelector('.chat-older')!)).toBe(`${EMPTY_STATE.title}${EMPTY_STATE.hint}`);
+    expect(EMPTY_STATE).toEqual({ title: 'No messages yet', hint: 'Say hello, or type @ to mention someone.' });
     const busy = mount([msg(1)], true);
     expect(busy.querySelector('.chat-older')!.classList.contains('chat-welcome')).toBe(false);
     expect(busy.querySelector('.chat-log')!.classList.contains('has-welcome')).toBe(false);

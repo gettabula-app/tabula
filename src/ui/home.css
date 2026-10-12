@@ -37,13 +37,12 @@
 }
 .topbar-link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-family: inherit; cursor: pointer; }
-/* the Chat link's unread count (docs/chat.md): ink on paper, outlined in red when someone mentioned you */
+/* the Chat link's unread count (docs/chat.md): ink on paper, flat, with no ring */
 .topbar-badge {
   display: none; align-items: center; justify-content: center; min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px; box-sizing: border-box;
   border-radius: var(--radius-xs); background: var(--ink); color: var(--paper); font-size: 10px; font-weight: 700; letter-spacing: 0; line-height: 16px;
 }
 .topbar-badge.show { display: inline-flex; }
-.topbar-badge.mention { outline: 2px solid var(--danger); outline-offset: 0; }
 .topbar-link.on { color: var(--ink); border-bottom-color: var(--ink); text-decoration: none; }
 .topbar-end { display: flex; align-items: center; gap: 16px; margin-left: auto; min-width: 0; }
 .topbar-me { min-width: 0; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

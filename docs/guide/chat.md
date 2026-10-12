@@ -16,8 +16,10 @@ Team and workspace chat live on the **Chat page**. Board chat is also there whil
 
 Select **Chat** in the top bar of the home screen, or open the address `#/chat`.
 
+The channel list and the open conversation are dark panels, like the chat panel on a board. On a phone the list and the conversation are one screen each.
+
 - The list on the left has **Workspace**, **Teams**, **Other teams** (teams you may read as an admin without belonging to) and **Boards** (boards whose chat had a message in the last 14 days).
-- A badge on a row counts unread messages. It has a red outline if someone mentioned you.
+- A badge on a row counts unread messages. If someone mentioned you, an @ comes before the count.
 - Select a row to read it. The conversation on the right works the way it does on a board, and the address changes so you can come back to it.
 - When you open the page, it opens the channel where you were mentioned, or the one with the most unread messages.
 - On a phone the list is one screen and the conversation another. **All channels** (or the browser's Back button) returns to the list.
@@ -49,10 +51,13 @@ Messages are a live list, oldest at the top.
 
 - Scroll up to load earlier messages. Your place stays put when older or newer messages arrive.
 - **Jump to latest** takes you to the end when you have scrolled away.
+- Each person has a colour square. Your own messages sit on the right as bubbles, and a message that mentions you is highlighted.
 - Several messages from one person within five minutes are grouped. Date lines separate days.
 - A **New messages** line shows where you stopped reading. It moves when the newest message is on screen.
 - **edited** marks a message its author changed. A removed message shows **Message deleted**, or **Message removed by a moderator**, so replies still make sense.
 - A reply shows a one-line quote of the message it answers.
+- Reactions sit as small chips under the message. Hover over a message to see **React**, **Reply** and **More**.
+- The compact chat shows one line per message. An empty chat says who can read it and what to do.
 - Web links (`http` and `https`) open in a new tab. Messages are always shown as plain text.
 
 ## Write
