@@ -73,6 +73,7 @@ describe('link preview tags', () => {
     }
     const page = (await get(port, '/')).body.toString();
     expect(page).toContain('<meta property="og:title" content="Tabula" />');
+    expect(page).toContain('<meta property="og:description" content="An infinite whiteboard for teams: sticky notes, diagrams and workshop templates. Open source." />');
     const image = await get(port, '/og/invite.png');
     expect(image.status).toBe(200);
     expect(image.type).toBe('image/png');
