@@ -37,6 +37,7 @@ const startRelay = (dir = dataDir, env: Record<string, string> = {}) => startRel
     HOST: '127.0.0.1',
     TABULA_AUTH: 'on',
     TABULA_OWNER_EMAIL: OWNER,
+    TABULA_AUTH_IP_LIMIT: '20',
     TABULA_MAIL: 'file',
     TABULA_BASE_URL: `http://127.0.0.1:${port}`,
     TABULA_TRUST_PROXY: '1',
@@ -283,6 +284,8 @@ describe('accounts mode server', () => {
       expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
       const limited = await api(undefined, 'POST', '/api/auth/request', { email }, { 'x-forwarded-for': ip });
       expect(limited.body.error).toBe('rate_limited');
+      expect(limited.body.message).toMatch(/^Too many sign-in requests for this email address\. Try again in (59|60) minutes\.$/);
+      expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(3500);
 
       // 20 requests from one proxy-reported client are fine even though the left entries differ;
       // the 21st is limited by the rightmost entry, whatever a client prepends.
@@ -293,6 +296,7 @@ describe('accounts mode server', () => {
       }
       const over = await api(undefined, 'POST', '/api/auth/request', { email: emailOf('flood') }, { 'x-forwarded-for': `1.2.3.4, ${client}` });
       expect(over.status).toBe(429);
+      expect((await over.body).message).toMatch(/^Too many sign-in requests from your network\. Try again in (59|60) minutes\.$/);
     });
 
     it('requires the csrf header and a matching Origin on every state-changing request', async () => {

@@ -74,6 +74,13 @@ class HttpError extends Error {
   }
 }
 
+/** The words for a sign-in request refused by the limiter, with the real wait (a school shares one network address). */
+function rateLimitedMessage({ scope, retryAfterSec }) {
+  const minutes = Math.ceil(retryAfterSec / 60);
+  const wait = retryAfterSec < 60 ? 'Try again in a moment.' : `Try again in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`;
+  return `${scope === 'ip' ? 'Too many sign-in requests from your network.' : 'Too many sign-in requests for this email address.'} ${wait}`;
+}
+
 const badRequest = (message) => new HttpError(400, 'bad_request', message);
 const forbidden = (message = 'You do not have permission to do that') => new HttpError(403, 'forbidden', message);
 const notFound = (message = 'Not found') => new HttpError(404, 'not_found', message);
@@ -894,8 +901,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       if (invite != null && (typeof invite !== 'string' || invite.length > 256)) throw badRequest('invite must be a string');
       const result = await auth.requestLogin({ email, invite: invite ?? undefined, oauthRequest, ip: clientIp(req) });
       if (result.limited) {
-        res.setHeader('retry-after', '3600');
-        throw new HttpError(429, 'rate_limited', 'Too many sign-in requests. Try again later.');
+        res.setHeader('retry-after', String(result.retryAfterSec));
+        throw new HttpError(429, 'rate_limited', rateLimitedMessage(result));
       }
       return [200, { ok: true }];
     }),
@@ -907,7 +914,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         if (!(err instanceof SeatLimitError)) throw err;
         throw conflict('seat_limit', 'This workspace has reached its member limit. Ask an admin to remove or disable a member, or the workspace owner to write to us for a larger workspace, then open this link again.');
       }
-      if (!result) throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
+      if (!result) {
+        log('auth verify invalid_token');
+        throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
+      }
       res.setHeader('set-cookie', auth.sessionCookie(result.sessionToken, result.maxAgeMs));
       directory.audit(result.user.id, 'auth.login', {});
       if (cloud) emit('usage-changed');

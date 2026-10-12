@@ -286,7 +286,7 @@ if (config.authEnabled) {
     });
     directory.setKeyFloorListener(() => events.emit(KEY_FLOOR_CHANGED_EVENT));
   }
-  auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
+  auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable, log });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
     const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier, mailAfterMsFromEnv }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([

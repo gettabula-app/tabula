@@ -80,6 +80,17 @@ function parseOAuthRedirectSchemes(raw) {
 }
 
 // null when off. Accounts mode: per-user access tokens. Open mode: one shared token with a fixed scope.
+/** TABULA_AUTH_IP_LIMIT: sign-in link requests per hour from one client address (default 300; a school shares one address). */
+function parseAuthIpLimit(raw) {
+  const text = String(raw ?? '').trim();
+  if (text === '') return 300;
+  const value = Number(text);
+  if (!/^\d+$/.test(text) || !Number.isSafeInteger(value) || value < 1 || value > 100_000) {
+    throw new Error('TABULA_AUTH_IP_LIMIT must be a whole number from 1 to 100000');
+  }
+  return value;
+}
+
 function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
   const dailyWrites = parseMcpDailyWrites(env);
   const mode = mcpVar(env, 'MCP') || 'off';
@@ -375,6 +386,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     authEnabled,
     ownerEmail,
     baseUrl,
+    authIpLimit: parseAuthIpLimit(env.TABULA_AUTH_IP_LIMIT),
     origin,
     secureCookies,
     trustProxy: env.TABULA_TRUST_PROXY === '1',

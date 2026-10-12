@@ -22,7 +22,7 @@ function page(...body: (Node | null)[]): HTMLElement {
 
 function describe(err: unknown): string {
   if (!(err instanceof ApiError)) return GENERIC;
-  if (err.status === 429) return 'Too many sign-in requests. Try again in an hour.';
+  if (err.status === 429) return err.code === 'rate_limited' && err.message !== err.code ? err.message : 'Too many sign-in requests. Try again in a few minutes.';
   if (err.status === 0 || err.code === 'network') return NETWORK;
   return err.code === 'unknown' ? GENERIC : err.message;
 }
@@ -58,7 +58,7 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
       try {
         await api.requestLogin(email, invite?.token, opts.oauthRequest);
       } catch (err) {
-        setError(describe(err));
+        setError(describe(err) + (invite && err instanceof ApiError && err.status === 429 ? ' Your invitation still works. Open it again after the wait.' : ''));
         submit.disabled = false;
         submit.textContent = 'Email me a link';
         return;
