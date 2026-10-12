@@ -133,6 +133,7 @@ describe('telemetry schema catalogue', () => {
       'app_version', 'connections_now', 'connections_peak', 'hour', 'last_activity_at', 'mode', 'node_major',
       'platform', 'schema', 'schema_chat', 'schema_directory', 'workspace',
     ]);
+    expect(Object.keys(TELEMETRY_SCHEMA.fleetEnvelope.fields).sort()).toEqual(['hour', 'kind', 'schema', 'workspace']);
     expect(Object.keys(TELEMETRY_SCHEMA.errors.fields).sort()).toEqual(['code', 'count', 'fingerprint', 'kind', 'status', 'top_frame']);
     expect(Object.keys(TELEMETRY_SCHEMA.alerts.fields).sort()).toEqual(['at', 'kind', 'severity', 'workspace']);
     const eventFields = {
@@ -147,6 +148,7 @@ describe('telemetry schema catalogue', () => {
       expect(Object.keys(TELEMETRY_SCHEMA.events[name].fields).sort()).toEqual(fields);
     }
     for (const [name, descriptor] of Object.entries(TELEMETRY_SCHEMA.envelope.fields)) validateFieldDescriptor(descriptor, `envelope.${name}`);
+    for (const [name, descriptor] of Object.entries(TELEMETRY_SCHEMA.fleetEnvelope.fields)) validateFieldDescriptor(descriptor, `fleetEnvelope.${name}`);
     for (const [name, descriptor] of Object.entries(TELEMETRY_SCHEMA.events as Record<string, EventDescriptor>)) {
       expect(descriptor.kind).toBe('event');
       for (const [fieldName, field] of Object.entries(descriptor.fields)) validateFieldDescriptor(field, `${name}.${fieldName}`);
@@ -164,8 +166,20 @@ describe('telemetry schema catalogue', () => {
   it('includes the approved feature and milestone enum values', () => {
     expect(TELEMETRY_SCHEMA.events.workspace_hour.source).toBe('control_plane');
     expect(TELEMETRY_SCHEMA.events.workspace_hour.fields.state.values).toEqual([
-      'trial', 'active', 'past_due', 'suspended', 'canceled', 'provisioning', 'deleting', 'other',
+      'pending_checkout', 'provisioning', 'trialing', 'active', 'past_due', 'read_only', 'suspended', 'deleting', 'deleted', 'failed', 'other',
     ]);
+    expect(TELEMETRY_SCHEMA.events.workspace_hour.fields.machine.values).toEqual(['started', 'stopped', 'other']);
+    expect(TELEMETRY_SCHEMA.events.workspace_hour.fields.plan.values).toEqual(['paid', 'comp', 'other']);
+    expect(TELEMETRY_SCHEMA.events.workspace_hour.fields.backup_state.values).toEqual([
+      'off', 'unsupported', 'ok', 'failing', 'stale', 'never', 'unreachable', 'unknown',
+    ]);
+    for (const name of ['seats_paid', 'seats_used', 'guests_used', 'members_used', 'disk_used_bytes', 'disk_total_bytes', 'backup_age_hours', 'app_version']) {
+      expect(TELEMETRY_SCHEMA.events.workspace_hour.fields[name].optional).toBe(true);
+      expect(TELEMETRY_SCHEMA.events.workspace_hour.fields[name]).not.toHaveProperty('nullable');
+    }
+    expect(TELEMETRY_SCHEMA.events.workspace_hour.fields.backup_age_hours.max).toBe(87600);
+    expect(TELEMETRY_SCHEMA.fleetEnvelope.fields.kind.values).toEqual(['fleet']);
+    expect(TELEMETRY_SCHEMA.fleetEnvelope.fields.hour.multipleOf).toBe(3600000);
     expect(TELEMETRY_SCHEMA.events.workspace_day.fields.features_used.items.values).toEqual([
       'board_text', 'board_kanban', 'board_sticky', 'board_drawing', 'board_image', 'tracker_ticket', 'tracker_view',
       'tracker_import', 'chat', 'mcp_token', 'mcp_oauth', 'backup_restore', 'ai_assist', 'export', 'guest_invite',

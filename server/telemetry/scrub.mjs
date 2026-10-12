@@ -336,10 +336,14 @@ for (const [eventName, eventDefinition] of Object.entries(TELEMETRY_SCHEMA.event
   }
 }
 
-function processEvent(value, state, source) {
+function processEvent(value, state, source, expectedName = null) {
   const fields = readRecord(value, state);
   if (!fields) return null;
   const name = fields.get('event');
+  if (expectedName !== null && name !== expectedName) {
+    drop(state, 'wrong_event');
+    return null;
+  }
   if (typeof name !== 'string') {
     drop(state, 'unknown_event');
     return null;
@@ -419,6 +423,69 @@ function processAlerts(input, source, output, state) {
   rejectInstanceAlerts(input, state);
 }
 
+function discardFleetCollection(input, state) {
+  if (input === undefined) return;
+  const length = readArray(input, state);
+  if (length !== null && length > 0) drop(state, 'wrong_event', length);
+}
+
+function processFleetReport(fields, state, source) {
+  if (source !== 'control_plane') {
+    drop(state, 'wrong_event');
+    return null;
+  }
+
+  const arrayNames = new Set(['metrics', 'errors', 'events', 'alerts']);
+  const fleetFields = new Set(Object.keys(TELEMETRY_SCHEMA.fleetEnvelope.fields));
+  for (const key of fields.keys()) {
+    if (!fleetFields.has(key) && !arrayNames.has(key)) drop(state, 'unknown_field');
+  }
+
+  const envelopeFields = new Map([...fields].filter(([key]) => fleetFields.has(key)));
+  const envelope = projectFields(envelopeFields, TELEMETRY_SCHEMA.fleetEnvelope.fields, state);
+  if (!envelope.ok) {
+    drop(state, 'invalid_report');
+    return null;
+  }
+
+  for (const key of ['metrics', 'errors', 'alerts']) discardFleetCollection(fields.get(key), state);
+
+  if (!fields.has('events')) {
+    drop(state, 'invalid_shape');
+    drop(state, 'invalid_report');
+    return null;
+  }
+  const eventCount = readArray(fields.get('events'), state);
+  if (eventCount === null) {
+    drop(state, 'invalid_report');
+    return null;
+  }
+  if (eventCount !== 1) {
+    drop(state, 'invalid_shape');
+    drop(state, 'invalid_report');
+    return null;
+  }
+
+  const item = Object.getOwnPropertyDescriptor(fields.get('events'), '0');
+  if (!item || !item.enumerable || !Object.hasOwn(item, 'value')) {
+    drop(state, 'invalid_shape');
+    drop(state, 'invalid_report');
+    return null;
+  }
+  const event = processEvent(item.value, state, source, 'workspace_hour');
+  if (!event) {
+    drop(state, 'invalid_report');
+    return null;
+  }
+
+  const clean = { ...envelope.value, events: [event] };
+  if (!enforceSize(clean, state) || clean.events.length !== 1) {
+    drop(state, 'invalid_report');
+    return null;
+  }
+  return clean;
+}
+
 function encodedBytes(value) {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
@@ -428,7 +495,7 @@ function enforceSize(clean, state) {
   const trimOrder = ['alerts', 'events', 'errors', 'metrics'];
   let size = encodedBytes(clean);
   for (const key of trimOrder) {
-    while (size > limit && clean[key].length > 0) {
+    while (size > limit && Array.isArray(clean[key]) && clean[key].length > 0) {
       clean[key].pop();
       drop(state, 'payload_limit');
       size = encodedBytes(clean);
@@ -441,8 +508,10 @@ function enforceSize(clean, state) {
  * Validate and project a report. The clean value contains only schema fields.
  * `options.source` is `instance` by default, which drops control-plane-only events
  * with `wrong_event`; `control_plane` enables those events for control-plane reports.
+ * Fleet reports use their own envelope and are accepted only from `control_plane`.
  * Events declared for instances remain accepted in either mode.
  * @param {{ source?: 'instance' | 'control_plane' }} [options]
+ * @returns {{ clean: Record<string, any> | null, dropped: { total: number, byReason: Record<string, number> } }}
  */
 export function scrubReport(input, options = {}) {
   const state = newState();
@@ -452,6 +521,11 @@ export function scrubReport(input, options = {}) {
     if (!fields) {
       drop(state, 'invalid_report');
       return { clean: null, dropped: state.dropped };
+    }
+
+    if (fields.get('kind') === 'fleet') {
+      const clean = processFleetReport(fields, state, source);
+      return { clean, dropped: state.dropped };
     }
 
     const arrayNames = new Set(['metrics', 'errors', 'events', 'alerts']);

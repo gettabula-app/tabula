@@ -84,6 +84,16 @@ function validReport(): any {
   };
 }
 
+function validFleetReport(): any {
+  return {
+    schema: 1,
+    kind: 'fleet',
+    hour: 1791676800000,
+    workspace: 'ws_8M2kW4p7nQ1Z',
+    events: [validEvent('workspace_hour')],
+  };
+}
+
 function expectNoSensitiveText(clean: unknown): string {
   const serialized = JSON.stringify(clean);
   expect(serialized).not.toMatch(EMAIL);
@@ -202,17 +212,90 @@ describe('scrubReport', () => {
     expect(rejected.clean?.events).toEqual([]);
   });
 
-  it('gates control-plane events by source and keeps one workspace-hour event per report', () => {
+  it('accepts the standalone fleet envelope only from the control plane', () => {
+    const report = validFleetReport();
+    const result = scrubReport(report, { source: 'control_plane' });
+    expect(result.clean).toEqual(report);
+    expect(result.dropped.total).toBe(0);
+
+    const rejected = scrubReport(report);
+    expect(rejected.clean).toBeNull();
+    expect(rejected.dropped.byReason.wrong_event).toBe(1);
+
+    const instanceWithFleetKind = validReport();
+    instanceWithFleetKind.kind = 'fleet';
+    const rejectedInstance = scrubReport(instanceWithFleetKind);
+    expect(rejectedInstance.clean).toBeNull();
+    expect(rejectedInstance.dropped.byReason.wrong_event).toBe(1);
+  });
+
+  it('drops extra fleet top-level fields and omits unsupported report collections from clean output', () => {
+    const extra = validFleetReport();
+    extra.private_note = 'alice@example.test';
+    const extraResult = scrubReport(extra, { source: 'control_plane' });
+    expect(extraResult.clean).toEqual(validFleetReport());
+    expect(extraResult.dropped.byReason.unknown_field).toBe(1);
+    expectNoSensitiveText(extraResult.clean);
+
+    const emptyCollections = validFleetReport();
+    emptyCollections.metrics = [];
+    emptyCollections.errors = [];
+    emptyCollections.alerts = [];
+    const emptyResult = scrubReport(emptyCollections, { source: 'control_plane' });
+    expect(emptyResult.clean).toEqual(validFleetReport());
+
+    const populatedCollections = validFleetReport();
+    populatedCollections.metrics = [validMetric('http_requests_total')];
+    populatedCollections.errors = [validError()];
+    populatedCollections.alerts = [validAlert()];
+    const populatedResult = scrubReport(populatedCollections, { source: 'control_plane' });
+    expect(populatedResult.clean).toEqual(validFleetReport());
+    expect(populatedResult.dropped.byReason.wrong_event).toBe(3);
+  });
+
+  it('validates every required fleet envelope field', () => {
+    const badSchema = validFleetReport();
+    badSchema.schema = 2;
+    expect(scrubReport(badSchema, { source: 'control_plane' }).clean).toBeNull();
+
+    const badHour = validFleetReport();
+    badHour.hour += 1;
+    expect(scrubReport(badHour, { source: 'control_plane' }).clean).toBeNull();
+
+    const badWorkspace = validFleetReport();
+    badWorkspace.workspace = 'workspace name';
+    expect(scrubReport(badWorkspace, { source: 'control_plane' }).clean).toBeNull();
+
+    const missingWorkspace = validFleetReport();
+    delete missingWorkspace.workspace;
+    expect(scrubReport(missingWorkspace, { source: 'control_plane' }).clean).toBeNull();
+  });
+
+  it('requires exactly one workspace-hour event in a fleet report', () => {
+    const empty = validFleetReport();
+    empty.events = [];
+    const emptyResult = scrubReport(empty, { source: 'control_plane' });
+    expect(emptyResult.clean).toBeNull();
+    expect(emptyResult.dropped.byReason.invalid_report).toBe(1);
+
+    const duplicates = validFleetReport();
+    duplicates.events = [validEvent('workspace_hour'), validEvent('workspace_hour')];
+    const duplicateResult = scrubReport(duplicates, { source: 'control_plane' });
+    expect(duplicateResult.clean).toBeNull();
+    expect(duplicateResult.dropped.byReason.invalid_report).toBe(1);
+  });
+
+  it('keeps instance-envelope event gating and duplicate handling unchanged', () => {
     const report = validReport();
     report.events = [validEvent('workspace_hour')];
-
-    const controlPlane = scrubReport(report, { source: 'control_plane' });
-    expect(controlPlane.clean?.events).toEqual([validEvent('workspace_hour')]);
-    expect(controlPlane.dropped.total).toBe(0);
 
     const instance = scrubReport(report);
     expect(instance.clean?.events).toEqual([]);
     expect(instance.dropped.byReason.wrong_event).toBe(1);
+
+    const controlPlane = scrubReport(report, { source: 'control_plane' });
+    expect(controlPlane.clean?.events).toEqual([validEvent('workspace_hour')]);
+    expect(controlPlane.dropped.total).toBe(0);
 
     report.events = [validEvent('workspace_hour'), validEvent('workspace_hour')];
     const duplicates = scrubReport(report, { source: 'control_plane' });
@@ -220,14 +303,15 @@ describe('scrubReport', () => {
     expect(duplicates.dropped.byReason.duplicate_event).toBe(1);
   });
 
-  it('rejects unknown workspace-hour enum values and validates bounded and nullable fields', () => {
+  it('rejects unknown workspace-hour enum values and validates optional bounded fields', () => {
     const enumFields = ['state', 'machine', 'plan', 'backup_state'];
     for (const field of enumFields) {
-      const report = validReport();
+      const report = validFleetReport();
       report.events = [{ ...validEvent('workspace_hour'), [field]: 'invented_value' }];
       const result = scrubReport(report, { source: 'control_plane' });
-      expect(result.clean?.events).toEqual([]);
+      expect(result.clean).toBeNull();
       expect(result.dropped.byReason.invalid_enum).toBe(1);
+      expect(result.dropped.byReason.invalid_report).toBe(1);
     }
 
     const bounds: Record<string, { min: number; max: number }> = {
@@ -235,34 +319,45 @@ describe('scrubReport', () => {
       seats_used: { min: 0, max: 100000 },
       guests_used: { min: 0, max: 100000 },
       members_used: { min: 0, max: 100000 },
-      backup_age_hours: { min: 0, max: 100000 },
+      backup_age_hours: { min: 0, max: 87600 },
       disk_used_bytes: { min: 0, max: Number.MAX_SAFE_INTEGER },
       disk_total_bytes: { min: 0, max: Number.MAX_SAFE_INTEGER },
     };
     for (const [field, { min, max }] of Object.entries(bounds)) {
       for (const value of [min, max]) {
-        const report = validReport();
+        const report = validFleetReport();
         report.events = [{ ...validEvent('workspace_hour'), [field]: value }];
         expect(scrubReport(report, { source: 'control_plane' }).clean?.events).toEqual(report.events);
       }
       for (const value of [min - 1, max + 1]) {
-        const report = validReport();
+        const report = validFleetReport();
         report.events = [{ ...validEvent('workspace_hour'), [field]: value }];
         const result = scrubReport(report, { source: 'control_plane' });
-        expect(result.clean?.events).toEqual([]);
+        expect(result.clean).toBeNull();
         expect(result.dropped.byReason[max === Number.MAX_SAFE_INTEGER && value > max ? 'wrong_type' : 'out_of_range']).toBe(1);
       }
     }
 
-    const nullable = validReport();
-    nullable.events = [{
-      ...validEvent('workspace_hour'),
-      backup_age_hours: null,
-      disk_used_bytes: null,
-      disk_total_bytes: null,
-      app_version: null,
-    }];
-    expect(scrubReport(nullable, { source: 'control_plane' }).clean?.events).toEqual(nullable.events);
+    const absentOptional = validFleetReport();
+    for (const field of ['seats_paid', 'seats_used', 'guests_used', 'members_used', 'backup_age_hours', 'disk_used_bytes', 'disk_total_bytes', 'app_version']) {
+      delete absentOptional.events[0][field];
+    }
+    expect(scrubReport(absentOptional, { source: 'control_plane' }).clean).toEqual(absentOptional);
+
+    const nullOptional = validFleetReport();
+    nullOptional.events[0].backup_age_hours = null;
+    const nullResult = scrubReport(nullOptional, { source: 'control_plane' });
+    expect(nullResult.clean).toBeNull();
+    expect(nullResult.dropped.byReason.wrong_type).toBe(1);
+  });
+
+  it('requires a fleet report to contain a workspace-hour event', () => {
+    const report = validFleetReport();
+    report.events = [validEvent('workspace_day')];
+    const result = scrubReport(report, { source: 'control_plane' });
+    expect(result.clean).toBeNull();
+    expect(result.dropped.byReason.wrong_event).toBe(1);
+    expect(result.dropped.byReason.invalid_report).toBe(1);
   });
 
   it('drops unknown workspace-hour fields while keeping the valid event', () => {

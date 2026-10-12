@@ -33,7 +33,7 @@ self-hosted (opt-in): instance ──POST https://telemetry.<tabula domain>/v1/t
 6. `server/cloud.mjs`: a `pushTelemetry()` next to `pushUsage()`, with the same retry and logging style, skipped when telemetry is off.
 
 **What needs endpoints in the control plane (`tabula-cloud`)**
-1. `POST /v1/workspaces/:id/telemetry` (public listener, control-token authenticated like `usage` and `key-floor`): body at most 256 KB, 6 posts per hour per workspace, `{schema, hour, metrics, events, errors}`. Replies `{ok, dropped}` where `dropped` is the count of fields the scrubber removed (the instance logs it, which catches schema drift).
+1. `POST /v1/workspaces/:id/telemetry` (public listener, control-token authenticated like `usage` and `key-floor`): instance report body at most 256 KB, 6 posts per hour per workspace, `{schema, hour, metrics, events, errors}`. Replies `{ok, dropped}` where `dropped` is the count of fields the scrubber removed (the instance logs it, which catches schema drift).
 2. `src/telemetry/scrub.mjs`: the validator and allowlist. `src/telemetry/sinks.mjs`: the three forwarders, each behind its own env switch so they can be turned on one at a time; a failing sink never fails the post (it queues up to an hour in memory and drops with a counter).
 3. A small table `telemetry_status(workspace_id, last_at, last_dropped, opted_out, connections_now, connections_peak, last_activity_at, series)` so the operator can see who is reporting, when each instance was last active, and a 24-hour hourly-peak activity series (section 7 of the dashboard spec). This is what the fleet view uses for "last seen"; it needs no live call to any instance. Also an `alerts` table (section 2.5a).
 4. Optional, phase 6: `POST /v1/telemetry` for self-hosted installs, unauthenticated, 64 KB, strict rate limit per IP and per install id, same scrubber.
@@ -45,7 +45,7 @@ self-hosted (opt-in): instance ──POST https://telemetry.<tabula domain>/v1/t
 
 Every name below is in the schema. Labels are enums from fixed lists; numbers are counts, durations in milliseconds, or bytes. A field that is a free string does not exist in the schema.
 
-### 2.1 Common envelope (every post)
+### 2.1 Instance report envelope
 
 | Field | Type | Why it holds no content |
 | --- | --- | --- |
@@ -104,20 +104,42 @@ Sent from the control plane, never from the browser, as **daily rollups** per wo
 
 Feature enum (fixed list, extended by changing the schema): `board_text`, `board_kanban`, `board_sticky`, `board_drawing`, `board_image`, `tracker_ticket`, `tracker_view`, `tracker_import`, `chat`, `mcp_token`, `mcp_oauth`, `backup_restore`, `ai_assist`, `export`, `guest_invite`.
 
-### 2.4a Fleet workspace-hour event
+### 2.4a Fleet report: workspace-hour event
 
-The control plane emits at most one `workspace_hour` event for each workspace in an hourly report. It records fleet operating state and capacity; it is not a product-analytics event. The control-plane scrubber accepts control-plane events only when called with `source: 'control_plane'`. The default `source: 'instance'` rejects them as `wrong_event`. Downstream deduplication uses the workspace id, report hour, and kind `fleet`.
+The control plane emits one `workspace_hour` event for each workspace and hour in a standalone fleet report. It records fleet operating state and capacity; it is not a product-analytics event. The fleet report has no instance facts and uses this exact envelope:
+
+```json
+{
+  "schema": 1,
+  "kind": "fleet",
+  "hour": 1791676800000,
+  "workspace": "ws_8M2kW4p7nQ1Z",
+  "events": [
+    {
+      "event": "workspace_hour",
+      "state": "active",
+      "machine": "started",
+      "plan": "paid",
+      "backup_state": "ok"
+    }
+  ]
+}
+```
+
+The scrubber requires `source: 'control_plane'` for `kind: 'fleet'`; the default instance source rejects it with `wrong_event`. The fleet envelope allows only `schema`, `kind`, `hour` and `workspace`, plus `events`. `events` must contain exactly one valid `workspace_hour` event. The cleaned report keeps the four envelope fields and `events`; it omits `metrics`, `errors` and `alerts`. Empty input collections are accepted and omitted. Any entries in those collections are dropped with `wrong_event`; unknown top-level fields are dropped with `unknown_field`.
+
+Collector routing uses `clean.kind === 'fleet'`, requires the control-plane token, and claims `(workspace, hour, 'fleet')` for deduplication. This route never reads or updates the instance gauges. A report without `kind: 'fleet'` keeps the instance envelope and its existing event-source rules: an instance using the default source has a `workspace_hour` event dropped with `wrong_event`.
 
 | Field | Values | Purpose |
 | --- | --- | --- |
-| `state` | `trial`, `active`, `past_due`, `suspended`, `canceled`, `provisioning`, `deleting`, `other` | workspace lifecycle state |
-| `machine` | `started`, `stopped`, `suspended`, `missing`, `unknown`, `other` | machine state |
-| `plan` | `trial`, `paid`, `comp`, `other` | plan class |
-| `seats_paid`, `seats_used`, `guests_used`, `members_used` | integers from 0 to 100,000 | workspace capacity and usage |
-| `backup_state` | `off`, `unsupported`, `ok`, `failing`, `stale`, `never`, `other` | backup health |
-| `backup_age_hours` | integer from 0 to 100,000 or null | age of the latest backup |
-| `disk_used_bytes`, `disk_total_bytes` | integer from 0 to 2^53−1 or null | workspace disk usage and capacity |
-| `app_version` | release label matching the envelope pattern, or null | deployed version |
+| `state` | `pending_checkout`, `provisioning`, `trialing`, `active`, `past_due`, `read_only`, `suspended`, `deleting`, `deleted`, `failed`, `other` | workspace lifecycle state |
+| `machine` | `started`, `stopped`, `other` | machine state |
+| `plan` | `paid`, `comp`, `other` | plan class |
+| `seats_paid`, `seats_used`, `guests_used`, `members_used` | optional integers from 0 to 100,000 | workspace capacity and usage |
+| `backup_state` | `off`, `unsupported`, `ok`, `failing`, `stale`, `never`, `unreachable`, `unknown` | backup health |
+| `backup_age_hours` | optional integer from 0 to 87,600 | age of the latest backup |
+| `disk_used_bytes`, `disk_total_bytes` | optional integers from 0 to 2^53−1 | workspace disk usage and capacity |
+| `app_version` | optional release label matching the existing version pattern | deployed version |
 
 ### 2.5 Never sent
 
