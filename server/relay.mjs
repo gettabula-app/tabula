@@ -26,6 +26,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { loadConfig } from './config.mjs';
+import { ogKind, withOgTags } from './og-tags.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
@@ -42,6 +43,7 @@ import { createLiveRuns } from './ai/live.mjs';
 import { createAssetStore, createJsonAssetIndex, createUploadLimiter } from './assets.mjs';
 import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
+import { createLinkUnfurl, createOpenLinkRoutes } from './link-routes.mjs';
 import { clientIpOf } from './client-ip.mjs';
 import { createSourceGate } from './source-policy.mjs';
 import { createPresenceRegistry } from './presence.mjs';
@@ -484,6 +486,8 @@ if (assets) {
   setInterval(sweep, 24 * 60 * 60 * 1000).unref();
 }
 const openAssets = assets && !directory ? createOpenAssetRoutes({ handlers: assets.handlers, clientIp }) : null;
+// link previews in open mode exist only with TABULA_LINK_PREVIEWS=on (docs/link-cards.md); accounts mode wires its own in api.mjs
+const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpenLinkRoutes({ linkUnfurl: createLinkUnfurl({ config, log: console.error, assets: assets?.store ?? null }), clientIp }) : null;
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
@@ -1263,6 +1267,9 @@ function serveIcons(req, res, url) {
   else body.pipe(res);
 }
 
+// Only the pages a person opens get the tags; a request for a missing asset falls back to the same shell untouched.
+const isShellPath = (pathname) => !path.extname(pathname);
+
 function serveStatic(req, res, url) {
   if (!fs.existsSync(path.join(DIST, 'index.html'))) {
     res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
@@ -1283,6 +1290,15 @@ function serveStatic(req, res, url) {
     || url.pathname === '/b' || url.pathname.startsWith('/b/');
   if (appRoute || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
   const ext = path.extname(file);
+  if (file === path.join(DIST, 'index.html') && req.method !== 'HEAD' && isShellPath(url.pathname)) {
+    const html = withOgTags(fs.readFileSync(file, 'utf8'), ogKind(url.pathname, url.searchParams), config.baseUrlSet ? config.baseUrl : null, config.authEnabled);
+    const shell = Buffer.from(html);
+    const shellHeaders = { 'content-type': MIME['.html'], 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'content-security-policy': CSP, 'cache-control': 'no-cache', 'content-length': shell.length };
+    if (!ALLOW_FRAMING) shellHeaders['x-frame-options'] = 'DENY';
+    res.writeHead(200, shellHeaders);
+    res.end(shell);
+    return;
+  }
   const headers = {
     'content-type': MIME[ext] || 'application/octet-stream',
     'x-content-type-options': 'nosniff',
@@ -1292,7 +1308,7 @@ function serveStatic(req, res, url) {
     headers['content-security-policy'] = CSP;
     if (!ALLOW_FRAMING) headers['x-frame-options'] = 'DENY';
   }
-  headers['cache-control'] = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+  headers['cache-control'] = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : rel.startsWith('/og/') ? 'public, max-age=86400' : 'no-cache';
   res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 }
@@ -1360,6 +1376,8 @@ async function onRequest(req, res) {
         await openAiRun.handle(req, res); // streams for minutes and writes through the room: no barrier lease
       } else if (/^\/api\/ai\/runs\/[A-Za-z0-9_-]{1,64}\/resolve$/.test(url.pathname) && req.method === 'POST') {
         await runOpenWriter(() => openAiRun.resolve(req, res, url.pathname.split('/')[4]));
+      } else if (openLinks && (await openLinks(req, res, url))) {
+        // answered: a link preview of open mode (it writes nothing to a board, so no barrier lease)
       } else if (openAssets && (await runOpenWriter(() => openAssets(req, res, url)))) {
         // answered: an image upload or download of open mode
         noteOpenWrite(req, res);
