@@ -484,7 +484,7 @@ describe('accounts mode server', () => {
       const team = await newTeam(owner.cookie, 'Invite crew');
       const created = await api(owner.cookie, 'POST', `/api/teams/${team.id}/invites`, { role: 'member', days: 2 });
       expect(created.status).toBe(201);
-      expect(created.body.url).toBe(`${baseUrl}/#/invite/${created.body.token}`);
+      expect(created.body.url).toBe(`${baseUrl}/?invite=1#/invite/${created.body.token}`);
       expect(created.body.expiresAt).toBeGreaterThan(Date.now() + 47 * 3600_000);
       expect(created.body.expiresAt).toBeLessThan(Date.now() + 49 * 3600_000);
 

@@ -489,3 +489,23 @@ describe('link preview fetcher', () => {
     await expect(fetchImage(url(target.port, '/image-large'), optionsFor(target.port))).rejects.toMatchObject({ code: 'too_large' });
   });
 });
+
+describe('the user agent names the instance', () => {
+  async function agentFor(options: { instanceUrl?: string }) {
+    let agent = '';
+    const target = await startServer((request, response) => {
+      agent = String(request.headers['user-agent']);
+      html(response);
+    });
+    vi.stubEnv('TABULA_BASE_URL', '');
+    await fetchPage(url(target.port), { ...optionsFor(target.port), ...options });
+    return agent;
+  }
+
+  it('uses the instance origin and falls back to gettabula.app when it is unknown or only a development address', async () => {
+    expect(await agentFor({ instanceUrl: 'https://team.thetabula.cloud/some/path' })).toBe('TabulaLinkPreview/1.0 (+https://team.thetabula.cloud/docs/link-previews)');
+    for (const instanceUrl of [undefined, 'http://localhost:3000', 'http://127.0.0.1:8787', 'ftp://x.test', 'not a url']) {
+      expect([instanceUrl, await agentFor({ instanceUrl })]).toEqual([instanceUrl, 'TabulaLinkPreview/1.0 (+https://gettabula.app/docs/link-previews)']);
+    }
+  });
+});

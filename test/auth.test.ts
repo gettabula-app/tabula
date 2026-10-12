@@ -730,6 +730,8 @@ describe('loadConfig', () => {
       authEnabled: false,
       ownerEmail: null,
       baseUrl: 'http://localhost:8787',
+      baseUrlSet: false,
+      slowRequestMs: 300,
       origin: 'http://localhost:8787',
       secureCookies: false,
       cookieName: 'tabula_session',
@@ -747,8 +749,16 @@ describe('loadConfig', () => {
       assets: { maxBytes: 10 * 1024 * 1024, boardQuota: 50 * 1024 * 1024, totalQuota: 0 },
       // the tracker (tickets) is off unless TABULA_TRACKER=on
       tracker: false,
+      // link previews (docs/link-cards.md): no operator switch set; the workspace setting and the hosted default decide
+      linkPreviews: { forced: null },
       telemetry: { defaultEnabled: false, forced: null },
     });
+  });
+
+  it('reads TABULA_LINK_PREVIEWS as the operator switch and refuses other values', () => {
+    expect(loadConfig({ TABULA_LINK_PREVIEWS: 'on' }).linkPreviews).toEqual({ forced: 'on' });
+    expect(loadConfig({ TABULA_LINK_PREVIEWS: ' off ' }).linkPreviews).toEqual({ forced: 'off' });
+    expect(() => loadConfig({ TABULA_LINK_PREVIEWS: 'maybe' })).toThrow(/TABULA_LINK_PREVIEWS must be on or off/);
   });
 
   it('reads the deprecated MIRA_ names, warning once with the names to use instead', () => {

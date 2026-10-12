@@ -134,7 +134,8 @@ export class ImageLoader {
         return this.set(asset, { kind: 'failed', why });
       }
       const blob = await res.blob();
-      await this.deps.cache.put({ key: asset, blob, mime: blob.type, width: 0, height: 0, boardId: this.deps.boardId, pending: false });
+      // keeping a copy is a courtesy: the picture is shown from the bytes in hand even when the store refuses them
+      await this.deps.cache.put({ key: asset, blob, mime: blob.type, width: 0, height: 0, boardId: this.deps.boardId, pending: false }).catch(() => undefined);
       this.ready(asset, blob);
     } catch {
       this.set(asset, { kind: 'failed', why: 'offline' });
