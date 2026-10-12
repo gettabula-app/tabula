@@ -8,6 +8,7 @@ import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { isWindows } from './platform';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // A room is written a while after its last change (a second by default, SAVE_DEBOUNCE_MS here). A relay that is asked
 // to stop before then must write the room first. Windows cannot deliver SIGTERM (a kill ends the process at once), so
@@ -26,7 +27,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(test: () => boolean, ms: number, what: string) {
   const t0 = Date.now();
   while (!test()) {
-    if (Date.now() - t0 > ms) throw new Error(what);
+    if (Date.now() - t0 > budget(ms)) throw new Error(what);
     await sleep(20);
   }
 }

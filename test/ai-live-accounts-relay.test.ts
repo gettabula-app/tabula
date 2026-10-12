@@ -12,6 +12,7 @@ import WebSocket from 'ws';
 import { createKeyRing } from '../server/ai/keys.mjs';
 import { openDirectory } from '../server/directory.mjs';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // docs/ai.md, "Live runs", in accounts mode: the relay shapes the AI-run messages (type 6) for each socket's person.
 // Viewers see runs without the prompt, a private run reaches its runner only, and a socket whose access is removed
@@ -63,7 +64,7 @@ afterAll(async () => {
 const until = async (fn: () => boolean, ms = 8000) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await new Promise((r) => setTimeout(r, 10));
   }
 };

@@ -89,7 +89,8 @@ export default defineConfig({
     maxWorkers: process.env.CI ? 2 : undefined,
     // every test file's fetch avoids reused idle sockets and retries one reset GET visibly (test/http-retry.ts)
     setupFiles: ['./test/setup-http.ts'],
-    testTimeout: 60_000,
-    hookTimeout: 60_000,
+    // The Windows runners are roughly 20 times slower for real restores and relays (test/wait-budget.ts scales the waits inside tests the same way).
+    testTimeout: process.platform === 'win32' ? 180_000 : 60_000,
+    hookTimeout: process.platform === 'win32' ? 120_000 : 60_000,
   },
 });

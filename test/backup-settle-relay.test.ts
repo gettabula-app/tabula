@@ -10,6 +10,7 @@ import { CREDS, docBytes, envFor, harness, type Harness } from './backup-harness
 import { freePort } from './free-port';
 import { makePng } from './image-fixtures';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // docs/backups.md, When it runs. The relay as a child process next to the fake S3: a backup shortly after an edit
 // (settle) with no interval run, and a bounded final backup when the relay is asked to stop. The stop is the IPC
@@ -27,7 +28,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(test: () => boolean | Promise<boolean>, ms: number, what: string) {
   const t0 = Date.now();
   while (!(await test())) {
-    if (Date.now() - t0 > ms) throw new Error(what);
+    if (Date.now() - t0 > budget(ms)) throw new Error(what);
     await sleep(20);
   }
 }

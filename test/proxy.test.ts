@@ -11,6 +11,7 @@ import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { loadConfig } from '../server/config.mjs';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // The relay in accounts mode behind a reverse proxy that terminates https (docs/accounts.md, TABULA_TRUST_PROXY). The
 // relay is a child process on plain http; a small Node proxy sits in front of it, adds X-Forwarded-For (appending the
@@ -50,7 +51,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn: () => boolean, ms = 5000) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(20);
   }
 };

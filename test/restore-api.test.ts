@@ -10,6 +10,7 @@ import { loadConfig } from '../server/config.mjs';
 import { setRestoreGate } from '../server/tracker/gate.mjs';
 import { HOUR, MIN, harness, type Harness } from './backup-harness';
 import { audits, backupNow, becomeB, filesOf, rig, seedA, setting, type Rig } from './restore-harness';
+import { budget } from './wait-budget';
 
 // Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
 vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
@@ -20,7 +21,7 @@ const TOKEN = 'r'.repeat(48);
 let h: Harness;
 const servers: http.Server[] = [];
 async function until(fn: () => boolean, timeoutMs = 10_000) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + budget(timeoutMs);
   while (!fn()) {
     if (Date.now() >= deadline) throw new Error('timed out waiting for deferred restore exit');
     await new Promise((resolve) => setTimeout(resolve, 20));

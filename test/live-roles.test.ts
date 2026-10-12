@@ -10,6 +10,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // Sockets that are already open when somebody's access changes (docs/accounts.md, "Relay"). The relay runs as a child
 // process in accounts mode. A "write" here is a real Yjs update sent over the member's own socket from a fresh document
@@ -55,7 +56,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn: () => boolean, ms = 5000) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(20);
   }
 };

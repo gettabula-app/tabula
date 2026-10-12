@@ -7,6 +7,7 @@ import { WebsocketProvider } from 'y-websocket';
 import { expect } from 'vitest';
 import { freePort } from '../free-port';
 import { RELAY_START_MS } from '../relay-timing';
+import { budget } from '../wait-budget';
 
 // The relay as a child process, exactly as `npm start` runs it, and a client of it (HTTP as a signed-in person, sync
 // sockets). Moved here from test/restore-relay.test.ts so the restore drill (test/drill, `npm run drill:local`) uses
@@ -18,7 +19,7 @@ export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve
 export async function until(fn: () => boolean | Promise<boolean>, ms = 8000) {
   const t0 = Date.now();
   while (!(await fn())) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(20);
   }
 }

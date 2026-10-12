@@ -6,6 +6,7 @@ import { describeError } from '../server/ai/errors.mjs';
 import { AiError } from '../server/ai/errors.mjs';
 import { createOpenAiCompatibleProvider, httpsTransport } from '../server/ai/openai-compatible.mjs';
 import { startOpenAiStub } from '../scripts/lib/openai-stub.mjs';
+import { budget } from './wait-budget';
 
 const KEY = 'sk-test-' + crypto.randomBytes(16).toString('hex');
 const MODEL = 'gpt-local';
@@ -68,7 +69,7 @@ async function failureOf(promise: Promise<unknown>): Promise<any> {
 }
 
 async function waitFor(fn: () => boolean, timeoutMs = 10_000) {
-  const deadline = Date.now() + timeoutMs;
+  const deadline = Date.now() + budget(timeoutMs);
   while (!fn()) {
     if (Date.now() >= deadline) throw new Error('timed out waiting for local request');
     await new Promise((resolve) => setTimeout(resolve, 20));

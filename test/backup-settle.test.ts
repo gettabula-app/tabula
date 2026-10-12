@@ -9,6 +9,7 @@ import { createCloud } from '../server/cloud.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
 import { CREDS, KEY, MIN, T0, docBytes, envFor, harness, type Harness } from './backup-harness';
+import { budget } from './wait-budget';
 
 // docs/backups.md, When it runs. The settle backup (a backup shortly after the activity stops), the final backup of a
 // graceful shutdown, and their settings: the real engine against the fake S3, with timers and the clock in the test's hands.
@@ -63,7 +64,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 async function until(test: () => boolean, ms = 5000) {
   const t0 = Date.now();
   while (!test()) {
-    if (Date.now() - t0 > ms) throw new Error('timed out');
+    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
     await sleep(5);
   }
 }

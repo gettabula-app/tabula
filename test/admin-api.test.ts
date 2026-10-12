@@ -8,6 +8,7 @@ import WebSocket from 'ws';
 import { openDirectory } from '../server/directory.mjs';
 import pkg from '../package.json';
 import { startRelayProcess } from './start-relay';
+import { budget } from './wait-budget';
 
 // docs/admin.md. The relay runs as a child process in accounts mode (and once in open mode), exactly as `npm start`
 // would: revoking sessions has to close real sockets, and the events that do it only reach the relay in-process.
@@ -27,7 +28,7 @@ const within = <T>(p: Promise<T>, ms = 4000) =>
   Promise.race([p, sleep(ms).then(() => Promise.reject(new Error('timed out')))]) as Promise<T>;
 
 async function eventually(fn: () => Promise<void>, ms = 4000) {
-  const deadline = Date.now() + ms;
+  const deadline = Date.now() + budget(ms);
   for (;;) {
     try {
       return await fn();
