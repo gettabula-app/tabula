@@ -47,9 +47,9 @@ The guest opens **Join with a code**, enters a display name, and joins without a
 
 1. Open your workspace address. The sign-in page asks for your email.
 2. Enter it and select **Email me a link**.
-3. Open the email and follow the link. It works once and expires after 15 minutes.
+3. Open the email and follow the link. A page confirms who is signing in (**Joining as** your email). Select **Continue to Tabula**. The link is used only when you select it, so a mail program that previews links does not use it up. It works once and expires after 15 minutes.
 
-If the link has expired, request a new one. The first person to sign in with the owner address becomes the workspace owner. Everyone else needs an invite, or an account that an admin already created.
+If the link has expired or was already used, the page says so. When you came from an invite, it adds that your invitation still works, and **Send me a new link** sends a new sign-in email (older links stop working); **Use a different email** lets you start again with another address. Otherwise, request a new link below. You can ask for at most five links for the same address in an hour, and a whole school network has a much higher limit (300 an hour by default); when a limit is reached, the page says how long to wait. The first person to sign in with the owner address becomes the workspace owner. Everyone else needs an invite, or an account that an admin already created.
 
 To sign out, open the board menu and choose **Sign out** under **Account**, or open your name in the top bar of the home screen and choose **Sign out**. **Sign out everywhere** ends all your sessions on every device.
 
@@ -129,7 +129,7 @@ Anyone with the link who confirms their email can join the team. When you paste 
 
 #### Invite a class
 
-Invite a class with one link. On the home screen choose your team, then Manage, then Create invite link. Pick how long it should last (7 days is the default; 14 covers a two-week project) and share the link with the class. Each pupil opens the link, types their email, and gets a sign-in email from Tabula; the link in that email works once and for 15 minutes, so they should open the newest one. After that they are in the team and see its boards. The invite link itself keeps working for everyone until it expires or you revoke it under Manage. Pupils need an email address they can open on the same device.
+Invite a class with one link. On the home screen choose your team, then Manage, then Create invite link. Pick how long it should last (7 days is the default; 14 covers a two-week project) and share the link with the class. Each pupil opens the link, types their email, and gets a sign-in email from Tabula; the link in that email works once and for 15 minutes, so they should open the newest one. After that they are in the team and see its boards. The invite link itself keeps working for everyone until it expires or you revoke it under Manage. If an invite has a use limit and it is used up, the invite page says "This invitation has been used up. Ask the person who invited you for a new link." Pupils need an email address they can open on the same device.
 
 ### Workspace members
 
