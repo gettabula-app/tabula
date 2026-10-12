@@ -5,7 +5,7 @@ import type { BoardApp } from './app';
 import type { BaseObj, Point } from './types';
 import { ApiError, api } from './api';
 import { linkPreviewsAvailable } from './auth';
-import { LINK_SIZES, failureOf, loneUrl, maskSecrets, normaliseUrl, openLink, parsePreview, secretLooking, urlsFromList } from './link-cards';
+import { LINK_SIZES, type LinkLayout, failureOf, loneUrl, maskSecrets, normaliseUrl, openLink, parsePreview, secretLooking, urlsFromList } from './link-cards';
 import { dialog, toast } from './ui/common';
 import { h } from './ui/dom';
 
@@ -117,6 +117,33 @@ export class LinkCards {
     const clean: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(patch)) clean[k] = v;
     this.app.store.transactAs(() => this.app.store.update(id, clean as Partial<BaseObj>), PREVIEW_ORIGIN);
+  }
+
+  /** Resizes the card to the default of a layout, keeping its top-left corner (one undo step). */
+  setLayout(id: string, layout: LinkLayout): void {
+    const o = this.app.store.get(id) as BaseObj | undefined;
+    if (!o || o.type !== 'link' || this.app.readOnly) return;
+    const size = LINK_SIZES[layout];
+    this.app.store.undo.stopCapturing();
+    this.app.store.transact(() => this.app.store.update(id, { w: size.w, h: size.h }));
+  }
+
+  /** Reads the page again: the card shows "Loading preview…" until the relay answers; edited fields are kept. */
+  refresh(id: string): void {
+    const o = this.app.store.get(id) as BaseObj | undefined;
+    if (!o || o.type !== 'link' || this.app.readOnly || !this.previewsOn() || o.unfurl === 'pending') return;
+    this.apply(id, { unfurl: 'pending', unfurlError: undefined });
+    void this.fetchPreview(id, true);
+  }
+
+  /** A text or sticky whose content is one address becomes a link card in its place (one undo step). */
+  fromText(id: string): boolean {
+    const o = this.app.store.get(id) as BaseObj | undefined;
+    if (!o || (o.type !== 'text' && o.type !== 'sticky') || this.app.readOnly) return false;
+    const url = loneUrl(o.text ?? '');
+    if (!url) return false;
+    void this.addUrls([url], { at: { x: o.x + o.w / 2, y: o.y + o.h / 2 }, source: 'convert', replace: id });
+    return true;
   }
 
   /** Opens the card's address in a new tab, without opener or referrer. */

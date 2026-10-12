@@ -260,6 +260,7 @@ describe.skipIf(!available)('an address that looks like it holds a secret', () =
     await dialog.waitFor();
     expect(await page.locator('.link-secret p').textContent()).toBe('This link may contain a secret that everyone on the board will see.');
     expect(await page.locator('.link-secret-url').textContent()).toBe('https://example.com/cb?token=…&q=1');
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Cancel');
     expect(await page.evaluate(() => document.activeElement?.textContent)).toBe('Cancel');
     await page.getByRole('button', { name: 'Cancel' }).click();
     expect(await links(page)).toEqual([]);
@@ -283,6 +284,109 @@ describe.skipIf(!available)('a dropped link', () => {
     });
     await page.waitForFunction(() => [...(window as any).__board.store.cache.values()].filter((o: any) => o.type === 'link').length === 10, null, { timeout: 8000 });
     expect(await page.locator('.toast').textContent()).toBe('10 links added');
+    await page.close();
+  });
+});
+
+describe.skipIf(!available)('the quick bar', () => {
+  async function selected(over: Partial<Stub> = {}, width = 1280) {
+    const ctx = await open(over, width);
+    await paste(ctx.page, 'https://example.com/bar');
+    const settled = ctx.stub.previews ? 'ok' : 'off';
+    await ctx.page.waitForFunction((state) => [...(window as any).__board.store.cache.values()].some((o: any) => o.type === 'link' && o.unfurl === state), settled);
+    await ctx.page.evaluate(() => { const app = (window as any).__board; app.setSelection([[...app.store.cache.values()].find((o: any) => o.type === 'link').id]); });
+    await ctx.page.locator('.quickbar.show').waitFor();
+    return ctx;
+  }
+  const bar = (page: Page) => page.locator('.quickbar');
+
+  it('offers the layouts, Open, Refresh, Edit and Turn into text, with the current layout pressed', async () => {
+    const { page } = await selected();
+    expect(await bar(page).locator('.qb-seg').allTextContents()).toEqual(['Compact', 'Card', 'Large']);
+    expect(await bar(page).locator('.qb-seg[aria-pressed="true"]').textContent()).toBe('Card');
+    for (const name of ['Open link', 'Refresh preview', 'Edit', 'Turn into text']) expect([name, await bar(page).getByRole('button', { name }).count()]).toEqual([name, 1]);
+    await page.close();
+  });
+
+  it('resizes to a layout default in one undo step', async () => {
+    const { page } = await selected();
+    await bar(page).locator('.qb-seg', { hasText: 'Large' }).click();
+    expect((await links(page))[0]).toMatchObject({ w: 320, h: 280 });
+    await bar(page).locator('.qb-seg', { hasText: 'Compact' }).click();
+    expect((await links(page))[0]).toMatchObject({ w: 320, h: 48 });
+    await page.keyboard.press('Control+z');
+    expect((await links(page))[0]).toMatchObject({ w: 320, h: 280 });
+    expect(await bar(page).locator('.qb-seg[aria-pressed="true"]').textContent()).toBe('Large');
+    await page.close();
+  });
+
+  it('refreshes: pending at once, the cache skipped, and what a person edited kept', async () => {
+    const { page, stub } = await selected({ delay: 300 });
+    await page.evaluate(() => { const app = (window as any).__board; const o = [...app.store.cache.values()].find((x: any) => x.type === 'link'); app.store.transact(() => app.store.update(o.id, { title: 'My own title', edited: ['title'] })); });
+    await bar(page).getByRole('button', { name: 'Refresh preview' }).click();
+    expect((await links(page))[0].unfurl).toBe('pending');
+    expect(await bar(page).getByRole('button', { name: 'Refresh preview' }).isDisabled()).toBe(true);
+    await page.waitForFunction(() => [...(window as any).__board.store.cache.values()].some((o: any) => o.type === 'link' && o.unfurl === 'ok'));
+    expect(stub.unfurls.at(-1)).toEqual({ url: 'https://example.com/bar', refresh: true });
+    expect((await links(page))[0].title).toBe('My own title');
+    await page.close();
+  });
+
+  it('edits the title and description in place: a click outside saves, Esc cancels, and edited fields are marked', async () => {
+    const { page } = await selected();
+    await bar(page).getByRole('button', { name: 'Edit' }).click();
+    const title = page.getByRole('textbox', { name: 'Title' });
+    await title.fill('Renamed');
+    await page.keyboard.press('Escape');
+    await page.locator('.link-edit').waitFor({ state: 'detached', timeout: 5000 });
+    expect((await links(page))[0].title).toBe('Example Domain');
+    await bar(page).getByRole('button', { name: 'Edit' }).click();
+    await page.getByRole('textbox', { name: 'Title' }).fill('Renamed');
+    await page.mouse.click(5, 400);
+    await page.locator('.link-edit').waitFor({ state: 'detached' });
+    expect((await links(page))[0]).toMatchObject({ title: 'Renamed', edited: ['title'] });
+    await page.close();
+  });
+
+  it('turns into text from the bar, and a text that is one address into a card', async () => {
+    const { page } = await selected();
+    await bar(page).getByRole('button', { name: 'Turn into text' }).click();
+    expect(await links(page)).toEqual([]);
+    const id = await page.evaluate(() => { const app = (window as any).__board; const t = [...app.store.cache.values()].find((o: any) => o.type === 'text'); app.setSelection([t.id]); return t.id; });
+    await page.locator('.quickbar.show').waitFor();
+    await bar(page).getByRole('button', { name: 'Turn into link card' }).click();
+    await page.waitForFunction(() => [...(window as any).__board.store.cache.values()].some((o: any) => o.type === 'link'));
+    expect((await links(page))[0].url).toBe('https://example.com/bar');
+    expect(await page.evaluate((i) => (window as any).__board.store.get(i), id)).toBeUndefined();
+    await page.keyboard.press('Control+z');
+    expect(await links(page)).toEqual([]);
+    expect(await texts(page)).toEqual(['https://example.com/bar']);
+    await page.close();
+  });
+
+  it('shows a viewer Open alone', async () => {
+    const { page } = await selected();
+    await page.evaluate(() => (window as any).__board.store.setReadOnly(true));
+    await page.waitForFunction(() => document.querySelectorAll('.quickbar .icon-btn').length === 1);
+    expect(await bar(page).getByRole('button').allTextContents()).toEqual(['Open']);
+    await bar(page).getByRole('button', { name: 'Open link' }).click();
+    expect((await opened(page)).length).toBe(1);
+    await page.close();
+  });
+
+  it('has no Refresh when previews are off', async () => {
+    const { page } = await selected({ previews: false });
+    expect(await bar(page).getByRole('button', { name: 'Refresh preview' }).isVisible()).toBe(false);
+    await page.close();
+  });
+
+  it('keeps Open in the bar on a phone and puts the rest in the more-actions menu', async () => {
+    const { page } = await selected({}, 390);
+    expect(await bar(page).locator('.qb-seg').count()).toBe(0);
+    expect(await bar(page).getByRole('button', { name: 'Open link' }).count()).toBe(1);
+    await bar(page).getByRole('button', { name: 'More actions' }).click();
+    const items = await page.locator('.qb-action-menu .menu-item').allTextContents();
+    for (const label of ['Compact', 'Card', 'Large', 'Refresh preview', 'Edit', 'Turn into text']) expect(items.join('|')).toContain(label);
     await page.close();
   });
 });
