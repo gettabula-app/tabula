@@ -8,7 +8,7 @@ En åtkomsttoken låter ett AI-verktyg som Claude Code arbeta med dina tavlor å
 
 Vad verktyget kan göra beror på vilken åtkomstnivå du ger tokenen.
 
-- **Read only** (Endast läsning): listar dina tavlor, läser innehållet på en tavla och läser dess kommentarer.
+- **Read only** (Endast läsning): listar dina tavlor, läser innehållet på en tavla och läser dess kommentarer. Ett verktyg kan också söka efter text på en tavla, exportera den som Markdown eller JSON och, om du är ägare eller redigerare av tavlan, läsa dess versionshistorik och vad som ändrades mellan versioner (ändringarna, aldrig objektens text).
 - **Read and comment** (Läsa och kommentera): kan även lägga till kommentarer och svara på dem. Kommentarer märks med ditt namn följt av tokenens namn, så att andra kan skilja dem från kommentarer du själv har skrivit.
 - **Read and edit** (Läsa och redigera): kan även skapa, ändra och ta bort objekt på tavlan. Alla på tavlan ser ändringarna direkt.
 
