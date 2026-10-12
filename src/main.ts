@@ -29,7 +29,8 @@ import type { CustomTemplate } from './custom-templates';
 import { applyImported, type ImportedBoard } from './exporters';
 import { toast } from './ui/common';
 import { trackerEnabled } from './tracker-gate';
-import { syncChatDock } from './ui/chat-dock';
+import { currentChatDock, syncChatDock } from './ui/chat-dock';
+import { dockHiddenOn } from './ui/chat-dock-state';
 import { commentNoticeText } from './comments';
 import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
@@ -298,6 +299,9 @@ async function isDeletedBoard(id: string, auth: AuthState, role: ServerBoard['ro
   }
 }
 
+/** The page being shown, for the chat dock: it stays away from sign-in, consent and the Chat page. */
+let routeName = '';
+
 async function route() {
   if (DEMO) {
     if (location.hash !== '#/b/demo') {
@@ -328,6 +332,8 @@ async function route() {
   const seq = ++routeSeq;
   const auth = authState();
   const r = resolveRoute(location.hash, auth.mode, location.pathname, location.search);
+  routeName = r.name;
+  currentChatDock()?.setSuppressed(dockHiddenOn(r.name));
   const trackerScreen = r.name === 'tracker' && (trackerEnabled(auth) || trackerBoardMockVisual);
   const keepTrackerStore = trackerScreen;
   const preserveBoard = trackerScreen && current !== null && currentBoardId !== null;
@@ -629,7 +635,8 @@ async function boot() {
   syncMentions();
   const syncDock = () => {
     const a = authState();
-    syncChatDock(overlay, (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.id : null, chatAvailable(), (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.name : undefined);
+    const dock = syncChatDock(overlay, (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.id : null, chatAvailable(), (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.name : undefined);
+    dock?.setSuppressed(dockHiddenOn(routeName));
   };
   syncDock();
   onAuth((s) => {

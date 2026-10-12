@@ -12,6 +12,7 @@ import { openAiKeyDialog } from './ai';
 import { openChatNotifications } from './chat-prefs';
 import { canChangeProfile } from './share-logic';
 import { getUser, saveUser } from '../sync';
+import { currentChatDock } from './chat-dock';
 
 export type TopbarPage = 'boards' | 'templates' | 'chat';
 
@@ -34,6 +35,16 @@ export async function signOutAndLeave() {
 function chatLink(current: TopbarPage): HTMLElement {
   const badge = h('span', { class: 'topbar-badge', 'aria-hidden': 'true' });
   const a = h('a', { class: current === 'chat' ? 'topbar-link on' : 'topbar-link', href: '#/chat', 'aria-current': current === 'chat' ? 'page' : undefined }, 'Chat', badge);
+  // On a page that is not the Chat page the link opens the chat dock where you are; the address still opens the Chat page in a new tab.
+  a.addEventListener('click', (e) => {
+    if (current === 'chat' || e.defaultPrevented || e.button > 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const dock = currentChatDock();
+    if (!dock) return;
+    e.preventDefault();
+    dock.noteOpener(a);
+    dock.dispatch('open');
+    dock.focusComposer();
+  });
   const life = new AbortController();
   const paint = () => {
     const t = totalUnread();

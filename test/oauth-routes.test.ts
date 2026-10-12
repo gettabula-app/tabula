@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import WebSocket from 'ws';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHarness, type Harness } from './mcp-harness';
@@ -168,9 +170,12 @@ describe('OAuth metadata and registration routes', () => {
       revocation_endpoint_auth_methods_supported: ['none'],
       code_challenge_methods_supported: ['S256'],
       authorization_response_iss_parameter_supported: true,
-      service_documentation: `${h.base}/docs/mcp.html`,
+      service_documentation: `${h.base}/docs/ai-tools/`,
     });
     expect(authorization.headers.get('access-control-allow-origin')).toBe('*');
+    // the documentation link in the metadata points at a guide page that exists (the relay serves /docs/<page>/ from docs/guide/<page>.md)
+    const documentation = new URL((authorization.body as { service_documentation: string }).service_documentation).pathname;
+    expect(fs.existsSync(path.join('docs', 'guide', `${documentation.replace(/^\/docs\/|\/$/g, '')}.md`))).toBe(true);
     expect((await h.api(undefined, 'GET', '/.well-known/oauth-protected-resource/other')).status).toBe(404);
     expect((await h.api(undefined, 'GET', '/.well-known/openid-configuration')).status).toBe(404);
   });

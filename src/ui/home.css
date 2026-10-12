@@ -1,7 +1,7 @@
 /* Home and templates pages: the admin dashboard's Swiss language (admin.css) of flush-left type, 2px ink rules and
    1px hairlines on a plain canvas. Theme variables only. */
 
-.home-root { min-height: 100%; background: var(--canvas); }
+.home-root { min-height: 100%; background: var(--canvas); padding-right: var(--dock-inset, 0px); } /* room for the chat dock */
 .home-page { color: var(--ink); }
 .topbar :focus-visible,
 .home :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
