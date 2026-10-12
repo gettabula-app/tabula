@@ -329,11 +329,32 @@ export interface BoardConn {
   destroy: () => void;
 }
 
+/** How long a board waits for its copy on this device before it goes on without one. */
+export const LOCAL_COPY_WAIT_MS = 3000;
+
+/**
+ * A board's copy on this device (y-indexeddb). Storage that is missing, blocked or never answers (a private window, a policy, a
+ * hung open) leaves the board working from the relay alone, instead of never opening: the wait is bounded and every failure is
+ * absorbed. Nothing is kept on the device then.
+ */
+export function localCopy(name: string, doc: Y.Doc, waitMs = LOCAL_COPY_WAIT_MS): { whenSynced: Promise<unknown>; destroy: () => unknown } {
+  try {
+    const p = new IndexeddbPersistence(name, doc);
+    const synced = new Promise<unknown>((resolve) => {
+      const timer = setTimeout(resolve, waitMs);
+      p.whenSynced.then(() => { clearTimeout(timer); resolve(undefined); }, () => { clearTimeout(timer); resolve(undefined); });
+    });
+    return { whenSynced: synced, destroy: () => p.destroy() };
+  } catch {
+    return { whenSynced: Promise.resolve(), destroy: () => undefined };
+  }
+}
+
 export async function openBoard(id: string, user: User): Promise<BoardConn> {
   const doc = new Y.Doc();
-  const idb = new IndexeddbPersistence(`driftboard:${id}`, doc);
+  const idb = localCopy(`driftboard:${id}`, doc);
   const cdoc = new Y.Doc();
-  const cidb = new IndexeddbPersistence(`driftboard:${commentsRoom(id)}`, cdoc);
+  const cidb = localCopy(`driftboard:${commentsRoom(id)}`, cdoc);
   await Promise.all([idb.whenSynced, cidb.whenSynced]);
   const store = new Store(doc);
   const comments = new Comments(cdoc);

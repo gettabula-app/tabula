@@ -197,6 +197,7 @@ export function openChat(file) {
       );
       const id = Number(result.lastInsertRowid);
       addMentions(id, mentions);
+      topsCache.clear();
       return { message: getMessage(id), created: true };
     });
   }
@@ -331,13 +332,25 @@ export function openChat(file) {
    * Where a person without a marker starts: caught up at the newest message, except that a mention of them is never
    * skipped, so the marker goes just before the first one. Written, so later messages count from there.
    */
-  function startMarker(userId, kind, ref) {
-    const first = get(
+  // The newest message id of every channel of one kind. A class connecting at once asked for the same scan once per
+  // person; a new row or a purge is the only thing that moves a top, so the answer is kept until one happens.
+  const topsCache = new Map();
+  function topsOf(kind) {
+    let tops = topsCache.get(kind);
+    if (!tops) {
+      tops = new Map(all('SELECT ref, MAX(id) AS top FROM chat_messages WHERE kind = ? GROUP BY ref', kind).map((r) => [r.ref, Number(r.top)]));
+      topsCache.set(kind, tops);
+    }
+    return tops;
+  }
+
+  function startMarker(userId, kind, ref, firstMentions = null) {
+    const first = firstMentions ? { first: firstMentions.get(ref) ?? null } : get(
       `SELECT MIN(m.id) AS first FROM chat_mentions cm JOIN chat_messages m ON m.id = cm.message_id
         WHERE cm.user_id = ? AND m.kind = ? AND m.ref = ? AND m.deleted_at IS NULL AND (m.author_id IS NULL OR m.author_id <> ?)`,
       userId, kind, ref, userId,
-    ).first;
-    const start = first == null ? topId(kind, ref) : Number(first) - 1;
+    );
+    const start = first.first == null ? (firstMentions ? (topsOf(kind).get(ref) ?? 0) : topId(kind, ref)) : Number(first.first) - 1;
     run('INSERT OR IGNORE INTO chat_reads (user_id, kind, ref, last_id) VALUES (?, ?, ?, ?)', userId, kind, ref, start);
     return markerOf(userId, kind, ref);
   }
@@ -377,11 +390,18 @@ export function openChat(file) {
   function unreadSummary(userId, kind, refs) {
     return transaction(() => {
       const markers = new Map(all('SELECT ref, last_id FROM chat_reads WHERE user_id = ? AND kind = ?', userId, kind).map((r) => [r.ref, Number(r.last_id)]));
-      const tops = new Map(all('SELECT ref, MAX(id) AS top FROM chat_messages WHERE kind = ? GROUP BY ref', kind).map((r) => [r.ref, Number(r.top)]));
+      const tops = topsOf(kind);
+      // A first look at many channels at once (a new person in a big workspace): one query for the mentions, not one per channel.
+      let firstMentions = null;
+      const mentionsBefore = () => (firstMentions ??= new Map(all(
+        `SELECT m.ref, MIN(m.id) AS first FROM chat_mentions cm JOIN chat_messages m ON m.id = cm.message_id
+          WHERE cm.user_id = ? AND m.kind = ? AND m.deleted_at IS NULL AND (m.author_id IS NULL OR m.author_id <> ?) GROUP BY m.ref`,
+        userId, kind, userId,
+      ).map((r) => [r.ref, Number(r.first)])));
       /** @type {{ kind: string, ref: string, lastId: number, unread: number, mentions: number }[]} */
       const out = [];
       for (const ref of refs) {
-        const lastId = markers.get(ref) ?? startMarker(userId, kind, ref);
+        const lastId = markers.get(ref) ?? startMarker(userId, kind, ref, mentionsBefore());
         if ((tops.get(ref) ?? 0) <= lastId) continue;
         const counts = countsAfter(userId, kind, ref, lastId);
         if (counts.unread > 0) out.push({ kind, ref, lastId, ...counts });
@@ -399,6 +419,7 @@ export function openChat(file) {
     return transaction(() => {
       const ids = all('SELECT id FROM chat_messages WHERE created_at < ? ORDER BY id LIMIT ?', cutoff, limit).map((r) => Number(r.id));
       if (ids.length === 0) return 0;
+      topsCache.clear();
       const marks = ids.map(() => '?').join(', ');
       db.prepare(`DELETE FROM chat_mentions WHERE message_id IN (${marks})`).run(...ids);
       db.prepare(`DELETE FROM chat_reactions WHERE message_id IN (${marks})`).run(...ids);
