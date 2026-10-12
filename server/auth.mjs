@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
 import { normaliseEmail } from './config.mjs';
+import { mailFailureDetails } from './mail-health.mjs';
 
 const HOUR_MS = 60 * 60 * 1000;
 const EMAIL_LIMIT = 5;
-const IP_LIMIT = 20;
+const DEFAULT_IP_LIMIT = 300;
 const SWEEP_MS = 60 * 1000;
 const MAX_LIMITER_KEYS = 50_000;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -15,6 +16,9 @@ const COOKIE_TOKEN_RE = /^[A-Za-z0-9_-]+$/;
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 /** A new person would need a seat the workspace does not have (hosted workspaces, docs/cloud.md). */
+/** The invite's last use was taken (by someone else) before this sign-in could take it. */
+export class InviteExhaustedError extends Error {}
+
 export class SeatLimitError extends Error {
   constructor() {
     super('no free seat');
@@ -22,7 +26,7 @@ export class SeatLimitError extends Error {
   }
 }
 
-function createLimiter(now) {
+function createLimiter(now, ipLimit) {
   const byEmail = new Map();
   const byIp = new Map();
   let lastSweep = 0;
@@ -46,20 +50,26 @@ function createLimiter(now) {
     }
   }
 
+  // Returns null when the request may go on, else which limit was hit and the real seconds until the oldest hit leaves the window.
   return function allow(email, ip) {
     const t = now();
     sweep(t);
     const ipKey = String(ip || 'unknown').slice(0, 64);
     const emailHits = recent(byEmail, email, t);
     const ipHits = recent(byIp, ipKey, t);
-    if (emailHits.length >= EMAIL_LIMIT || ipHits.length >= IP_LIMIT) {
+    const emailFull = emailHits.length >= EMAIL_LIMIT;
+    const ipFull = ipHits.length >= ipLimit;
+    if (emailFull || ipFull) {
       if (emailHits.length) remember(byEmail, email, emailHits);
       if (ipHits.length) remember(byIp, ipKey, ipHits);
-      return false;
+      const wait = (hits) => Math.max(1, Math.ceil((hits[0] + HOUR_MS - t) / 1000));
+      const emailWait = emailFull ? wait(emailHits) : 0;
+      const ipWait = ipFull ? wait(ipHits) : 0;
+      return emailWait >= ipWait ? { scope: 'email', retryAfterSec: emailWait } : { scope: 'ip', retryAfterSec: ipWait };
     }
     remember(byEmail, email, [...emailHits, t]);
     remember(byIp, ipKey, [...ipHits, t]);
-    return true;
+    return null;
   };
 }
 
@@ -78,8 +88,8 @@ export function csrfOk(req) {
   }
 }
 
-export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, notifications = /** @type {any} */ (null) }) {
-  const allow = createLimiter(now);
+export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, log = (/** @type {string} */ _line) => {}, notifications = /** @type {any} */ (null) }) {
+  const allow = createLimiter(now, config.authIpLimit ?? DEFAULT_IP_LIMIT);
 
   const cookieFlags = `Path=/; HttpOnly; SameSite=Lax${config.secureCookies ? '; Secure' : ''}`;
 
@@ -94,10 +104,11 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
   const ownerMayBootstrap = (email) =>
     config.ownerEmail !== null && email === config.ownerEmail && directory.countOwners() === 0;
 
-  function sendLoginMail(email, token, oauthRequest = null) {
+  function sendLoginMail(email, token, oauthRequest = null, invite = null) {
     const verifyUrl = new URL(config.baseUrl);
     const verifyParams = new URLSearchParams({ token });
     if (oauthRequest) verifyParams.set('oauthRequest', oauthRequest);
+    if (invite) verifyParams.set('invite', invite);
     verifyUrl.hash = `/signin/verify?${verifyParams}`;
     const link = verifyUrl.href;
     const minutes = Math.round(config.loginTokenMs / 60000);
@@ -108,9 +119,12 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
       subject: 'Your Tabula sign-in link',
       text: `Sign in to Tabula with this link:\n\n${link}\n\nThe link works once and expires in ${minutes} minutes. If you did not ask for it, you can ignore this email.\n`,
     };
-    // Not awaited and never rethrown: a failure or a slow mail server must not tell the caller
-    // whether this address exists.
-    const failed = (err) => console.error('mail: could not send a sign-in link:', err?.message ?? err);
+    // Do not await: the allowed address would otherwise take a different amount of time from an unknown one.
+    // The next auth request sees service refusals through the global mail health state.
+    const failed = (err) => {
+      const { reason } = mailFailureDetails(err);
+      log(`auth request mail_failed reason=${reason}`);
+    };
     try {
       Promise.resolve(mailer.send(message)).catch(failed);
     } catch (err) {
@@ -122,7 +136,11 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
     const { email, invite, ip, oauthRequest: requestedOAuth } = request;
     const address = normaliseEmail(email);
     if (!address) return { ok: true };
-    if (!allow(address, ip)) return { limited: true };
+    const blocked = allow(address, ip);
+    if (blocked) {
+      log(`auth request rate_limited scope=${blocked.scope}`);
+      return { limited: true, ...blocked };
+    }
 
     const t = now();
     const validInvite = typeof invite === 'string' && invite ? directory.findInvite(invite, t) : null;
@@ -144,7 +162,7 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
         // A malformed or expired consent return behaves like an ordinary sign-in request.
       }
     }
-    sendLoginMail(address, token, oauthRequest);
+    sendLoginMail(address, token, oauthRequest, validInvite ? invite : null);
     return { ok: true };
   }
 
@@ -180,7 +198,8 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
             inviterToPing = invite.createdBy;
           }
         }
-        directory.recordInviteUse(invite.id);
+        // Check-and-increment in one statement: if the last use was taken meanwhile, undo the whole sign-in.
+        if (!directory.recordInviteUse(invite.id)) throw new InviteExhaustedError();
       }
 
       const session = directory.createSession(user.id, { ttlMs: config.sessionMs, now: t, userAgent });
