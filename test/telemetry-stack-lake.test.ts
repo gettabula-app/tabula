@@ -8,7 +8,7 @@ import { compact, runDuckdb, viewsSql } from '../telemetry-collector/src/lake.mj
 import { reportToRows } from '../telemetry-collector/src/map.mjs';
 import { appendRows, listSpool } from '../telemetry-collector/src/spool.mjs';
 import { validateReport } from '../telemetry-collector/src/validate.mjs';
-import { HOUR, WORKSPACE, validReport } from './telemetry-stack-fixtures';
+import { CONTROL_PLANE_EVENTS, HOUR, WORKSPACE, validReport } from './telemetry-stack-fixtures';
 
 function hasDuckdb(): boolean {
   try { execFileSync(process.env.DUCKDB_BIN || 'duckdb', ['--version'], { stdio: 'ignore' }); return true; } catch { return false; }
@@ -22,7 +22,7 @@ describe.skipIf(!hasDuckdb())('lake compaction with the DuckDB CLI', () => {
   it('compacts a closed day into zstd Parquet partitions, checks the row count, and the views read lake plus spool', async () => {
     const config = loadConfig({ TELEMETRY_DATA_DIR: dir, DUCKDB_MEMORY_LIMIT: '256MB' });
     const rowsFor = (id: string, hour: number) =>
-      reportToRows((validateReport(validReport({ workspace: id, hour }), { workspace: id, now: hour + 60_000, maxAgeMs: 1e12 }) as any).clean, hour + 60_000);
+      reportToRows((validateReport(validReport({ workspace: id, hour, events: CONTROL_PLANE_EVENTS }), { workspace: null, now: hour + 60_000, maxAgeMs: 1e12 }) as any).clean, hour + 60_000);
     const other = 'ws_other0123456';
     const yesterday = rowsFor(WORKSPACE, HOUR).concat(rowsFor(other, HOUR + 3600_000));
     await appendRows(config.lakeDir, yesterday, HOUR + 1000); // spool file of 2026-10-11

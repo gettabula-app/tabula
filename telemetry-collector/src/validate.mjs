@@ -27,7 +27,8 @@ export function validateReport(body, { workspace, now = Date.now(), maxAgeMs = 7
   // A fleet snapshot (the control plane's own data about a workspace) is accepted from the control-plane token only; a workspace-bound token is refused.
   const fleet = input.kind === 'fleet';
   if (fleet && workspace !== null) return fail(403, 'fleet_requires_control_plane');
-  const { clean, dropped } = fleet ? scrubReport(input, { source: 'control_plane' }) : scrubReport(input);
+  // Events that only the control plane may send (workspace_day, upgrade_result, error_rate_day, workspace_hour) pass the scrubber only for its own token.
+  const { clean, dropped } = workspace === null ? scrubReport(input, { source: 'control_plane' }) : scrubReport(input);
   if (!clean || dropped.total > 0) {
     return fail(422, 'invalid_report', { dropped: { total: dropped.total, byReason: { ...dropped.byReason } } });
   }

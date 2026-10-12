@@ -15,7 +15,7 @@ import { createRegistry, issueToken, listTokens, revokeTokens } from '../telemet
 import { createCollector } from '../telemetry-collector/src/server.mjs';
 import { listSpool, spoolPath } from '../telemetry-collector/src/spool.mjs';
 import { validateReport } from '../telemetry-collector/src/validate.mjs';
-import { HOUR, WORKSPACE, validReport } from './telemetry-stack-fixtures';
+import { CONTROL_PLANE_EVENTS, HOUR, WORKSPACE, validReport } from './telemetry-stack-fixtures';
 
 const NOW = HOUR + 20 * 60 * 1000;
 let dir: string;
@@ -45,7 +45,7 @@ describe('validation', () => {
     ['an email in a field', (r: any) => { r.app_version = 'a@b.example'; }],
     ['a url as an error frame', (r: any) => { r.errors[0].top_frame = 'https://x.test/a'; }],
     ['an IP address', (r: any) => { r.errors[0].code = '10.0.0.1'; }],
-    ['a token-like value', (r: any) => { r.events[1].to = 'sk_live_0123456789abcdef'; }],
+    ['a token-like value', (r: any) => { r.errors[0].code = 'sk_live_0123456789abcdef'; }],
     ['an unknown metric', (r: any) => { r.metrics.push({ name: 'board_titles', labels: {}, value: 1 }); }],
     ['an unknown label value', (r: any) => { r.metrics[0].labels.route = '/boards/secret-title'; }],
     ['an instance alert', (r: any) => { r.alerts = [{ kind: 'other', severity: 'info', workspace: null, at: 1 }]; }],
@@ -78,6 +78,8 @@ describe('smoke script fixture', () => {
 
 describe('mapping', () => {
   const clean = () => (validateReport(validReport(), { workspace: WORKSPACE, now: NOW }) as any).clean;
+  // the operating events only the control plane may send, so this report arrives with a control-plane token
+  const controlPlaneClean = () => (validateReport(validReport({ events: CONTROL_PLANE_EVENTS }), { workspace: null, now: NOW }) as any).clean;
 
   it('writes only known series names, all carrying the workspace label and the report hour', () => {
     const samples = reportToVm(clean(), NOW);
@@ -96,7 +98,7 @@ describe('mapping', () => {
   });
 
   it('puts error codes and operating events in Loki with workspace as a label and no free text', () => {
-    const loki = reportToLoki(clean());
+    const loki = reportToLoki(controlPlaneClean());
     const kinds = loki.streams.map((s: any) => s.stream.kind).sort();
     expect(kinds).toEqual(['error', 'event', 'event', 'report']);
     for (const s of loki.streams) {
@@ -109,7 +111,7 @@ describe('mapping', () => {
   });
 
   it('flattens the lake rows by stream with the day taken from the report hour', () => {
-    const rows = reportToRows(clean(), NOW);
+    const rows = reportToRows(controlPlaneClean(), NOW);
     expect(new Set(rows.map((r: any) => r.stream))).toEqual(new Set(['status', 'reports_hourly', 'errors', 'events']));
     expect(new Set(rows.map((r: any) => r.dt))).toEqual(new Set(['2026-10-11']));
     expect(rows.every((r: any) => r.workspace === WORKSPACE)).toBe(true);
@@ -203,7 +205,7 @@ describe('collector integration against fake sinks', () => {
 
       const loki = sinks.calls.find((call) => call.sink === 'loki')!;
       expect(loki.url).toBe('/loki/api/v1/push');
-      expect(JSON.parse(loki.body).streams.length).toBeGreaterThan(2);
+      expect(JSON.parse(loki.body).streams.length).toBeGreaterThanOrEqual(2);
 
       const spool = fs.readFileSync(spoolPath(c.cfg.lakeDir, NOW), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
       expect(spool.some((row) => row.stream === 'errors' && row.name === 'not_found')).toBe(true);

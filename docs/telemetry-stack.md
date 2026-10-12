@@ -164,6 +164,10 @@ The data volume, disk alert and the headroom rules of the runbook (root disk ale
 
 **Open question: how the control plane reaches the ingest door.** The doors are tunnel-only by the brief, but the control plane runs on Fly and cannot join a NetBird or WireGuard tunnel without extra work. The runbook's answer is one public TLS door allow-listed to the Fly static egress address. Options: (a) that public door (the proxy then needs TLS and a firewall rule for the Fly address); (b) a WireGuard peer on the Fly machine; (c) keep ingest on the tunnel and have an operator machine relay for now. Until Johan chooses, ingest works only from machines on the tunnel.
 
+## Fleet snapshots (every workspace, also the stopped ones)
+
+An instance reports only while it runs. So the control plane also sends one small report per workspace and hour about what it knows itself: `{ schema: 1, kind: "fleet", hour, workspace, events: [workspace_hour] }` (state, plan, machine started or stopped, backup state and age, seats, guests, members, disk used and total, image version; closed enums and whole numbers, no names or emails). The collector accepts it only with the control-plane token (a workspace token gets 403 `fleet_requires_control_plane`) and only for allowlisted workspaces, claims (workspace, hour, fleet) separately from instance reports so neither blocks the other, writes `tabula_fleet_*` gauges to VictoriaMetrics and one `events` row to the lake, and nothing to Loki. The Fleet overview shows it in "All workspaces, control plane view". Deleting a workspace removes it with everything else. **Deploy order: collector first, then the control plane job.**
+
 ## Deploy checklist
 
 Nothing below has been done.
