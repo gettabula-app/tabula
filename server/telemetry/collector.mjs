@@ -6,7 +6,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const MAX_LABEL_COMBINATIONS = 200;
 // Feature-use series follow the owner's product-analytics choice. Capacity,
 // backup/restore health, and process series remain available when it is off.
-const PRODUCT_ANALYTICS_METRICS = new Set([
+export const PRODUCT_ANALYTICS_METRICS = new Set([
   'mcp_calls_total', 'oauth_events_total', 'tracker_ops_total', 'chat_messages_total', 'uploads_total', 'upload_bytes',
   'ai_calls_total', 'client_sessions_total', 'ui_events_total',
 ]);
