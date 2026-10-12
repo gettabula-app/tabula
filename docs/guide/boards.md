@@ -21,6 +21,8 @@ If your workspace has no sign-in, the page shows one table, **Your boards**, wit
 
 Click a board name to open it. A board that someone shared by link has the same address in the browser, so you can also bookmark it.
 
+Open mode has no accounts, so anyone who can reach the server can open its boards. Use it only on your own computer or on a network you trust. For anything shared more widely, turn on sign-in; the server warns at startup when open mode listens on a network address.
+
 ## Workspaces with sign-in
 
 When your workspace uses sign-in, the page groups boards:
