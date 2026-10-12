@@ -5,9 +5,9 @@ import { PRIVACY_COPY } from '../src/ui/privacy-logic';
 import { FakeElement, FakeEvent, flush, installFakeBrowser, need, textOf, type FakeBrowser } from './fake-dom';
 
 const hosted = (): Me['workspace'] => ({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 1 });
-const owner: Me = { user: { id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'owner' }, teams: [], workspace: hosted(), mcpOauth: false };
-const admin: Me = { user: { id: 'u2', email: 'admin@example.test', name: 'Admin', role: 'admin' }, teams: [], workspace: hosted(), mcpOauth: false };
-const selfOwner: Me = { user: { id: 'u3', email: 'self@example.test', name: 'Self owner', role: 'owner' }, teams: [], mcpOauth: false };
+const owner: Me = { user: { id: 'u1', email: 'owner@example.test', name: 'Owner', role: 'owner' }, teams: [], workspace: hosted() };
+const admin: Me = { user: { id: 'u2', email: 'admin@example.test', name: 'Admin', role: 'admin' }, teams: [], workspace: hosted() };
+const selfOwner: Me = { user: { id: 'u3', email: 'self@example.test', name: 'Self owner', role: 'owner' }, teams: [] };
 
 const settings = (patch: Partial<AdminPrivacy> = {}): AdminPrivacy => ({
   enabled: true,
