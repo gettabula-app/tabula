@@ -16,6 +16,8 @@ Fly's edge replays hosted requests, but Fly cannot replay request bodies over 1 
 
 Cloud mode is on only when `TABULA_AUTH=on` **and** all three are set.
 
+OAuth's built-in exact provider callbacks are enabled by default (`TABULA_OAUTH_REDIRECTS=known`); set `TABULA_OAUTH_REDIRECTS=none` to disable them or `TABULA_OAUTH_REDIRECT_HOSTS` to add exact callback hosts.
+
 A hosted workspace runs accounts mode, so it has team chat (docs/chat.md) with no variable: chat is on by default there, `chat.sqlite` is created on first use and is in the backups, and `TABULA_CHAT=off` is the operator's opt-out. A workspace gets it when it moves to an image that has this default.
 
 - None set: nothing changes, the routes below answer `404`.

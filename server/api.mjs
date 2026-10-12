@@ -24,6 +24,7 @@ import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientIpOf, clientIpReport } from './client-ip.mjs';
 import { createWindowLimiter } from './limiter.mjs';
 import { MAX_OAUTH_BOARD_IDS, OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
+import { knownRedirect } from './oauth-known-clients.mjs';
 import { OpsError, TrackerRestoringError } from './tracker/shared.mjs';
 import { trackerGateState } from './tracker/gate.mjs';
 import { ticketAccess } from './tracker/access.mjs';
@@ -349,9 +350,10 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     } catch {
       return null;
     }
-    const loopback = destination.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(destination.hostname);
+    const loopback = destination.protocol === 'http:' && ['127.0.0.1', '[::1]', 'localhost'].includes(destination.hostname);
     const redirectHost = `${destination.hostname || destination.protocol.slice(0, -1)}${loopback && destination.port ? `:${destination.port}` : ''}`;
-    const verified = destination.protocol === 'https:' && config.mcp.redirectHosts.includes(destination.hostname);
+    const known = config.mcp.redirectKnown === true ? knownRedirect(request.redirectUri) : null;
+    const verified = Boolean(known) || destination.protocol === 'https:' && config.mcp.redirectHosts.includes(destination.hostname);
     return {
       request,
       client,
@@ -359,6 +361,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       nonce: directory.createOAuthNonce({ requestId: request.requestId, sessionId, expiresAt: request.expiresAt }),
       clientName: client.name,
       clientNameIsClaim: true,
+      provider: known?.label ?? null,
       redirectHost,
       redirectUri: request.redirectUri,
       verified,
@@ -1332,6 +1335,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             return [200, {
               clientName: context.clientName,
               clientNameIsClaim: context.clientNameIsClaim,
+              provider: context.provider,
               redirectHost: context.redirectHost,
               redirectUri: context.redirectUri,
               verified: context.verified,
