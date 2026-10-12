@@ -48,6 +48,7 @@ function dashboard(uid, title, panels, { templated = false, description = '' } =
   };
 }
 
+const fleetGauge = (name) => `last_over_time(${name}[3h])`;
 const lastSeenAge = 'time() - max by (workspace) (last_over_time(tabula_report_received_timestamp_seconds[14d]))';
 
 const dashboards = {
@@ -77,6 +78,30 @@ const dashboards = {
       { expr: 'increase(tabula_collector_reports_accepted_total[1h])', legendFormat: 'accepted', interval: '1m' },
       { expr: 'sum by (reason) (increase(tabula_collector_reports_rejected_total[1h]))', legendFormat: 'rejected: {{reason}}', interval: '1m' },
     ]),
+    // The control plane's own view (fleet snapshots): every workspace, also the ones that auto-stop and send no instance report.
+    table('All workspaces, control plane view', 0, 44, 24, 9, [
+      { expr: fleetGauge('tabula_fleet_workspace_info'), legendFormat: '' },
+      { expr: fleetGauge('tabula_fleet_seats_used'), legendFormat: '' },
+      { expr: fleetGauge('tabula_fleet_seats_paid'), legendFormat: '' },
+      { expr: fleetGauge('tabula_fleet_members_used'), legendFormat: '' },
+      { expr: fleetGauge('tabula_fleet_backup_age_hours'), legendFormat: '' },
+      { expr: fleetGauge('tabula_fleet_disk_used_bytes'), legendFormat: '' },
+      { expr: fleetGauge('tabula_fleet_disk_total_bytes'), legendFormat: '' },
+    ], [
+      { id: 'joinByField', options: { byField: 'workspace', mode: 'outer' } },
+      { id: 'organize', options: {
+        excludeByName: { Time: true, 'Time 1': true, 'Time 2': true, 'Time 3': true, 'Time 4': true, 'Time 5': true, 'Time 6': true, 'Time 7': true, 'Value #A': true, __name__: true, 'Value #A 1': true },
+        renameByName: { 'Value #B': 'Seats used', 'Value #C': 'Seats paid', 'Value #D': 'Members', 'Value #E': 'Backup age (h)', 'Value #F': 'Disk used', 'Value #G': 'Disk total' },
+      } },
+    ], { description: 'One row per workspace id, from the control plane (state, plan, machine, seats, backup, disk, version). Ids only: no names or emails exist in the data.' }),
+    ts('Machines started and stopped', 0, 53, 8, 8, [
+      { expr: `sum(${fleetGauge('tabula_fleet_machine_started')})`, legendFormat: 'started' },
+      { expr: `count(${fleetGauge('tabula_fleet_machine_started')}) - sum(${fleetGauge('tabula_fleet_machine_started')})`, legendFormat: 'stopped or other' },
+    ]),
+    ts('Seats used by workspace', 8, 53, 8, 8, [{ expr: fleetGauge('tabula_fleet_seats_used'), legendFormat: '{{workspace}}' }]),
+    ts('Hours since the last successful backup', 16, 53, 8, 8, [{ expr: fleetGauge('tabula_fleet_backup_age_hours'), legendFormat: '{{workspace}}' }]),
+    ts('Disk used by workspace', 0, 61, 12, 8, [{ expr: fleetGauge('tabula_fleet_disk_used_bytes'), legendFormat: '{{workspace}}' }], { unit: 'bytes' }),
+    ts('Disk used, share of the volume', 12, 61, 12, 8, [{ expr: `${fleetGauge('tabula_fleet_disk_used_bytes')} / ${fleetGauge('tabula_fleet_disk_total_bytes')}`, legendFormat: '{{workspace}}' }], { unit: 'percentunit' }),
   ], { description: 'All workspaces. Operating data only; ids are workspace ids.' }),
 
   'workspace-health': dashboard('tabula-workspace', 'Per-workspace health', [

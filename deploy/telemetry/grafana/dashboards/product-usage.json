@@ -21,7 +21,7 @@
   },
   "panels": [
     {
-      "id": 38,
+      "id": 44,
       "type": "timeseries",
       "title": "MCP calls per hour by tool (top 10)",
       "gridPos": {
@@ -61,7 +61,7 @@
       }
     },
     {
-      "id": 39,
+      "id": 45,
       "type": "timeseries",
       "title": "MCP calls by result",
       "gridPos": {
@@ -101,7 +101,7 @@
       }
     },
     {
-      "id": 40,
+      "id": 46,
       "type": "timeseries",
       "title": "AI calls by feature",
       "gridPos": {
@@ -141,7 +141,7 @@
       }
     },
     {
-      "id": 41,
+      "id": 47,
       "type": "timeseries",
       "title": "Tracker operations",
       "gridPos": {
@@ -181,7 +181,7 @@
       }
     },
     {
-      "id": 42,
+      "id": 48,
       "type": "timeseries",
       "title": "Chat messages",
       "gridPos": {
@@ -221,7 +221,7 @@
       }
     },
     {
-      "id": 43,
+      "id": 49,
       "type": "timeseries",
       "title": "Uploads by kind",
       "gridPos": {
@@ -261,7 +261,7 @@
       }
     },
     {
-      "id": 44,
+      "id": 50,
       "type": "timeseries",
       "title": "Upload bytes by size bucket",
       "gridPos": {
@@ -303,7 +303,7 @@
       }
     },
     {
-      "id": 45,
+      "id": 51,
       "type": "timeseries",
       "title": "Sessions by device class",
       "gridPos": {
@@ -343,7 +343,7 @@
       }
     },
     {
-      "id": 46,
+      "id": 52,
       "type": "timeseries",
       "title": "Sessions by browser family",
       "gridPos": {
@@ -383,7 +383,7 @@
       }
     },
     {
-      "id": 47,
+      "id": 53,
       "type": "timeseries",
       "title": "Sessions by operating system",
       "gridPos": {
@@ -423,7 +423,7 @@
       }
     },
     {
-      "id": 48,
+      "id": 54,
       "type": "timeseries",
       "title": "Sessions installed or in a browser",
       "gridPos": {
@@ -463,7 +463,7 @@
       }
     },
     {
-      "id": 49,
+      "id": 55,
       "type": "timeseries",
       "title": "OAuth events",
       "gridPos": {
@@ -503,7 +503,7 @@
       }
     },
     {
-      "id": 50,
+      "id": 56,
       "type": "timeseries",
       "title": "Entities (boards, tickets, users)",
       "gridPos": {

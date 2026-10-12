@@ -73,19 +73,20 @@ export function removeAllowed(config, workspace) {
   writeJson(config.workspacesFile, { workspaces: readAllow(config).filter((w) => w !== workspace) });
 }
 
-const hourFile = (config, workspace, hour) => path.join(config.seenDir, safeId(workspace), String(Number(hour)));
+// Instance reports and fleet snapshots have separate claims for the same hour: a snapshot never blocks a real report, and the reverse.
+const hourFile = (config, workspace, hour, kind = 'report') => path.join(config.seenDir, safeId(workspace), `${kind === 'fleet' ? 'fleet-' : ''}${Number(hour)}`);
 
 /** Claim a workspace/hour. False when it was already accepted (even before a restart). */
-export function claimHour(config, workspace, hour) {
-  const file = hourFile(config, workspace, hour);
+export function claimHour(config, workspace, hour, kind = 'report') {
+  const file = hourFile(config, workspace, hour, kind);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   try { fs.closeSync(fs.openSync(file, 'wx')); return true; } catch (error) {
     if (error?.code === 'EEXIST') return false;
     throw error;
   }
 }
-export function releaseHour(config, workspace, hour) {
-  fs.rmSync(hourFile(config, workspace, hour), { force: true });
+export function releaseHour(config, workspace, hour, kind = 'report') {
+  fs.rmSync(hourFile(config, workspace, hour, kind), { force: true });
 }
 export function forgetWorkspaceHours(config, workspace) {
   fs.rmSync(path.join(config.seenDir, safeId(workspace)), { recursive: true, force: true });
@@ -98,7 +99,7 @@ export function pruneHours(config, now = Date.now()) {
   for (const ws of workspaces) {
     const dir = path.join(config.seenDir, ws);
     for (const name of fs.readdirSync(dir)) {
-      if (Number(name) < now - config.maxReportAgeMs - 3_600_000) { fs.rmSync(path.join(dir, name), { force: true }); removed += 1; }
+      if (Number(name.replace(/^fleet-/u, '')) < now - config.maxReportAgeMs - 3_600_000) { fs.rmSync(path.join(dir, name), { force: true }); removed += 1; }
     }
     try { fs.rmdirSync(dir); } catch { /* not empty */ }
   }

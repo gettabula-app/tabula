@@ -21,7 +21,7 @@
   },
   "panels": [
     {
-      "id": 28,
+      "id": 34,
       "type": "stat",
       "title": "Backup runs, last 24 h",
       "gridPos": {
@@ -60,7 +60,7 @@
       }
     },
     {
-      "id": 29,
+      "id": 35,
       "type": "stat",
       "title": "Failed backup runs, last 24 h",
       "gridPos": {
@@ -99,7 +99,7 @@
       }
     },
     {
-      "id": 30,
+      "id": 36,
       "type": "stat",
       "title": "Restore runs, last 7 d",
       "gridPos": {
@@ -138,7 +138,7 @@
       }
     },
     {
-      "id": 31,
+      "id": 37,
       "type": "stat",
       "title": "Failed restores, last 7 d",
       "gridPos": {
@@ -177,7 +177,7 @@
       }
     },
     {
-      "id": 32,
+      "id": 38,
       "type": "table",
       "title": "Hours since the last successful backup, by workspace",
       "gridPos": {
@@ -222,7 +222,7 @@
       "description": "Uses MetricsQL tlast_over_time (VictoriaMetrics)."
     },
     {
-      "id": 33,
+      "id": 39,
       "type": "table",
       "title": "Failed backups by workspace and error code, last 7 d",
       "gridPos": {
@@ -266,7 +266,7 @@
       ]
     },
     {
-      "id": 34,
+      "id": 40,
       "type": "timeseries",
       "title": "Backup runs per hour by result",
       "gridPos": {
@@ -306,7 +306,7 @@
       }
     },
     {
-      "id": 35,
+      "id": 41,
       "type": "timeseries",
       "title": "Backup duration p50 and p95",
       "gridPos": {
@@ -358,7 +358,7 @@
       }
     },
     {
-      "id": 36,
+      "id": 42,
       "type": "timeseries",
       "title": "Backup bytes per hour",
       "gridPos": {
@@ -400,7 +400,7 @@
       }
     },
     {
-      "id": 37,
+      "id": 43,
       "type": "timeseries",
       "title": "Restore runs per hour by kind and result",
       "gridPos": {

@@ -9,11 +9,21 @@ export function vmName(name, kind) {
   return `tabula_${name}`;
 }
 
+/**
+ * The fleet snapshot gauges (kind 'fleet' reports from the control plane). One series per workspace; the info series carries the enums as labels
+ * (a handful of values each), the others are numbers. Names are listed for the dashboard test.
+ */
+export const FLEET_GAUGES = {
+  seats_paid: 'tabula_fleet_seats_paid', seats_used: 'tabula_fleet_seats_used', guests_used: 'tabula_fleet_guests_used', members_used: 'tabula_fleet_members_used',
+  disk_used_bytes: 'tabula_fleet_disk_used_bytes', disk_total_bytes: 'tabula_fleet_disk_total_bytes', backup_age_hours: 'tabula_fleet_backup_age_hours',
+};
+const FLEET_SERIES = ['tabula_fleet_workspace_info', 'tabula_fleet_machine_started', 'tabula_fleet_received_timestamp_seconds', ...Object.values(FLEET_GAUGES)];
+
 /** Every VictoriaMetrics series name the collector can write (used by tests to check the dashboards). */
 export function allSeriesNames() {
   const names = new Set([
     'tabula_connections_now', 'tabula_connections_peak', 'tabula_last_activity_timestamp_seconds', 'tabula_report_info',
-    'tabula_report_received_timestamp_seconds', 'tabula_schema_directory', 'tabula_schema_chat',
+    'tabula_report_received_timestamp_seconds', 'tabula_schema_directory', 'tabula_schema_chat', ...FLEET_SERIES,
   ]);
   for (const [name, def] of Object.entries(TELEMETRY_SCHEMA.metrics)) {
     if (def.source === 'control_plane') continue;
@@ -28,8 +38,26 @@ function sample(name, labels, value, timestamp) {
   return { metric: { __name__: name, ...labels }, values: [value], timestamps: [timestamp] };
 }
 
+/** A fleet snapshot to VictoriaMetrics import objects: the same one sample per series at the snapshot hour. */
+export function fleetToVm(clean, receivedAt) {
+  const ws = { workspace: clean.workspace };
+  const at = clean.hour;
+  const out = [];
+  for (const { event, ...fields } of clean.events) {
+    if (event !== 'workspace_hour') continue;
+    const info = { ...ws, state: fields.state, plan: fields.plan, machine: fields.machine, backup_state: fields.backup_state };
+    if (typeof fields.app_version === 'string') info.app_version = fields.app_version;
+    out.push(sample('tabula_fleet_workspace_info', info, 1, at));
+    out.push(sample('tabula_fleet_machine_started', ws, fields.machine === 'started' ? 1 : 0, at));
+    for (const [field, name] of Object.entries(FLEET_GAUGES)) if (Number.isFinite(fields[field])) out.push(sample(name, ws, fields[field], at));
+  }
+  out.push(sample('tabula_fleet_received_timestamp_seconds', ws, Math.floor(receivedAt / 1000), at));
+  return out;
+}
+
 /** Clean report to VictoriaMetrics JSON-line import objects (one sample per series at the report hour). */
 export function reportToVm(clean, receivedAt) {
+  if (clean.kind === 'fleet') return fleetToVm(clean, receivedAt);
   const ws = { workspace: clean.workspace };
   const at = clean.hour;
   const out = [];
@@ -70,6 +98,7 @@ const OPERATING_EVENTS = new Set(['upgrade_result', 'error_rate_day']);
  * deletion by workspace id is a single selector.
  */
 export function reportToLoki(clean) {
+  if (clean.kind === 'fleet') return { streams: [] }; // the snapshot lives in VictoriaMetrics and the lake only
   const ts = `${BigInt(clean.hour) * 1_000_000n}`;
   const streams = new Map();
   const add = (kind, line, extra = {}) => {
@@ -91,6 +120,10 @@ export function reportToRows(clean, receivedAt) {
   const dt = dayOf(clean.hour);
   const base = { dt, workspace: clean.workspace, hour: clean.hour, schema: clean.schema, received_at: receivedAt };
   const rows = [];
+  if (clean.kind === 'fleet') {
+    for (const { event, ...fields } of clean.events) rows.push({ ...base, stream: 'events', name: event, data: JSON.stringify(fields) });
+    return rows;
+  }
   rows.push({
     ...base, stream: 'status', name: 'status', kind: null,
     data: JSON.stringify({

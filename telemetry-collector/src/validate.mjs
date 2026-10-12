@@ -24,7 +24,10 @@ export function validateReport(body, { workspace, now = Date.now(), maxAgeMs = 7
   } else if (typeof claimed !== 'string' || !WORKSPACE_RE.test(claimed)) {
     return fail(422, 'workspace_required');
   }
-  const { clean, dropped } = scrubReport(input);
+  // A fleet snapshot (the control plane's own data about a workspace) is accepted from the control-plane token only; a workspace-bound token is refused.
+  const fleet = input.kind === 'fleet';
+  if (fleet && workspace !== null) return fail(403, 'fleet_requires_control_plane');
+  const { clean, dropped } = fleet ? scrubReport(input, { source: 'control_plane' }) : scrubReport(input);
   if (!clean || dropped.total > 0) {
     return fail(422, 'invalid_report', { dropped: { total: dropped.total, byReason: { ...dropped.byReason } } });
   }

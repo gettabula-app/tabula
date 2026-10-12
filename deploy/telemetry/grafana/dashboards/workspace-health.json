@@ -45,7 +45,7 @@
   },
   "panels": [
     {
-      "id": 15,
+      "id": 21,
       "type": "stat",
       "title": "Seconds since last report",
       "gridPos": {
@@ -86,7 +86,7 @@
       }
     },
     {
-      "id": 16,
+      "id": 22,
       "type": "stat",
       "title": "Version",
       "gridPos": {
@@ -126,7 +126,7 @@
       "description": "The label shows the version."
     },
     {
-      "id": 17,
+      "id": 23,
       "type": "stat",
       "title": "Connections now",
       "gridPos": {
@@ -165,7 +165,7 @@
       }
     },
     {
-      "id": 18,
+      "id": 24,
       "type": "stat",
       "title": "Connections peak",
       "gridPos": {
@@ -204,7 +204,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 25,
       "type": "stat",
       "title": "Seconds since last activity",
       "gridPos": {
@@ -245,7 +245,7 @@
       }
     },
     {
-      "id": 20,
+      "id": 26,
       "type": "timeseries",
       "title": "Requests per hour by status class",
       "gridPos": {
@@ -285,7 +285,7 @@
       }
     },
     {
-      "id": 21,
+      "id": 27,
       "type": "timeseries",
       "title": "HTTP duration p50 and p95",
       "gridPos": {
@@ -337,7 +337,7 @@
       }
     },
     {
-      "id": 22,
+      "id": 28,
       "type": "timeseries",
       "title": "Sync save and load p95",
       "gridPos": {
@@ -389,7 +389,7 @@
       }
     },
     {
-      "id": 23,
+      "id": 29,
       "type": "timeseries",
       "title": "Memory and event loop",
       "gridPos": {
@@ -439,7 +439,7 @@
       }
     },
     {
-      "id": 24,
+      "id": 30,
       "type": "timeseries",
       "title": "CPU seconds per hour",
       "gridPos": {
@@ -481,7 +481,7 @@
       }
     },
     {
-      "id": 25,
+      "id": 31,
       "type": "timeseries",
       "title": "Data and disk free",
       "gridPos": {
@@ -533,7 +533,7 @@
       }
     },
     {
-      "id": 26,
+      "id": 32,
       "type": "timeseries",
       "title": "Entities",
       "gridPos": {
@@ -573,7 +573,7 @@
       }
     },
     {
-      "id": 27,
+      "id": 33,
       "type": "logs",
       "title": "Error codes (counts and code names only)",
       "gridPos": {

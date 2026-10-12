@@ -21,7 +21,7 @@
   },
   "panels": [
     {
-      "id": 51,
+      "id": 57,
       "type": "timeseries",
       "title": "Error occurrences per hour by code",
       "gridPos": {
@@ -61,7 +61,7 @@
       }
     },
     {
-      "id": 52,
+      "id": 58,
       "type": "timeseries",
       "title": "Workspaces with errors per hour",
       "gridPos": {
@@ -101,7 +101,7 @@
       }
     },
     {
-      "id": 53,
+      "id": 59,
       "type": "timeseries",
       "title": "5xx responses per hour by workspace",
       "gridPos": {
@@ -141,7 +141,7 @@
       }
     },
     {
-      "id": 54,
+      "id": 60,
       "type": "timeseries",
       "title": "Failed backups and restores per hour",
       "gridPos": {
@@ -191,7 +191,7 @@
       }
     },
     {
-      "id": 55,
+      "id": 61,
       "type": "logs",
       "title": "Error entries (fingerprint, code, kind, status, top frame, count)",
       "gridPos": {
@@ -226,7 +226,7 @@
       }
     },
     {
-      "id": 56,
+      "id": 62,
       "type": "logs",
       "title": "Upgrade results",
       "gridPos": {
@@ -261,7 +261,7 @@
       }
     },
     {
-      "id": 57,
+      "id": 63,
       "type": "logs",
       "title": "Daily top error codes",
       "gridPos": {

@@ -104,14 +104,15 @@ export function createCollector(config, { log, fetchImpl = fetch, now = Date.now
       return reject(res, 429, perWorkspace.ok ? 'fleet_rate_limited' : 'rate_limited', {}, { 'retry-after': String(Math.ceil(wait / 1000)) });
     }
     // replay protection: an exclusive file per workspace and hour, so it survives a restart
-    if (!claimHour(config, clean.workspace, clean.hour)) return reject(res, 409, 'duplicate_hour');
+    const claimKind = clean.kind === 'fleet' ? 'fleet' : 'report';
+    if (!claimHour(config, clean.workspace, clean.hour, claimKind)) return reject(res, 409, 'duplicate_hour');
 
     const receivedAt = now();
     try {
       if (isDeleting(config, clean.workspace)) throw Object.assign(new Error('deleting'), { code: 'EDELETING' });
       await appendRows(config.lakeDir, reportToRows(clean, receivedAt), receivedAt);
     } catch (error) {
-      releaseHour(config, clean.workspace, clean.hour);
+      releaseHour(config, clean.workspace, clean.hour, claimKind);
       if (error?.code === 'EDELETING') return reject(res, 410, 'workspace_deleted');
       counters.spoolFailures += 1;
       log?.error('spool_failed', { reason: String(error?.code ?? 'error') });
@@ -121,10 +122,10 @@ export function createCollector(config, { log, fetchImpl = fetch, now = Date.now
     const delivered = await sinks.push({ vm: reportToVm(clean, receivedAt), loki: reportToLoki(clean), workspace: clean.workspace });
     counters.accepted += 1;
     log?.info('report_accepted', {
-      token: auth.id, workspace: clean.workspace, hour: clean.hour, metrics: clean.metrics.length,
-      errors: clean.errors.length, events: clean.events.length, vm: delivered.vm, loki: delivered.loki,
+      token: auth.id, workspace: clean.workspace, hour: clean.hour, kind: claimKind, metrics: clean.metrics?.length ?? 0,
+      errors: clean.errors?.length ?? 0, events: clean.events.length, vm: delivered.vm, loki: delivered.loki,
     });
-    send(res, 200, { ok: true, accepted: { metrics: clean.metrics.length, errors: clean.errors.length, events: clean.events.length }, sinks: delivered });
+    send(res, 200, { ok: true, accepted: { metrics: clean.metrics?.length ?? 0, errors: clean.errors?.length ?? 0, events: clean.events.length }, sinks: delivered });
   }
 
   function metricsText() {

@@ -645,6 +645,354 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "All workspaces, control plane view",
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 24,
+        "h": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tabula-vm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "last_over_time(tabula_fleet_workspace_info[3h])",
+          "legendFormat": "",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "last_over_time(tabula_fleet_seats_used[3h])",
+          "legendFormat": "",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "last_over_time(tabula_fleet_seats_paid[3h])",
+          "legendFormat": "",
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "last_over_time(tabula_fleet_members_used[3h])",
+          "legendFormat": "",
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "last_over_time(tabula_fleet_backup_age_hours[3h])",
+          "legendFormat": "",
+          "refId": "E"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "last_over_time(tabula_fleet_disk_used_bytes[3h])",
+          "legendFormat": "",
+          "refId": "F"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "instant": true,
+          "format": "table",
+          "expr": "last_over_time(tabula_fleet_disk_total_bytes[3h])",
+          "legendFormat": "",
+          "refId": "G"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "workspace",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Time 5": true,
+              "Time 6": true,
+              "Time 7": true,
+              "Value #A": true,
+              "__name__": true,
+              "Value #A 1": true
+            },
+            "renameByName": {
+              "Value #B": "Seats used",
+              "Value #C": "Seats paid",
+              "Value #D": "Members",
+              "Value #E": "Backup age (h)",
+              "Value #F": "Disk used",
+              "Value #G": "Disk total"
+            }
+          }
+        }
+      ],
+      "description": "One row per workspace id, from the control plane (state, plan, machine, seats, backup, disk, version). Ids only: no names or emails exist in the data."
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Machines started and stopped",
+      "gridPos": {
+        "x": 0,
+        "y": 53,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tabula-vm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "interval": "1h",
+          "expr": "sum(last_over_time(tabula_fleet_machine_started[3h]))",
+          "legendFormat": "started",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "interval": "1h",
+          "expr": "count(last_over_time(tabula_fleet_machine_started[3h])) - sum(last_over_time(tabula_fleet_machine_started[3h]))",
+          "legendFormat": "stopped or other",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Seats used by workspace",
+      "gridPos": {
+        "x": 8,
+        "y": 53,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tabula-vm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "interval": "1h",
+          "expr": "last_over_time(tabula_fleet_seats_used[3h])",
+          "legendFormat": "{{workspace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Hours since the last successful backup",
+      "gridPos": {
+        "x": 16,
+        "y": 53,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tabula-vm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "interval": "1h",
+          "expr": "last_over_time(tabula_fleet_backup_age_hours[3h])",
+          "legendFormat": "{{workspace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Disk used by workspace",
+      "gridPos": {
+        "x": 0,
+        "y": 61,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tabula-vm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "interval": "1h",
+          "expr": "last_over_time(tabula_fleet_disk_used_bytes[3h])",
+          "legendFormat": "{{workspace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Disk used, share of the volume",
+      "gridPos": {
+        "x": 12,
+        "y": 61,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tabula-vm"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "tabula-vm"
+          },
+          "interval": "1h",
+          "expr": "last_over_time(tabula_fleet_disk_used_bytes[3h]) / last_over_time(tabula_fleet_disk_total_bytes[3h])",
+          "legendFormat": "{{workspace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ]
 }
