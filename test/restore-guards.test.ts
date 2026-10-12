@@ -6,6 +6,9 @@ import { RestoreError, SimulatedCrash } from '../server/restore.mjs';
 import { DAY, HOUR, MIN, T0, harness, type Harness } from './backup-harness';
 import { audits, backedUp, backupNow, becomeB, CONFIRM, filesOf, ownerOf, raw, reopen, rig, seedA, setting } from './restore-harness';
 
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
+
 // docs/backups.md, Restoring. One restore at a time, at most one whole restore in ten minutes, maintenance mode, what
 // happens when the swap itself fails, how the process leaves, and when the old data is removed.
 

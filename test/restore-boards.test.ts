@@ -10,6 +10,9 @@ import { BOARDS_LISTED_MAX, RestoreError } from '../server/restore.mjs';
 import { HOUR, MIN, T0, docBytes, harness, type Harness } from './backup-harness';
 import { audits, backupNow, becomeB, forge, ownerOf, rig, seedA, sqliteBytes } from './restore-harness';
 
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
+
 // docs/backups.md, "In the app": the boards inside one backup (GET /api/admin/backups/:name/boards, for the board
 // picker) and the engine's status in the list (GET /api/admin/backups).
 
