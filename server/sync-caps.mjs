@@ -36,7 +36,9 @@ export const CLOSE_DOC_TOO_LARGE = 4413; // reason 'document_too_large'
 // 60 Hz plus a multi-object drag stays far below 200 per second; the burst absorbs a paste that emits one update per object).
 export const STEP1_BURST = 20;
 export const STEP1_PER_SECOND = 5;
-export const UPDATE_BURST = 500;
+// The burst is above the tracker guard's own budget of 1,200 guard entries a minute (server/tracker/socket-budget.mjs), so
+// that guard still answers a runaway client first, with its own code and notice.
+export const UPDATE_BURST = 2000;
 export const UPDATE_PER_SECOND = 200;
 // Frames over the limit are dropped; this long without a break and the socket is closed.
 export const ABUSE_CLOSE_MS = 10_000;

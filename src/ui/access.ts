@@ -43,7 +43,8 @@ export function mountAccessBanner(conn: BoardConn, root: HTMLElement, handlers: 
     root.appendChild(banner);
   });
   // a limit that passed (retry connected again) takes its message away
-  const unsubscribeStatus = conn.onStatus((s) => { if (s === 'live') dismiss(); });
+  // (a minimal connection without status events, as in some tests, simply has no retry to follow)
+  const unsubscribeStatus = conn.onStatus?.((s) => { if (s === 'live') dismiss(); }) ?? (() => undefined);
   return () => {
     unsubscribe();
     unsubscribeStatus();

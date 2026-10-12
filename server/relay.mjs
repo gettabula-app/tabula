@@ -256,6 +256,16 @@ function parseRoom(name) {
 // Who may write which room. Anything not listed here (an unknown role or kind) may not write, and nobody writes
 // while a hosted workspace is read-only, or to a deleted board (workspace admins may still open one, to look before
 // restoring it).
+// What the ROLE alone allows in a room, without the board's deletion state or the hosted workspace's read-only switch. The
+// receive limit follows this, so flipping the switch (which changes canWrite for every writer at once) neither closes sockets
+// nor changes limits; admitFrame/onMessage still drop the writes by canWrite, frame by frame.
+function roleMayWrite(role, kind) {
+  if (kind === 'board') return role === 'owner' || role === 'editor';
+  if (kind === 'comments') return role === 'owner' || role === 'editor' || role === 'commenter';
+  return false;
+}
+const receiveLimitOf = (ws) => frameLimitFor(syncCaps, { canWrite: roleMayWrite(ws.role, ws.roomKind), role: ws.role }, true, ws.roomKind);
+
 function canWriteRoom(role, kind, deleted = false) {
   if (deleted || cloud?.limits().readOnly) return false;
   if (kind === 'board') return role === 'owner' || role === 'editor';
@@ -971,7 +981,7 @@ class Room {
   // (the socket may already have been closed).
   admitFrame(ws, data) {
     const bytes = data.byteLength ?? data.length ?? 0;
-    if (bytes > frameLimitFor(syncCaps, ws, config.authEnabled, this.kind)) {
+    if (bytes > (config.authEnabled ? receiveLimitOf(ws) : frameLimitFor(syncCaps, ws, false, this.kind))) {
       log(`room ${this.name}: frame of ${bytes} bytes refused, socket closed`);
       ws.close(CLOSE_FRAME_TOO_BIG, 'message_too_big');
       return false;
@@ -1642,7 +1652,7 @@ function deny(ws, code, reason) {
 // of the right size (a demoted editor must not be able to buffer 96 MiB, a promoted viewer must not be cut at 1 MiB).
 function resizeReceiver(ws) {
   if (ws.denied || ws.recvLimit === undefined) return;
-  if (frameLimitFor(syncCaps, ws, true, ws.roomKind) === ws.recvLimit) return;
+  if (receiveLimitOf(ws) === ws.recvLimit) return;
   ws.denied = true; // no further frame of this socket is processed while the close completes
   if (ws.guestExpiryTimer) clearTimeout(ws.guestExpiryTimer);
   ws.guestExpiryTimer = null;
@@ -1827,7 +1837,6 @@ server.on('upgrade', (req, socket, head) => {
       verdict = { code: 1011, reason: 'internal_error' };
     }
   }
-  const verdictCanWrite = verdict?.session ? canWriteRoom(verdict.role, parsed.kind, verdict.deleted) : false;
   // A client that has already gone away (an aborted handshake) holds nothing: no slot, no socket.
   if (socket.destroyed || !socket.readable || !socket.writable) {
     socket.destroy();
@@ -1845,7 +1854,7 @@ server.on('upgrade', (req, socket, head) => {
   }
   const receiveLimit = maintenance || !upgradeAllowed || socketCapped ? DENIED_FRAME_BYTES
     : !config.authEnabled ? frameLimitFor(syncCaps, { canWrite: true }, false, parsed.kind)
-      : verdict?.session ? frameLimitFor(syncCaps, { canWrite: verdictCanWrite, role: verdict.role }, true, parsed.kind)
+      : verdict?.session ? frameLimitFor(syncCaps, { canWrite: roleMayWrite(verdict.role, parsed.kind), role: verdict.role }, true, parsed.kind)
         : DENIED_FRAME_BYTES;
   const freeSlot = () => { release?.(); };
   socket.once('close', freeSlot); // also when the upgrade never produces a WebSocket
