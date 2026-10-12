@@ -80,13 +80,18 @@ const updateFrame = (map: string, key: string) => {
   return encoding.toUint8Array(enc);
 };
 
-const awarenessFrame = (name: string) => {
-  const awareness = new awarenessProtocol.Awareness(new Y.Doc());
+// One awareness identity per socket, like a real client (one clientID per Doc); the relay limits how many ids a socket may claim.
+const frameAwareness = new WeakMap<object, awarenessProtocol.Awareness>();
+const awarenessFrame = (name: string, socket: object) => {
+  let awareness = frameAwareness.get(socket);
+  if (!awareness) {
+    awareness = new awarenessProtocol.Awareness(new Y.Doc());
+    frameAwareness.set(socket, awareness);
+  }
   awareness.setLocalState({ user: { name } });
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, 1);
   encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(awareness, [awareness.clientID]));
-  awareness.destroy();
   return encoding.toUint8Array(enc);
 };
 
@@ -218,7 +223,7 @@ function harness(getPort: () => number, getDir: () => string) {
     const name = unique('marker');
     const ws = from.provider.ws!;
     ws.send(updateFrame(map, key));
-    ws.send(awarenessFrame(name));
+    ws.send(awarenessFrame(name, ws));
     await until(() => peers(to, name));
     return to.doc.getMap(map).has(key);
   }
