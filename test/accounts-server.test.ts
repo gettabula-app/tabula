@@ -299,6 +299,27 @@ describe('accounts mode server', () => {
       expect((await over.body).message).toMatch(/^Too many sign-in requests from your network\. Try again in (59|60) minutes\.$/);
     });
 
+    it('does not let another address lock an email out, and answers a 429 the same for known and unknown emails', async () => {
+      const known = emailOf('lockout-known');
+      const unknown = emailOf('lockout-unknown');
+      const attacker = nextIp();
+      await requestLink(known, undefined, nextIp()); // the account's own first request, from its own address
+      const mine = nextIp();
+      const statuses = { known: [] as number[], unknown: [] as number[] };
+      for (let i = 0; i < 6; i++) {
+        statuses.known.push((await requestLink(known, undefined, attacker)).res.status);
+        statuses.unknown.push((await requestLink(unknown, undefined, attacker)).res.status);
+      }
+      expect(statuses.known).toEqual([200, 200, 200, 200, 200, 429]);
+      expect(statuses.unknown).toEqual(statuses.known);
+      const a = await api(undefined, 'POST', '/api/auth/request', { email: known }, { 'x-forwarded-for': attacker });
+      const b = await api(undefined, 'POST', '/api/auth/request', { email: unknown }, { 'x-forwarded-for': attacker });
+      expect(a.body.message).toBe(b.body.message);
+      expect(a.headers.get('retry-after')).toBe(b.headers.get('retry-after'));
+      // the owner of the address still gets through from their own client address
+      expect((await requestLink(known, undefined, mine)).res.status).toBe(200);
+    });
+
     it('requires the csrf header and a matching Origin on every state-changing request', async () => {
       const bare = await fetch(`${baseUrl}/api/teams`, {
         method: 'POST',

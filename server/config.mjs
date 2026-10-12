@@ -79,14 +79,12 @@ function parseOAuthRedirectSchemes(raw) {
   return entries;
 }
 
-// null when off. Accounts mode: per-user access tokens. Open mode: one shared token with a fixed scope.
-/** TABULA_AUTH_IP_LIMIT: sign-in link requests per hour from one client address (default 300; a school shares one address). */
-function parseAuthIpLimit(raw) {
+function parseAuthLimit(raw, name, fallback) {
   const text = String(raw ?? '').trim();
-  if (text === '') return 300;
+  if (text === '') return fallback;
   const value = Number(text);
   if (!/^\d+$/.test(text) || !Number.isSafeInteger(value) || value < 1 || value > 100_000) {
-    throw new Error('TABULA_AUTH_IP_LIMIT must be a whole number from 1 to 100000');
+    throw new Error(`${name} must be a whole number from 1 to 100000`);
   }
   return value;
 }
@@ -97,6 +95,12 @@ function slowMs(raw) {
   return String(raw ?? '').trim() !== '' && Number.isInteger(value) && value >= 0 && value <= 600_000 ? value : 300;
 }
 
+/** TABULA_AUTH_IP_LIMIT: sign-in link requests per hour from one client address (default 300; a school shares one address). */
+const parseAuthIpLimit = (raw) => parseAuthLimit(raw, 'TABULA_AUTH_IP_LIMIT', 300);
+/** TABULA_AUTH_EMAIL_LIMIT: sign-in link requests per hour for one email address from all clients together (default 30). */
+const parseAuthEmailLimit = (raw) => parseAuthLimit(raw, 'TABULA_AUTH_EMAIL_LIMIT', 30);
+
+// null when off. Accounts mode: per-user access tokens. Open mode: one shared token with a fixed scope.
 function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
   const dailyWrites = parseMcpDailyWrites(env);
   const mode = mcpVar(env, 'MCP') || 'off';
@@ -405,6 +409,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     authIpLimit: parseAuthIpLimit(env.TABULA_AUTH_IP_LIMIT),
     baseUrlSet: Boolean((env.TABULA_BASE_URL || '').trim()),
     slowRequestMs: slowMs(env.TABULA_SLOW_REQUEST_MS),
+    authEmailLimit: parseAuthEmailLimit(env.TABULA_AUTH_EMAIL_LIMIT),
     origin,
     secureCookies,
     trustProxy: env.TABULA_TRUST_PROXY === '1',
