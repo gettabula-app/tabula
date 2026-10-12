@@ -425,8 +425,8 @@ describe('behind a proxy that terminates https, with TABULA_TRUST_PROXY=1', { ti
     direct.doc.getMap('objects').set('fromDirect', 2);
     await until(() => a.doc.getMap('objects').get('fromDirect') === 2 && b.doc.getMap('objects').get('fromDirect') === 2);
 
-    a.provider.awareness.setLocalStateField('user', { name: 'through the proxy' });
-    await until(() => [...direct.provider.awareness.getStates().values()].some((s) => s.user?.name === 'through the proxy'));
+    a.provider.awareness.setLocalStateField('marker', 'through the proxy');
+    await until(() => [...direct.provider.awareness.getStates().values()].some((s) => s.marker === 'through the proxy'));
 
     const file = path.join(server.dir, `${board}.yjs`);
     await until(() => {
