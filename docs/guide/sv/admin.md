@@ -51,7 +51,7 @@ En sökbar lista över alla med ett konto: namn, e-postadress, roll, senaste akt
 - **Sign out everywhere** avslutar alla personens sessioner utan att inaktivera kontot. Du kan använda den på dig själv.
 - **Remove** tar bort kontot, loggar ut personen och tar bort personens åtkomst.
 
-Rollerna förklaras i [Dela, roller och team](sharing.md). En gratisarbetsyta har en gräns för hur många medlemmar den rymmer. När den är full nekas du att aktivera en person eller befordra en gäst med meddelandet ”This workspace has reached its member limit. Remove or disable a member to make room.” (Den här arbetsytan har nått sin medlemsgräns. Ta bort eller inaktivera en medlem för att få plats.) Gäster räknas inte mot gränsen.
+Rollerna förklaras i [Dela, roller och team](sharing.md). En gratisarbetsyta har en gräns för hur många medlemmar den rymmer. När den är full nekas du att aktivera en person eller befordra en gäst med meddelandet ”This workspace has reached its member limit. Remove or disable a member to make room, or ask the workspace owner to write to us for a larger workspace.” (Den här arbetsytan har nått sin medlemsgräns. Ta bort eller inaktivera en medlem för att få plats, eller be arbetsytans ägare att kontakta oss för en större arbetsyta.) Gäster räknas inte mot gränsen.
 
 ## Team
 
