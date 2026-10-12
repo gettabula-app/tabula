@@ -11,6 +11,7 @@ import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mj
 import { createMailer } from './mailer.mjs';
 import { createTelemetryCollector } from './telemetry/collector.mjs';
 import { createDataBytes } from './telemetry/data-bytes.mjs';
+import { createLastReport } from './telemetry/last-report.mjs';
 import { analyticsChoice, appVersionLabel, dropFeatureSeries, workspaceIdValid } from './telemetry/report.mjs';
 import {
   MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
@@ -393,12 +394,42 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   let completedTelemetry = null;
   let lastTelemetryCaptureAt = null;
 
+  // The last report is also kept in one small file on the data volume (docs/telemetry-design.md, "A machine that stops"), so a hosted
+  // machine that stops between hours can still hand it over after its next start. One report per hour: the first one kept for an hour wins,
+  // as it does at the collector.
+  const lastReport = cloud ? createLastReport({ dir: dataDir, workspace: hostedWorkspaceId, log }) : null;
+  if (lastReport && !telemetryCollectionEnabled()) lastReport.remove();
+  const TELEMETRY_RETAIN_MS = 72 * TELEMETRY_HOUR_MS; // the collector's own window for a late report
+  const keepStored = (report) => {
+    if (!lastReport || !report) return;
+    const stored = lastReport.read();
+    if (stored && stored.hour === report.hour) return;
+    lastReport.write(report);
+  };
+
   const settleTelemetry = () => {
     if (pendingTelemetry && pendingTelemetry.hour < telemetryHourOf(now())) {
       completedTelemetry = pendingTelemetry;
       pendingTelemetry = null;
+      keepStored(completedTelemetry);
     }
   };
+
+  /** On a graceful stop: the hour that is running is written to the file as it stands (labelled with its hour), so it is not lost with the process. */
+  function flushTelemetry() {
+    if (!lastReport) return;
+    try {
+      if (maintenance() || !telemetryCollectionEnabled()) return;
+      settleTelemetry();
+      const pinned = telemetryHourOf(now());
+      collectTelemetryGauges();
+      const clean = telemetryCollector.snapshot().clean;
+      if (!clean || clean.hour !== pinned || telemetryHourOf(now()) !== pinned) return;
+      keepStored(telemetryEnabled() ? clean : dropFeatureSeries(clean));
+    } catch (err) {
+      log(`api: could not flush the telemetry report: ${String(err?.message ?? err).slice(0, 120)}`);
+    }
+  }
 
   function captureTelemetryHour() {
     settleTelemetry();
@@ -433,12 +464,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     captureTelemetryHour();
   }
 
-  /** The report to hand out: null when there is none, or when it is older than the hour before this one (a missed hour is not served as if it were fresh). */
+  /**
+   * The report to hand out: the newest finished hour, from memory or from the file (the same hour from the file first), and only within the
+   * collector's 72 hours. Never an hour that is still running (a pull inside it would take a partial hour).
+   */
   function telemetryToHandOut() {
     settleTelemetry();
-    if (!completedTelemetry) return { none: 'no_report_yet' };
-    if (completedTelemetry.hour < telemetryHourOf(now()) - TELEMETRY_HOUR_MS) return { none: 'stale_report' };
-    return { report: telemetryEnabled() ? completedTelemetry : dropFeatureSeries(completedTelemetry) };
+    const current = telemetryHourOf(now());
+    const finished = [lastReport?.read() ?? null, completedTelemetry].filter((report) => report && report.hour < current);
+    const best = finished.reduce((a, b) => (b.hour > a.hour ? b : a), finished[0]);
+    if (!best) return { none: 'no_report_yet' };
+    if (current - best.hour > TELEMETRY_RETAIN_MS) return { none: 'stale_report' };
+    return { report: telemetryEnabled() ? best : dropFeatureSeries(best) };
   }
   // only a hosted workspace has a control plane to pull the report (the internal route below), so only it builds one
   if (cloud) setInterval(telemetryTick, 5_000).unref?.();
@@ -910,6 +947,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           // the finished hour held feature counts too: they are taken out of it for good (a later opt-in must not bring them back)
           if (completedTelemetry) completedTelemetry = dropFeatureSeries(completedTelemetry);
           if (pendingTelemetry) pendingTelemetry = dropFeatureSeries(pendingTelemetry);
+          // the stored one too, so the file never holds feature series after an opt-out
+          const stored = lastReport?.read();
+          if (stored) lastReport.write(dropFeatureSeries(stored));
         }
       } else {
         telemetryCollector.reset();
@@ -2245,5 +2285,5 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     return true;
   }
 
-  return { handle, captureTelemetryHour, telemetryTick };
+  return { handle, captureTelemetryHour, telemetryTick, flushTelemetry };
 }
