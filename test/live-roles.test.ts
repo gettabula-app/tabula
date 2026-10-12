@@ -585,7 +585,7 @@ describe('awareness on authenticated sockets', { timeout: 60_000 }, () => {
 
   beforeAll(async () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-awareness-auth-'));
-    const started = await startRelay(dir);
+    const started = await startRelay(dir, { TABULA_AWARENESS_BURST: '10', TABULA_AWARENESS_PER_SECOND: '1' });
     port = started.port;
     relay = started.proc;
     owner = await signIn(OWNER);
@@ -630,8 +630,9 @@ describe('awareness on authenticated sockets', { timeout: 60_000 }, () => {
     for (let i = 0; i < 200; i++) raw.ws.send(frameOf(aw, { n: i }));
     await until(() => (stateOf(watcher.board, aw.clientID)?.n ?? -1) >= 0);
     await sleep(500);
+    // this relay runs with a burst of 10 and a refill of 1 per second: frame n is frame n, so at most burst + 3 got through
     const seen = stateOf(watcher.board, aw.clientID)?.n as number;
-    expect(seen).toBeLessThan(100); // burst of 40 plus a little refill, not all 200
+    expect(seen).toBeLessThanOrEqual(10 + 3 - 1);
     expect(raw.ws.readyState).toBe(WebSocket.OPEN);
     await sleep(1500); // bucket refills
     raw.ws.send(frameOf(aw, { n: 1000 }));

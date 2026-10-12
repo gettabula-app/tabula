@@ -110,6 +110,13 @@ const AWARENESS_COLOUR_RE = /^#[0-9a-f]{6}$/i;
 const GUEST_PRESENCE_COLORS = ['#326DD3', '#D3332D', '#1B8151', '#A06A00', '#7B58DB', '#CE2C7D', '#1C7C85', '#B9501C'];
 const GUEST_AWARENESS_STRING_LIMIT = 256;
 
+// TABULA_AWARENESS_BURST and TABULA_AWARENESS_PER_SECOND are test knobs for the per-socket awareness bucket (defaults 40 and 30).
+const knob = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= 1 && n <= 10_000 ? n : fallback;
+};
+const AWARENESS_BUCKET = { burst: knob('TABULA_AWARENESS_BURST', 40), perSecond: knob('TABULA_AWARENESS_PER_SECOND', 30) };
+
 function cleanAwarenessString(value, limit = GUEST_AWARENESS_STRING_LIMIT) {
   return [...value.slice(0, limit * 4).normalize('NFC').replace(/[\p{Cc}\p{Cf}]/gu, '')].slice(0, limit).join('');
 }
@@ -983,7 +990,7 @@ class Room {
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
         const update = decoding.readVarUint8Array(dec);
-        ws.awarenessBucket ??= createAwarenessBucket();
+        ws.awarenessBucket ??= createAwarenessBucket(AWARENESS_BUCKET);
         if (!ws.awarenessBucket.take()) {
           const now = Date.now();
           if (process.env.DEBUG_AWARENESS === '1' && now - (ws.awarenessDropLogAt ?? 0) >= 10_000) {
