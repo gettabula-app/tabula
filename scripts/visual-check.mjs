@@ -2902,7 +2902,7 @@ const STATES = {
     await page.route('**/api/chat/workspace/main/messages*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: [], next: null }) }));
     await page.goto(`${base}/#/chat/workspace/main`);
     await page.locator('.chat-conv.open .chat-welcome').waitFor();
-    const lines = await page.locator('.chat-welcome').evaluate((el) => [...el.children].map((c) => c.textContent));
+    const lines = await page.locator('.chat-welcome').evaluate((el) => [...el.children].filter((c) => !c.classList.contains('chat-empty-people')).map((c) => c.textContent));
     if (JSON.stringify(lines) !== JSON.stringify(['Workspace chat', 'Everyone in this workspace can read this channel.', 'Say hello.'])) throw new Error(`chat-workspace-empty: the welcome block says ${JSON.stringify(lines)}`);
     const focused = await page.evaluate(() => document.activeElement?.classList.contains('chat-input') === true);
     if (!focused) throw new Error('chat-workspace-empty: the message box is not focused');

@@ -3,7 +3,7 @@ import type { ChatChannelEntry, ChatMessage } from '../src/api';
 import {
   GROUP_MS, applyDelete, atBottom, CHAT_REACTIONS, objectBoardHash, objectChip, badgeText, buildRows, channelHash, channelLabel, channelMeta, defaultChannel, groupChannels, canDelete, canEdit, chatOpenKey, colourIndex, composerState, countUnread, dayLabel, filterPeople,
   findLinks, fromTokens, initials, insertMention, mentionLabel, mentionQuery, mergeMessages, newer, outboxItem, quoteText, segments,
-  timeLabel, toTokens, trimOldest, noticeHash, parseMention, reactedWith, reactionChips, withReactions, type ChatAccess,
+  emptyStatePeople, isOwn, mentionsMe, timeLabel, toTokens, trimOldest, noticeHash, parseMention, reactedWith, reactionChips, withReactions, type ChatAccess,
 } from '../src/ui/chat-logic';
 
 // docs/chat.md: merging by id, grouping into runs, date lines and the New messages line, plain-text links, mentions.
@@ -433,5 +433,40 @@ describe('object chips', () => {
 
   it('link to the board where no board is open', () => {
     expect(objectBoardHash('b1')).toBe('#/b/b1');
+  });
+});
+
+describe('message styling rules', () => {
+  const m = (authorId: string | null, mentions: { id: string; name: string | null }[], deleted = false) => ({ authorId, mentions, deleted });
+
+  it('knows a message is its own only when the author is this person', () => {
+    expect(isOwn('me', 'me')).toBe(true);
+    expect(isOwn('ana', 'me')).toBe(false);
+    expect(isOwn(null, 'me')).toBe(false);
+    expect(isOwn(null, '')).toBe(false);
+  });
+
+  it('highlights a message from another person that mentions this one, never a deleted or own one', () => {
+    expect(mentionsMe(m('ana', [{ id: 'me', name: 'Me' }]), 'me')).toBe(true);
+    expect(mentionsMe(m('ana', [{ id: 'zed', name: 'Zed' }]), 'me')).toBe(false);
+    expect(mentionsMe(m('me', [{ id: 'me', name: 'Me' }]), 'me')).toBe(false);
+    expect(mentionsMe(m('ana', [{ id: 'me', name: 'Me' }], true), 'me')).toBe(false);
+    expect(mentionsMe(m(null, [{ id: 'me', name: 'Me' }]), 'me')).toBe(true);
+  });
+
+  it('picks the people for the empty state: not this person, in order, at most the limit', () => {
+    const people = ['a', 'me', 'b', 'c', 'd', 'e'].map((id) => ({ id }));
+    expect(emptyStatePeople(people, 'me').map((p) => p.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(emptyStatePeople(people, 'me', 2).map((p) => p.id)).toEqual(['a', 'b']);
+    expect(emptyStatePeople([], 'me')).toEqual([]);
+    expect(emptyStatePeople([{ id: 'me' }], 'me')).toEqual([]);
+  });
+
+  it('places the new-messages line before the first unread message from someone else, after the day line', () => {
+    const base = at(12, 9);
+    const mk = (id: number, authorId: string) => ({ id, kind: 'workspace', ref: 'main', authorId, authorName: authorId, clientId: `c-${id}-xxxxx`, text: 't', replyTo: null, objectId: null, mentions: [], createdAt: base + id * 1000, editedAt: null, deleted: false, deletedBy: null }) as never;
+    const rows = buildRows([mk(1, 'ana'), mk(2, 'me'), mk(3, 'ben'), mk(4, 'ben')], [], { newAfter: 2, meId: 'me', now: base + 60_000 });
+    expect(rows.map((r) => r.type)).toEqual(['day', 'message', 'message', 'new', 'message', 'message']);
+    expect(rows.filter((r) => r.type === 'message').map((r) => (r as { head: boolean }).head)).toEqual([true, true, true, false]);
   });
 });
