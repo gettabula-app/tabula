@@ -525,9 +525,9 @@ const SHOTS = {
     await page.evaluate(`(${seeds.chat.toString()})(window.__board)`);
     await placeAt(page, ['docs-chat-plan', 'docs-chat-checklist'], 0.8, 140, 220);
     await page.locator('.chat-toggle').click();
-    const tray = page.locator('.side-tray.show[data-tab="chat"]');
+    const tray = page.locator('.chat-dock:not([hidden])');
     await tray.waitFor();
-    await page.waitForFunction(() => document.querySelectorAll('.side-tray.show .chat-msg').length === 4);
+    await page.waitForFunction(() => document.querySelectorAll('.chat-dock:not([hidden]) .chat-msg').length === 4);
     await tray.locator('.chat-quote').first().waitFor();
     await tray.locator('.chat-mention').waitFor();
     await tray.locator('.chat-reaction').waitFor();

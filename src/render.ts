@@ -505,9 +505,11 @@ export class Renderer {
 
   /** Screen area covered by floating chrome; fitting keeps content clear of it. */
   insets = { top: 64, right: 16, bottom: 72, left: 80 };
+  /** How far the chat dock reaches in from the right edge; fitting leaves that room too. */
+  dockInset = 0;
 
   private fitCam(r: Rect, pad: number, maxZoom: number, insets = this.insets): Camera {
-    return fitCamera(this.size(), insets, r, pad, maxZoom);
+    return fitCamera(this.size(), { ...insets, right: insets.right + this.dockInset }, r, pad, maxZoom);
   }
 
   /**

@@ -46,7 +46,7 @@ for (const [w, h, touch] of [[1280, 800, false], [390, 780, true], [360, 740, tr
   try {
     await tap(p.locator('.chat-toggle').first()); await sleep(700);
     const box = p.getByRole('combobox', { name: 'Message' }); await box.click(); await box.fill('Hej världen åäö 😀'); await p.keyboard.press('Enter'); await sleep(1200);
-    const shown = await p.locator('.side-tray').innerText(); rec(w, 'chat message with åäö and an emoji', /Hej världen åäö/.test(shown) && shown.includes('😀'));
+    const shown = await p.locator('.chat-dock').innerText(); rec(w, 'chat message with åäö and an emoji', /Hej världen åäö/.test(shown) && shown.includes('😀'));
     await tap(p.getByRole('button', { name: /close/i }).first()).catch(() => {});
   } catch (e) { rec(w, 'chat message with åäö and an emoji', false, e.message.split('\n')[0]); }
   // share
