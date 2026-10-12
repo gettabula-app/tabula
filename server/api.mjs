@@ -11,6 +11,8 @@ import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mj
 import { createMailer } from './mailer.mjs';
 import { createTelemetryCollector } from './telemetry/collector.mjs';
 import { createDataBytes } from './telemetry/data-bytes.mjs';
+import { createLastReport } from './telemetry/last-report.mjs';
+import { analyticsChoice, appVersionLabel, dropFeatureSeries, workspaceIdValid } from './telemetry/report.mjs';
 import {
   MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
 } from './templates.mjs';
@@ -265,13 +267,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const telemetryConfig = config.telemetry ?? { defaultEnabled: Boolean(cloud), forced: null };
   const getTelemetrySetting = (key) => (typeof directory.getSetting === 'function' ? directory.getSetting(key) : null);
-  const telemetryEnabled = () => {
-    if (telemetryConfig.forced) return telemetryConfig.forced === 'on';
-    const saved = getTelemetrySetting('telemetry.enabled');
-    if (saved === '1') return true;
-    if (saved === '0') return false;
-    return telemetryConfig.defaultEnabled === true;
-  };
+  const telemetryEnabled = () => analyticsChoice(config.telemetry, getTelemetrySetting, Boolean(cloud));
   const TELEMETRY_CATEGORIES = ['feature_counts'];
   const TELEMETRY_OPERATIONAL = [
     'performance', 'error_codes', 'seats and guests', 'version', 'disk', 'backup state', 'health',
@@ -302,6 +298,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ? false
     : Boolean(hostedWorkspaceId()) || telemetryEnabled();
 
+  // A workspace id outside the report schema's pattern makes the scrubber reject every report, so none is ever built. Say so once
+  // (the id itself is not logged) and in the Privacy preview, instead of leaving a route that answers 503 for ever.
+  const telemetryIdProblem = hostedWorkspaceId() !== null && !workspaceIdValid(hostedWorkspaceId());
+  if (telemetryIdProblem && telemetryCollectionEnabled()) {
+    log('api: TABULA_CLOUD_WORKSPACE_ID does not fit the telemetry report schema (ws_ followed by 8 to 64 letters, digits, - or _): no telemetry report can be built for this workspace');
+  }
+
   eventLoopDelay = telemetryCollectionEnabled() ? monitorEventLoopDelay({ resolution: 20 }) : null;
   eventLoopDelay?.enable();
 
@@ -331,7 +334,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     return {
       schema: 1,
       hour: Math.floor(current / 3_600_000) * 3_600_000,
-      app_version: config.version ? (config.version.startsWith('v') ? config.version : `v${config.version}`) : 'v0.1.0',
+      app_version: appVersionLabel(config.version),
       schema_directory: report?.disk?.schema ?? report?.build?.schema ?? 0,
       schema_chat: chatReport?.disk?.schema ?? chatReport?.build?.schema ?? 0,
       node_major: Number(process.versions.node.split('.')[0]),
@@ -374,6 +377,110 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   }
 
   const dataBytesOnDisk = createDataBytes({ dir: dataDir, now });
+  // the directory is measured in the background; the first measurement starts now so the first report has it
+  void dataBytesOnDisk.refresh();
+
+  // The report of the last finished hour, for the control plane to pull (docs/telemetry-design.md, "How reports leave an instance"). The
+  // collector forgets an hour the moment the next one starts, so the report is built while the hour is still running: every few seconds
+  // in its last minute, the latest build kept, so a late timer or a failed build costs a few seconds of that hour, not the hour. A build
+  // that crossed the boundary (it would carry the next hour's label and an empty hour) is thrown away. It is held in memory only: a
+  // restart loses it, and an owner turning product analytics off removes the feature series from it at once.
+  const TELEMETRY_HOUR_MS = 3_600_000;
+  const TELEMETRY_CAPTURE_WINDOW_MS = 60_000;
+  const TELEMETRY_CAPTURE_EVERY_MS = 10_000;
+  const telemetryHourOf = (at) => Math.floor(at / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS;
+  // `pendingTelemetry` is the latest build of the hour that is still running (never handed out: a pull inside the hour would take a partial
+  // hour, and the collector on the other side drops a second report for the same workspace and hour); it becomes `completedTelemetry`
+  // once the hour has ended.
+  let pendingTelemetry = null;
+  let completedTelemetry = null;
+  let lastTelemetryCaptureAt = null;
+
+  // The last report is also kept in one small file on the data volume (docs/telemetry-design.md, "A machine that stops"), so a hosted
+  // machine that stops between hours can still hand it over after its next start. One report per hour: the first one kept for an hour wins,
+  // as it does at the collector.
+  const lastReport = cloud ? createLastReport({ dir: dataDir, workspace: hostedWorkspaceId, log }) : null;
+  if (lastReport && !telemetryCollectionEnabled()) lastReport.remove();
+  const TELEMETRY_RETAIN_MS = 72 * TELEMETRY_HOUR_MS; // the collector's own window for a late report
+  const keepStored = (report) => {
+    if (!lastReport || !report) return;
+    const stored = lastReport.read();
+    if (stored && stored.hour === report.hour) return;
+    lastReport.write(report);
+  };
+
+  const settleTelemetry = () => {
+    if (pendingTelemetry && pendingTelemetry.hour < telemetryHourOf(now())) {
+      completedTelemetry = pendingTelemetry;
+      pendingTelemetry = null;
+      keepStored(completedTelemetry);
+    }
+  };
+
+  /** On a graceful stop: the hour that is running is written to the file as it stands (labelled with its hour), so it is not lost with the process. */
+  function flushTelemetry() {
+    if (!lastReport) return;
+    try {
+      if (maintenance() || !telemetryCollectionEnabled()) return;
+      settleTelemetry();
+      const pinned = telemetryHourOf(now());
+      collectTelemetryGauges();
+      const clean = telemetryCollector.snapshot().clean;
+      if (!clean || clean.hour !== pinned || telemetryHourOf(now()) !== pinned) return;
+      keepStored(telemetryEnabled() ? clean : dropFeatureSeries(clean));
+    } catch (err) {
+      log(`api: could not flush the telemetry report: ${String(err?.message ?? err).slice(0, 120)}`);
+    }
+  }
+
+  function captureTelemetryHour() {
+    settleTelemetry();
+    if (!telemetryCollectionEnabled()) {
+      pendingTelemetry = null;
+      completedTelemetry = null;
+      return;
+    }
+    const pinned = telemetryHourOf(now());
+    collectTelemetryGauges();
+    const clean = telemetryCollector.snapshot().clean;
+    if (!clean || clean.hour !== pinned || telemetryHourOf(now()) !== pinned) return;
+    pendingTelemetry = telemetryEnabled() ? clean : dropFeatureSeries(clean);
+  }
+
+  /** Called every few seconds: in the last minute of an hour it builds the report again every ten seconds. */
+  function telemetryTick() {
+    try {
+      if (maintenance()) return; // a restore has closed or is swapping the directory
+      settleTelemetry();
+      tickWindow();
+    } catch (err) {
+      log(`api: telemetry capture failed: ${String(err?.message ?? err).slice(0, 120)}`);
+    }
+  }
+
+  function tickWindow() {
+    const at = now();
+    if (at - telemetryHourOf(at) < TELEMETRY_HOUR_MS - TELEMETRY_CAPTURE_WINDOW_MS) return;
+    if (lastTelemetryCaptureAt !== null && at - lastTelemetryCaptureAt >= 0 && at - lastTelemetryCaptureAt < TELEMETRY_CAPTURE_EVERY_MS) return;
+    lastTelemetryCaptureAt = at;
+    captureTelemetryHour();
+  }
+
+  /**
+   * The report to hand out: the newest finished hour, from memory or from the file (the same hour from the file first), and only within the
+   * collector's 72 hours. Never an hour that is still running (a pull inside it would take a partial hour).
+   */
+  function telemetryToHandOut() {
+    settleTelemetry();
+    const current = telemetryHourOf(now());
+    const finished = [lastReport?.read() ?? null, completedTelemetry].filter((report) => report && report.hour < current);
+    const best = finished.reduce((a, b) => (b.hour > a.hour ? b : a), finished[0]);
+    if (!best) return { none: 'no_report_yet' };
+    if (current - best.hour > TELEMETRY_RETAIN_MS) return { none: 'stale_report' };
+    return { report: telemetryEnabled() ? best : dropFeatureSeries(best) };
+  }
+  // only a hosted workspace has a control plane to pull the report (the internal route below), so only it builds one
+  if (cloud) setInterval(telemetryTick, 5_000).unref?.();
 
   function privacyState() {
     const auditActions = new Set(['telemetry.enabled', 'telemetry.disabled', 'telemetry.settings', 'settings.telemetry']);
@@ -456,6 +563,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const clientIp = (req) => clientIpOf(req, config);
   const oauthDecisionLimiter = createWindowLimiter(10, now);
+  // refused control-token attempts on the internal routes, per address (the control plane's own calls are never counted: only a refusal is)
+  const internalAuthFailures = createWindowLimiter(30, now);
+  const internalAuthLogged = createWindowLimiter(1, now);
   const oauthScopeRank = (scope) => OAUTH_SCOPES.indexOf(scope) + 1;
   const oauthLowerScope = (a, b) => oauthScopeRank(a) <= oauthScopeRank(b) ? a : b;
   // What a role on a board allows a connected app to do there: editors and owners write, commenters comment, the rest read.
@@ -844,11 +954,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       requireAdmin(user);
       return [200, privacyState()];
     }),
-    compile('GET', 'admin/privacy/preview', {}, ({ user }) => {
+    compile('GET', 'admin/privacy/preview', {}, async ({ user }) => {
       requireAdmin(user);
+      await dataBytesOnDisk.ready();
       collectTelemetryGauges();
       const result = telemetryCollector.snapshot();
-      return [200, { preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: 'Nothing has been sent' }];
+      return [200, { ...(telemetryIdProblem ? { problem: 'workspace_id' } : {}), preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: cloud ? 'Collected by Tabula once an hour, as shown' : 'Nothing has been sent' }];
     }),
     compile('PUT', 'admin/privacy', { body: true, readOnlyOk: true }, ({ user, body }) => {
       requireOwner(user);
@@ -862,10 +973,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         if (body.enabled) persistTelemetryInstallId();
         audit(user, body.enabled ? 'telemetry.enabled' : 'telemetry.disabled', {});
       });
+      void cloud?.pushUsageNow?.();
       if (hostedWorkspaceId()) {
-        if (!body.enabled) telemetryCollector.resetProductAnalytics();
+        if (!body.enabled) {
+          telemetryCollector.resetProductAnalytics();
+          // the finished hour held feature counts too: they are taken out of it for good (a later opt-in must not bring them back)
+          if (completedTelemetry) completedTelemetry = dropFeatureSeries(completedTelemetry);
+          if (pendingTelemetry) pendingTelemetry = dropFeatureSeries(pendingTelemetry);
+          // the stored one too, so the file never holds feature series after an opt-out
+          const stored = lastReport?.read();
+          if (stored) lastReport.write(dropFeatureSeries(stored));
+        }
       } else {
         telemetryCollector.reset();
+        completedTelemetry = null;
+        pendingTelemetry = null;
       }
       if (!telemetryCollectionEnabled()) {
         eventLoopDelay?.disable();
@@ -1930,6 +2052,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'internal/backup-status', { internal: true }, () => [200, backupStatus()]),
           // TAB-200: which volume this is and its last adoption (docs/cloud.md, "Volumes"); ids only.
           compile('GET', 'internal/volume', { internal: true }, () => [200, volumeStatus()]),
+          // The last finished hour's telemetry report, exactly as the Privacy tab previews it (already scrubbed, at most 256 KB, no content and
+          // no new identifier): 200 with the report as the body; 204 when collection is off (TABULA_TELEMETRY=off); 503 until the first hour has
+          // finished. Bearer token only, like the routes around it. The control plane forwards it; the instance sends nothing itself.
+          compile('GET', 'internal/telemetry', { internal: true }, () => {
+            if (!telemetryCollectionEnabled()) return [204];
+            const out = telemetryToHandOut();
+            if (out.none) throw new HttpError(503, out.none, out.none === 'stale_report' ? 'The last report is older than an hour' : 'No hour has finished yet');
+            return [200, out.report];
+          }),
           // TAB-225: which build this is and which schema it and its files are on (docs/migrations.md); never a secret.
           compile('GET', 'internal/version', { internal: true }, () => [200, versionReport()]),
           compile('GET', 'admin/updates', {}, ({ user }) => {
@@ -2053,6 +2184,17 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     if (route.internal) {
       // Bearer token only: no cookie, no CSRF header (a browser cannot send this one).
       if (!cloud.tokenOk(req.headers.authorization)) {
+        // A refused attempt counts against its address: past thirty a minute it is answered 429 without a look at the token, and the first
+        // refusal of each minute leaves one log line (the address and the route, never the header or any part of a token).
+        const from = clientIp(req);
+        const wait = internalAuthFailures.wait(from);
+        if (wait) {
+          res.setHeader('retry-after', String(wait));
+          throw new HttpError(429, 'rate_limited', 'Too many refused requests. Try again later.');
+        }
+        if (internalAuthFailures.hit(from) === 0 && internalAuthLogged.hit(from) === 0) {
+          log(`api: internal route ${route.template ?? 'unknown'} refused a request without a valid control token (address ${from})`);
+        }
         res.setHeader('www-authenticate', 'Bearer');
         throw new HttpError(401, 'unauthenticated', 'A valid bearer token is required');
       }
@@ -2205,5 +2347,5 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     return true;
   }
 
-  return { handle };
+  return { handle, captureTelemetryHour, telemetryTick, flushTelemetry };
 }

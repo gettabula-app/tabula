@@ -179,6 +179,7 @@ export function createCloud({
   setTimeout: setTimer = (...args) => globalThis.setTimeout(...args),
   clearTimeout: clearTimer = (...args) => globalThis.clearTimeout(...args),
   log = (...args) => console.error(...args),
+  telemetryAnalytics = () => false,
 }) {
   if (!config) return null;
 
@@ -446,14 +447,25 @@ export function createCloud({
       const { seats, guests } = seatUsage();
       const explicit = hasExplicitAutoUpgrade();
       const value = autoUpgrade();
-      if (pushed && pushed.seats === seats && pushed.guests === guests && pushed.hasAutoUpgrade === explicit && (!explicit || pushed.autoUpgrade === value)) return;
-      const payload = { seats, guests, ...(explicit ? { autoUpgrade: value } : {}) };
+      // The owner's product-analytics choice rides on every push; the control plane treats a missing value as off.
+      let analytics = false;
+      try { analytics = telemetryAnalytics() === true; } catch { analytics = false; }
+      if (pushed && pushed.seats === seats && pushed.guests === guests && pushed.hasAutoUpgrade === explicit && (!explicit || pushed.autoUpgrade === value) && pushed.telemetryAnalytics === analytics) return;
+      const payload = { seats, guests, ...(explicit ? { autoUpgrade: value } : {}), telemetryAnalytics: analytics };
       const reply = await post('usage', payload);
       if (!reply.ok) throw new Error(`answered ${reply.status}`);
-      pushed = { seats, guests, hasAutoUpgrade: explicit, ...(explicit ? { autoUpgrade: value } : {}) };
+      pushed = { seats, guests, hasAutoUpgrade: explicit, ...(explicit ? { autoUpgrade: value } : {}), telemetryAnalytics: analytics };
     } catch (err) {
       log(`cloud: could not push usage: ${describe(err)}`);
     }
+  }
+
+  // The owner switched product analytics: send now rather than after the debounce (a failure is retried by the next change or pull).
+  function pushUsageNow() {
+    if (closed) return Promise.resolve();
+    if (usageTimer !== null) clearTimer(usageTimer);
+    usageTimer = null;
+    return pushUsage();
   }
 
   // Trailing debounce: a burst of changes becomes one push, 30 seconds after the last one, with the counts as they are then.
@@ -485,6 +497,7 @@ export function createCloud({
     readKeyFloor,
     notify,
     scheduleUsagePush,
+    pushUsageNow,
     close() {
       closed = true;
       if (usageTimer !== null) clearTimer(usageTimer);

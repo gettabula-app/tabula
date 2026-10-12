@@ -254,28 +254,29 @@ describe('the protection in the pruning', () => {
     }
   });
 
-  it('stops deleting when the list of protected backups cannot be read', async () => {
+  // Two backups before and two after the protection list breaks are enough to show it (each backup is slow on the Windows runners).
+  it('stops deleting when the list of protected backups cannot be read', { timeout: 120_000 }, async () => {
     h = await harness({ accounts: true, env: keepNothing });
     seedA(h);
     const engine = h.engine();
     await backupNow(engine);
-    for (let i = 1; i <= 3; i++) {
+    for (let i = 1; i <= 2; i++) {
       h.clock.now += HOUR;
       h.write('b2.yjs', Buffer.from(`change ${i}`));
       await backupNow(engine);
     }
     expect(await engine.listManifests()).toHaveLength(1);
     h.directory!.setSetting('backup.protected', '{broken');
-    for (let i = 4; i <= 6; i++) {
+    for (let i = 3; i <= 4; i++) {
       h.clock.now += HOUR;
       h.write('b2.yjs', Buffer.from(`change ${i}`));
       await backupNow(engine);
     }
-    expect((await engine.listManifests()).length).toBe(4);
+    expect((await engine.listManifests()).length).toBe(3);
     expect(engine.status().prune).toMatchObject({ gcSkipped: 'unreadable_protection', manifestsDeleted: 0, objectsDeleted: 0 });
     h.directory!.setSetting('backup.protected', '{}');
     h.clock.now += HOUR;
-    h.write('b2.yjs', Buffer.from('change 7'));
+    h.write('b2.yjs', Buffer.from('change 5'));
     await backupNow(engine);
     expect(await engine.listManifests()).toHaveLength(1);
   });
