@@ -32,9 +32,33 @@ When your workspace uses sign-in, the page groups boards:
 
 The table has an **Access** column. A badge appears only when your access is limited: **View only** or **Can comment**. No badge means you can edit.
 
+The table also has a **Here now** column. It shows who has the board open right now, for boards you can open:
+
+- Each other person is a small square with their initial and cursor colour. The first three people are shown, then **+N** for the rest. People appear in the order they joined.
+- If you also have the board open in another tab, a **You** square follows the others. When nobody else is there, the cell is empty: your own presence alone shows nothing, and there is no "0".
+- Point at the squares to see everyone's name. People who joined with a join code are marked **(guest)**.
+- On a phone the squares are followed by a short text such as "Lin and 5 more". When the row has no room for a name, the text is left out.
+- When someone leaves, their square stays for about three seconds, so a brief reconnect does not make it flicker.
+- You only see people on boards you can open. AI tools never appear. People who joined with a join code do not see this column.
+- It updates live through the chat connection. If chat is off on your server, the page checks again every 15 seconds.
+
 Owners and admins also see **Members** and **New team** buttons. Other people, except guests, see **New team**. For teams and roles, see [Sharing, roles and teams](sharing.md).
 
 If your workspace has a banner message, it appears at the very top. If the server cannot be reached, a note says **You are offline. Showing the last list from this device.** and buttons that need the server are disabled.
+
+## Notifications
+
+In workspaces with sign-in, a bell sits in the top bar of the Boards page, next to your name. A badge on the bell counts what has not been read yet. It has a red outline when someone mentioned you. Open the bell to see the list, newest first:
+
+- **Chat mentions**: someone mentioned you in a board, team or workspace chat.
+- **Replies**: someone replied to a comment of yours.
+- **Shares**: someone shared a board directly with you.
+- **Team joins**: someone you invited joined the team, including when they signed in through your invite link.
+- **Tracker**: tickets assigned to you, commented on and moved, if your workspace has the tracker.
+
+Each row says who, what and where, with the first words of a message or comment, and when. Select a row to go there. Select the check on a row, or **Mark all as read**, to mark items read. Reading a chat clears its mention notices. **All** and **Mentions** filter the list, **Show older** loads more, and the list goes back 90 days. **Notification settings** opens your chat notification settings.
+
+An item disappears from the list, and from the count, when you can no longer open what it points to, for example after a board is unshared from you. The count updates live while chat is on, and every minute when chat is off. In open mode, without sign-in, there is no bell.
 
 ## Open a board
 
