@@ -115,6 +115,40 @@ describe.skipIf(!available)('here now', () => {
     await page.close();
   });
 
+  it('on a phone cuts a single name that does not fit, and never the "and N more" tail', async () => {
+    const page = await open(390);
+    await page.evaluate(() => (window as any).__store.set('empty', {
+      boardId: 'empty', count: 6, people: [
+        { userId: 'a', name: 'Wolfeschlegelsteinhausen Bergerdorff', joinedAt: 1 },
+        { userId: 'b', name: 'Hubert Blaine Wolfeschlegelstein', joinedAt: 2 },
+      ],
+    }));
+    const row = page.locator('.board-row', { hasText: 'Alone' });
+    const head = row.locator('.here-names-head');
+    const tail = row.locator('.here-names-tail');
+    expect(await head.textContent()).toBe('Wolfeschlegelsteinhausen'); // two do not fit, so one name and the count
+    expect(await tail.textContent()).toBe(' and 5 more');
+    const [h, t] = await Promise.all([head.evaluate((e) => e.scrollWidth > e.clientWidth), tail.evaluate((e) => e.scrollWidth <= e.clientWidth)]);
+    expect([h, t]).toEqual([true, true]); // the head is cut with an ellipsis, the tail is whole
+    const tailBox = await tail.boundingBox();
+    expect(tailBox!.x + tailBox!.width).toBeLessThanOrEqual(390);
+    await page.close();
+  });
+
+  it('on a phone writes one name and the count when two names do not fit', async () => {
+    const page = await open(390);
+    await page.evaluate(() => (window as any).__store.set('empty', {
+      boardId: 'empty', count: 5, people: [
+        { userId: 'a', name: 'Maximilian Rosenberg', joinedAt: 1 },
+        { userId: 'b', name: 'Bartholomew Winterbourne', joinedAt: 2 },
+      ],
+    }));
+    const row = page.locator('.board-row', { hasText: 'Alone' });
+    await page.waitForFunction(() => document.querySelectorAll('.board-row')[2].querySelector('.here-names-tail')?.textContent === ' and 4 more');
+    expect(await row.locator('.here-names-head').textContent()).toBe('Maximilian');
+    await page.close();
+  });
+
   it('draws each person in their own colour and falls back to the ink with the paper as text', async () => {
     const page = await open(1280);
     const crowd = page.locator('.board-row', { hasText: 'Crowded' }).locator('.here-sq');

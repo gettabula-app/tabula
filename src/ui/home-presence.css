@@ -12,7 +12,9 @@
   flex: none; display: inline-grid; place-items: center; min-width: 24px; height: 24px; padding: 0 5px; border-radius: var(--radius-xs);
   background: var(--ink); color: var(--paper); font-size: 11px; font-weight: 700;
 }
-.here-names { display: none; margin-left: 8px; color: var(--graphite); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.here-names { display: none; min-width: 0; margin-left: 8px; color: var(--graphite); font-size: 13px; white-space: nowrap; }
+.here-names-head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.here-names-tail { flex: none; }
 .here-tip {
   position: absolute; z-index: 3; left: 0; top: 30px; display: none; padding: 8px 10px; background: var(--tray); color: var(--tray-text);
   border-radius: var(--radius-sm); box-shadow: 0 0 0 1px var(--tray-line); font-size: 12.5px; line-height: 1.5; white-space: nowrap;
@@ -28,6 +30,6 @@
   .here-sq, .here-more { height: 20px; font-size: 9px; }
   .here-sq:not(.you) { width: 20px; }
   .here-more { min-width: 20px; }
-  .here-names { display: block; }
+  .here-names { display: flex; }
   .here-tip, .board-here:hover .here-tip, .board-row:focus-within .here-tip { display: none; }
 }

@@ -40,8 +40,12 @@ export interface PresenceView {
   more: number;
   /** "Lin and you are here now" */
   label: string;
-  /** "Lin, Omar and 2 more": the phone text, without the suffix. */
+  /** "Lin, Omar and 2 more": the spoken form, without the suffix. */
   names: string;
+  /** The phone line: first names, at most two, then "and N more". `head` may be cut to fit; `tail` never is. */
+  phone: { head: string; tail: string };
+  /** The same with a limit on the names: a row too narrow for two writes one and the count ("Lin and 5 more"). */
+  phoneWith: (maxNames: number) => { head: string; tail: string };
   /** The people the server named, for the hover list. */
   all: HereSquare[];
   /** Others the server counted but did not name (it names at most 8): the list ends "and N more". */
@@ -69,6 +73,21 @@ export function spoken(names: string[], total = names.length): string {
   return `${names.slice(0, 2).join(', ')} and ${total - 2} more`;
 }
 
+/**
+ * The phone line (proto/designer-preview/presence/SPEC.md): first names only, at most two, then "and N more" ("Lin", "Lin and Omar",
+ * "Lin, Omar and 1 more"). Two people who share a first name are both written in full. The tail is its own part so a narrow row cuts
+ * the names and never the count.
+ */
+export function phoneNames(names: string[], total: number, maxNames = 2): { head: string; tail: string } {
+  const first = (n: string) => n.trim().split(/\s+/)[0] ?? n;
+  const firsts = names.map(first);
+  const written = names.map((n, i) => (firsts.filter((f) => f.toLowerCase() === firsts[i].toLowerCase()).length > 1 ? n.trim() : firsts[i]));
+  if (total <= 1) return { head: written[0] ?? '', tail: '' };
+  if (maxNames <= 1) return { head: written[0] ?? '', tail: ` and ${total - 1} more` };
+  if (total === 2) return { head: written.slice(0, 2).join(' and '), tail: '' };
+  return { head: written.slice(0, 2).join(', '), tail: ` and ${total - 2} more` };
+}
+
 /** Null when nobody else is there: the row then draws nothing (alone on a board is not shown, and neither is "0"). */
 export function presenceView(summary: Pick<PresenceSummary, 'count' | 'people' | 'me'> | null | undefined): PresenceView | null {
   if (!summary) return null;
@@ -87,5 +106,7 @@ export function presenceView(summary: Pick<PresenceSummary, 'count' | 'people' |
   const squares = all.slice(0, you ? MAX_SQUARES - 1 : MAX_SQUARES);
   const everyone = total + (you ? 1 : 0);
   const names = spoken([...all.map((x) => x.name), ...(you ? ['you'] : [])], everyone);
-  return { squares, you, more: total - squares.length, label: `${names} ${everyone === 1 ? 'is' : 'are'} here now`, names, all, unnamed: total - all.length };
+  const spokenNames = [...all.map((x) => x.name), ...(you ? ['you'] : [])];
+  const phoneWith = (maxNames: number) => phoneNames(spokenNames, everyone, maxNames);
+  return { squares, you, more: total - squares.length, label: `${names} ${everyone === 1 ? 'is' : 'are'} here now`, names, phone: phoneWith(2), phoneWith, all, unnamed: total - all.length };
 }

@@ -19,6 +19,8 @@ export function presenceCell(store: PresenceStore, boardId: string, link: () => 
     target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: e.button, ctrlKey: e.ctrlKey, metaKey: e.metaKey, shiftKey: e.shiftKey, altKey: e.altKey }));
   });
 
+  let refit: () => void = () => undefined;
+
   function paint() {
     const view = presenceView(store.get(boardId));
     if (!view) {
@@ -47,11 +49,39 @@ export function presenceCell(store: PresenceStore, boardId: string, link: () => 
     const parts: Node[] = view.squares.map(square);
     if (view.you) parts.push(h('span', { class: 'here-sq you', 'aria-hidden': 'true' }, 'You'));
     if (view.more > 0) parts.push(h('span', { class: 'here-more', 'aria-hidden': 'true' }, `+${view.more}`));
-    parts.push(h('span', { class: 'here-names', 'aria-hidden': 'true' }, view.names), tip);
+    const head = h('span', { class: 'here-names-head' }, view.phone.head);
+    const tail = h('span', { class: 'here-names-tail' }, view.phone.tail);
+    tail.hidden = !view.phone.tail;
+    const names = h('span', { class: 'here-names', 'aria-hidden': 'true' }, head, tail);
+    parts.push(names, tip);
     cell.replaceChildren(...parts);
+    refit = () => fit(names, head, tail, view);
+    refit();
+  }
+
+  /** On a phone, two names that do not fit become one and the count; the names are cut only when one name alone does not fit. */
+  function fit(names: HTMLElement, head: HTMLElement, tail: HTMLElement, view: NonNullable<ReturnType<typeof presenceView>>) {
+    if (getComputedStyle(names).display === 'none') return;
+    const write = (max: number) => {
+      const p = view.phoneWith(max);
+      head.textContent = p.head;
+      tail.textContent = p.tail;
+      tail.hidden = !p.tail;
+    };
+    write(2);
+    if (head.scrollWidth > head.clientWidth && view.phone.tail !== view.phoneWith(1).tail) write(1);
   }
 
   paint();
+  if (typeof ResizeObserver === 'function') {
+    // a turn of the phone or a resized row: try two names again (only the names are rewritten, so this cannot loop)
+    let width = 0;
+    new ResizeObserver(() => {
+      if (cell.classList.contains('nobody') || Math.abs(cell.clientWidth - width) < 1) return;
+      width = cell.clientWidth;
+      refit();
+    }).observe(cell);
+  }
   const stop = store.watch(boardId, () => {
     if (!cell.isConnected) { stop(); return; }
     paint();

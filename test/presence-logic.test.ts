@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createPresenceStore, type PresenceSource } from '../src/presence';
-import { initialOf, presenceView, spoken, squareColour, MAX_SQUARES, type PresenceSummary, type PresenceUser } from '../src/ui/presence-logic';
+import { initialOf, phoneNames, presenceView, spoken, squareColour, MAX_SQUARES, type PresenceSummary, type PresenceUser } from '../src/ui/presence-logic';
 import { PERSON_INK, USER_COLORS, luminance } from '../src/palette';
 
 // "Here now" on the Boards rows (proto/designer-preview/presence/SPEC.md): the view rules and the store's debounce and pause.
@@ -50,6 +50,25 @@ describe('presenceView', () => {
     expect(spoken(['A'])).toBe('A');
     expect(spoken(['A', 'B', 'you'])).toBe('A, B and you');
     expect(spoken(['A', 'B', 'C', 'D'])).toBe('A, B and 2 more');
+  });
+
+  it('writes the phone line as first names, at most two, then "and N more"', () => {
+    expect(phoneNames(['Lin Member'], 1)).toEqual({ head: 'Lin', tail: '' });
+    expect(phoneNames(['Lin Member', 'Omar Hadad'], 2)).toEqual({ head: 'Lin and Omar', tail: '' });
+    expect(phoneNames(['Lin Member', 'Omar Hadad', 'Eva Berg'], 3)).toEqual({ head: 'Lin, Omar', tail: ' and 1 more' });
+    expect(phoneNames(['Lin Member', 'Omar Hadad', 'Eva Berg', 'Ben Ok'], 6)).toEqual({ head: 'Lin, Omar', tail: ' and 4 more' });
+    expect(phoneNames(['Lin', 'you'], 2)).toEqual({ head: 'Lin and you', tail: '' });
+  });
+
+  it('writes two people who share a first name in full', () => {
+    expect(phoneNames(['Anna Berg', 'Anna Lind', 'Omar Hadad'], 3)).toEqual({ head: 'Anna Berg, Anna Lind', tail: ' and 1 more' });
+    expect(phoneNames(['anna Berg', 'Anna Lind'], 2).head).toBe('anna Berg and Anna Lind');
+  });
+
+  it('puts the phone line on the view, and leaves the guest mark to the hover list', () => {
+    const view = presenceView(sum([u('a', 'Lin Member', 1), u('b', 'Gus Visitor', 2, undefined, true), u('c', 'Omar Hadad', 3)], { me: true }))!;
+    expect(view.phone).toEqual({ head: 'Lin, Gus', tail: ' and 2 more' });
+    expect(view.all.find((s) => s.name === 'Gus Visitor')?.guest).toBe(true);
   });
 
   it('counts a person on two tabs once, marks guests, and survives a missing name', () => {
