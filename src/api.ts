@@ -163,7 +163,7 @@ export interface AdminPrivacy {
 export interface AdminPrivacyPreview {
   preview: Record<string, unknown> | null;
   builtAt: number;
-  note: 'Nothing has been sent';
+  note: string;
 }
 
 export interface ChatUnread { kind: string; ref: string; lastId: number; unread: number; mentions: number }
