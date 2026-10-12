@@ -1031,7 +1031,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, log, snapshotBarrier, history });
 }
 
 let oauthRoutes = null;
