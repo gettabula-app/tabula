@@ -385,6 +385,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     authEnabled,
     ownerEmail,
     baseUrl,
+    baseUrlSet: Boolean((env.TABULA_BASE_URL || '').trim()),
     origin,
     secureCookies,
     trustProxy: env.TABULA_TRUST_PROXY === '1',

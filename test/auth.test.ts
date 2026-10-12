@@ -730,6 +730,7 @@ describe('loadConfig', () => {
       authEnabled: false,
       ownerEmail: null,
       baseUrl: 'http://localhost:8787',
+      baseUrlSet: false,
       origin: 'http://localhost:8787',
       secureCookies: false,
       cookieName: 'tabula_session',
