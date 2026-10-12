@@ -49,9 +49,9 @@ Skärmbilderna visar gränssnittet på engelska.
 
 1. Öppna arbetsytans adress. På inloggningssidan ombeds du ange din e-postadress.
 2. Ange den och välj **Email me a link** (Mejla mig en länk).
-3. Öppna mejlet och följ länken. Den fungerar en gång och upphör att gälla efter 15 minuter.
+3. Öppna mejlet och följ länken. En sida bekräftar vem som loggar in (**Joining as** din e-postadress). Välj **Continue to Tabula**. Länken används först när du väljer den, så ett e-postprogram som förhandsgranskar länkar förbrukar den inte. Den fungerar en gång och upphör att gälla efter 15 minuter.
 
-Om länken har upphört att gälla begär du en ny. Den första personen som loggar in med ägaradressen blir arbetsytans ägare. Alla andra behöver en inbjudan eller ett konto som en administratör redan har skapat.
+Om länken har upphört att gälla eller redan har använts säger sidan det. När du kom från en inbjudan står där också att din inbjudan fortfarande fungerar, och **Send me a new link** (Skicka en ny länk till mig) skickar ett nytt inloggningsmejl (äldre länkar slutar fungera); **Use a different email** (Använd en annan e-postadress) låter dig börja om med en annan adress. Annars begär du en ny länk nedan. Du kan be om högst fem länkar för samma adress per timme, och ett helt skolnätverk har en mycket högre gräns (som standard 300 per timme); när en gräns nås säger sidan hur länge du ska vänta. Den första personen som loggar in med ägaradressen blir arbetsytans ägare. Alla andra behöver en inbjudan eller ett konto som en administratör redan har skapat.
 
 Om du vill logga ut öppnar du tavlans meny och väljer **Sign out** (Logga ut) under **Account**, eller öppnar ditt namn i startskärmens övre fält och väljer **Sign out**. **Sign out everywhere** (Logga ut överallt) avslutar alla dina sessioner på alla enheter.
 
@@ -128,6 +128,10 @@ Alla medlemmar kan välja **Leave team** (Lämna teamet). Då förlorar du åtko
 3. Välj **Create invite link** (Skapa inbjudningslänk) och sedan **Copy** (Kopiera).
 
 Alla med länken som bekräftar sin e-postadress kan ansluta till teamet. När du klistrar in en inbjudningslänk, eller en länk till en tavla, i en chatt- eller socialmedia-app visar appen en förhandsgranskning med en Tabula-bild och en allmän rubrik; den visar aldrig team- eller tavelnamnet. (En server du själv kör behöver `TABULA_BASE_URL` inställd för bildens adress.) På inbjudningssidan visas teamnamnet och knappen **Join team** (Gå med i teamet). Om arbetsytan är en gratisarbetsyta med en medlemsgräns och den är full, avvisas inbjudan med meddelandet ”This workspace has reached its member limit. Ask an admin to remove or disable a member, or the workspace owner to write to us for a larger workspace, then open this link again.” (Den här arbetsytan har nått sin medlemsgräns. Be en administratör ta bort eller inaktivera en medlem, eller be arbetsytans ägare kontakta oss för en större arbetsyta, och öppna sedan länken igen.) Gäster räknas inte mot gränsen.
+
+#### Bjud in en klass
+
+Bjud in en klass med en enda länk. Välj ditt team på startskärmen, sedan Manage och Create invite link. Välj hur länge den ska gälla (7 dagar som standard; 14 räcker för ett tvåveckorsprojekt) och dela länken med klassen. Varje elev öppnar länken, skriver sin e-postadress och får ett inloggningsmejl från Tabula; länken i mejlet fungerar en gång och i 15 minuter, så eleverna bör öppna det nyaste. Därefter är de med i teamet och ser dess tavlor. Själva inbjudningslänken fortsätter fungera för alla tills den upphör att gälla eller du återkallar den under Manage. Om en inbjudan har en användningsgräns och den är förbrukad säger inbjudningssidan ”This invitation has been used up. Ask the person who invited you for a new link.” (Den här inbjudan är förbrukad. Be den som bjöd in dig om en ny länk.) Eleverna behöver en e-postadress de kan öppna på samma enhet.
 
 ### Arbetsytans medlemmar
 

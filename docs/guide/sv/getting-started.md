@@ -6,7 +6,7 @@ Tabula är en gemensam whiteboard. Du placerar lappar, former, text och ritninga
 
 Öppna adressen till din Tabula-server i en webbläsare. Du kommer till sidan **Boards** (Tavlor), där dina tavlor visas.
 
-Om din arbetsyta kräver inloggning visas först **Sign in to Tabula** (Logga in på Tabula). Ange din jobbmejladress, välj **Email me a link** (Skicka en länk till min e-post) och öppna länken i mejlet. Länken fungerar en gång och upphör att gälla efter 15 minuter. När du har loggat in kommer du till **Boards**. Utan inloggning (öppet läge) frågar sidan inte vem du är, utan öppnas direkt med dina tavlor.
+Om din arbetsyta kräver inloggning visas först **Sign in to Tabula** (Logga in på Tabula). Ange din jobbmejladress, välj **Email me a link** (Skicka en länk till min e-post) och öppna länken i mejlet. En sida säger **Joining as** (Ansluter som) din e-postadress; välj **Continue to Tabula** (Fortsätt till Tabula) för att slutföra inloggningen. Länken fungerar en gång och upphör att gälla efter 15 minuter. När du har loggat in kommer du till **Boards**. Utan inloggning (öppet läge) frågar sidan inte vem du är, utan öppnas direkt med dina tavlor.
 
 ## Skapa din första tavla
 
