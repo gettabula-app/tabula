@@ -1,0 +1,132 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { chromium, type Browser, type Page } from 'playwright';
+import { existsSync } from 'node:fs';
+import { createServer, type ViteDevServer } from 'vite';
+
+// "Here now" on the Boards rows in a real browser (proto/designer-preview/presence/SPEC.md): the real table, rows and CSS with the
+// presence store fed by hand. Layout (fixed row height, the phone's omitted cell), the hover list, the keyboard, the click.
+
+let server: ViteDevServer | undefined;
+let browser: Browser | undefined;
+let base = '';
+const available = existsSync(chromium.executablePath());
+
+beforeAll(async () => {
+  if (!available) return;
+  server = await createServer({ configFile: false, root: process.cwd(), logLevel: 'error', server: { host: '127.0.0.1', port: 0 } });
+  await server.listen();
+  const address = server.httpServer?.address();
+  if (!address || typeof address === 'string') throw new Error('Vite did not open a TCP port');
+  base = `http://127.0.0.1:${address.port}/`;
+  browser = await chromium.launch({ headless: true });
+}, 300_000);
+
+afterAll(async () => {
+  await browser?.close();
+  await server?.close();
+});
+
+async function open(width: number): Promise<Page> {
+  const page = await browser!.newPage({ viewport: { width, height: 700 } });
+  await page.route('**/__blank', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><div id="host"></div>' }));
+  await page.goto(`${base}__blank`);
+  await page.addScriptTag({
+    type: 'module',
+    content: `
+      import '/src/styles.css';
+      import { boardTable } from '/src/ui/home.ts';
+      import { boardsPresence } from '/src/presence.ts';
+      const U = (userId, name, joinedAt, colour) => ({ userId, name, joinedAt, colour });
+      boardsPresence.set('crowd', [U('a', 'Ana', 1, '#326DD3'), U('b', 'Ben', 2, '#D3332D'), U('c', 'Cy', 3, '#1B8151'), U('d', 'Di', 4, '#A06A00'), U('me', 'Me', 5)]);
+      boardsPresence.set('pair', [U('a', 'Ana', 1, '#326DD3')]);
+      const row = (id, title) => ({ id, title, updatedAt: Date.now() - 3600000, role: 'editor', chat: false, here: true, actions: [] });
+      document.getElementById('host').append(boardTable('Team', [row('crowd', 'Crowded'), row('pair', 'Pair'), row('empty', 'Alone')], 'access', 'me'));
+      window.__store = boardsPresence;
+      window.__ready = true;
+    `,
+  });
+  await page.waitForFunction('window.__ready === true');
+  return page;
+}
+
+describe.skipIf(!available)('here now', () => {
+  it('draws squares, You and +N from the store, with a spoken label and no new tab stop', async () => {
+    const page = await open(1280);
+    const crowd = page.locator('.board-row', { hasText: 'Crowded' }).locator('.board-here');
+    expect(await crowd.getAttribute('role')).toBe('img');
+    expect(await crowd.getAttribute('aria-label')).toBe('Ana, Ben and 3 more are here now');
+    expect(await crowd.locator('.here-sq').allTextContents()).toEqual(['A', 'B', 'You']);
+    expect(await crowd.locator('.here-more').textContent()).toBe('+2');
+    // only the row's link and nothing in the cluster takes focus
+    const stops = await page.evaluate(() => [...document.querySelectorAll('.board-row')].map((r) => r.querySelectorAll('a,button,[tabindex]').length));
+    expect(stops).toEqual([1, 1, 1]);
+    // alone on a board draws nothing
+    const alone = page.locator('.board-row', { hasText: 'Alone' }).locator('.board-here');
+    expect([await alone.count(), await alone.evaluate((el) => el.children.length), await alone.getAttribute('aria-label')]).toEqual([1, 0, null]);
+    await page.close();
+  });
+
+  it('keeps every row the same height whether or not people are there, and updates in place', async () => {
+    const page = await open(1280);
+    const heights = await page.evaluate(() => [...document.querySelectorAll('.board-row')].map((r) => r.getBoundingClientRect().height));
+    expect(new Set(heights).size).toBe(1);
+    const grown = await page.evaluate(() => {
+      (window as any).__store.set('empty', [{ userId: 'z', name: 'Zed', joinedAt: 9 }]);
+      return [...document.querySelectorAll('.board-row')].map((r) => r.getBoundingClientRect().height);
+    });
+    expect(grown).toEqual(heights);
+    expect(await page.locator('.board-row', { hasText: 'Alone' }).locator('.board-here').getAttribute('aria-label')).toBe('Zed is here now');
+    await page.close();
+  });
+
+  it('shows everyone in a list on hover and on keyboard focus of the row link', async () => {
+    const page = await open(1280);
+    const row = page.locator('.board-row', { hasText: 'Crowded' });
+    const tip = row.locator('.here-tip');
+    expect(await tip.isVisible()).toBe(false);
+    await row.locator('.board-here').hover();
+    expect(await tip.isVisible()).toBe(true);
+    expect(await tip.locator('.here-tip-row').allTextContents()).toEqual(['Ana', 'Ben', 'Cy', 'Di']);
+    await page.mouse.move(0, 0);
+    expect(await tip.isVisible()).toBe(false);
+    await page.keyboard.press('Tab');
+    expect(await tip.isVisible()).toBe(true);
+    await page.close();
+  });
+
+  it('goes to the board when the cluster is clicked', async () => {
+    const page = await open(1280);
+    await page.locator('.board-row', { hasText: 'Pair' }).locator('.here-sq').first().click();
+    expect(await page.evaluate(() => location.hash)).toBe('#/b/pair');
+    await page.close();
+  });
+
+  it('on a phone puts the cluster and the names before the edited time, and omits the cell when empty', async () => {
+    const page = await open(390);
+    const crowd = page.locator('.board-row', { hasText: 'Crowded' });
+    expect(await crowd.locator('.here-names').isVisible()).toBe(true);
+    expect(await crowd.locator('.here-names').textContent()).toBe('Ana, Ben and 3 more');
+    expect(await crowd.locator('.here-sq').first().evaluate((el) => el.getBoundingClientRect().height)).toBe(20);
+    expect(await crowd.locator('.here-tip').isVisible()).toBe(false);
+    const order = await crowd.locator('.board-sub').evaluate((el) => [...el.children].map((c) => c.className.split(' ')[0]));
+    expect(order.slice(0, 2)).toEqual(['board-here', 'board-edited']);
+    const alone = page.locator('.board-row', { hasText: 'Alone' }).locator('.board-here');
+    expect(await alone.evaluate((el) => getComputedStyle(el).display)).toBe('none');
+    await page.close();
+  });
+
+  it('draws each person in their own colour and falls back to the ink with the paper as text', async () => {
+    const page = await open(1280);
+    const crowd = page.locator('.board-row', { hasText: 'Crowded' }).locator('.here-sq');
+    const bg = await crowd.evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
+    expect(bg[0]).toBe('rgb(50, 109, 211)');
+    expect(bg[1]).toBe('rgb(211, 51, 45)');
+    await page.evaluate(() => (window as any).__store.set('empty', [{ userId: 'q', name: 'Quinn', joinedAt: 1 }]));
+    const plain = page.locator('.board-row', { hasText: 'Alone' }).locator('.here-sq');
+    const [ink, paper] = await plain.evaluate((e) => [getComputedStyle(e).backgroundColor, getComputedStyle(e).color]);
+    const root = await page.evaluate(() => [getComputedStyle(document.body).color]);
+    expect(ink).toBe(root[0]);
+    expect(paper).not.toBe(ink);
+    await page.close();
+  });
+});

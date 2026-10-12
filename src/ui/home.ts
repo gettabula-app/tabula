@@ -1,5 +1,7 @@
 import './home.css';
 import './home-teams.css';
+import { boardsPresence } from '../presence';
+import { presenceCell } from './presence-cell';
 import { h, icon } from './dom';
 import { dialog, fmtAgo, popover, toast } from './common';
 import { deleteBoard, listBoards, relayUrl, touchBoard, type BoardEntry } from '../sync';
@@ -228,26 +230,29 @@ function sharedSection(v: AccountView, boards: ServerBoard[], heading: string) {
 
 function serverBoardList(v: AccountView, boards: ServerBoard[], label: string) {
   if (!boards.length) return emptyLine('No boards yet. Create the first one.');
+  for (const b of boards) if (b.here) boardsPresence.set(b.id, b.here);
   return boardTable(label, [...boards].sort((a, b) => b.updatedAt - a.updatedAt).map((b) => {
     const title = b.title || UNTITLED;
     return {
-      id: b.id, title, updatedAt: b.updatedAt, role: b.role, chat: true,
+      id: b.id, title, updatedAt: b.updatedAt, role: b.role, chat: true, here: true,
       actions: [b.role === 'owner' ? deleteButton(`Delete ${title}`, 'Delete board', v.down, () => confirmDeleteBoard(v, b.id, title)) : null],
     };
-  }), 'access');
+  }), 'access', v.me.user.id);
 }
 
 function deviceSection(v: AccountView, local: BoardEntry[], teams: Team[]) {
   return group('On this device', null, [], boardTable('On this device', local.map((b) => localRow(b, v.refresh, (anchor) => addToWorkspace(anchor, b, v, teams), v.down)), 'device'));
 }
 
-interface BoardRow {
+export interface BoardRow {
   id: string;
   title: string;
   updatedAt: number;
   role?: BoardRole;
   /** A board on the server: its chat's unread count shows beside the title (when chat is on). */
   chat?: boolean;
+  /** Draws the "Here now" cell (boards on the server). */
+  here?: boolean;
   actions: (HTMLElement | null)[];
 }
 
@@ -289,19 +294,24 @@ function boardChatBadge(boardId: string): HTMLElement | null {
 }
 
 /** Rows on hairlines under a labelled 2px rule. `access` adds the role column, `device` makes room for Add to workspace. */
-function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 'device') {
+export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'access' | 'device', meId: string | null = null) {
   return h('div', { class: `board-table ${kind}` },
     h('div', { class: 'board-head', 'aria-hidden': 'true' },
       h('span', null, 'Name'),
+      kind === 'access' ? h('span', null, 'Here now') : null,
       h('span', null, 'Edited'),
       kind === 'access' ? h('span', null, 'Access') : null,
       h('span')),
-    h('ul', { class: 'board-list', 'aria-label': label }, ...rows.map((r) => h('li', { class: 'board-row' },
-      h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null),
+    h('ul', { class: 'board-list', 'aria-label': label }, ...rows.map((r) => {
+      const link = h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null);
+      return h('li', { class: 'board-row' },
+      link,
       h('span', { class: 'board-sub' },
+        r.here ? presenceCell(boardsPresence, r.id, meId, () => link) : null,
         h('span', { class: 'board-edited' }, h('span', { class: 'board-lbl' }, 'Edited '), fmtAgo(r.updatedAt)),
         r.role ? h('span', { class: 'board-access' }, ACCESS[r.role] ? h('span', { class: 'badge' }, ACCESS[r.role]) : null) : null),
-      h('span', { class: 'board-actions' }, ...r.actions)))));
+      h('span', { class: 'board-actions' }, ...r.actions));
+    })));
 }
 
 function addToWorkspace(anchor: HTMLElement, b: BoardEntry, v: AccountView, teams: Team[]) {
