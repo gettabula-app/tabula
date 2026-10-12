@@ -11,8 +11,8 @@
 .chat-count.show { display: block; }
 .chat-count.mention { outline: 2px solid var(--danger); outline-offset: 0; }
 
-.side-tray .chat-panel { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
-.side-tray .chat-panel[hidden] { display: none; }
+.side-tray .chat-panel, .chat-dock .chat-panel { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.side-tray .chat-panel[hidden], .chat-dock .chat-panel[hidden] { display: none; }
 
 .chat-status {
   flex: none; margin: 0; padding: 8px 16px; border-bottom: 1px solid var(--tray-line); border-left: 4px solid var(--tray-muted);

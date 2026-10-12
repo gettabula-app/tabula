@@ -68,7 +68,9 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     // Below the top bars, and above the properties panel when a phone docks it to the bottom edge.
     const top = parseFloat(getComputedStyle(bar).getPropertyValue('--panel-top')) || 72;
     const dock = dockTopOf(props.el.classList.contains('show') ? props.el.getBoundingClientRect() : null, top);
-    const view = { w: window.innerWidth, h: dock ?? window.innerHeight };
+    // the chat dock takes the right edge: the bar is placed in the room that is left
+    const dockInset = parseFloat(getComputedStyle(bar).getPropertyValue('--dock-inset')) || 0;
+    const view = { w: window.innerWidth - dockInset, h: dock ?? window.innerHeight };
     const selectedGroup = sel.length === 1 && sel[0].type === 'group';
     const gap = selectedGroup ? GROUP_BAR_GAP : undefined;
     // on a phone the bar starts right of the rail, so it is placed (and checked against the chip) from there
@@ -76,7 +78,8 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const safeLeft = parseFloat(style.getPropertyValue('--safe-left')) || 0;
     const safeRight = parseFloat(style.getPropertyValue('--safe-right')) || 0;
     const safeBottom = parseFloat(style.getPropertyValue('--safe-bottom')) || 0;
-    const railClear = isPhone() ? parseFloat(style.getPropertyValue('--rail-clear')) || 76 : 12 + safeLeft;
+    // with the chat dock open the bar sits between the rail and the dock, so it never runs under the rail
+    const railClear = isPhone() || dockInset > 0 ? parseFloat(style.getPropertyValue('--rail-clear')) || 76 : 12 + safeLeft;
     const right = 12 + safeRight;
     const bottom = 12 + safeBottom;
     const p = placeBar({ x: a.x, y: a.y, w: z.x - a.x, h: z.y - a.y }, { w: bar.offsetWidth, h: bar.offsetHeight }, view, lift, undefined, top, gap, [...connectorBoxes(), ...aiBarBox(), ...sessionBoxes(), ...groupChipBoxes(a, top)], railClear, right, bottom);
