@@ -79,6 +79,7 @@ export function loadSyncCaps(env = process.env) {
     if (!Number.isSafeInteger(v) || v < 1) throw new Error(`${name} must be a whole number of at least 1 (got "${String(raw).slice(0, 20)}")`);
     return v;
   };
+  const set = (name) => env[name] != null && String(env[name]).trim() !== '';
   const caps = {
     maxFrameOwner: bytes('TABULA_SYNC_MAX_FRAME_OWNER', MAX_FRAME_BYTES_OWNER),
     maxFrameOther: bytes('TABULA_SYNC_MAX_FRAME_OTHER', MAX_FRAME_BYTES_OTHER),
@@ -90,7 +91,15 @@ export function loadSyncCaps(env = process.env) {
     upgradesPerMinute: count('TABULA_SYNC_UPGRADES_PER_MINUTE', UPGRADES_PER_ACCOUNT_PER_MINUTE),
     upgradesPerAddressPerMinute: count('TABULA_SYNC_UPGRADES_PER_ADDRESS_PER_MINUTE', UPGRADES_PER_ADDRESS_PER_MINUTE),
   };
-  // The limits must nest, or a role would get a smaller allowance than a lesser one (or a frame that can never be stored).
+  // A deployment that sets only the (older, documented) document cap keeps working: frame limits left at their defaults are
+  // clamped down to it, in nesting order. Only two values that were both set and contradict each other stop the relay.
+  if (caps.maxDocBytes > 0) {
+    const clamp = (key, name, ceiling) => { if (!set(name) && caps[key] > ceiling) caps[key] = ceiling; };
+    clamp('maxFrameOwner', 'TABULA_SYNC_MAX_FRAME_OWNER', caps.maxDocBytes);
+    clamp('maxFrameOther', 'TABULA_SYNC_MAX_FRAME_OTHER', caps.maxFrameOwner);
+    clamp('maxFrameComments', 'TABULA_SYNC_MAX_FRAME_COMMENTS', caps.maxFrameOther);
+    clamp('maxFrameSmall', 'TABULA_SYNC_MAX_FRAME_SMALL', caps.maxFrameComments);
+  }
   if (caps.maxFrameSmall < DENIED_FRAME_BYTES) throw new Error(`TABULA_SYNC_MAX_FRAME_SMALL must be at least ${DENIED_FRAME_BYTES} bytes`);
   const order = [['TABULA_SYNC_MAX_FRAME_SMALL', caps.maxFrameSmall], ['TABULA_SYNC_MAX_FRAME_COMMENTS', caps.maxFrameComments],
     ['TABULA_SYNC_MAX_FRAME_OTHER', caps.maxFrameOther], ['TABULA_SYNC_MAX_FRAME_OWNER', caps.maxFrameOwner]];

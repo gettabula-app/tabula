@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { deniedReason, denyOnce, retryableReason, retryDelayMs, handshakeBackoffMs, HANDSHAKE_BACKOFF_MAX_MS, RETRY_BASE_MS, RETRY_MAX_MS, type DeniedReason } from '../src/sync';
+import { deniedReason, denyOnce, retryableReason, retryDelayMs, handshakeBackoffMs, roleChangedDelayMs, ROLE_CHANGED_JITTER_MS, HANDSHAKE_BACKOFF_MAX_MS, RETRY_BASE_MS, RETRY_MAX_MS, type DeniedReason } from '../src/sync';
 
 describe('deniedReason', () => {
   it.each([
@@ -95,5 +95,14 @@ describe('handshakeBackoffMs', () => {
     const atCeiling = [0, 0.2, 0.5, 0.9].map((r) => handshakeBackoffMs(8, () => r));
     expect(new Set(atCeiling).size).toBe(4);
     expect(new Set(Array.from({ length: 20 }, () => handshakeBackoffMs(2))).size).toBeGreaterThan(5);
+  });
+});
+
+describe('roleChangedDelayMs', () => {
+  it('spreads the reconnect after a role change over 0 to 3 s', () => {
+    expect(roleChangedDelayMs(() => 0)).toBe(0);
+    expect(roleChangedDelayMs(() => 0.5)).toBe(1500);
+    expect(roleChangedDelayMs(() => 0.999)).toBeLessThan(ROLE_CHANGED_JITTER_MS);
+    expect(new Set([0.1, 0.4, 0.7, 0.95].map((r) => roleChangedDelayMs(() => r))).size).toBe(4);
   });
 });

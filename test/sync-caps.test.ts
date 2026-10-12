@@ -123,7 +123,17 @@ describe('loadSyncCaps and frameLimitFor', () => {
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_SMALL: '10M' })).toThrow(/TABULA_SYNC_MAX_FRAME_SMALL.*TABULA_SYNC_MAX_FRAME_COMMENTS/);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_COMMENTS: '100M' })).toThrow(/TABULA_SYNC_MAX_FRAME_COMMENTS.*TABULA_SYNC_MAX_FRAME_OTHER/);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_OTHER: '200M' })).toThrow(/TABULA_SYNC_MAX_FRAME_OTHER.*TABULA_SYNC_MAX_FRAME_OWNER/);
-    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '100M' })).toThrow(/TABULA_SYNC_MAX_FRAME_OWNER.*TABULA_SYNC_MAX_DOC_BYTES/);
+    // only the document cap set (an older, valid deployment): frame limits left at their defaults come down to it
+    const only100 = loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '100M' });
+    expect([only100.maxFrameOwner, only100.maxFrameOther]).toEqual([100 * 1024 * 1024, MAX_FRAME_BYTES_OTHER]);
+    const only10 = loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '10M' });
+    expect([only10.maxFrameOwner, only10.maxFrameOther, only10.maxFrameComments, only10.maxFrameSmall]).toEqual([10, 10, 8, 1].map((m) => m * 1024 * 1024));
+    const only4 = loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '4M' }); // below the editor and comments defaults
+    expect([only4.maxFrameOwner, only4.maxFrameOther, only4.maxFrameComments, only4.maxFrameSmall]).toEqual([4, 4, 4, 1].map((m) => m * 1024 * 1024));
+    const off = loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '0' });
+    expect([off.maxDocBytes, off.maxFrameOwner, off.maxFrameOther]).toEqual([0, MAX_FRAME_BYTES_OWNER, MAX_FRAME_BYTES_OTHER]);
+    // both set and contradicting: the relay does not start, and the message names both
+    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '100M', TABULA_SYNC_MAX_FRAME_OWNER: '128M' })).toThrow(/TABULA_SYNC_MAX_FRAME_OWNER.*TABULA_SYNC_MAX_DOC_BYTES/);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_SMALL: '512' })).toThrow(/at least 1024/);
     expect(loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '0', TABULA_SYNC_MAX_FRAME_OWNER: '512M' }).maxFrameOwner).toBe(512 * 1024 * 1024);
     expect(frameLimitFor(d, { role: 'editor', canWrite: true }, true)).toBe(MAX_FRAME_BYTES_OTHER);

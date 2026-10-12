@@ -157,6 +157,14 @@ export function handshakeBackoffMs(failures: number, rand: () => number = Math.r
   return Math.round(base * (1 + 0.5 * rand()));
 }
 
+/**
+ * Close code 4511 (docs/capacity.md): the relay closed this socket because the person's role changed. y-websocket would
+ * reconnect after about 200 ms, so a role change for a whole class returns in one wave; wait a random 0 to 3 s instead.
+ */
+export const CLOSE_ROLE_CHANGED = 4511;
+export const ROLE_CHANGED_JITTER_MS = 3_000;
+export const roleChangedDelayMs = (rand: () => number = Math.random): number => Math.round(ROLE_CHANGED_JITTER_MS * rand());
+
 /** Wait before the nth (0-based) automatic retry. */
 export const retryDelayMs = (attempt: number): number => Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.max(0, attempt));
 
@@ -477,8 +485,11 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     handshake.set(p, st);
     p.on('connection-close', (event: CloseEvent | null) => {
       clearTimeout(st.stable);
-      if (conn.denied || !event || event.code !== 1006 || !p.shouldConnect) return;
-      const wait = handshakeBackoffMs(st.failures++);
+      if (conn.denied || !event || !p.shouldConnect) return;
+      let wait: number;
+      if (event.code === CLOSE_ROLE_CHANGED) wait = roleChangedDelayMs();
+      else if (event.code === 1006) wait = handshakeBackoffMs(st.failures++);
+      else return;
       p.disconnect();
       clearTimeout(st.timer);
       st.timer = window.setTimeout(() => { if (!conn.denied) p.connect(); }, wait);
