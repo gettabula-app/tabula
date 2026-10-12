@@ -225,7 +225,7 @@
   .trk.tk-page .tk-properties > .tk-section-heading { display: none; }
 }
 @media (max-width: 600px) {
-  .trk.tk-page { padding: 16px 16px calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .trk.tk-page { padding: 16px 16px calc(96px + var(--safe-bottom, env(safe-area-inset-bottom, 0px))); }
   .trk.tk-page .tk-header { margin-bottom: 20px; }
   .trk.tk-page .tk-title { font-size: 22px; }
   .trk.tk-page .tk-title-input { font-size: 22px; }

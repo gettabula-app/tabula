@@ -16,7 +16,7 @@ describe('tracker phone rows', () => {
   });
 
   it('keeps the suggestion sheet above the soft keyboard and hides the floating + while it is open', () => {
-    expect(css).toMatch(/\.trk-filter-suggestions \{ position: fixed;[^}]*bottom: max\(calc\(64px \+ env\(safe-area-inset-bottom\)\), calc\(var\(--trk-kb, 0px\) \+ 8px\)\)/);
+    expect(css).toMatch(/\.trk-filter-suggestions \{ position: fixed;[^}]*bottom: max\(calc\(64px \+ var\(--safe-bottom, env\(safe-area-inset-bottom, 0px\)\)\), calc\(var\(--trk-kb, 0px\) \+ 8px\)\)/);
     expect(css).toMatch(/\.trk:has\(\.trk-filter-suggestions:not\(\[hidden\]\)\) \.trk-new-trigger \{ display: none; \}/);
     expect(shell).toMatch(/--trk-kb/);
     expect(shell).toMatch(/visualViewport\?\.removeEventListener\('resize', publishKeyboard\)/);
