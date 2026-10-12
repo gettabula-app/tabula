@@ -317,6 +317,9 @@ describe('deletion and retention', () => {
       expect(decodeURIComponent(vmCall.url)).toContain(`match[]={workspace="${WORKSPACE}"}`);
       const lokiCall = sinks.calls.find((call) => call.url.startsWith('/loki/api/v1/delete'))!;
       expect(decodeURIComponent(lokiCall.url)).toContain(`query={workspace="${WORKSPACE}"}`);
+      // Loki answers 400 "deletes in the future are not allowed" when end is after now (found on the first real smoke run).
+      const lokiEnd = Number(new URL(lokiCall.url, 'http://x').searchParams.get('end'));
+      expect(lokiEnd).toBeLessThanOrEqual(Math.floor(NOW / 1000));
 
       expect(fs.existsSync(path.join(cfg.lakeDir, 'stream=errors', 'dt=2026-10-10', `workspace=${WORKSPACE}`))).toBe(false);
       expect(fs.existsSync(path.join(cfg.lakeDir, 'stream=errors', 'dt=2026-10-10', `workspace=${other}`))).toBe(true);
