@@ -9,7 +9,7 @@ import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
-import { createAwarenessBucket, filterAwarenessUpdate, MAX_AWARENESS_UPDATE_BYTES } from '../server/awareness-guard.mjs';
+import { createAwarenessBucket, filterAwarenessUpdate, transferAwarenessOwnership, viewerAwarenessState, MAX_AWARENESS_UPDATE_BYTES } from '../server/awareness-guard.mjs';
 
 const entry = (clientID: number, clock: number, state: unknown) => {
   const enc = encoding.createEncoder();
@@ -33,6 +33,50 @@ const decode = (u: Uint8Array) => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return import('y-protocols/awareness').then((m) => { m.applyAwarenessUpdate(a, u, 'test'); return seen; });
 };
+
+describe('takeover keeps the new owner state when the old socket closes', () => {
+  it('moves ownership of an updated id and survives the old socket leaving', async () => {
+    const { applyAwarenessUpdate, removeAwarenessStates } = await import('y-protocols/awareness');
+    const awareness = new Awareness(new Y.Doc());
+    awareness.setLocalState(null);
+    const oldWs = {}, newWs = {};
+    const conns = new Map<object, Set<number>>([[oldWs, new Set()], [newWs, new Set()]]);
+    // same bookkeeping as Room: the 'update' listener registers only added ids
+    awareness.on('update', ({ added, removed }: { added: number[]; removed: number[] }, conn: object) => {
+      const ids = conns.get(conn);
+      if (!ids) return;
+      added.forEach((id) => ids.add(id));
+      removed.forEach((id) => ids.delete(id));
+    });
+    const send = (ws: object, own: Set<number>, others: any[], clock: number, state: unknown) => {
+      const v = filterAwarenessUpdate(update(entry(42, clock, state)), { own, others, self: { userId: 'u1', guest: false } });
+      applyAwarenessUpdate(awareness, v.update as Uint8Array, ws);
+      transferAwarenessOwnership(conns, ws, v.ids);
+    };
+    send(oldWs, conns.get(oldWs)!, [], 1, { user: { name: 'old' } });
+    expect([...conns.get(oldWs)!]).toEqual([42]);
+    // reconnect: the new socket takes over id 42 (an 'updated' id) while the old one lingers
+    send(newWs, conns.get(newWs)!, [{ ids: conns.get(oldWs)!, userId: 'u1', guest: false }], 2, { user: { name: 'new' } });
+    expect([...conns.get(newWs)!]).toEqual([42]);
+    expect(conns.get(oldWs)!.size).toBe(0);
+    // the old socket closes late: Room.leave removes its ids
+    removeAwarenessStates(awareness, [...conns.get(oldWs)!], null);
+    expect(awareness.getStates().get(42)).toEqual({ user: { name: 'new' } });
+  });
+});
+
+describe('viewerAwarenessState', () => {
+  const deps = { cleanValue: (v: unknown) => v, cleanName: (n: string) => n, fallbackColor: () => '#111111' };
+  it('takes id and name from the socket, keeps cursor and a valid colour only', () => {
+    const ws = { userId: 'u1', userName: 'Real' };
+    const s = viewerAwarenessState({ cursor: { x: 1 }, user: { id: 'boss', name: 'Boss', color: '#AbCdEf', extra: 1 } }, ws, deps) as any;
+    expect(s.cursor).toEqual({ x: 1 });
+    expect(s.user).toEqual({ id: 'u1', name: 'Real', color: '#AbCdEf' });
+    expect((viewerAwarenessState({ user: { color: 'red' } }, ws, deps) as any).user.color).toBe('#111111');
+    expect((viewerAwarenessState({}, ws, deps) as any).user.id).toBe('u1');
+    expect(viewerAwarenessState(null, ws, deps)).toBeNull();
+  });
+});
 
 describe('createAwarenessBucket', () => {
   it('never limits a sustained 20 frames per second', () => {
@@ -74,7 +118,9 @@ describe('filterAwarenessUpdate', () => {
     expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u2'), self: { userId: 'u1', guest: false } }).update).toBeNull();
     expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u1', true), self: { userId: 'u1', guest: false } }).update).toBeNull();
     expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u1'), self: { userId: 'u1', guest: true } }).update).toBeNull();
-    expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u1', true), self: { userId: 'u1', guest: true } }).update).toBeNull();
+    // the same guest session may reclaim its id; another guest or a member may not
+    expect(filterAwarenessUpdate(u, { own: new Set(), others: held('g1', true), self: { userId: 'g1', guest: true } }).update).not.toBeNull();
+    expect(filterAwarenessUpdate(u, { own: new Set(), others: held('g1', true), self: { userId: 'g2', guest: true } }).update).toBeNull();
     expect(filterAwarenessUpdate(u, { own: new Set(), others: held(''), self: { userId: '', guest: false } }).update).toBeNull();
   });
 

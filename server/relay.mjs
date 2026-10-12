@@ -23,7 +23,7 @@ import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
-import { createAwarenessBucket, filterAwarenessUpdate } from './awareness-guard.mjs';
+import { createAwarenessBucket, filterAwarenessUpdate, transferAwarenessOwnership, viewerAwarenessState } from './awareness-guard.mjs';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -145,6 +145,13 @@ function cleanGuestAwarenessState(state, ws) {
   const name = cleanAwarenessString(typeof ws.userName === 'string' ? ws.userName : 'Guest', 40).trim() || 'Guest';
   safe.user = { id: ws.userId, name, color: ws.userColor ?? guestPresenceColor(ws.userId), guest: true };
   return safe;
+}
+function cleanViewerAwarenessState(state, ws) {
+  return viewerAwarenessState(state, ws, {
+    cleanValue: cleanGuestAwarenessValue,
+    cleanName: (name) => cleanAwarenessString(name, 40).trim(),
+    fallbackColor: guestPresenceColor,
+  });
 }
 const CLOSE_ACCESS_REMOVED = 4410;
 // The workspace is being restored from a backup (docs/backups.md, Restoring): sent to every open socket, and to every
@@ -989,7 +996,7 @@ class Room {
         for (const [other, ids] of this.conns) if (other !== ws) others.push({ ids, userId: other.userId, guest: other.guest === true });
         const clean = ws.guest
           ? (state) => cleanGuestAwarenessState(state, ws)
-          : ws.canWrite !== true ? (state) => cleanGuestAwarenessValue(state) : undefined;
+          : ws.canWrite !== true ? (state) => cleanViewerAwarenessState(state, ws) : undefined;
         const verdict = filterAwarenessUpdate(update, { own: this.conns.get(ws) ?? new Set(), others, self: { userId: ws.userId, guest: ws.guest === true }, clean });
         if (verdict.oversized || verdict.dropped) {
           const now = Date.now();
@@ -1001,10 +1008,7 @@ class Room {
         if (!verdict.update) return;
         const safeUpdate = verdict.update;
         awarenessProtocol.applyAwarenessUpdate(this.awareness, safeUpdate, ws);
-        // Ids taken over from the same account's lingering socket now belong to this one, so the old socket closing
-        // does not remove them.
-        const mine = this.conns.get(ws);
-        if (mine) for (const o of others) for (const id of mine) o.ids.delete(id);
+        transferAwarenessOwnership(this.conns, ws, verdict.ids);
       }
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);
