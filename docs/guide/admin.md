@@ -51,7 +51,7 @@ A searchable list of everyone with an account: name, email, role, last activity,
 - **Sign out everywhere** ends all of their sessions without disabling them. You can use it on yourself.
 - **Remove** deletes the account, signs the person out and removes their access.
 
-The role names are explained in [Sharing, roles and teams](sharing.md#roles). If a hosted workspace has a limit on how many members it can hold and it is full, enabling a person or promoting a guest is refused until someone is removed or disabled. Guests do not count towards this limit.
+The role names are explained in [Sharing, roles and teams](sharing.md#roles). A free workspace has a limit on how many members it can hold. When it is full, enabling a person or promoting a guest is refused with "This workspace has reached its member limit. Remove or disable a member to make room." Guests do not count towards the limit.
 
 ## Teams
 
