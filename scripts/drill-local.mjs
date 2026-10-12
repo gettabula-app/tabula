@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// TAB-94: the restore drill of the ops runbook (section 8), rehearsed locally against relays and the fake S3 of the
-// backup tests. Runs test/drill/*.drill.test.ts with vitest.drill.config.ts (they are never part of `npm test`), reads
-// vitest's JSON report, and prints a checklist of the runbook boxes and a filled drill record (section 9).
+// TAB-94: the restore drill of the ops runbook (section 8), rehearsed locally against relays, the fake S3 of the
+// backup tests and the off-site puller. Runs test/drill/*.drill.test.ts with vitest.drill.config.ts (they are never part
+// of `npm test`), reads vitest's JSON report, and prints a checklist of the runbook boxes and a filled drill record.
 //
 //   npm run drill:local
 //
@@ -32,6 +32,14 @@ export const BOXES = [
   { id: '8.2.no-secret', label: 'No key, S3 secret or signature in logs, audit log or status' },
   { id: '8.2.verify-repair', label: 'A missing object: the prune reports it, the next run repairs it' },
   { id: '8.2.verify-deep', label: 'Daily deep verify finds a damaged object', note: 'not rehearsed locally (no trigger without a new hook)' },
+  { id: '8.3.dir-backup', label: 'A dir-target relay seals a board edit and writes its first manifest' },
+  { id: '8.3.export-auth', label: 'Export requires the pull token and hides keys outside objects and manifests' },
+  { id: '8.3.pull', label: 'The puller downloads sealed files and writes state and metrics' },
+  { id: '8.3.pull-incremental', label: 'Unchanged pulls fetch nothing; a later edit fetches only new files' },
+  { id: '8.3.restore-check', label: 'The pulled store passes keyed and structure-only restore checks' },
+  { id: '8.3.decrypt-restore', label: 'An empty dir-target relay restores the newest pulled manifest' },
+  { id: '8.3.no-secret', label: 'Relay logs, puller logs, metrics and state contain no backup or pull credentials' },
+  { id: '8.3.purge', label: 'Deleted workspaces expire after grace; an operator purge erases a copy at once' },
   { id: '8.1.adopt-copy', label: '8.1 local analogue: a copied data directory on a new Fly volume id is adopted' },
 ];
 
@@ -131,12 +139,12 @@ export function render(rows, measured, { date = new Date() } = {}) {
     '  Drill type:               local',
     `  Date:                     ${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`,
     '  Who:                      local script (npm run drill:local)',
-    '  Workspace / app / bucket: local relay + fake S3',
+    '  Workspace / app / bucket: local relays, fake S3 and off-site puller store',
     `  Data age at restore:      ${fmt(measured.dataAgeAtRestoreSeconds, 's')} (local only, not representative)`,
     `  Time to restore:          whole ${fmt(measured.wholeRestoreSeconds, 's')}, disaster ${fmt(measured.disasterRestoreSeconds, 's')} (local only, not representative)`,
-    '  Steps that differed:      relays and S3 are local; settle 1 s; the whole restore goes back to the newest backup',
-    '                            (retention keeps one per hour); wrong key, damaged and the full-disk branch use a',
-    '                            copy of the bucket' + (differed.length ? '; ' : ''),
+    '  Steps that differed:      relays, control plane, S3 and pull host are local; puller HTTPS is rewritten to relay HTTP;',
+    '                            settle is short; whole and disaster restores use the newest retained manifest; wrong key,',
+    '                            damaged and full-disk branches use a copy of the bucket' + (differed.length ? '; ' : ''),
     ...differed.map((d) => `                            ${d}`),
     `  Problems found:           ${failed.length ? '' : 'none'}`,
     ...failed.flatMap((r) => (r.problems.length ? r.problems : [`${r.id}: no test ran`]).map((p) => `    - ${p}`)),

@@ -158,6 +158,19 @@ function loadTracker(env) {
   return mode === 'on';
 }
 
+// Diagnostics and product analytics are opt-out for hosted accounts and opt-in for self-hosted accounts.
+// An explicit operator value locks the owner control; no data leaves the instance in this phase.
+function loadTelemetry(env, hosted) {
+  const raw = (env.TABULA_TELEMETRY ?? '').trim();
+  if (raw && raw !== 'on' && raw !== 'off') {
+    throw new Error(`TABULA_TELEMETRY must be on or off (got "${raw.slice(0, 20)}")`);
+  }
+  return {
+    defaultEnabled: raw ? raw === 'on' : hosted,
+    forced: raw || null,
+  };
+}
+
 // AI features (docs/ai.md). The secrets are not enumerable, so printing or serialising the config never shows them.
 // Open mode has no accounts to own a key, so it needs both the operator's key and the explicit TABULA_AI_OPEN=1: a key
 // alone never turns AI on, because anyone with a board link would then spend it.
@@ -335,6 +348,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const assets = loadAssets(env, authEnabled);
   const chat = loadChat(env, authEnabled, warn);
   const tracker = loadTracker(env);
+  const telemetry = loadTelemetry(env, Boolean(cloud));
   const joinCodeMode = (env.TABULA_JOIN_CODES ?? '').trim() || 'off';
   if (joinCodeMode !== 'on' && joinCodeMode !== 'off') throw new Error(`TABULA_JOIN_CODES must be on or off (got "${joinCodeMode.slice(0, 20)}")`);
   if (joinCodeMode === 'on' && !authEnabled) warn('TABULA_JOIN_CODES=on is ignored without accounts mode (TABULA_AUTH=on)');
@@ -365,6 +379,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     ...(joinCodes ? { joinCodes: true } : {}),
     ...(chat ? { chat: true } : {}),
     tracker,
+    telemetry,
     ...(cloud ? { cloud } : {}),
     ...(mcp ? { mcp } : {}),
   };
