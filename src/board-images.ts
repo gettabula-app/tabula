@@ -17,7 +17,7 @@ export const assetCache = createBlobCache(idbBackend());
 /** Keeps the pictures of an opened board file on this device under their own references, so a board that is only on this device (the desktop app) shows them. */
 export async function cacheImportedAssets(assets: Record<string, ImportedAsset> | undefined): Promise<void> {
   for (const [key, a] of Object.entries(assets ?? {})) {
-    await assetCache.put({ key, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId: '', pending: false });
+    await assetCache.put({ key, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId: '', pending: false }).catch(() => undefined);
   }
 }
 
@@ -131,20 +131,29 @@ export class BoardImages {
     if (DEMO) {
       for (const [key, ids] of byKey) {
         const a = assets[key];
-        await this.cache.put({ key, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId, pending: false });
+        await this.cache.put({ key, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId, pending: false }).catch(() => undefined);
         this.app.r.invalidateObjects(ids);
       }
       return;
     }
+    let notKept = 0;
     for (const [key, ids] of byKey) {
       const a = assets[key];
       const pending = `pending:${newId()}`;
-      await this.cache.put({ key: pending, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId, pending: true });
+      try {
+        await this.cache.put({ key: pending, blob: new Blob([a.bytes as BlobPart], { type: a.mime }), mime: a.mime, width: a.width, height: a.height, boardId, pending: true });
+        await this.queue.enqueue({ id: pending, boardId, objectId: ids[0], hash: key });
+      } catch {
+        // the browser would not keep a copy to upload: the objects stay as they are, and the person is told once below
+        await this.cache.backend.deleteBlob(pending).catch(() => undefined);
+        notKept++;
+        continue;
+      }
       store.transactAs(() => ids.forEach((id) => store.update(id, { asset: pending, mime: a.mime, nw: a.width, nh: a.height })), 'assets');
-      await this.queue.enqueue({ id: pending, boardId, objectId: ids[0], hash: key });
       this.app.r.invalidateObjects(ids);
     }
-    if (byKey.size) void this.queue.run(boardId);
+    if (notKept) toast(IMAGE_UPLOAD_MESSAGES.notKept(notKept), 10_000);
+    if (byKey.size > notKept) void this.queue.run(boardId);
   }
 
   /**
