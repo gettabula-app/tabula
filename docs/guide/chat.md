@@ -27,7 +27,7 @@ The channel list and the open conversation are dark panels, like the chat panel 
 
 ![The Chat page: the channel list on the left with Workspace and the board Design review, and the Design review conversation on the right with the same messages and Open board at the top](images/chat-page.png)
 
-The **Chat** link in the top bar shows how many messages you have not read in all your channels. On the **Boards** page, a number beside a board's name shows its unread chat messages.
+The **Chat** link in the top bar shows how many messages you have not read in all your channels. If someone mentioned you, an @ comes before the count. On the **Boards** page, a number beside a board's name shows its unread chat messages.
 
 ## The chat panel
 
