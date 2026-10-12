@@ -598,7 +598,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
 
   // ------------------------------------------------------------ who may join
 
-  it('closes unauthorised connections to a comments room with 4401, 4403 and 4404 and creates no room file', async () => {
+  it('closes unauthorised connections to a comments room with 4401 and 4403 and creates no room file', async () => {
     const { creator, board, person } = await setup();
     const commenter = await person('commenter');
     const otherTeam = await newTeam(owner.cookie);
@@ -619,7 +619,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
       rawSocket(rooms[2]),
     ];
     for (const a of attempts) a.ws.on('open', () => a.ws.send(updateFrame()));
-    expect(await within(Promise.all(attempts.map((a) => a.closed)))).toEqual([4401, 4401, 4403, 4404, 4404, 4404, 4401]);
+    expect(await within(Promise.all(attempts.map((a) => a.closed)))).toEqual([4401, 4401, 4403, 4403, 4403, 4403, 4401]);
 
     // the Origin is checked before anything else, for the comments room too
     const wrongOrigins: Record<string, string>[] = [
@@ -640,7 +640,7 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
   it('lets only a workspace admin into the comments room of a deleted board', async () => {
     const { creator, board } = await setup();
     expect((await api(creator.cookie, 'DELETE', `/api/boards/${board}`)).status).toBe(204);
-    expect(await within(rawSocket(`${board}${COMMENTS}`, creator.cookie).closed)).toBe(4404);
+    expect(await within(rawSocket(`${board}${COMMENTS}`, creator.cookie).closed)).toBe(4403);
     const admin = rawSocket(`${board}${COMMENTS}`, owner.cookie);
     await within(admin.joined);
     expect(admin.ws.readyState).toBe(WebSocket.OPEN);

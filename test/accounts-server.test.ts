@@ -155,9 +155,10 @@ function rawSocket(board: string, cookie?: string, headers: Record<string, strin
   sockets.add(ws);
   ws.on('error', () => {});
   const closed = new Promise<number>((resolve) => ws.on('close', (code) => resolve(code)));
+  const closedWith = new Promise<{ code: number; reason: string }>((resolve) => ws.on('close', (code, reason) => resolve({ code, reason: reason.toString() })));
   const joined = new Promise<void>((resolve) => ws.once('message', () => resolve()));
   const rejected = new Promise<number>((resolve) => ws.on('unexpected-response', (_req, res) => resolve(res.statusCode ?? 0)));
-  return { ws, closed, joined, rejected };
+  return { ws, closed, closedWith, joined, rejected };
 }
 
 const updateFrame = () => {
@@ -910,7 +911,7 @@ describe('accounts mode server', () => {
   });
 
   describe('relay', () => {
-    it('closes unauthorised connections with 4401, 4404 and 4403 and rejects the wrong Origin', async () => {
+    it('closes unauthorised connections with 4401 and 4403 and rejects the wrong Origin', async () => {
       const team = await newTeam(owner.cookie);
       const other = await newTeam(owner.cookie);
       const member = await joinTeam(owner.cookie, team.id);
@@ -919,8 +920,8 @@ describe('accounts mode server', () => {
 
       expect(await within(rawSocket(board).closed)).toBe(4401);
       expect(await within(rawSocket(board, 'tabula_session=not-a-session').closed)).toBe(4401);
-      expect(await within(rawSocket(unique('ghost'), member.cookie).closed)).toBe(4404);
-      expect(await within(rawSocket(unique('ghost'), owner.cookie).closed)).toBe(4404);
+      expect(await within(rawSocket(unique('ghost'), member.cookie).closed)).toBe(4403);
+      expect(await within(rawSocket(unique('ghost'), owner.cookie).closed)).toBe(4403);
       expect(await within(rawSocket(board, outsider.cookie).closed)).toBe(4403);
 
       const ok = rawSocket(board, member.cookie);
@@ -939,15 +940,34 @@ describe('accounts mode server', () => {
       }
     });
 
-    it('answers deleted boards with 4404, except to workspace admins', async () => {
+    it('answers deleted boards with 4403, except to workspace admins', async () => {
       const team = await newTeam(owner.cookie);
       const member = await joinTeam(owner.cookie, team.id);
       const board = await newBoard(member.cookie, { teamId: team.id });
       expect((await api(member.cookie, 'DELETE', `/api/boards/${board}`)).status).toBe(204);
-      expect(await within(rawSocket(board, member.cookie).closed)).toBe(4404);
+      expect(await within(rawSocket(board, member.cookie).closed)).toBe(4403);
       const admin = rawSocket(board, owner.cookie);
       await within(admin.joined);
       expect(admin.ws.readyState).toBe(WebSocket.OPEN);
+    });
+
+    it('closes a missing, a deleted and an inaccessible board with the same code and reason', async () => {
+      const team = await newTeam(owner.cookie);
+      const other = await newTeam(owner.cookie);
+      const member = await joinTeam(owner.cookie, team.id);
+      const outsider = await joinTeam(owner.cookie, other.id);
+      const existing = await newBoard(member.cookie, { teamId: team.id });
+      const deleted = await newBoard(member.cookie, { teamId: team.id });
+      expect((await api(member.cookie, 'DELETE', `/api/boards/${deleted}`)).status).toBe(204);
+
+      const missing = await within(rawSocket(unique('ghost'), outsider.cookie).closedWith);
+      const gone = await within(rawSocket(deleted, outsider.cookie).closedWith);
+      const noAccess = await within(rawSocket(existing, outsider.cookie).closedWith);
+      expect(noAccess).toEqual({ code: 4403, reason: 'no_access' });
+      expect(missing).toEqual(noAccess);
+      expect(gone).toEqual(noAccess);
+      // a member of the deleted board gets the same answer, not a distinct "deleted" one
+      expect(await within(rawSocket(deleted, member.cookie).closedWith)).toEqual(noAccess);
     });
 
     it('keeps a deleted board read-only for workspace admins until it is restored', async () => {
@@ -1030,7 +1050,7 @@ describe('accounts mode server', () => {
       for (const a of attempts) {
         a.ws.on('open', () => a.ws.send(updateFrame()));
       }
-      expect(await within(Promise.all(attempts.map((a) => a.closed)))).toEqual([4401, 4403, 4404, 4401]);
+      expect(await within(Promise.all(attempts.map((a) => a.closed)))).toEqual([4401, 4403, 4403, 4401]);
       await sleep(1400); // longer than the relay's save debounce
 
       for (const name of [board, ghost]) expect(fs.existsSync(path.join(dataDir, `${name}.yjs`))).toBe(false);

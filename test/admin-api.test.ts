@@ -585,7 +585,7 @@ describe('admin boards', () => {
   it('restores a deleted board, once, and its owner can open it again', async () => {
     const board = await c.newBoard(member.cookie, { title: 'Back from the dead' });
     expect((await c.api(member.cookie, 'DELETE', `/api/boards/${board}`)).status).toBe(204);
-    expect(await within(c.rawSocket(board, member.cookie).closed)).toBe(4404);
+    expect(await within(c.rawSocket(board, member.cookie).closed)).toBe(4403);
     expect(((await c.api(member.cookie, 'GET', '/api/boards')).body as Body[]).map((b) => b.id)).not.toContain(board);
     // an admin can still look a deleted board up, so the app can open it read-only
     const one = await c.api(admin.cookie, 'GET', `/api/admin/boards/${board}`);

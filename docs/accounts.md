@@ -146,8 +146,8 @@ In accounts mode the relay decides **before it touches the room** (`getRoom()` m
 
 0. The `Origin` header must equal the origin of `TABULA_BASE_URL`; otherwise answer `403` and destroy the socket before upgrading (stops a page on another workspace's sibling subdomain from riding the cookie).
 1. Read the session cookie. No or invalid session: close with code `4401` (`unauthenticated`).
-2. Unknown or deleted board id (for non-admins): `4404`. A board must exist in the directory first (created through `POST /api/boards`). Workspace admins may open a deleted board, but read-only: the relay drops their writes to both rooms until the board is restored, and the app opens it read-only with a **Deleted board** badge.
-3. No access: `4403` (never deletes anything on the client).
+2. Unknown or deleted board id (for non-admins): `4403` with reason `no_access`, identical to step 3, so a signed-in user cannot tell a missing board from one they may not open. A board must exist in the directory first (created through `POST /api/boards`). Workspace admins may open a deleted board, but read-only: the relay drops their writes to both rooms until the board is restored, and the app opens it read-only with a **Deleted board** badge.
+3. No access: `4403` `no_access` (never deletes anything on the client).
 4. Otherwise `getRoom()` and join. The connection remembers `userId`.
 
 While connected:
@@ -164,12 +164,12 @@ Open mode (`TABULA_AUTH=off`) skips all of this.
 ## Client
 
 - On start, `GET /api/config`. Open mode: the current home screen and local board list, unchanged.
-- Turning accounts on for an instance that already has boards: the old rooms have no directory rows, so they would get `4404`. Admins adopt them through `POST /api/boards`. Each browser's local list is not discarded: the home screen keeps an **On this device** section listing local boards that are not in the server list, with an **Add to workspace** action (optionally into a team).
+- Turning accounts on for an instance that already has boards: the old rooms have no directory rows, so they would get `4403`. Admins adopt them through `POST /api/boards`. Each browser's local list is not discarded: the home screen keeps an **On this device** section listing local boards that are not in the server list, with an **Add to workspace** action (optionally into a team).
 - Accounts mode: `GET /api/me`. A `401` shows the sign-in screen (`#/signin`; `#/invite/<token>` shows the team name and asks for an email). After the emailed link the server redirects to `/`.
 - Home screen: teams as sections, then **Personal** (boards you own that have no team) and **Shared with you** (everything else you can open: boards of teams you are not in and personal boards others shared with you; workspace admins see it as **Other boards**), each with its boards. Create a board in a team, create/rename/leave a team, invite link, member list, move a personal board into a team. The board list comes from `GET /api/boards` and is cached in `localStorage` for offline use.
 - Board creation registers the board (`POST /api/boards`) before opening it.
 - **Viewers are read-only in the UI**, not just at the relay (otherwise their edits would silently never sync and look like data loss). `GET /api/boards` returns `role`; for `viewer` the board opens read-only: `Store.transact` becomes a no-op (the single choke point for every write), drawing tools and the quick-action bar are disabled, text editing does not start, and a **View only** badge is shown. Remote updates still apply.
-- The sync connection stops reconnecting on close codes `4401`, `4403`, `4404` and `4410` and the app shows a clear message: `4401` sign in again, `4403` no access, `4404` board not found, `4410` access removed. Local data is never deleted automatically: on `4410` the message offers a **Remove from this device** button.
+- The sync connection stops reconnecting on close codes `4401`, `4403`, `4404` and `4410` and the app shows a clear message: `4401` sign in again, `4403` no access or board not found (the relay no longer sends `4404`; the client still understands it), `4410` access removed. Local data is never deleted automatically: on `4410` the message offers a **Remove from this device** button.
 - **Share dialog**: the board owner (workspace admins count as owners) sees **People with access**: the board's shares with a role menu (`POST /api/boards/:id/shares` upserts) and **Remove** (`DELETE`, click twice), and an add row. The picker offers the teams the person is in and the people in them (`GET /api/teams`, `GET /api/teams/:id/members`); workspace owners and admins also get every active member (`GET /api/members`). Yourself, the board owner and anyone already shared are left out. Other roles see the link only, because listing shares is owner-only.
 - The board menu shows who is signed in and a **Sign out** item. With accounts on, the presence name defaults to the account name (the colour stays local).
 

@@ -208,7 +208,7 @@ describe('CDX-42 security regression gaps', () => {
       ws.once('close', (code, reason) => resolve({ code, reason: reason.toString() }));
     });
 
-    expect(close.code).toBe(4404);
+    expect(close.code).toBe(4403);
     const after = (await h.api(undefined, 'GET', '/api/health')).body;
     expect(after.rooms).toBe(before.rooms);
 
