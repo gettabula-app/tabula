@@ -98,7 +98,7 @@ PATCH  /api/teams/:id {name?,archived?} -> team      (team admin or workspace ad
 GET    /api/teams/:id/members           -> [{userId,name,email,role}]   (team members and workspace admins)
 PATCH  /api/teams/:id/members/:userId {role} -> member  (team admin or workspace admin)
 DELETE /api/teams/:id/members/:userId   -> 204  (yourself = leave; team/workspace admins can remove others; the last team admin cannot leave: 409)
-POST   /api/teams/:id/invites {role?: 'member'|'admin', days?: 1..30} -> 201 {id, url, token, expiresAt}   (url = <base>/#/invite/<token>; team admin or workspace admin)
+POST   /api/teams/:id/invites {role?: 'member'|'admin', days?: 1..30} -> 201 {id, url, token, expiresAt}   (url = <base>/?invite=1#/invite/<token>; team admin or workspace admin)
 GET    /api/teams/:id/invites           -> [{id,role,expiresAt,uses,maxUses}]
 DELETE /api/teams/:id/invites/:inviteId -> 204
 GET    /api/invites/:token              public  {team: {id,name}, role}  (404 when invalid/expired/revoked)

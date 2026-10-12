@@ -164,6 +164,15 @@ function loadChat(env, authEnabled, warn) {
   return mode === 'on';
 }
 
+// Link previews (docs/link-cards.md). The operator's switch: `off` is a kill switch no setting can override, `on` turns the
+// feature on where it is otherwise off (self-hosted accounts mode, open mode), and unset leaves it to the workspace setting
+// (default on for hosted workspaces, off elsewhere).
+function loadLinkPreviews(env) {
+  const raw = (env.TABULA_LINK_PREVIEWS ?? '').trim();
+  if (raw && raw !== 'on' && raw !== 'off') throw new Error(`TABULA_LINK_PREVIEWS must be on or off (got "${raw.slice(0, 20)}")`);
+  return { forced: raw || null };
+}
+
 // Tracker tools (docs/mcp.md). The directory migration runs independently; this switch only exposes the feature.
 function loadTracker(env) {
   const mode = (env.TABULA_TRACKER ?? '').trim() || 'off';
@@ -361,6 +370,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const assets = loadAssets(env, authEnabled);
   const chat = loadChat(env, authEnabled, warn);
   const tracker = loadTracker(env);
+  const linkPreviews = loadLinkPreviews(env);
   const telemetry = loadTelemetry(env, Boolean(cloud));
   const joinCodeMode = (env.TABULA_JOIN_CODES ?? '').trim() || 'off';
   if (joinCodeMode !== 'on' && joinCodeMode !== 'off') throw new Error(`TABULA_JOIN_CODES must be on or off (got "${joinCodeMode.slice(0, 20)}")`);
@@ -375,6 +385,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     authEnabled,
     ownerEmail,
     baseUrl,
+    baseUrlSet: Boolean((env.TABULA_BASE_URL || '').trim()),
     origin,
     secureCookies,
     trustProxy: env.TABULA_TRUST_PROXY === '1',
@@ -392,6 +403,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     ...(joinCodes ? { joinCodes: true } : {}),
     ...(chat ? { chat: true } : {}),
     tracker,
+    linkPreviews,
     telemetry,
     ...(cloud ? { cloud } : {}),
     ...(mcp ? { mcp } : {}),

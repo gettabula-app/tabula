@@ -13,6 +13,10 @@ import { openChatNotifications } from './chat-prefs';
 import { canChangeProfile } from './share-logic';
 import { getUser, saveUser } from '../sync';
 import { currentChatDock } from './chat-dock';
+import { notificationsBell } from './notifications';
+
+/** The server keeps a notification list for this person (`notifications: true` in /api/me, sent by the server that has the list). */
+const notificationsOn = (me: Me) => (me as Me & { notifications?: boolean }).notifications === true;
 
 export type TopbarPage = 'boards' | 'templates' | 'chat';
 
@@ -120,6 +124,7 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
       admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null,
       h('a', { class: 'topbar-link', href: '/docs/' }, 'Help')),
     me ? h('div', { class: 'topbar-end' },
+      notificationsOn(me) ? notificationsBell() : null,
       accountButton(me)) : null);
 }
 

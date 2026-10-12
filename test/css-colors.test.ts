@@ -24,6 +24,8 @@ const ALLOWED: { file: string; selector: string; literals: string[] }[] = [
   },
   { file: 'src/ui/comments.css', selector: '.comment-avatar', literals: ['#fff'] },
   { file: 'src/ui/chat.css', selector: '.chat-avatar', literals: ['#fff'] },
+  { file: 'src/ui/home-presence.css', selector: '.here-sq', literals: ['#fff'] },
+  { file: 'src/ui/notifications.css', selector: '.notif-sq', literals: ['#fff'] },
 ];
 
 const LITERAL = /#(?:[\da-f]{8}|[\da-f]{6}|[\da-f]{4}|[\da-f]{3})(?![\w-])|(?<![\w-])rgba?\([^)]*\)|(?<![\w-])(?:white|black)(?![\w-])/gi;

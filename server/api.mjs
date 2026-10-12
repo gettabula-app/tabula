@@ -20,6 +20,7 @@ import { FEATURE_SPECS } from './ai/features.mjs';
 import { createAiRoutes } from './ai/routes.mjs';
 import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError } from './assets.mjs';
+import { LinkRouteError, createLinkUnfurl } from './link-routes.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
 import { createBackupExport } from './backup-export.mjs';
@@ -225,7 +226,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -775,6 +776,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     : [];
 
   const aiApi = createAiRoutes({ directory, config, compile, audit, requireAdmin, isAdmin, errors: { HttpError, badRequest, forbidden, notFound, conflict }, cloud, ...ai });
+  // Link previews (docs/link-cards.md): the workspace setting is read on every request, so an admin's change applies at once.
+  const linkUnfurl = createLinkUnfurl({ config, getSetting: directory.getSetting, hosted: Boolean(cloud), now, log, assets: assets?.store ?? null, ...link });
   const backupExport = backupConfig?.target === 'dir' && typeof backupConfig.pullTokenSha256 === 'string'
     ? createBackupExport({ backupConfig, dataDir, now, log })
     : null;
@@ -872,6 +875,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ...(config.mcp ? { mcp: true } : {}),
         mcpOauth: config.mcp?.oauth === true,
         ...(assets ? { images: true } : {}),
+        ...(linkUnfurl.enabled() ? { linkPreviews: true } : {}),
         ...(chatOn ? { chat: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
         ...(trackerCanAccess(user) ? { tracker: true } : {}),
@@ -1011,7 +1015,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       });
       return [
         201,
-        { id: invite.id, url: `${config.baseUrl}/#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt },
+        { id: invite.id, url: `${config.baseUrl}/?invite=1#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt },
       ];
     }),
     compile('GET', 'teams/:id/invites', {}, ({ user, params }) => {
@@ -1789,6 +1793,55 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         ]
       : []),
 
+    // ---------------------------------------------------------- link previews (docs/link-cards.md)
+
+    compile('POST', 'boards/:id/unfurl', { body: true }, async ({ req, res, params, user, body }) => {
+      // v1 decision (docs/link-cards.md): a server-side fetch is never made on behalf of a join-code guest, whatever the guest's role
+      if (user.guest) throw new HttpError(403, 'guests_cannot_preview', 'Guests cannot add link previews');
+      const { role } = boardFor(user, params.id);
+      if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can add link cards');
+      // the asker going away (a closed tab) stops the fetch, unless someone else is waiting for the same address
+      const gone = new AbortController();
+      const onClose = () => { if (!res.writableEnded) gone.abort(); };
+      res.on('close', onClose);
+      try {
+        return [200, await linkUnfurl.unfurl({
+          url: body.url,
+          refresh: body.refresh === true,
+          boardId: params.id,
+          userId: user.id,
+          acceptLanguage: req.headers['accept-language'],
+          signal: gone.signal,
+          rateKeys: { person: `user:${user.id}`, workspace: 'workspace' },
+        })];
+      } catch (err) {
+        if (err instanceof LinkRouteError) {
+          if (err.retryAfter) res.setHeader('retry-after', String(err.retryAfter));
+          throw new HttpError(err.status, err.code, err.message);
+        }
+        throw err;
+      } finally {
+        res.off('close', onClose);
+      }
+    }),
+    compile('GET', 'admin/link-previews', {}, ({ user }) => {
+      requireAdmin(user);
+      return [200, linkUnfurl.state()];
+    }),
+    compile('PUT', 'admin/link-previews', { body: true }, ({ user, body }) => {
+      requireAdmin(user);
+      for (const key of Object.keys(body)) {
+        if (key !== 'enabled') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+      }
+      if (typeof body.enabled !== 'boolean') throw badRequest('enabled must be a boolean');
+      if (config.linkPreviews?.forced === 'off') throw conflict('link_previews_locked', 'TABULA_LINK_PREVIEWS=off turns link previews off for this server');
+      directory.transaction(() => {
+        directory.setSetting('linkPreviews.enabled', body.enabled ? '1' : '0');
+        audit(user, body.enabled ? 'linkPreviews.enabled' : 'linkPreviews.disabled', {});
+      });
+      return [200, linkUnfurl.state()];
+    }),
+
     // ---------------------------------------------------------- AI settings and keys (docs/ai.md)
 
     ...aiApi.routes,
@@ -1913,6 +1966,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     if (read && area === 'assets' && tail.length === 1) return true;
     if (read && guest.boardRole === 'editor' && area === 'versions' && (tail.length === 0 || (tail.length === 2 && tail[1] === 'state'))) return true;
     // An editor may add images to this board only; the asset store applies the same per-file and per-board quotas.
+    // The unfurl path is let through only so the route can answer a guest with its own clear code; the route refuses every guest.
+    if (method === 'POST' && area === 'unfurl' && tail.length === 0) return true;
     return method === 'POST' && guest.boardRole === 'editor' && area === 'assets' && tail.length === 0;
   }
 
