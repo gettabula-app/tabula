@@ -1,0 +1,65 @@
+/* The chat dock (docs/chat.md, Dock): in the overlay layer above the board chrome, below popovers and dialogs. */
+.chat-dock-host { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+.chat-dock-host > * { pointer-events: auto; }
+.chat-dock, .chat-bubble { position: fixed; box-shadow: 0 10px 30px color-mix(in srgb, var(--tray) 28%, transparent); }
+.chat-dock[hidden], .chat-bubble[hidden] { display: none; }
+.chat-dock {
+  right: calc(12px + var(--safe-right)); top: calc(72px + var(--safe-top)); bottom: calc(12px + var(--safe-bottom));
+  width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md);
+}
+.chat-dock-host[data-mode='compact'] .chat-dock { top: auto; width: min(300px, calc(100vw - 24px)); height: min(440px, calc(100dvh - 96px)); }
+.chat-dock-head { display: flex; flex: none; align-items: center; gap: 4px; min-height: 48px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--tray-line); }
+.chat-dock-title { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; font-size: 15px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.chat-dock-head .chat-dock-btn { flex: none; width: 32px; height: 32px; }
+.chat-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.chat-dock-conv { flex: 1 1 auto; min-height: 0; }
+.chat-dock-top { position: relative; z-index: 1; flex: none; background: var(--tray); border-bottom: 1px solid var(--tray-line); }
+.chat-dock-top:not(:has(> :not([hidden]))) { display: none; }
+.chat-dock-chips { display: flex; gap: 6px; padding: 10px 12px 0; overflow: hidden; }
+.chat-dock-chips[hidden], .chat-dock-here[hidden], .chat-dock-status[hidden] { display: none; }
+.chat-chip { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.chat-chip:hover { background: var(--tray-hover); }
+.chat-chip.on { background: var(--tray-hover); color: var(--tray-text); }
+.chat-chip-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.chat-chip-count { display: inline-grid; place-items: center; flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--signal); color: var(--on-signal); font-size: 11px; font-weight: 700; text-decoration: none; }
+.chat-chip-count[hidden] { display: none; }
+.chat-chip-list .chat-chip { width: 100%; justify-content: space-between; }
+.chat-dock-here { display: flex; align-items: center; gap: 8px; padding: 10px 14px; color: var(--tray-muted); font-size: 12.5px; }
+.chat-here-avatar { width: 24px; height: 24px; margin-left: -6px; font-size: 10px; border: 0; box-shadow: 0 0 0 2px var(--tray); }
+.chat-here-avatar:first-child { margin-left: 0; }
+.chat-here-avatar.live::after { content: ''; position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 2px var(--tray); }
+.chat-here-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-dock-status { margin: 0; padding: 16px 14px; color: var(--tray-muted); font-size: 13px; }
+/* the compact dock is one channel, one line per message: no chips, no presence strip */
+.chat-dock-host[data-mode='compact'] :is(.chat-dock-top) { display: none; }
+.chat-bubble {
+  right: calc(12px + var(--safe-right)); bottom: calc(76px + var(--safe-bottom)); display: grid; place-items: center;
+  width: 52px; height: 52px; padding: 0; border: 0; border-radius: 50%; color: var(--tray-text);
+}
+.chat-dock-context { display: none; font-weight: 400; color: var(--tray-muted); }
+.chat-dock-host[data-mode='compact'] .chat-dock-context { display: inline; }
+/* the composer's rule is a hairline here, not the heavy rule of the old tray */
+.chat-dock .chat-composer { border-top: 1px solid var(--tray-line); }
+.chat-bubble-count { position: absolute; right: -2px; top: -2px; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: var(--signal); color: var(--on-signal); font-size: 11px; font-weight: 700; text-decoration: none; box-shadow: 0 0 0 2px var(--canvas); }
+.chat-bubble-count[hidden] { display: none; }
+.chat-bubble-count.mention { outline: 2px solid var(--danger); outline-offset: 1px; }
+/* the full-screen tracker sits at z-index 20000: the dock goes over it (popovers and dialogs are above both) */
+:root:has(.trk-route-root) .chat-dock-host { z-index: 20001; }
+/* On a phone the open dock is a bottom sheet over the board: full width, rounded top, a scrim, a handle, above the soft keyboard. */
+.chat-dock-scrim, .chat-dock-handle { display: none; }
+@media (max-width: 599px) {
+  .chat-dock-scrim { display: block; position: fixed; inset: 0; background: color-mix(in srgb, var(--tray) 45%, transparent); }
+  .chat-dock-scrim[hidden] { display: none; }
+  .chat-dock, .chat-dock-host[data-mode='compact'] .chat-dock {
+    inset: auto 0 var(--dock-kb, 0px) 0; width: auto; height: min(80dvh, calc(var(--dock-vh, 100dvh) - 56px - var(--safe-top)));
+    border-radius: var(--radius-md) var(--radius-md) 0 0; padding-bottom: var(--safe-bottom); box-shadow: none; transition: none;
+  }
+  .chat-dock-handle { display: grid; place-items: center; flex: none; width: 100%; height: 24px; padding: 0; border: 0; background: transparent; color: var(--tray-muted); cursor: grab; touch-action: none; }
+  .chat-dock-handle > span { width: 36px; height: 4px; border-radius: 999px; background: currentColor; opacity: 0.6; }
+  .chat-dock-head { min-height: 44px; }
+  .chat-dock-head .chat-dock-btn { width: 44px; height: 44px; }
+  .chat-dock-head [aria-label='Compact'], .chat-dock-head [aria-label='Full size'] { display: none; }
+  .chat-dock-chips { overflow-x: auto; scrollbar-width: none; }
+  .chat-chip { min-height: 44px; }
+  .chat-dock-top { position: sticky; top: 0; }
+}

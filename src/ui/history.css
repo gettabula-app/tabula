@@ -2,7 +2,7 @@
    hairlines and 2px rules, a medium tray radius and small control radii, no shadow, 11px uppercase labels, an 8px grid. Theme variables only. */
 
 .history-panel {
-  position: absolute; top: var(--panel-top); right: calc(12px + var(--safe-right)); bottom: calc(72px + var(--safe-bottom)); width: 320px; z-index: 3; display: none; flex-direction: column; min-height: 0;
+  position: absolute; top: var(--panel-top); right: calc(12px + var(--safe-right) + var(--dock-inset, 0px)); bottom: calc(72px + var(--safe-bottom)); width: 320px; z-index: 3; display: none; flex-direction: column; min-height: 0;
   box-sizing: border-box; background: var(--tray); color: var(--tray-text); color-scheme: dark;
   border: 1px solid var(--tray-line); border-radius: var(--radius-md); box-shadow: none; outline: none;
 }

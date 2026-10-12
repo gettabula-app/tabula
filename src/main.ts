@@ -28,6 +28,8 @@ import { mayChange } from './template-share';
 import type { CustomTemplate } from './custom-templates';
 import { applyImported, type ImportedBoard } from './exporters';
 import { toast } from './ui/common';
+import { currentChatDock, syncChatDock } from './ui/chat-dock';
+import { dockHiddenOn } from './ui/chat-dock-state';
 import { commentNoticeText } from './comments';
 import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
@@ -67,6 +69,9 @@ if (!DEMO) onRestoring(() => showRestoring());
 const RETURN_KEY = 'driftboard:return';
 
 const root = document.getElementById('app')!;
+// The overlay layer at the app root: what stays on screen while the page behind it changes (the chat dock).
+const overlay = Object.assign(document.createElement('div'), { id: 'overlay' });
+document.body.append(overlay);
 const trackerFoundationVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).get('debug') === 'tracker-foundation';
 const trackerMockVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).has('debug') && new URLSearchParams(location.search).get('trackerMock') === '1';
 const trackerBoardMockVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).has('debug') && new URLSearchParams(location.search).get('trackerMock') === 'board';
@@ -294,6 +299,9 @@ async function isDeletedBoard(id: string, auth: AuthState, role: ServerBoard['ro
   }
 }
 
+/** The page being shown, for the chat dock: it stays away from sign-in, consent and the Chat page. */
+let routeName = '';
+
 async function route() {
   if (DEMO) {
     if (location.hash !== '#/b/demo') {
@@ -324,6 +332,8 @@ async function route() {
   const seq = ++routeSeq;
   const auth = authState();
   const r = resolveRoute(location.hash, auth.mode, location.pathname, location.search);
+  routeName = r.name;
+  currentChatDock()?.setSuppressed(dockHiddenOn(r.name));
   const trackerScreen = r.name === 'tracker' && (trackerEnabled(auth) || trackerBoardMockVisual);
   const keepTrackerStore = trackerScreen;
   const preserveBoard = trackerScreen && current !== null && currentBoardId !== null;
@@ -620,12 +630,19 @@ async function boot() {
     }
   };
   syncMentions();
+  const syncDock = () => {
+    const a = authState();
+    const dock = syncChatDock(overlay, (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.id : null, chatAvailable(), (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.name : undefined);
+    dock?.setSuppressed(dockHiddenOn(routeName));
+  };
+  syncDock();
   onAuth((s) => {
     if (needsSignIn(resolveRoute(location.hash, s.mode, location.pathname, location.search), s.mode)) {
       saveReturn(location.hash);
       location.replace('#/signin');
     }
     syncMentions();
+    syncDock();
   });
   if (!DEMO && isDesktop()) {
     try {

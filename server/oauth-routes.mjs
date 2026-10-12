@@ -318,7 +318,7 @@ export function createOAuthRoutes({ config, directory, now = Date.now }) {
     revocation_endpoint_auth_methods_supported: ['none'],
     code_challenge_methods_supported: ['S256'],
     authorization_response_iss_parameter_supported: true,
-    service_documentation: `${issuer}/docs/mcp.html`,
+    service_documentation: `${issuer}/docs/ai-tools/`,
   };
 
   async function register(req, res) {
