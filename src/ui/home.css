@@ -236,3 +236,8 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .save-tpl { grid-template-columns: minmax(0, 1fr); }
   .save-tpl-preview { order: -1; }
 }
+
+/* the name opens the account menu when there is something in it */
+.topbar-me-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 4px; border: 0; background: transparent; font: inherit; cursor: pointer; text-align: inherit; }
+.topbar-me-btn::after { content: ''; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+.topbar-me-btn:hover { text-decoration: underline; }
