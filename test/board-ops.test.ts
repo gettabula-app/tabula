@@ -476,7 +476,7 @@ describe('update', () => {
     );
     const before = bytes(d);
     const missing = failure(() => planUpdate(d, [{ id: 'missing', x: 12 }]));
-    expect(missing).toMatchObject({ code: 'not_found', message: 'No such object', path: 'updates[0].id' });
+    expect(missing).toMatchObject({ code: 'not_found', message: 'No such object. Call get_board or get_objects for current ids.', path: 'updates[0].id' });
     for (const id of ['hidden-card', 'private-card', 'hidden-lane', 'card-in-hidden-lane', 'hidden-kanban']) {
       const err = failure(() => planUpdate(d, [{ id, x: 12 }]));
       expect(err).toMatchObject({ code: missing.code, message: missing.message, path: missing.path });
@@ -1203,7 +1203,7 @@ describe('kanban labels and lanes', () => {
     expect(bytes(d)).toBe(before);
     const blocked = failure(() => planDeleteKanbanLane(d, 'kb', lanes[0].id, lanes[1].id));
     expect(blocked.code).toBe('wip_limit');
-    expect(blocked.message).toBe('This lane is at its WIP limit (1/1).');
+    expect(blocked.message).toBe('This lane is at its WIP limit (1/1). Move a card out of the lane first or pick another lane.');
     expect(bytes(d)).toBe(before);
 
     target.set('wip', 2);

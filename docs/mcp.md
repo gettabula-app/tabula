@@ -201,7 +201,7 @@ Numbers must be finite. Coordinates are within ±1,000,000 and rounded to 2 deci
 
 ### `list_boards` (accounts mode only)
 
-`{ query?: string (at most 100 characters, matched against the title, case-insensitive), limit?: 1..100 (default 50) }` -> `{ boards: [{id, title, role, access: 'read'|'comment'|'write', teamName|null, updatedAt}], truncated: boolean }`. Uses `directory.listBoardsFor(user)` (deleted boards excluded), filtered by the token's `boardIds`. `access` is the effective access from the table above, for this token. Newest `updatedAt` first.
+`{ query?: string (at most 100 characters, matched against the title, case-insensitive), limit?: 1..100 (default 50), cursor?: string }` -> `{ boards: [{id, title, role, access: 'read'|'comment'|'write', teamName|null, updatedAt}], nextCursor: string|null, truncated: boolean }`. Uses `directory.listBoardsFor(user)` (deleted boards excluded), filtered by the token's `boardIds`. `access` is the effective access from the table above, for this token. Sorted by title then id.
 
 ### `get_board`
 
@@ -260,7 +260,7 @@ icon, image, path, UML objects   x y w h rotation(deg), parent(frame or group id
 
 ### `delete_objects`
 
-`{ boardId, ids: string[1..50] }` -> `{ deleted: string[], alsoDeleted: string[], removed: Summary[] }`. Explicit ids only: there is no "delete all", no filter. Any locked or unknown id fails the whole call. Lanes cannot be deleted here; use `delete_kanban_lane`. Kanbans are deleted through the board UI. A card must be visible, in a kanban lane and unlocked; an unrevealed private or hidden card answers `not_found`, and a card assigned to another agent answers `conflict` for a different token. A person's card can be deleted by an editor token. Deleting a group also deletes its members, including nested groups, frames and kanban members; any locked member blocks the whole cascade with `conflict` until it is unlocked. Unrevealed private notes are left on the board and moved to the nearest parent outside the deleted group. Children of a directly deleted frame stay on the board with `parent` cleared. **Connectors attached to a deleted object are deleted too** (`alsoDeleted`): the app turns them into free lines, which needs connector geometry that lives in TypeScript under `src/` and is not available to the server. Deleting is permanent for the human, because MCP edits are outside the undo stack and rooms use `gc: true`; the result therefore echoes a `Summary` of everything removed (`removed`) so a model can recreate it.
+`{ boardId, ids: string[1..50] }` -> `{ deleted: string[], alsoDeleted: string[], removed: Summary[] }`. Explicit ids only: there is no "delete all", no filter. Any locked or unknown id fails the whole call. Lanes cannot be deleted here; use `delete_kanban_lane`. Kanbans are deleted through the board UI. A card must be visible, in a kanban lane and unlocked; an unrevealed private or hidden card answers `not_found`, and a card assigned to another agent answers `conflict` for a different token. A person's card can be deleted by an editor token. Deleting a group also deletes its members, including nested groups, frames and kanban members; any locked member blocks the whole cascade with `conflict` until it is unlocked. Unrevealed private notes are left on the board and moved to the nearest parent outside the deleted group. Children of a directly deleted frame stay on the board with `parent` cleared. **Connectors attached to a deleted object are deleted too** (`alsoDeleted`): the app turns them into free lines, which needs connector geometry that lives in TypeScript under `src/` and is not available to the server. The result echoes a `Summary` of everything removed (`removed`) so a model can recreate it.
 
 ### `list_kanban_cards`
 
@@ -316,7 +316,7 @@ icon, image, path, UML objects   x y w h rotation(deg), parent(frame or group id
 
 ### `list_templates` (accounts mode only)
 
-`{ query?: string (≤ 100, matches name, category and description), category?: one of the template categories, limit?: 1..100 (default 50) }` -> `{ templates: [{ id, name, category, description, scope: 'personal'|'team'|'workspace', teamName|null, objects, steps, updatedAt }], truncated }`. Newest first. It lists exactly what the person behind the token can see in the app: their own templates, those of their teams, and the workspace's (guests: only their teams'); see `docs/custom-templates.md` for the rules. Names and descriptions are written by people, so the result is fenced and cleaned like board text. The content of a template is never returned.
+`{ query?: string (≤ 100, matches name, category and description), category?: one of the template categories, limit?: 1..100 (default 50), cursor?: string }` -> `{ templates: [{ id, name, category, description, scope: 'personal'|'team'|'workspace', teamName|null, objects, steps, updatedAt }], nextCursor: string|null, truncated }`. Sorted by name then id. It lists exactly what the person behind the token can see in the app: their own templates, those of their teams, and the workspace's (guests: only their teams'); see `docs/custom-templates.md` for the rules. Names and descriptions are written by people, so the result is fenced and cleaned like board text. The content of a template is never returned.
 
 ### `use_template` (accounts mode only)
 
@@ -345,6 +345,7 @@ The template's session steps and fonts are **not** applied (`stepsSkipped` says 
 | Cards per `add_kanban_cards` / `move_kanban_cards` | 25 |
 | Ids per `delete_objects` / `get_objects` | 50 |
 | `get_board` page | 500 objects (default 200) |
+| Board and template lists | `list_boards` and `list_templates` accept `limit` (1..100, default 50) and an opaque `cursor`; follow `nextCursor` until it is `null`. Boards are sorted by title, templates by name, then each by id. A bad cursor returns `invalid_input`. Board pages apply the token's board restriction before paging. |
 | Objects per board | 5,000 |
 | Response size | 200 KB of text; larger results are cut with `truncated: true` |
 | Calls per token | 120 per minute, of which at most 30 mutating, sliding window in memory (`429`, `Retry-After`, JSON-RPC error body) |
@@ -630,7 +631,7 @@ Settled when the spec was approved:
 2. **https only.** `TABULA_MCP=on` refuses to start for an `http://` base URL on a non-loopback host. This rules out clear-text LAN setups.
 3. **Workspace owners and admins must list boards for `comment` and `write` tokens.** Their role is `owner` of everything.
 4. **No visible marker on AI-created objects** (only audit rows and the `createdBy` account id). A `createdVia` field would be one optional field in `src/types.ts`.
-5. **Delete removes attached connectors** instead of freeing their ends, and cannot be undone.
+5. **Delete removes attached connectors** instead of freeing their ends.
 6. **Access tokens only** (no OAuth), so Claude Desktop needs a bridge until an OAuth slice.
 7. **Open mode shared token ships in this slice**, off by default, `read` scope by default.
 8. **Token expiry** default 30 days, maximum 365, no non-expiring tokens; "Sign out everywhere" leaves tokens alone.
