@@ -324,6 +324,18 @@ export function colourIndex(id: string | null, count: number): number {
   return hash % count;
 }
 
+/** A message this person wrote: shown as a bubble on the right, without a name. */
+export const isOwn = (authorId: string | null, meId: string): boolean => authorId !== null && authorId === meId;
+
+/** A message from someone else that names this person: its row carries the signal bar. */
+export const mentionsMe = (m: Pick<ChatMessage, 'authorId' | 'mentions' | 'deleted'>, meId: string): boolean =>
+  !m.deleted && !isOwn(m.authorId, meId) && m.mentions.some((p) => p.id === meId);
+
+/** The people an empty conversation shows as colour squares: everyone but this person, at most `max`. */
+export function emptyStatePeople<T extends { id: string }>(people: readonly T[], meId: string, max = 4): T[] {
+  return people.filter((p) => p.id !== meId).slice(0, max);
+}
+
 /** Characters as the server counts them (code points), after mentions become tokens. */
 export const textLength = (text: string): number => [...text].length;
 

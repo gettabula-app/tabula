@@ -119,6 +119,8 @@ export const ICONS = {
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   // the list sheet's drag handle (docs/kanban.md, Visual design)
   grip: '<rect x="8" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="13" y="5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="8" y="10.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="13" y="10.5" width="3" height="3" fill="currentColor" stroke="none"/><rect x="8" y="16" width="3" height="3" fill="currentColor" stroke="none"/><rect x="13" y="16" width="3" height="3" fill="currentColor" stroke="none"/>',
+  smile: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14c.9 1.4 2.2 2.1 3.5 2.1s2.6-.7 3.5-2.1"/><path d="M9 9.8v.4M15 9.8v.4"/>',
+  reply: '<path d="M9.5 6.5L4.5 11.5l5 5"/><path d="M4.5 11.5H14a5.5 5.5 0 015.5 5.5v1"/>',
   dots: '<circle cx="5.5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="18.5" cy="12" r="1.2" fill="currentColor"/>',
   map: '<path d="M3.5 6.5l5.5-2.5 6 2.5 5.5-2.5v13.5L15 20l-6-2.5-5.5 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>',
   chat: '<path d="M4 5h16v11H10l-6 4z"/><path d="M8 9.5h8M8 12.5h5"/>',

@@ -1,5 +1,6 @@
-/* Board chat (docs/chat.md, Interface): the Chat tab of the side tray. Swiss: theme variables only, radius tokens by role,
-   no shadows, hairlines and 2px rules, 11px uppercase labels, an 8px grid. --signal marks only Send and the active tab. */
+/* Board chat (docs/chat.md, Interface): the conversation in the chat dock and on the Chat page. Theme variables only, radius
+   tokens by role (8px controls, 12px bubbles and pills), hairlines, 11px uppercase labels, an 8px grid. --signal marks Send, the
+   New messages line, a message that mentions you, your own bubbles and the reactions you gave. */
 
 /* the Chat button and its unread badge (a red outline when someone mentions you) */
 .chat-toggle { position: relative; }
@@ -28,44 +29,50 @@
 .chat-log:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
 .chat-older { padding: 8px 16px; color: var(--tray-muted); font-size: 12px; line-height: 16px; }
 .chat-older:empty { display: none; }
-/* An empty workspace channel: a centred block of three short lines in the tray text colours, no picture. */
+/* An empty conversation: the colour squares of the people here, a heading and a line, centred. */
 .chat-log.has-welcome { display: flex; flex-direction: column; }
 .chat-older.chat-welcome { flex: 1 1 auto; display: grid; align-content: center; justify-items: center; gap: 4px; padding: 32px 24px; color: var(--tray-muted); font-size: 13px; line-height: 18px; text-align: center; }
-.chat-welcome-title { color: var(--tray-text); font-size: 15px; font-weight: 700; line-height: 20px; }
+.chat-welcome-title { color: var(--tray-text); font-size: 16px; font-weight: 700; line-height: 22px; }
+.chat-empty-people { display: flex; margin-bottom: 8px; }
+.chat-empty-people .chat-avatar { width: 32px; height: 32px; margin: 0 0 0 -4px; font-size: 11px; box-shadow: 0 0 0 2px var(--tray); }
+.chat-empty-people .chat-avatar:first-child { margin-left: 0; }
 
-/* date line and the New messages line: labels on a rule */
+/* the day line: a label between two rules; the New messages line: the label in the signal colour, then a signal rule */
 .chat-day, .chat-new {
-  display: flex; align-items: center; gap: 8px; margin: 16px 16px 8px; color: var(--tray-muted);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; line-height: 16px;
+  display: flex; align-items: center; gap: 10px; margin: 16px 16px 8px; color: var(--tray-muted);
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 16px;
 }
-.chat-day::after, .chat-new::after { content: ''; flex: 1; height: 1px; background: var(--tray-line); }
-.chat-new { color: var(--tray-text); }
-.chat-new::after { height: 2px; background: var(--tray-text); }
+.chat-day::before, .chat-day::after, .chat-new::after { content: ''; flex: 1; height: 1px; background: var(--tray-line); }
+.chat-new { color: var(--signal); }
+.chat-new::after { background: var(--signal); }
 
-/* one message: a colour square at the start of a run, the text beside it, the actions button at the end */
+/* one message: a colour square at the start of a run, the text beside it; the tools float at the top right on hover and focus */
 .chat-msg {
-  position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) 32px; column-gap: 8px; align-items: start;
-  padding: 2px 4px 2px 16px;
+  position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 10px; align-items: start;
+  margin: 0 8px; padding: 4px 8px; border-radius: var(--radius-sm);
 }
 .chat-msg.head { margin-top: 8px; }
 .chat-msg:hover, .chat-msg:focus-within { background: var(--tray-hover); }
-.chat-gutter { width: 24px; }
+.chat-gutter { width: 28px; }
 .chat-avatar {
-  width: 24px; height: 24px; margin-top: 2px; border-radius: 50%; background: var(--c, var(--tray-2)); color: #fff;
-  display: grid; place-items: center; font: 700 10px/1 var(--ui); letter-spacing: 0.02em;
+  width: 28px; height: 28px; margin-top: 0; border-radius: 50%; background: var(--c, var(--tray-2)); color: #fff;
+  display: grid; place-items: center; font: 700 11px/1 var(--ui); letter-spacing: 0.02em;
 }
 .chat-main { min-width: 0; }
 .chat-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; min-width: 0; }
-.chat-name { min-width: 0; font-weight: 600; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
-.chat-time { color: var(--tray-muted); font-size: 11px; line-height: 20px; white-space: nowrap; }
+.chat-meta.cont { display: none; }
+.chat-name { min-width: 0; font-weight: 700; font-size: 13.5px; line-height: 20px; overflow-wrap: anywhere; }
+.chat-time { color: var(--tray-muted); font-size: 11.5px; line-height: 20px; white-space: nowrap; }
 .chat-text, .chat-tomb, .chat-state { margin: 0; font-size: 13.5px; line-height: 20px; }
 .chat-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tray-text); }
 .chat-tomb { color: var(--tray-muted); font-style: italic; }
 .chat-edited { color: var(--tray-muted); font-size: 11px; }
 .chat-link { color: var(--tray-text); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-all; }
 .chat-link:hover { text-decoration-thickness: 2px; }
-.chat-mention { padding: 0 2px; border-radius: var(--radius-xs); background: var(--tray-2); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
-.chat-mention.me { text-decoration: underline 2px; text-underline-offset: 3px; }
+/* a mention: a chip with a signal underline; yours is stronger, and a message that names you gets an inset signal bar */
+.chat-mention { padding: 0 3px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--signal) 24%, transparent); border-bottom: 1.5px solid var(--signal); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
+.chat-mention.me { background: color-mix(in srgb, var(--signal) 40%, transparent); }
+.chat-msg.mention { background: color-mix(in srgb, var(--signal) 14%, transparent); box-shadow: inset 3px 0 0 var(--signal); }
 .chat-quote {
   display: flex; gap: 8px; min-width: 0; margin: 2px 0 4px; padding-left: 8px; border-left: 2px solid var(--tray-line);
   color: var(--tray-muted); font-size: 12px; line-height: 16px;
@@ -73,9 +80,34 @@
 .chat-quote-name { flex: none; font-weight: 600; }
 .chat-quote-name:empty { display: none; }
 .chat-quote-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-more { width: 32px; height: 28px; opacity: 0; }
-.chat-msg:hover .chat-more, .chat-more:focus-visible, .chat-more[aria-expanded='true'] { opacity: 1; }
-@media (hover: none) { .chat-more { opacity: 1; } }
+
+/* hover tools: React, Reply and the actions menu. Hidden until the row is hovered or has focus; on a touch screen only the menu button shows, inside the row. */
+.chat-hover {
+  position: absolute; z-index: 1; top: -14px; right: 6px; display: flex; gap: 2px; padding: 3px; opacity: 0; pointer-events: none;
+  background: var(--tray-2); border: 1px solid var(--tray-line); border-radius: var(--radius-sm);
+}
+/* hidden by opacity, not display, so the buttons stay in the tab order and focus shows the bar */
+.chat-msg:hover .chat-hover, .chat-msg:focus-within .chat-hover { opacity: 1; pointer-events: auto; }
+.chat-hover .icon-btn { width: 28px; height: 26px; border-radius: var(--radius-xs); }
+.chat-hover .icon-btn:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 1px; }
+@media (hover: none) {
+  .chat-hover { top: 2px; right: 2px; padding: 0; border: 0; background: transparent; opacity: 1; pointer-events: auto; }
+  .chat-hover .chat-react, .chat-hover .chat-reply { display: none; }
+  .chat-hover .icon-btn { width: 32px; height: 32px; }
+}
+
+/* your own messages: a bubble on the right in a soft signal tint, the time under it, no name or square */
+.chat-msg.own { grid-template-columns: minmax(0, 1fr); justify-items: end; }
+.chat-msg.own > .chat-avatar, .chat-msg.own > .chat-gutter { display: none; }
+.chat-msg.own .chat-main { display: flex; flex-direction: column; align-items: flex-end; max-width: 82%; }
+.chat-msg.own .chat-text {
+  padding: 7px 11px; border-radius: 12px 12px 4px 12px; text-align: left;
+  background: color-mix(in srgb, var(--signal) 14%, var(--tray)); border: 1px solid color-mix(in srgb, var(--signal) 35%, transparent);
+}
+.chat-msg.own .chat-name { display: none; }
+.chat-msg.own .chat-meta { order: 9; margin: 2px 4px 0 0; }
+.chat-msg.own:has(.chat-edit) .chat-main { width: 100%; max-width: 100%; align-items: stretch; }
+.chat-msg.own.pending .chat-text { background: transparent; }
 
 /* the person's own messages on their way: greyed, with what happened under them */
 .chat-msg.pending .chat-text { color: var(--tray-muted); }
@@ -103,11 +135,11 @@
 /* the composer: below a 2px rule, the field grows to six lines */
 .chat-composer {
   position: relative; flex: none; display: flex; flex-direction: column; gap: 8px; padding: 8px 16px 16px;
-  border-top: 2px solid var(--tray-text);
+  border-top: 1px solid var(--tray-line);
 }
 .chat-panel .chat-input {
   display: block; width: 100%; min-height: 38px; resize: none; overflow-y: hidden; border-radius: var(--radius-sm);
-  padding: 8px; font-size: 14px; line-height: 20px;
+  padding: 8px 12px; border: 1px solid var(--tray-line); background: var(--tray-2); font-size: 14px; line-height: 20px;
 }
 .chat-panel .chat-input:focus { border-color: var(--tray-text); }
 .chat-panel .chat-input:disabled { opacity: 1; color: var(--tray-muted); cursor: not-allowed; }
@@ -157,20 +189,26 @@
 .chat-reactions { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 0; }
 .chat-reaction {
   display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; box-sizing: border-box;
-  border: 1px solid var(--tray-line); border-radius: var(--radius-xs); background: transparent; color: var(--tray-text);
+  border: 1px solid var(--tray-line); border-radius: var(--radius-md); background: var(--tray-2); color: var(--tray-text);
   font: 600 12px/1 var(--ui); cursor: pointer;
 }
 .chat-reaction:hover:not(:disabled) { background: var(--tray-hover); }
-.chat-reaction.mine { border-color: var(--tray-text); background: var(--tray-2); }
+.chat-reaction.mine { border-color: var(--signal); background: color-mix(in srgb, var(--signal) 14%, transparent); }
 .chat-reaction:disabled { cursor: default; opacity: 1; }
 .chat-reaction:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 1px; }
 .chat-reaction-n { min-width: 8px; text-align: left; }
+/* the quick reactions bar, opened by React in the hover tools */
+.chat-quick-pop.popover { padding: 4px; border: 1px solid var(--tray-line); border-radius: var(--radius-md); }
+.chat-quick { display: flex; gap: 2px; }
+.chat-quick .chat-quick-btn { width: 36px; height: 36px; border-radius: var(--radius-sm); font-size: 18px; line-height: 1; }
+.chat-quick .chat-quick-btn.on { background: color-mix(in srgb, var(--signal) 18%, transparent); box-shadow: inset 0 -2px 0 var(--signal); }
+.chat-quick .chat-quick-btn:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
 .chat-picker { display: flex; flex-wrap: nowrap; gap: 0; padding: 4px; }
 .chat-menu:has(.chat-picker) { min-width: 256px; }
 .chat-pick.menu-item { width: 40px; height: 40px; padding: 0; justify-content: center; font-size: 20px; line-height: 1; }
 .chat-pick.on { background: var(--tray-2); box-shadow: inset 0 -2px 0 var(--tray-text); }
 @media (forced-colors: active) {
-  .chat-reaction.mine, .chat-pick.on { outline: 2px solid Highlight; outline-offset: -2px; }
+  .chat-reaction.mine, .chat-pick.on, .chat-quick-btn.on { outline: 2px solid Highlight; outline-offset: -2px; }
 }
 
 /* object chips and Reference selection (docs/chat.md, Object link): a chip under a message that goes to the object, and the button
@@ -194,4 +232,25 @@
 .chat-attach-btn.btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); font-size: 12.5px; }
 .chat-attach-btn.btn:hover:not(:disabled) { background: var(--tray-hover); }
 .chat-attach-btn[hidden] { display: none; }
-.chat-page .chat-object { border-color: var(--ink); }
+
+/* compact dock (set on an ancestor by the dock): one line per message, "Name time text", the name in the person's colour, no squares,
+   no bubbles. The name is lightened toward the tray text so it reads on the tray. */
+.chat-dock-host[data-mode='compact'] .chat-msg, .chat-dock-host[data-mode='compact'] .chat-msg.own { display: block; justify-items: stretch; margin: 0 4px; padding: 2px 8px; }
+.chat-dock-host[data-mode='compact'] .chat-msg.head { margin-top: 0; }
+.chat-dock-host[data-mode='compact'] .chat-msg > .chat-avatar, .chat-dock-host[data-mode='compact'] .chat-msg > .chat-gutter { display: none; }
+.chat-dock-host[data-mode='compact'] .chat-main, .chat-dock-host[data-mode='compact'] .chat-msg.own .chat-main {
+  display: flex; flex-flow: row wrap; align-items: baseline; gap: 0 6px; max-width: none;
+}
+.chat-dock-host[data-mode='compact'] .chat-meta, .chat-dock-host[data-mode='compact'] .chat-meta.cont { display: contents; }
+.chat-dock-host[data-mode='compact'] .chat-msg.own .chat-meta { order: 0; margin: 0; }
+.chat-dock-host[data-mode='compact'] .chat-name, .chat-dock-host[data-mode='compact'] .chat-msg.own .chat-name { display: inline; color: color-mix(in srgb, var(--c, var(--tray-text)) 55%, var(--tray-text)); font-size: 13px; }
+.chat-dock-host[data-mode='compact'] .chat-time { color: var(--tray-muted); font-size: 11px; font-weight: 400; }
+.chat-dock-host[data-mode='compact'] .chat-text, .chat-dock-host[data-mode='compact'] .chat-msg.own .chat-text {
+  flex: 1 1 0; min-width: 8ch; padding: 0; border: 0; border-radius: var(--radius-xs); background: transparent; font-size: 13px;
+}
+.chat-dock-host[data-mode='compact'] .chat-main > :is(.chat-quote, .chat-reactions, .chat-object, .chat-state, .chat-tomb, .chat-edit, .chat-edit-actions) { flex: 0 0 100%; }
+.chat-dock-host[data-mode='compact'] .chat-hover { top: -12px; }
+@media (forced-colors: active) {
+  .chat-msg.mention { border-left: 3px solid Highlight; }
+  .chat-msg.own .chat-text { border: 1px solid CanvasText; }
+}
