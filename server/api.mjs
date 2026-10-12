@@ -9,6 +9,7 @@ import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
 import { SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
+import { authMailUnavailable } from './mail-health.mjs';
 import { createTelemetryCollector } from './telemetry/collector.mjs';
 import { createDataBytes } from './telemetry/data-bytes.mjs';
 import {
@@ -899,6 +900,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const { email, invite, oauthRequest } = body;
       if (typeof email !== 'string' || email.length > 320) throw badRequest('email must be a string');
       if (invite != null && (typeof invite !== 'string' || invite.length > 256)) throw badRequest('invite must be a string');
+      const mailUnavailable = authMailUnavailable(mailer.mailHealth?.status());
+      if (mailUnavailable) throw new HttpError(mailUnavailable.status, mailUnavailable.code, mailUnavailable.message);
       const result = await auth.requestLogin({ email, invite: invite ?? undefined, oauthRequest, ip: clientIp(req) });
       if (result.limited) {
         res.setHeader('retry-after', String(result.retryAfterSec));
@@ -1344,6 +1347,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         {
           ...directory.adminStats(),
           live: { rooms: live.rooms, connections: live.connections },
+          mail: mailer.mailHealth?.status() ?? { refusedRecently: 0, reason: null },
           instance: { authEnabled: true, baseUrl: config.baseUrl, mail: config.mail.mode, version: config.version ?? VERSION },
           ...(cloud ? { trialEndsAt: cloud.limits().trialEndsAt, state: cloud.limits().state } : {}),
         },

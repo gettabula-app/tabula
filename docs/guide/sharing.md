@@ -127,6 +127,10 @@ Any member can select **Leave team**. You lose access to the team's boards. Boar
 
 Anyone with the link who confirms their email can join the team. The invite page shows the team name and a **Join team** button. If your workspace is a free workspace with a member limit and it is full, the invite is refused with "This workspace has reached its member limit. Ask an admin to remove or disable a member, or the workspace owner to write to us for a larger workspace, then open this link again." Guests do not count towards the limit.
 
+#### Invite a class
+
+Invite a class with one link. On the home screen choose your team, then Manage, then Create invite link. Pick how long it should last (7 days is the default; 14 covers a two-week project) and share the link with the class. Each pupil opens the link, types their email, and gets a sign-in email from Tabula; the link in that email works once and for 15 minutes, so they should open the newest one. After that they are in the team and see its boards. The invite link itself keeps working for everyone until it expires or you revoke it under Manage. Pupils need an email address they can open on the same device.
+
 ### Workspace members
 
 Owners and admins select **Members** on the home screen to change workspace roles, **Disable** or **Enable** a person, or remove them. A removed member is signed out everywhere and loses access immediately. Their local copies stay on their devices. The [admin dashboard](admin.md) has a fuller version of this list.

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { normaliseEmail } from './config.mjs';
+import { mailFailureDetails } from './mail-health.mjs';
 
 const HOUR_MS = 60 * 60 * 1000;
 const EMAIL_LIMIT = 5;
@@ -100,10 +101,11 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
   const ownerMayBootstrap = (email) =>
     config.ownerEmail !== null && email === config.ownerEmail && directory.countOwners() === 0;
 
-  function sendLoginMail(email, token, oauthRequest = null) {
+  function sendLoginMail(email, token, oauthRequest = null, invite = null) {
     const verifyUrl = new URL(config.baseUrl);
     const verifyParams = new URLSearchParams({ token });
     if (oauthRequest) verifyParams.set('oauthRequest', oauthRequest);
+    if (invite) verifyParams.set('invite', invite);
     verifyUrl.hash = `/signin/verify?${verifyParams}`;
     const link = verifyUrl.href;
     const minutes = Math.round(config.loginTokenMs / 60000);
@@ -114,9 +116,12 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
       subject: 'Your Tabula sign-in link',
       text: `Sign in to Tabula with this link:\n\n${link}\n\nThe link works once and expires in ${minutes} minutes. If you did not ask for it, you can ignore this email.\n`,
     };
-    // Not awaited and never rethrown: a failure or a slow mail server must not tell the caller
-    // whether this address exists.
-    const failed = (err) => console.error('mail: could not send a sign-in link:', err?.message ?? err);
+    // Do not await: the allowed address would otherwise take a different amount of time from an unknown one.
+    // The next auth request sees service refusals through the global mail health state.
+    const failed = (err) => {
+      const { reason } = mailFailureDetails(err);
+      log(`auth request mail_failed reason=${reason}`);
+    };
     try {
       Promise.resolve(mailer.send(message)).catch(failed);
     } catch (err) {
@@ -154,7 +159,7 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
         // A malformed or expired consent return behaves like an ordinary sign-in request.
       }
     }
-    sendLoginMail(address, token, oauthRequest);
+    sendLoginMail(address, token, oauthRequest, validInvite ? invite : null);
     return { ok: true };
   }
 

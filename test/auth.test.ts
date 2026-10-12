@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 function setup(env: Record<string, string> = {}) {
-  const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, PORT: '8787', ...env });
+  const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, TABULA_AUTH_IP_LIMIT: '20', PORT: '8787', ...env });
   const d = openDirectory(':memory:');
   opened.push(d);
   const sent: Mail[] = [];
@@ -134,14 +134,25 @@ describe('requestLogin', () => {
     expect(c.sent[0].text).not.toContain('com//');
   });
 
+  it('keeps a valid invite in the verify fragment for recovery when sessionStorage is unavailable', async () => {
+    const c = setup();
+    const owner = c.d.createUser({ email: OWNER, role: 'owner' })!;
+    const classTeam = c.d.createTeam({ name: 'Class', creatorId: owner.id })!;
+    const invite = c.d.createInvite({ teamId: classTeam.id, role: 'member', createdBy: owner.id, ttlMs: 7 * DAY })!;
+
+    await c.auth.requestLogin({ email: 'pupil@example.com', invite: invite.token, ip: '1.1.1.1' });
+
+    expect(c.sent[0].text).toContain(`invite=${invite.token}`);
+  });
+
   it('does not let a mail failure, sync or async, show through', async () => {
     const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER });
     const d = openDirectory(':memory:');
     opened.push(d);
     d.createUser({ email: 'known@example.com', role: 'member' });
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const lines: string[] = [];
 
-    const failing = createAuth({ directory: d, config, mailer: { send: () => Promise.reject(new Error('smtp down')) }, now: () => T0 });
+    const failing = createAuth({ directory: d, config, mailer: { send: () => Promise.reject(new Error('smtp down')) }, now: () => T0, log: (line) => lines.push(line) });
     const throwing = createAuth({
       directory: d,
       config,
@@ -151,13 +162,15 @@ describe('requestLogin', () => {
         },
       },
       now: () => T0,
+      log: (line) => lines.push(line),
     });
 
     expect(await failing.requestLogin({ email: 'known@example.com', ip: '1.1.1.1' })).toEqual({ ok: true });
     expect(await failing.requestLogin({ email: 'unknown@example.com', ip: '1.1.1.1' })).toEqual({ ok: true });
     expect(await throwing.requestLogin({ email: 'known@example.com', ip: '1.1.1.2' })).toEqual({ ok: true });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(errors).toHaveBeenCalledTimes(2);
+    expect(lines).toEqual(['auth request mail_failed reason=network', 'auth request mail_failed reason=network']);
+    expect(lines.join(' ')).not.toContain('known@example.com');
   });
 });
 
@@ -431,7 +444,7 @@ describe('rate limits', () => {
       for (let i = 0; i < 5; i++) {
         expect(await c.auth.requestLogin({ email, ip: `10.0.${email.length}.${i}` })).toEqual({ ok: true });
       }
-      expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toEqual({ limited: true });
+      expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toMatchObject({ limited: true });
     }
     expect(await c.auth.requestLogin({ email: 'other@example.com', ip: '10.9.9.9' })).toEqual({ ok: true });
     expect(c.sent).toHaveLength(5);
@@ -440,7 +453,7 @@ describe('rate limits', () => {
   it('is case-insensitive about the address', async () => {
     const c = setup();
     for (let i = 0; i < 5; i++) await c.auth.requestLogin({ email: `Same@Example.com${' '.repeat(i)}`, ip: `10.0.0.${i}` });
-    expect(await c.auth.requestLogin({ email: 'same@example.com', ip: '10.0.0.9' })).toEqual({ limited: true });
+    expect(await c.auth.requestLogin({ email: 'same@example.com', ip: '10.0.0.9' })).toMatchObject({ limited: true });
   });
 
   it('allows twenty requests per IP per hour', async () => {
@@ -448,14 +461,14 @@ describe('rate limits', () => {
     for (let i = 0; i < 20; i++) {
       expect(await c.auth.requestLogin({ email: `u${i}@example.com`, ip: '2.2.2.2' })).toEqual({ ok: true });
     }
-    expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '2.2.2.2' })).toEqual({ limited: true });
+    expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '2.2.2.2' })).toMatchObject({ limited: true });
     expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '3.3.3.3' })).toEqual({ ok: true });
   });
 
   it('shares one bucket between requests without an IP', async () => {
     const c = setup();
     for (let i = 0; i < 20; i++) await c.auth.requestLogin({ email: `u${i}@example.com` });
-    expect(await c.auth.requestLogin({ email: 'late@example.com', ip: undefined })).toEqual({ limited: true });
+    expect(await c.auth.requestLogin({ email: 'late@example.com', ip: undefined })).toMatchObject({ limited: true });
   });
 
   it('use a rolling hour and reset after it', async () => {
@@ -466,16 +479,16 @@ describe('rate limits', () => {
     await ask();
     await ask();
     c.clock.t = T0 + 50 * MIN;
-    expect(await ask()).toEqual({ limited: true });
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
 
     c.clock.t = T0 + HOUR - 1;
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
     c.clock.t = T0 + HOUR;
     expect(await ask()).toEqual({ ok: true });
     expect(await ask()).toEqual({ ok: true });
     expect(await ask()).toEqual({ ok: true });
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
 
     c.clock.t = T0 + 3 * HOUR;
     expect(await ask()).toEqual({ ok: true });
@@ -487,7 +500,7 @@ describe('rate limits', () => {
     for (let i = 0; i < 5; i++) await ask();
     for (let m = 1; m < 60; m += 5) {
       c.clock.t = T0 + m * MIN;
-      expect(await ask()).toEqual({ limited: true });
+      expect(await ask()).toMatchObject({ limited: true });
     }
     c.clock.t = T0 + HOUR + 1;
     expect(await ask()).toEqual({ ok: true });
@@ -738,6 +751,7 @@ describe('loadConfig', () => {
       dataDir: path.resolve(import.meta.dirname, '..', 'data'),
       port: 8787,
       trustProxy: false,
+      authIpLimit: 300,
       clientIpHeader: 'x-forwarded-for',
       sourcePolicy: { mode: 'off', sources: [] },
       mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Tabula <no-reply@localhost>' },

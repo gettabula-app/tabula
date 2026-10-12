@@ -287,7 +287,7 @@ const stacks: Stack[] = [];
 /** A relay with its own proxy in front; every relay has its own in-memory rate limits. */
 async function launch(env: Record<string, string>, proxy: Partial<ProxyOptions> = {}): Promise<Stack> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-proxy-'));
-  const { port, proc: relay } = await startRelay(dir, env);
+  const { port, proc: relay } = await startRelay(dir, { TABULA_AUTH_IP_LIMIT: '20', ...env });
   const front = await startProxy({ target: port, forwardedProto: 'https', preserveHost: true, ...proxy });
   const stack = { port, dir, relay, proxy: front };
   stacks.push(stack);
