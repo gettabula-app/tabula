@@ -606,8 +606,12 @@ function integer(v, path, min, max) {
 
 function listOf(v, path, min, max) {
   if (!Array.isArray(v)) throw invalid(path, 'Must be an array');
-  if (v.length < min || v.length > max) {
-    throw new OpsError('invalid_input', `Must have ${min} to ${max} items`, path);
+  if (v.length < min) throw new OpsError('invalid_input', `Must have ${min} to ${max} items`, path);
+  if (v.length > max) {
+    const batch = ['objects', 'updates', 'ids', 'cards', 'moves'].includes(path);
+    throw new OpsError('invalid_input', batch
+      ? `Must have no more than ${max} items. Split the call into smaller batches.`
+      : `Must have ${min} to ${max} items`, path);
   }
   return v;
 }
@@ -707,7 +711,7 @@ function laneIdInState(state, laneId) {
 }
 
 function wipLimitError(path, beforeCount, limit) {
-  return new OpsError('wip_limit', `This lane is at its WIP limit (${beforeCount}/${limit}).`, path);
+  return new OpsError('wip_limit', `This lane is at its WIP limit (${beforeCount}/${limit}). Move a card out of the lane first or pick another lane.`, path);
 }
 
 /** Plans a new kanban with the same default lanes, ranks and derived size as the board app.
@@ -787,7 +791,7 @@ export function planCreateKanban(doc, input, options = {}) {
   }
 
   if (objects.size + laneFields.length + 1 > LIMITS.boardObjects) {
-    throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects`, 'lanes');
+    throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects. Delete objects or use another board.`, 'lanes');
   }
 
   const taken = new Set();
@@ -1195,7 +1199,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
   const list = listOf(items, 'objects', 1, LIMITS.createItems);
   const { map, get } = snapshot(doc);
   if (map.size + list.length > LIMITS.boardObjects) {
-    throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects`, 'objects');
+    throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects. Delete objects or use another board.`, 'objects');
   }
 
   const taken = new Set();
@@ -1383,9 +1387,9 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
     if (seen.has(id)) throw invalid(at(path, 'id'), 'Each object may appear once per call');
     seen.add(id);
     const current = get(id);
-    if (!current) throw notFound('No such object', at(path, 'id'));
-    if (!isVisible(current)) throw notFound('No such object', at(path, 'id'));
-    if (current.locked === true) throw conflict('The object is locked', at(path, 'id'));
+    if (!current) throw notFound('No such object. Call get_board or get_objects for current ids.', at(path, 'id'));
+    if (!isVisible(current)) throw notFound('No such object. Call get_board or get_objects for current ids.', at(path, 'id'));
+    if (current.locked === true) throw conflict('The object is locked. Unlock it in the board first.', at(path, 'id'));
 
     const fields = Object.keys(patch).filter((k) => k !== 'id');
     for (const key of fields) {
@@ -1506,10 +1510,10 @@ export function planDelete(doc, ids, { tokenId } = {}) {
       const lane = byId.get(card.parent);
       const container = lane?.type === 'lane' ? byId.get(lane.parent) : undefined;
       if (!isVisible(card) || container?.type !== 'container' || container.layout !== 'kanban') {
-        throw notFound('No such object', path);
+        throw notFound('No such object. Call get_board or get_objects for current ids.', path);
       }
     }
-    if (checkLocked && card.locked === true) throw conflict('The object is locked', path);
+    if (checkLocked && card.locked === true) throw conflict('The object is locked. Unlock it in the board first.', path);
     if (checkOwner && card.ownerKind === 'agent' && typeof card.ownerId === 'string' && card.ownerId !== tokenId) {
       throw conflict('The card is assigned to another agent', path);
     }
@@ -1520,7 +1524,7 @@ export function planDelete(doc, ids, { tokenId } = {}) {
     const id = idString(value, path);
     if (doomed.has(id)) throw invalid(path, 'Each id may appear once');
     const o = get(id);
-    if (!o) throw notFound('No such object', path);
+    if (!o) throw notFound('No such object. Call get_board or get_objects for current ids.', path);
     pathOfId.set(id, path);
     if (o.type === 'lane') throw conflict('Lanes cannot be deleted with delete_objects; use delete_kanban_lane', path);
     if (o.type === 'container') throw conflict('Kanbans are removed through the board UI', path);
@@ -1560,7 +1564,7 @@ export function planDelete(doc, ids, { tokenId } = {}) {
 
   list.forEach((value, i) => {
     if (byId.get(value)?.locked === true && !cascadeMembers.has(value)) {
-      throw conflict('The object is locked', `ids[${i}]`);
+      throw conflict('The object is locked. Unlock it in the board first.', `ids[${i}]`);
     }
   });
 
@@ -1623,7 +1627,7 @@ export function planUseTemplate(doc, content, { createdBy, now = Date.now(), at 
   const list = Array.isArray(content?.objects) ? content.objects : [];
   const { map } = snapshot(doc);
   if (map.size + list.length > LIMITS.boardObjects) {
-    throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects`, 'boardId');
+    throw new OpsError('limit_exceeded', `A board holds at most ${LIMITS.boardObjects} objects. Delete objects or use another board.`, 'boardId');
   }
   const overall = overallBounds(readAll(doc).boxes);
   const origin = at ?? nextFreeOf(overall);

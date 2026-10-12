@@ -639,6 +639,42 @@ describe('authorisation', () => {
     expect((await h.tool(await tokenOf(bob, 'read'), 'list_boards', { limit: 0 })).error).toBe('invalid_input');
     expect((await h.tool(await tokenOf(bob, 'read'), 'list_boards', { limit: 1 })).data.boards).toHaveLength(1);
   });
+
+  it('pages boards in title and id order, validates cursors, and reapplies a token board restriction', async () => {
+    const person = await newMember();
+    const firstAlpha = await h.newBoard(person.cookie, { title: 'Paging board Alpha' });
+    const secondAlpha = await h.newBoard(person.cookie, { title: 'Paging board Alpha' });
+    const gamma = await h.newBoard(person.cookie, { title: 'Paging board Gamma' });
+    const all = await tokenOf(person, 'read');
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 3; i++) {
+      const page = await h.tool(all, 'list_boards', { query: 'paging board', limit: 1, ...(cursor ? { cursor } : {}) });
+      expect(page.error).toBeUndefined();
+      ids.push(...page.data.boards.map((item: Body) => item.id));
+      cursor = page.data.nextCursor ?? undefined;
+    }
+    expect(ids).toEqual([firstAlpha, secondAlpha].sort().concat(gamma));
+    expect(new Set(ids).size).toBe(3);
+    expect(cursor).toBeUndefined();
+    const last = await h.tool(all, 'list_boards', { query: 'paging board', limit: 1, cursor: Buffer.from('2').toString('base64url') });
+    expect(last.data.nextCursor).toBeNull();
+    expect(last.data.truncated).toBe(false);
+    expect((await h.tool(all, 'list_boards', { cursor: '!bad' })).error).toBe('invalid_input');
+
+    const restricted = await tokenOf(person, 'read', [firstAlpha, gamma]);
+    const visible: string[] = [];
+    let restrictedCursor: string | undefined;
+    for (let i = 0; i < 2; i++) {
+      const page = await h.tool(restricted, 'list_boards', { query: 'paging board', limit: 1, ...(restrictedCursor ? { cursor: restrictedCursor } : {}) });
+      expect(page.error).toBeUndefined();
+      visible.push(...page.data.boards.map((item: Body) => item.id));
+      restrictedCursor = page.data.nextCursor ?? undefined;
+    }
+    expect(visible).toEqual([firstAlpha, gamma]);
+    expect(visible).not.toContain(secondAlpha);
+    expect(restrictedCursor).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------- editing live
