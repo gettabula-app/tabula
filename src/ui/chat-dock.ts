@@ -130,11 +130,16 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: (e: MouseEvent) => { dispatch('open'); if (e.detail === 0) dock.focusComposer(); } }, icon('chat', 22), bubbleCount);
   // Esc inside the dock closes it and gives focus back to the Chat button; a message box, a menu or an edit uses its own Esc first.
   panel.setAttribute('tabindex', '-1');
+  let escTimer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
   // The message box stops its keys from travelling up, so its Esc is seen here in the capture phase; once it has let go of focus (the
   // event is done by the next task), focus stays in the dock and the next Esc closes it from here.
   panel.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    setTimeout(() => {
+    clearTimeout(escTimer);
+    escTimer = setTimeout(() => {
+      // the page (or a test's fake page) may be gone by now
+      if (disposed || typeof document === 'undefined') return;
       const active = document.activeElement;
       if (e.defaultPrevented && isShown() && (!active || active === document.body)) panel.focus({ preventScroll: true });
     });
@@ -469,6 +474,8 @@ export function mountChatDock(overlay: HTMLElement, opts: {
       delete document.documentElement.dataset.dockInset;
       offBadge();
       watchLife?.abort();
+      disposed = true;
+      clearTimeout(escTimer);
       if (refetchTimer) clearTimeout(refetchTimer);
       board?.offPresence?.();
       unmount();
