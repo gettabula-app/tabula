@@ -3,10 +3,14 @@
 // check-then-act sequence runs without interleaving with another request.
 
 import fs from 'node:fs';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
 import { SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
+import { createTelemetryCollector } from './telemetry/collector.mjs';
 import {
   MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
 } from './templates.mjs';
@@ -211,7 +215,7 @@ function readJson(req, limit, { rejectDuplicateMappingKeys = false } = {}) {
 
 function compile(method, pattern, options, handler) {
   if (options.maxBody > DRAIN_LIMIT) throw new Error(`maxBody of ${method} ${pattern} is above DRAIN_LIMIT`);
-  return { method, parts: pattern.split('/'), handler, ...options };
+  return { method, parts: pattern.split('/'), template: pattern, handler, ...options };
 }
 
 // `ai` carries what the relay shares with the AI routes (canWriteRoom, readRoom) and can replace the provider factory
@@ -253,6 +257,165 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       activePeople: { last7d: counts.activePeople.last7d, last30d: counts.activePeople.last30d },
       aiRuns: { last30d: counts.aiRuns.last30d },
       chatMessages: chat?.store?.()?.countMessages?.() ?? 0,
+    };
+  }
+
+  const telemetryConfig = config.telemetry ?? { defaultEnabled: Boolean(cloud), forced: null };
+  const getTelemetrySetting = (key) => (typeof directory.getSetting === 'function' ? directory.getSetting(key) : null);
+  const telemetryEnabled = () => {
+    if (telemetryConfig.forced) return telemetryConfig.forced === 'on';
+    const saved = getTelemetrySetting('telemetry.enabled');
+    if (saved === '1') return true;
+    if (saved === '0') return false;
+    return telemetryConfig.defaultEnabled === true;
+  };
+  const TELEMETRY_CATEGORIES = ['feature_counts'];
+  const TELEMETRY_OPERATIONAL = [
+    'performance', 'error_codes', 'seats and guests', 'version', 'disk', 'backup state', 'health',
+    'workspace_scale', 'last activity',
+  ];
+  let telemetryInstallId = getTelemetrySetting('telemetry.install_id') || null;
+  let telemetryLastActivityAt = null;
+  let telemetryConnectionPeak = 0;
+  let telemetryConnectionPeakHour = Math.floor(now() / 3_600_000) * 3_600_000;
+
+  function updateTelemetryConnectionPeak(connections, at) {
+    const currentHour = Math.floor(at / 3_600_000) * 3_600_000;
+    if (currentHour !== telemetryConnectionPeakHour) {
+      telemetryConnectionPeakHour = currentHour;
+      telemetryConnectionPeak = 0;
+    }
+    telemetryConnectionPeak = Math.max(telemetryConnectionPeak, connections);
+  }
+  let eventLoopDelay = null;
+
+  function hostedWorkspaceId() {
+    return config.cloud?.workspaceId ?? cloud?.workspaceId ?? null;
+  }
+
+  // Hosted operating data remains available when an owner opts out of product
+  // analytics. An operator-forced off state still stops all telemetry.
+  const telemetryCollectionEnabled = () => telemetryConfig.forced === 'off'
+    ? false
+    : Boolean(hostedWorkspaceId()) || telemetryEnabled();
+
+  eventLoopDelay = telemetryCollectionEnabled() ? monitorEventLoopDelay({ resolution: 20 }) : null;
+  eventLoopDelay?.enable();
+
+  function localInstallId() {
+    if (hostedWorkspaceId()) return hostedWorkspaceId();
+    telemetryInstallId ??= `ins_${randomUUID().replaceAll('-', '')}`;
+    return telemetryInstallId;
+  }
+
+  function persistTelemetryInstallId() {
+    if (hostedWorkspaceId() || typeof directory.setSetting !== 'function') return;
+    const id = localInstallId();
+    if (getTelemetrySetting('telemetry.install_id') !== id) directory.setSetting('telemetry.install_id', id);
+  }
+
+  // A configured or saved opt-in is explicit. Persist the local install identifier at startup, not from a preview GET.
+  if (telemetryEnabled() && !hostedWorkspaceId()) persistTelemetryInstallId();
+
+  function telemetryEnvelope() {
+    const report = directory.schemaReport();
+    const chatReport = chat?.schemaReport?.() ?? null;
+    let live = {};
+    try { live = liveStats() ?? {}; } catch { /* a snapshot remains available if a live counter is unavailable */ }
+    const connections = Number.isSafeInteger(live.connections) && live.connections >= 0 ? live.connections : 0;
+    const current = now();
+    updateTelemetryConnectionPeak(connections, current);
+    return {
+      schema: 1,
+      hour: Math.floor(current / 3_600_000) * 3_600_000,
+      app_version: config.version ? (config.version.startsWith('v') ? config.version : `v${config.version}`) : 'v0.1.0',
+      schema_directory: report?.disk?.schema ?? report?.build?.schema ?? 0,
+      schema_chat: chatReport?.disk?.schema ?? chatReport?.build?.schema ?? 0,
+      node_major: Number(process.versions.node.split('.')[0]),
+      platform: process.platform,
+      mode: cloud ? 'hosted' : 'self',
+      workspace: localInstallId(),
+      connections_now: connections,
+      connections_peak: telemetryConnectionPeak,
+      last_activity_at: telemetryLastActivityAt === null ? null : Math.floor(telemetryLastActivityAt / 60_000) * 60_000,
+    };
+  }
+
+  const telemetryCollector = createTelemetryCollector({
+    enabled: telemetryCollectionEnabled,
+    analyticsEnabled: telemetryEnabled,
+    now,
+    envelope: telemetryEnvelope,
+  });
+
+  function collectTelemetryGauges() {
+    if (!telemetryCollectionEnabled()) return;
+    const stats = statsReport();
+    const live = (() => { try { return liveStats() ?? {}; } catch { return {}; } })();
+    const connections = Number.isSafeInteger(live.connections) && live.connections >= 0 ? live.connections : 0;
+    updateTelemetryConnectionPeak(connections, now());
+    const active = Number.isSafeInteger(stats.members?.active) ? stats.members.active : 0;
+    const guests = Number.isSafeInteger(stats.guests) ? stats.guests : 0;
+    const boards = Number.isSafeInteger(stats.boards) ? stats.boards : 0;
+    telemetryCollector.gauge('entities_total', boards, { kind: 'boards' });
+    telemetryCollector.gauge('entities_total', active, { kind: 'users_active' });
+    telemetryCollector.gauge('entities_total', guests, { kind: 'users_guest' });
+    telemetryCollector.gauge('ws_connections_peak', telemetryConnectionPeak);
+    telemetryCollector.gauge('process_rss_bytes', process.memoryUsage().rss);
+    const lagNs = eventLoopDelay?.percentile(95) ?? 0;
+    const lagMs = Number.isFinite(lagNs) ? Math.max(0, Math.round(lagNs / 1_000_000)) : 0;
+    telemetryCollector.gauge('event_loop_lag_ms_p95', lagMs);
+    const dataBytes = dataBytesOnDisk();
+    if (dataBytes !== null) telemetryCollector.gauge('data_bytes', dataBytes);
+    eventLoopDelay?.reset();
+  }
+
+  function dataBytesOnDisk() {
+    let bytes = 0;
+    const pending = [dataDir];
+    try {
+      while (pending.length) {
+        const dir = pending.pop();
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+          const file = path.join(dir, entry.name);
+          if (entry.isDirectory()) pending.push(file);
+          else if (entry.isFile()) {
+            bytes += fs.statSync(file).size;
+            if (!Number.isSafeInteger(bytes)) return Number.MAX_SAFE_INTEGER;
+          }
+        }
+      }
+      return bytes;
+    } catch {
+      return null;
+    }
+  }
+
+  function privacyState() {
+    const auditActions = new Set(['telemetry.enabled', 'telemetry.disabled', 'telemetry.settings', 'settings.telemetry']);
+    const changes = [];
+    if (typeof directory.listAuditPage === 'function') {
+      for (const action of ['telemetry', 'settings.telemetry']) {
+        try {
+          const rows = directory.listAuditPage({ limit: 100, action })?.entries;
+          if (Array.isArray(rows)) changes.push(...rows.filter((row) => auditActions.has(row.action)));
+        } catch { /* older directory adapters may not expose audit pages */ }
+      }
+    }
+    const lastChange = changes.sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
+    const changedBy = typeof lastChange?.actorName === 'string' && lastChange.actorName.trim()
+      ? lastChange.actorName.trim()
+      : typeof lastChange?.actorEmail === 'string' && lastChange.actorEmail.trim()
+        ? lastChange.actorEmail.trim()
+        : null;
+    return {
+      enabled: telemetryEnabled(),
+      locked: telemetryConfig.forced ? 'env' : null,
+      mode: cloud ? 'hosted' : 'self',
+      operational: TELEMETRY_OPERATIONAL,
+      categories: TELEMETRY_CATEGORIES,
+      lastBuiltAt: telemetryCollector.lastBuiltAt,
+      lastChangedBy: changedBy && Number.isSafeInteger(lastChange?.ts) ? { name: changedBy, at: lastChange.ts } : null,
     };
   }
 
@@ -660,6 +823,43 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // ------------------------------------------------------------ handlers
 
   const routes = [
+    compile('GET', 'admin/privacy', {}, ({ user }) => {
+      requireAdmin(user);
+      return [200, privacyState()];
+    }),
+    compile('GET', 'admin/privacy/preview', {}, ({ user }) => {
+      requireAdmin(user);
+      collectTelemetryGauges();
+      const result = telemetryCollector.snapshot();
+      return [200, { preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: 'Nothing has been sent' }];
+    }),
+    compile('PUT', 'admin/privacy', { body: true, readOnlyOk: true }, ({ user, body }) => {
+      requireOwner(user);
+      for (const key of Object.keys(body)) {
+        if (key !== 'enabled') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+      }
+      if (typeof body.enabled !== 'boolean') throw badRequest('enabled must be a boolean');
+      if (telemetryConfig.forced) throw conflict('telemetry_locked', 'TABULA_TELEMETRY controls this setting');
+      directory.transaction(() => {
+        directory.setSetting('telemetry.enabled', body.enabled ? '1' : '0');
+        if (body.enabled) persistTelemetryInstallId();
+        audit(user, body.enabled ? 'telemetry.enabled' : 'telemetry.disabled', {});
+      });
+      if (hostedWorkspaceId()) {
+        if (!body.enabled) telemetryCollector.resetProductAnalytics();
+      } else {
+        telemetryCollector.reset();
+      }
+      if (!telemetryCollectionEnabled()) {
+        eventLoopDelay?.disable();
+        eventLoopDelay = null;
+      } else if (!eventLoopDelay) {
+        eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
+        eventLoopDelay.enable();
+      }
+      return [200, privacyState()];
+    }),
+
     ...trackerApiRoutes,
     ...trackerLinkRoutes,
     ...trackerAdminRoutes,
@@ -1743,6 +1943,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       throw badRequest('Malformed URL');
     }
     const method = String(req.method).toUpperCase();
+    const requestStartedAt = now();
     const exportRoute = routes.find((route) => route.exportToken && route.parts.length === segments.length && route.parts.every((part, index) => part === segments[index]));
     if (exportRoute) {
       await exportRoute.handler({ req, res, query, method });
@@ -1774,6 +1975,19 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     };
 
     let session = route.public || route.internal ? null : signedIn();
+    if (typeof res.once === 'function') res.once('finish', () => {
+      try {
+        const responseAt = now();
+        const live = (() => { try { return liveStats() ?? {}; } catch { return {}; } })();
+        const connections = Number.isSafeInteger(live.connections) && live.connections >= 0 ? live.connections : 0;
+        updateTelemetryConnectionPeak(connections, responseAt);
+        const statusClass = `${Math.floor(Number(res.statusCode) / 100)}xx`;
+        telemetryCollector.count('http_requests_total', { route: route.template ?? 'other', status_class: statusClass });
+        telemetryCollector.observe('http_duration_ms', Math.max(0, responseAt - requestStartedAt), { route: route.template ?? 'other' });
+        telemetryCollector.gauge('ws_connections_peak', telemetryConnectionPeak);
+        if (session?.user && res.statusCode < 400) telemetryLastActivityAt = responseAt;
+      } catch { /* local aggregate collection cannot affect a response */ }
+    });
     if (route.tracker) {
       try {
         ticketAccess({ type: 'user', userId: session?.user?.id, user: session?.user }, { id: 'tracker-access-check' });

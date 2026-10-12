@@ -101,6 +101,10 @@ describe('auditSentence', () => {
     ['updates.auto off', entry('updates.auto', { from: true, to: false }), 'ana@example.com turned automatic updates off'],
     ['updates.auto on', entry('updates.auto', { from: false, to: true }), 'ana@example.com turned automatic updates on'],
     ['updates.auto with a name', entry('updates.auto', { from: true, to: false }, { actorEmail: null }), 'Ana turned automatic updates off'],
+    ['telemetry enabled event', entry('telemetry.enabled'), 'ana@example.com turned usage statistics and error reports on'],
+    ['telemetry disabled event', entry('telemetry.disabled'), 'ana@example.com turned usage statistics and error reports off'],
+    ['telemetry settings off', entry('telemetry.settings', { from: true, to: false }), 'ana@example.com turned usage statistics and error reports off'],
+    ['telemetry settings on', entry('telemetry.settings', { from: false, to: true }), 'ana@example.com turned usage statistics and error reports on'],
     ['cloud.limits without limits', entry('cloud.limits', { seatLimit: null, readOnly: false, banner: 'Hi' }), 'ana@example.com updated the workspace limits'],
     ['ai.settings turned on with a model', entry('ai.settings', { enabled: true, model: 'claude-sonnet-5-5' }), 'ana@example.com changed the AI settings (turned on, model claude-sonnet-5-5)'],
     ['ai.settings turned off', entry('ai.settings', { enabled: false }), 'ana@example.com changed the AI settings (turned off)'],
@@ -218,7 +222,7 @@ describe('auditSentence', () => {
       'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore',
       'template.create', 'template.update', 'template.delete',
       'member.update', 'member.remove',
-      'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify', 'updates.auto',
+      'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify', 'updates.auto', 'telemetry.enabled', 'telemetry.disabled', 'telemetry.settings',
       'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.key.test', 'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
       'asset.upload', 'assets.gc',
       'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
@@ -417,6 +421,9 @@ describe('admin API client', () => {
     ['restore a board', (a) => a.restoreBoard('b1'), 'POST', '/api/admin/boards/b1/restore'],
     ['automatic updates', (a) => a.adminUpdates(), 'GET', '/api/admin/updates'],
     ['save automatic updates', (a) => a.setAdminUpdates(false), 'PUT', '/api/admin/updates'],
+    ['privacy settings', (a) => a.adminPrivacy(), 'GET', '/api/admin/privacy'],
+    ['save privacy settings', (a) => a.setAdminPrivacy(false), 'PUT', '/api/admin/privacy'],
+    ['privacy report preview', (a) => a.adminPrivacyPreview(), 'GET', '/api/admin/privacy/preview'],
     ['audit first page', (a) => a.adminAudit(), 'GET', '/api/admin/audit'],
     ['audit with every option', (a) => a.adminAudit({ limit: 50, before: 7, action: 'board.' }), 'GET', '/api/admin/audit?limit=50&before=7&action=board.'],
     ['teams go through the existing route', (a) => a.teams(), 'GET', '/api/teams'],
@@ -430,6 +437,12 @@ describe('admin API client', () => {
     const { fetchFn, calls } = recorder({ auto: false, synced: true, securityAlwaysApplied: true });
     await createApi(fetchFn).setAdminUpdates(false);
     expect(JSON.parse(String(calls[0].init.body))).toEqual({ auto: false });
+  });
+
+  it('sends only the privacy choice', async () => {
+    const { fetchFn, calls } = recorder({ enabled: false });
+    await createApi(fetchFn).setAdminPrivacy(false);
+    expect(JSON.parse(String(calls[0].init.body))).toEqual({ enabled: false });
   });
 
   it.each<[string, (api: ReturnType<typeof createApi>) => Promise<unknown>]>([
@@ -571,6 +584,13 @@ describe('visibleAdminTabs', () => {
     expect(visibleAdminTabs(ADMIN_TABS, undefined, 'owner', false)).not.toContain('settings');
     for (const role of ['owner', 'admin'] as const) {
       expect(visibleAdminTabs(ADMIN_TABS, undefined, role, false, true)).toContain('settings');
+    }
+  });
+
+  it('shows Privacy on hosted and self-hosted workspaces for owners and admins', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(visibleAdminTabs(ADMIN_TABS, undefined, role, false)).toContain('privacy');
+      expect(visibleAdminTabs(ADMIN_TABS, undefined, role, false, true)).toContain('privacy');
     }
   });
 });

@@ -63,7 +63,7 @@ const ERROR_MAX = 200;
 
 export const STATUS_KEY = 'restore.status';
 export const KEEP_KEY = 'restore.keep';
-const CARRIED_SETTINGS = ['cloud.limits', 'cloud.trialEndingNotified'];
+const CARRIED_SETTINGS = ['cloud.limits', 'cloud.trialEndingNotified', 'telemetry.enabled', 'telemetry.install_id'];
 
 const JOURNAL = 'restore.json';
 const JOURNAL_VERSION = 1;

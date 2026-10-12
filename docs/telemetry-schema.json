@@ -1,0 +1,266 @@
+{
+  "schema": 1,
+  "limits": {
+    "maxBytes": 262144,
+    "maxEvents": 1000,
+    "maxLabelCombinationsPerMetric": 200,
+    "maxErrorFingerprints": 50
+  },
+  "envelope": {
+    "fields": {
+      "schema": { "type": "int", "min": 1, "max": 1 },
+      "hour": { "type": "int", "min": 0, "max": 9007199254740991, "multipleOf": 3600000 },
+      "app_version": { "type": "string", "pattern": "^(?:v\\d+(?:\\.\\d+){0,2}|[0-9a-f]{7,12})$", "maxLength": 64 },
+      "schema_directory": { "type": "int", "min": 0, "max": 9007199254740991 },
+      "schema_chat": { "type": "int", "min": 0, "max": 9007199254740991 },
+      "node_major": { "type": "int", "min": 0, "max": 999 },
+      "platform": { "type": "enum", "values": ["linux", "darwin", "win32"] },
+      "mode": { "type": "enum", "values": ["hosted", "self"] },
+      "connections_now": { "type": "int", "min": 0, "max": 9007199254740991 },
+      "connections_peak": { "type": "int", "min": 0, "max": 9007199254740991 },
+      "last_activity_at": { "type": "int", "min": 0, "max": 9007199254740991, "multipleOf": 60000, "nullable": true },
+      "workspace": { "type": "string", "pattern": "^(?:ws_[A-Za-z0-9_-]{8,64}|[A-Za-z0-9_-]{16,64})$", "maxLength": 67 }
+    }
+  },
+  "metrics": {
+    "http_requests_total": {
+      "kind": "counter",
+      "labels": {
+        "route": { "type": "enum", "values": ["admin/privacy", "boards/:id", "tickets/:id", "health", "other"] },
+        "status_class": { "type": "enum", "values": ["2xx", "3xx", "4xx", "5xx", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "http_duration_ms": {
+      "kind": "histogram",
+      "labels": {
+        "route": { "type": "enum", "values": ["admin/privacy", "boards/:id", "tickets/:id", "health", "other"] }
+      },
+      "buckets": [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000]
+    },
+    "ws_connections_peak": { "kind": "gauge", "min": 0, "max": 9007199254740991 },
+    "ws_connections_avg": { "kind": "gauge", "min": 0, "max": 9007199254740991 },
+    "rooms_open_peak": { "kind": "gauge", "min": 0, "max": 9007199254740991 },
+    "sync_save_ms": { "kind": "histogram", "buckets": [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000] },
+    "sync_load_ms": { "kind": "histogram", "buckets": [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000] },
+    "process_rss_bytes": { "kind": "gauge", "min": 0, "max": 9007199254740991 },
+    "event_loop_lag_ms_p95": { "kind": "gauge", "min": 0, "max": 9007199254740991 },
+    "cpu_seconds": { "kind": "counter", "min": 0, "max": 9007199254740991 },
+    "data_bytes": { "kind": "gauge", "min": 0, "max": 9007199254740991 },
+    "disk_free_bytes": { "kind": "gauge", "min": 0, "max": 9007199254740991 },
+    "entities_total": {
+      "kind": "gauge",
+      "labels": {
+        "kind": { "type": "enum", "values": ["boards", "users_active", "users_guest", "tickets", "trackers", "chat_channels", "assets", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "mcp_calls_total": {
+      "kind": "counter",
+      "labels": {
+        "tool": { "type": "enum", "values": ["add_comment", "add_kanban_card", "add_kanban_cards", "add_kanban_lane", "comment_ticket", "create_kanban", "create_kanban_label", "create_milestone", "create_objects", "create_project", "create_saved_view", "create_ticket", "create_ticket_label", "delete_kanban_label", "delete_kanban_lane", "delete_objects", "delete_saved_view", "get_board", "get_objects", "get_saved_view", "get_ticket", "list_boards", "list_comments", "list_kanban_cards", "list_milestones", "list_projects", "list_saved_views", "list_templates", "list_ticket_labels", "list_ticket_states", "list_tickets", "move_kanban_card", "move_kanban_cards", "relate_tickets", "reply_to_comment", "search_tickets", "transition_ticket", "update_kanban_card", "update_kanban_label", "update_kanban_lane", "update_milestone", "update_objects", "update_project", "update_saved_view", "update_ticket", "use_template", "whoami", "other"] },
+        "result": { "type": "enum", "values": ["ok", "denied", "error", "other"] },
+        "auth": { "type": "enum", "values": ["token", "oauth", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "oauth_events_total": {
+      "kind": "counter",
+      "labels": {
+        "event": { "type": "enum", "values": ["registered", "authorized", "denied", "token", "refresh", "revoked", "other"] },
+        "client_kind": { "type": "enum", "values": ["known", "unknown", "loopback", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "backup_runs_total": {
+      "kind": "counter",
+      "labels": {
+        "result": { "type": "enum", "values": ["ok", "failed", "other"] },
+        "error_code": { "type": "enum", "values": ["aborted", "bad_format", "content_mismatch", "copy_worker", "invalid_manifest", "invalid_path", "network", "not_found", "readback", "s3", "tamper", "timeout", "too_large", "unknown_key", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "backup_duration_ms": {
+      "kind": "histogram",
+      "labels": {
+        "result": { "type": "enum", "values": ["ok", "failed", "other"] },
+        "error_code": { "type": "enum", "values": ["aborted", "bad_format", "content_mismatch", "copy_worker", "invalid_manifest", "invalid_path", "network", "not_found", "readback", "s3", "tamper", "timeout", "too_large", "unknown_key", "other"] }
+      },
+      "buckets": [10, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000, 300000, 900000, 3600000]
+    },
+    "backup_bytes": {
+      "kind": "counter",
+      "labels": {
+        "result": { "type": "enum", "values": ["ok", "failed", "other"] },
+        "error_code": { "type": "enum", "values": ["aborted", "bad_format", "content_mismatch", "copy_worker", "invalid_manifest", "invalid_path", "network", "not_found", "readback", "s3", "tamper", "timeout", "too_large", "unknown_key", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "restore_runs_total": {
+      "kind": "counter",
+      "labels": {
+        "kind": { "type": "enum", "values": ["board", "workspace", "other"] },
+        "result": { "type": "enum", "values": ["ok", "failed", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "tracker_ops_total": {
+      "kind": "counter",
+      "labels": {
+        "op": { "type": "enum", "values": ["create", "update", "comment", "link", "attach", "search", "import", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "chat_messages_total": {
+      "kind": "counter",
+      "labels": {
+        "kind": { "type": "enum", "values": ["channel", "direct", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "uploads_total": {
+      "kind": "counter",
+      "labels": {
+        "kind": { "type": "enum", "values": ["image", "file", "other"] },
+        "size_bucket": { "type": "enum", "values": ["lt_1kb", "1_10kb", "10_100kb", "100kb_1mb", "gte_1mb", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "upload_bytes": {
+      "kind": "counter",
+      "labels": {
+        "kind": { "type": "enum", "values": ["image", "file", "other"] },
+        "size_bucket": { "type": "enum", "values": ["lt_1kb", "1_10kb", "10_100kb", "100kb_1mb", "gte_1mb", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "ai_calls_total": {
+      "kind": "counter",
+      "labels": {
+        "feature": { "type": "enum", "values": ["board_text", "board_kanban", "board_sticky", "board_drawing", "board_image", "tracker_ticket", "tracker_view", "tracker_import", "chat", "mcp_token", "mcp_oauth", "backup_restore", "ai_assist", "export", "guest_invite", "other"] },
+        "result": { "type": "enum", "values": ["ok", "error", "denied", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "client_sessions_total": {
+      "kind": "counter",
+      "labels": {
+        "device": { "type": "enum", "values": ["phone", "tablet", "desktop", "other"] },
+        "browser": { "type": "enum", "values": ["chrome", "safari", "firefox", "edge", "other"] },
+        "os": { "type": "enum", "values": ["ios", "android", "macos", "windows", "linux", "other"] },
+        "installed": { "type": "enum", "values": ["pwa", "browser", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "ui_events_total": {
+      "kind": "counter",
+      "labels": {
+        "event": { "type": "enum", "values": ["workspace_day", "feature_used", "milestone", "upgrade_result", "error_rate_day", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    },
+    "scrubber_dropped_total": {
+      "kind": "counter",
+      "source": "control_plane",
+      "labels": {
+        "reason": { "type": "enum", "values": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"] }
+      },
+      "min": 0,
+      "max": 9007199254740991
+    }
+  },
+  "events": {
+    "workspace_day": {
+      "kind": "event",
+      "source": "control_plane",
+      "fields": {
+        "dau": { "type": "int", "min": 0, "max": 9007199254740991 },
+        "wau": { "type": "int", "min": 0, "max": 9007199254740991 },
+        "boards": { "type": "int", "min": 0, "max": 9007199254740991 },
+        "tickets": { "type": "int", "min": 0, "max": 9007199254740991 },
+        "features_used": { "type": "array", "maxItems": 15, "uniqueItems": true, "items": { "type": "enum", "values": ["board_text", "board_kanban", "board_sticky", "board_drawing", "board_image", "tracker_ticket", "tracker_view", "tracker_import", "chat", "mcp_token", "mcp_oauth", "backup_restore", "ai_assist", "export", "guest_invite"] } },
+        "app_version": { "type": "string", "pattern": "^(?:v\\d+(?:\\.\\d+){0,2}|[0-9a-f]{7,12})$", "maxLength": 64 },
+        "mode": { "type": "enum", "values": ["hosted", "self"] }
+      }
+    },
+    "feature_used": {
+      "kind": "event",
+      "source": "control_plane",
+      "fields": {
+        "feature": { "type": "enum", "values": ["board_text", "board_kanban", "board_sticky", "board_drawing", "board_image", "tracker_ticket", "tracker_view", "tracker_import", "chat", "mcp_token", "mcp_oauth", "backup_restore", "ai_assist", "export", "guest_invite"] },
+        "count": { "type": "int", "min": 1, "max": 9007199254740991 }
+      }
+    },
+    "milestone": {
+      "kind": "event",
+      "source": "control_plane",
+      "fields": {
+        "name": { "type": "enum", "values": ["first_board", "first_ticket", "first_member_invited", "first_mcp_connect", "first_oauth_grant", "first_backup", "first_chat_message", "tracker_enabled"] }
+      }
+    },
+    "upgrade_result": {
+      "kind": "event",
+      "source": "control_plane",
+      "fields": {
+        "from": { "type": "string", "pattern": "^(?:v\\d+(?:\\.\\d+){0,2}|[0-9a-f]{7,12})$", "maxLength": 64 },
+        "to": { "type": "string", "pattern": "^(?:v\\d+(?:\\.\\d+){0,2}|[0-9a-f]{7,12})$", "maxLength": 64 },
+        "result": { "type": "enum", "values": ["ok", "rolled_back"] },
+        "duration_ms": { "type": "int", "min": 0, "max": 9007199254740991 }
+      }
+    },
+    "error_rate_day": {
+      "kind": "event",
+      "source": "control_plane",
+      "fields": {
+        "top_codes": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueBy": "code",
+          "items": {
+            "type": "object",
+            "fields": {
+              "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$", "maxLength": 40 },
+              "count": { "type": "int", "min": 1, "max": 9007199254740991 }
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": {
+    "kind": "event",
+    "fields": {
+      "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$", "maxLength": 16 },
+      "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$", "maxLength": 40 },
+      "kind": { "type": "enum", "values": ["api", "sync", "job", "ui", "startup", "unhandled"] },
+      "status": { "type": "int", "min": 0, "max": 599, "ranges": [[0, 0], [100, 599]] },
+      "top_frame": { "type": "string", "pattern": "^(?:server|src|desktop/src-tauri/src|scripts)/[A-Za-z0-9_-][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*:[0-9]{1,5}$", "maxLength": 80 },
+      "count": { "type": "int", "min": 1, "max": 9007199254740991 }
+    }
+  },
+  "alerts": {
+    "kind": "event",
+    "source": "control_plane",
+    "fields": {
+      "kind": { "type": "enum", "values": ["backup_failing", "backup_stale", "upgrade_rolled_back", "upgrade_job_gave_up", "rollout_halted", "disk_high", "payment_failed", "sign_in_failures", "sink_failing", "other"] },
+      "severity": { "type": "enum", "values": ["info", "warn", "page"] },
+      "workspace": { "type": "string", "pattern": "^(?:ws_[A-Za-z0-9_-]{8,64}|[A-Za-z0-9_-]{16,64})$", "maxLength": 67, "nullable": true },
+      "at": { "type": "int", "min": 0, "max": 9007199254740991 }
+    }
+  },
+  "droppedReasons": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"]
+}
