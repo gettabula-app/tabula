@@ -51,7 +51,7 @@ The guest opens **Join with a code**, enters a display name, and joins without a
 
 If the link has expired, request a new one. The first person to sign in with the owner address becomes the workspace owner. Everyone else needs an invite, or an account that an admin already created.
 
-To sign out, open the board menu and choose **Sign out** under **Account**, or use **Sign out** in the top bar of the home screen. **Sign out everywhere** ends all your sessions on every device.
+To sign out, open the board menu and choose **Sign out** under **Account**, or open your name in the top bar of the home screen and choose **Sign out**. **Sign out everywhere** ends all your sessions on every device.
 
 Under **Your name and colour** in the board menu you can change the name shown next to your cursor. With an account, the name is saved to your account. The colour is stored on this device. If you join with a guest link, your name comes from the join form; the board menu hides **Your name and colour** and **Save board as template**. Guest names have a **Guest** badge beside them in cursor labels and comments.
 
