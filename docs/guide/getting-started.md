@@ -6,7 +6,7 @@ Tabula is a collaborative whiteboard. You place sticky notes, shapes, text and d
 
 Open the address of your Tabula server in a browser. You land on the **Boards** page, which lists your boards.
 
-If your workspace uses sign-in, you first see **Sign in to Tabula**. Enter your work email, choose **Email me a link**, and open the link in the email. The link works once and expires after 15 minutes. After you sign in, you land on **Boards**. Without sign-in (open mode), nobody asks who you are: the page opens straight to your boards.
+If your workspace uses sign-in, you first see **Sign in to Tabula**. Enter your work email, choose **Email me a link**, and open the link in the email. A page says **Joining as** your email; select **Continue to Tabula** to finish signing in. The link works once and expires after 15 minutes. After you sign in, you land on **Boards**. Without sign-in (open mode), nobody asks who you are: the page opens straight to your boards.
 
 ## Create your first board
 

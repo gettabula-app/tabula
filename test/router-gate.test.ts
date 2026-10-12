@@ -9,7 +9,7 @@ const templates: Route = { name: 'templates' };
 const signin: Route = { name: 'signin' };
 const templateEdit = (id: string): Route => ({ name: 'template-edit', id });
 const board = (id: string): Route => ({ name: 'board', id });
-const verify = (token: string, oauthRequest?: string): Route => ({ name: 'verify', token, ...(oauthRequest ? { oauthRequest } : {}) });
+const verify = (token: string, oauthRequest?: string, invite?: string): Route => ({ name: 'verify', token, ...(oauthRequest ? { oauthRequest } : {}), ...(invite ? { invite } : {}) });
 const oauthConsent = (request: string): Route => ({ name: 'oauth-consent', request });
 const invite = (token: string): Route => ({ name: 'invite', token });
 const join = (code = ''): Route => ({ name: 'join', code });
@@ -81,6 +81,9 @@ describe('parseRoute', () => {
     ['#/signin/verify?token=a%2Bb', verify('a+b')],
     ['#/signin/verify?x=1&token=abc_-9', verify('abc_-9')],
     ['#/signin/verify?token=abc&oauthRequest=env_123-xy', verify('abc', 'env_123-xy')],
+    ['#/signin/verify?token=abc&invite=invite_token', verify('abc', undefined, 'invite_token')],
+    ['#/signin/verify?token=abc&invite=bad%21', verify('abc')],
+    ['#/signin/verify?token=abc&invite=one&invite=two', verify('abc')],
     ['#/signin/verify?token=abc&oauthRequest=bad%21', verify('abc')],
     ['#/signin/verify?token=abc&oauthRequest=one&oauthRequest=two', verify('abc')],
     ['#/signin/verify?token=', signin],
@@ -92,6 +95,7 @@ describe('parseRoute', () => {
     ['#/oauth/consent', oauthConsent('')],
     ['#/oauth/consent?request=' + 'a'.repeat(8193), oauthConsent('')],
     ['#/invite/tok_en-1', invite('tok_en-1')],
+    ['#/invite/short', invite('short')],
     ['#/join', join()],
     ['#/join?c=ABCD2345', join('ABCD2345')],
     ['#/invite/', home],

@@ -305,7 +305,7 @@ describe('admin overview, members and sessions', () => {
     await within(socket.joined);
 
     const overview = (await c.api(owner.cookie, 'GET', '/api/admin/overview')).body;
-    expect(keys(overview)).toEqual(['boards', 'instance', 'live', 'members', 'sessions', 'signIns7d', 'teams']);
+    expect(keys(overview)).toEqual(['boards', 'instance', 'live', 'mail', 'members', 'sessions', 'signIns7d', 'teams']);
     expect(keys(overview.members)).toEqual(['active', 'byRole', 'disabled', 'total']);
     expect(keys(overview.members.byRole)).toEqual(['admin', 'guest', 'member', 'owner']);
     expect(keys(overview.teams)).toEqual(['archived', 'total']);

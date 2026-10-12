@@ -450,7 +450,7 @@ async function route() {
       finishSignIn();
     };
     if (r.name === 'signin') renderSignIn(view);
-    else if (r.name === 'verify') renderVerify(view, r.token, finish, r.oauthRequest);
+    else if (r.name === 'verify') renderVerify(view, r.token, finish, r.oauthRequest, r.invite);
     else if (r.name === 'oauth-consent') renderOAuthConsent(view, r.request);
     else if (r.name === 'invite') renderInvite(view, r.token, auth, finish);
     else if (r.name === 'join') renderJoin(view, r.code, (guest) => {
