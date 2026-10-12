@@ -4201,6 +4201,18 @@ const STATES = {
     await env.page.waitForTimeout(300);
     return { keepFocus: true };
   },
+  async 'link-admin-on'(env) {
+    await env.page.route('**/api/admin/link-previews', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ enabled: true, locked: false, setting: true }) }));
+    await env.page.goto(`${env.base}/#/admin/privacy`);
+    await env.page.locator('.lp-switch').waitFor();
+    await env.page.locator('.lp-admin').scrollIntoViewIfNeeded();
+  },
+  async 'link-admin-off'(env) {
+    await env.page.route('**/api/admin/link-previews', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ enabled: false, locked: false, setting: null }) }));
+    await env.page.goto(`${env.base}/#/admin/privacy`);
+    await env.page.locator('.lp-switch').waitFor();
+    await env.page.locator('.lp-admin').scrollIntoViewIfNeeded();
+  },
   async 'chat-admin'({ page, base }) {
     await page.goto(`${base}/#/admin/chat`);
     await page.getByRole('radio', { name: '1 year' }).waitFor();
@@ -4976,6 +4988,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
 const CHAT_STATES = new Set(['chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays', 'home-presence', 'notif-closed-0', 'notif-closed-3', 'notif-closed-mention', 'notif-closed-99', 'notif-open-all', 'notif-open-mentions', 'notif-open-empty', 'notif-open-mentions-empty', 'notif-loading', 'notif-error', 'notif-stale-error', 'notif-row-hover', 'notif-row-focus', 'notif-long-text']);
+const CHAT_STATES = new Set(['link-admin-on', 'link-admin-off', 'chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'privacy-hosted': ['accounts'], 'privacy-self': ['accounts'], 'privacy-top': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };
