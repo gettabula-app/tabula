@@ -215,6 +215,12 @@ This applies to `create_objects`, `add_kanban_card`, `add_kanban_cards`, `create
 
 `{ query?: string (at most 100 characters, matched against the title, case-insensitive), limit?: 1..100 (default 50), cursor?: string }` -> `{ boards: [{id, title, role, access: 'read'|'comment'|'write', teamName|null, updatedAt}], nextCursor: string|null, truncated: boolean }`. Uses `directory.listBoardsFor(user)` (deleted boards excluded), filtered by the token's `boardIds`. `access` is the effective access from the table above, for this token. Sorted by title then id.
 
+### Resources
+
+`initialize` advertises `capabilities.resources = { listChanged: false, subscribe: false }`. In accounts mode, `resources/list { cursor? }` returns up to 50 boards as `board://<id>` resources with a cleaned title as `name`, `description: 'Board'`, `mimeType: 'application/json'` and the board update time as `annotations.lastModified`. It uses the same visible boards, role checks, token board restriction and title-then-id ordering as `list_boards`, with the same offset cursor format. Open mode has no board directory, so `resources/list` returns an empty list, just as `list_boards` is unavailable there.
+
+`resources/read { uri }` accepts only `board://<id>` with a 1 to 64 character board id and returns the fenced JSON text from the first page of `get_board`. It uses `get_board`'s read authorization path, including OAuth and personal-token board restrictions and withheld private session notes. `resources/templates/list` returns `{ resourceTemplates: [] }`; subscriptions are not supported. Resource listing and reading count toward the same 120-request-per-minute per-token window as `tools/call` (the 30 mutating-call limit is unchanged).
+
 ### `get_board`
 
 `{ boardId, frameId?: string, types?: ObjType[], bounds?: {x,y,w,h}, limit?: 1..500 (default 200), cursor?: string }`
@@ -372,7 +378,7 @@ The template's session steps and fonts are **not** applied (`stepsSkipped` says 
 | Board and template lists | `list_boards` and `list_templates` accept `limit` (1..100, default 50) and an opaque `cursor`; follow `nextCursor` until it is `null`. Boards are sorted by title, templates by name, then each by id. A bad cursor returns `invalid_input`. Board pages apply the token's board restriction before paging. |
 | Objects per board | 5,000 |
 | Response size | 200 KB of text; larger results are cut with `truncated: true` |
-| Calls per token | 120 per minute, of which at most 30 mutating, sliding window in memory (`429`, `Retry-After`, JSON-RPC error body) |
+| Calls per token | 120 JSON-RPC requests per minute, of which at most 30 mutating; includes `tools/call`, `resources/list` and `resources/read`, sliding window in memory (`429`, `Retry-After`, JSON-RPC error body) |
 | Board writes per token or OAuth grant | 2,000 items per UTC day by default; set `TABULA_MCP_DAILY_WRITES=0` for no cap. Applies to board tools, not ticket tools. Refusals use `daily_limit`; the count resets at 00:00 UTC |
 | Wrong tokens | 20 per minute per IP (a good token is never held back) |
 | Active tokens per user | 20 |
