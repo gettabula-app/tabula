@@ -602,13 +602,27 @@ async function workspaceListAgeSeconds(file, nowMs) {
 }
 
 async function readOptionalWorkspaceList(file) {
+  let stat;
+  try {
+    stat = await fs.promises.lstat(file);
+  } catch (error) {
+    return isMissing(error) ? { status: 'absent' } : { status: 'unknown' };
+  }
+  if (stat.isSymbolicLink() || !stat.isFile()) return { status: 'unknown' };
   try {
     const workspaces = JSON.parse(await fs.promises.readFile(file, 'utf8'));
-    if (!Array.isArray(workspaces)) return null;
-    for (const workspace of workspaces) validateWorkspace(workspace);
-    return workspaces;
+    if (!Array.isArray(workspaces) || workspaces.length === 0) return { status: 'unknown' };
+    const slugs = new Set();
+    const ids = new Set();
+    for (const workspace of workspaces) {
+      validateWorkspace(workspace);
+      if (slugs.has(workspace.slug) || ids.has(workspace.id)) return { status: 'unknown' };
+      slugs.add(workspace.slug);
+      ids.add(workspace.id);
+    }
+    return { status: 'valid', workspaces };
   } catch {
-    return null;
+    return { status: 'unknown' };
   }
 }
 
@@ -1116,11 +1130,24 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
         return 2;
       }
       purgedState = await readPurgedState(config.stateDir);
-      const operatorWorkspaces = await readOptionalWorkspaceList(config.workspacesFile);
-      if (operatorWorkspaces) {
+      const operatorWorkspaceList = await readOptionalWorkspaceList(config.workspacesFile);
+      if (operatorWorkspaceList.status === 'unknown' && !args.force) {
+        emit(log, `purge refused ${args.purge}: workspace list is invalid or unreadable; pass --force to purge`);
+        try {
+          await updateGlobalMetrics(config.metricsFile, {
+            tabula_backup_purged_total: purgedState.count,
+            tabula_backup_workspace_list_age_seconds: workspaceListAge,
+            tabula_backup_purge_leftovers: purgeLeftovers,
+          });
+        } catch {
+          emit(log, 'metrics write failed');
+        }
+        return 2;
+      }
+      if (operatorWorkspaceList.status === 'valid') {
         workspaceListStale = !workspaceListAgeKnown || workspaceListAge > config.workspacesMaxAgeHours * 60 * 60;
-        if (workspaceListStale) {
-          emit(log, 'purge skipped stale list');
+        if (workspaceListStale && !args.force) {
+          emit(log, `purge refused ${args.purge}: workspace list is stale; pass --force to purge`);
           try {
             await updateGlobalMetrics(config.metricsFile, {
               tabula_backup_purged_total: purgedState.count,
@@ -1130,9 +1157,9 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
           } catch {
             emit(log, 'metrics write failed');
           }
-          return 1;
+          return 2;
         }
-        const listed = operatorWorkspaces.find((workspace) => workspace.slug === args.purge);
+        const listed = operatorWorkspaceList.workspaces.find((workspace) => workspace.slug === args.purge);
         if (listed && listed.state !== 'deleted' && !args.force) {
           emit(log, `purge refused ${args.purge}: listed workspace state is ${listed.state}; pass --force to purge`);
           try {
@@ -1254,6 +1281,7 @@ export async function main({ argv = [], env = process.env, fetch: fetcher = glob
         }
         if (elapsedMs >= config.deletedGraceDays * 24 * 60 * 60 * 1000) {
           if (workspaceListStale) {
+            pendingPurgeSlugs.push(workspace.slug);
             states[workspace.slug] = state;
             results[workspace.slug] = { ok: true, skipped: true, state };
             continue;

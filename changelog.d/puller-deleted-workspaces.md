@@ -1,4 +1,4 @@
 section: Added
 audience: dev
 
-- Backup puller: require at least one day of deleted grace, skip automatic purges when the workspace list is stale, and rename copies to same-filesystem tombstones before removal. Clean and report leftover tombstones, expose list age and leftover metrics, keep dry runs write-free, and refuse immediate erasure of a listed live workspace unless `--force` is supplied.
+- Backup puller: require at least one day of deleted grace, skip automatic purges when the workspace list is stale, and keep expired skipped purges in the pending metric. Operator purges require `--force` for stale, invalid or unreadable lists, or listed live workspaces; an absent list still permits a manual purge. Rename copies to same-filesystem tombstones before removal, clean and report leftovers, expose list age and leftover metrics, and keep dry runs write-free.

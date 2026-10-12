@@ -43,6 +43,32 @@ function manualClock() {
   };
 }
 
+/** Counts the SQL statements a block runs, and the Y.Map snapshots (toJSON) it takes: work counts, not clocks (docs/testing.md). */
+function countWork(f: { directory: { db: { prepare(sql: string): object } } }, block: () => void) {
+  const statement = Object.getPrototypeOf(f.directory.db.prepare('SELECT 1')) as { run: unknown; get: unknown; all: unknown };
+  const counts = { statements: 0, snapshots: 0 };
+  const spies = (['run', 'get', 'all'] as const).map((name) => {
+    const original = statement[name] as (...args: unknown[]) => unknown;
+    const spy = vi.spyOn(statement as unknown as Record<string, (...args: unknown[]) => unknown>, name);
+    return spy.mockImplementation(function (this: unknown, ...args: unknown[]) {
+      counts.statements++;
+      return original.apply(this, args);
+    });
+  });
+  const toJson = Y.Map.prototype.toJSON;
+  const snapshots = vi.spyOn(Y.Map.prototype, 'toJSON').mockImplementation(function (this: Y.Map<unknown>) {
+    counts.snapshots++;
+    return toJson.call(this);
+  });
+  try {
+    block();
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+    snapshots.mockRestore();
+  }
+  return counts;
+}
+
 function fixture({ linked = 1, active = true, clock = manualClock(), readOnly = false, ticketCreateLimit = 10, maxLinkedCardsPerUpdate = 100 }: {
   linked?: number; active?: boolean; clock?: ReturnType<typeof manualClock>; readOnly?: boolean;
   ticketCreateLimit?: number; maxLinkedCardsPerUpdate?: number;
@@ -519,37 +545,45 @@ describe('tracker linked-card guard', () => {
     f.close();
   });
 
-  it('creates 500 tickets in one update and one outer SQL transaction', () => {
-    // Raise both production caps here to time the transaction ceiling independently.
-    const f = fixture({ linked: 0, ticketCreateLimit: 500, maxLinkedCardsPerUpdate: 500 });
-    let depth = 0;
-    let outerTransactions = 0;
-    const directory = Object.create(f.directory);
-    directory.transaction = (fn: () => unknown) => {
-      if (depth === 0) outerTransactions++;
-      depth++;
-      try { return f.directory.transaction(fn); } finally { depth--; }
-    };
-    f.guard = createTrackerGuard({
-      directory, now: f.clock.now,
-      setTimeoutFn: f.clock.setTimeout as unknown as typeof setTimeout,
-      clearTimeoutFn: f.clock.clearTimeout as unknown as typeof clearTimeout,
-      ticketCreateLimit: 500,
-      maxLinkedCardsPerUpdate: 500,
-    });
-    f.run = (apply: () => void, who = f.actor) => f.guard.run(f.room, who, () => f.doc.transact(apply, 'client'));
-    const started = process.hrtime.bigint();
-    f.run(() => {
-      for (let index = 0; index < 500; index++) f.put(`paste-${index}`, 'card', {
-        parent: 'lane-todo', rank: `a${index}@todo`, text: `Pasted ${index}`,
+  it('creates 500 tickets in one update and one outer SQL transaction, with SQL work that grows linearly', () => {
+    // Raise both production caps here to count the transaction ceiling independently.
+    const create = (count: number) => {
+      const f = fixture({ linked: 0, ticketCreateLimit: 500, maxLinkedCardsPerUpdate: 500 });
+      let depth = 0;
+      let outerTransactions = 0;
+      const directory = Object.create(f.directory);
+      directory.transaction = (fn: () => unknown) => {
+        if (depth === 0) outerTransactions++;
+        depth++;
+        try { return f.directory.transaction(fn); } finally { depth--; }
+      };
+      f.guard = createTrackerGuard({
+        directory, now: f.clock.now,
+        setTimeoutFn: f.clock.setTimeout as unknown as typeof setTimeout,
+        clearTimeoutFn: f.clock.clearTimeout as unknown as typeof clearTimeout,
+        ticketCreateLimit: 500,
+        maxLinkedCardsPerUpdate: 500,
       });
-    });
-    const elapsedMs = Number(process.hrtime.bigint() - started) / 1_000_000;
-    console.log(`[tracker guard timing] 500 tickets: ${elapsedMs.toFixed(1)} ms; created: ${f.count('SELECT COUNT(*) AS n FROM tickets')}`);
-    expect(outerTransactions).toBe(1);
-    expect(f.count('SELECT COUNT(*) AS n FROM tickets')).toBe(500);
-    expect(elapsedMs).toBeLessThan(5000);
-    f.close();
+      f.run = (apply: () => void, who = f.actor) => f.guard.run(f.room, who, () => f.doc.transact(apply, 'client'));
+      const work = countWork(f, () => {
+        f.run(() => {
+          for (let index = 0; index < count; index++) f.put(`paste-${index}`, 'card', {
+            parent: 'lane-todo', rank: `a${index}@todo`, text: `Pasted ${index}`,
+          });
+        });
+      });
+      const created = f.count('SELECT COUNT(*) AS n FROM tickets');
+      f.close();
+      return { work, outerTransactions, created };
+    };
+    const small = create(100);
+    const large = create(500);
+    expect(small.created).toBe(100);
+    expect(large.created).toBe(500);
+    expect(large.outerTransactions).toBe(1);
+    // a fixed number of statements per ticket: five times the tickets is at most five times the statements plus a little overhead
+    expect(large.work.statements).toBeLessThanOrEqual(5 * small.work.statements);
+    expect(large.work.statements / 500).toBeLessThanOrEqual(small.work.statements / 100 + 0.5);
   });
 
   it('creates at most 500 tickets from one update and sends one limit_exceeded notice', () => {
@@ -593,40 +627,36 @@ describe('tracker linked-card guard', () => {
     f.close();
   });
 
-  it('keeps the median unlinked-board guard cost below 1 ms in a 500-card room', () => {
+  it('does no SQL and takes no object snapshot for a write in an unlinked 500-card room', () => {
     const f = fixture({ linked: 0, active: false });
     for (let index = 0; index < 500; index++) f.put(`plain-${index}`, 'card', { parent: 'lane-todo', rank: `a${index}`, text: `Plain ${index}` });
-    const samples: number[] = [];
-    for (let index = 0; index < 41; index++) {
-      const start = process.hrtime.bigint();
-      f.run(() => (f.objects.get('plain-0') as Y.Map<unknown>).set('x', index));
-      samples.push(Number(process.hrtime.bigint() - start) / 1_000_000);
-    }
-    samples.sort((a, b) => a - b);
-    expect(samples[Math.floor(samples.length / 2)]).toBeLessThan(1);
+    f.run(() => (f.objects.get('plain-0') as Y.Map<unknown>).set('x', -1)); // the first write looks the board's links up once
+    const work = countWork(f, () => {
+      for (let index = 0; index < 20; index++) f.run(() => (f.objects.get('plain-0') as Y.Map<unknown>).set('x', index));
+    });
+    expect(work).toEqual({ statements: 0, snapshots: 0 });
     f.close();
   });
 
-  it('keeps the 10k-object linked-board snapshot median under 10 ms', () => {
-    const f = fixture({ linked: 150 });
-    const objectsToAdd = 10_000 - f.objects.size;
-    for (let index = 0; index < objectsToAdd; index++) {
-      f.put(`shape-${index}`, 'shape', { x: index, y: index });
-    }
-    f.run(() => card(f).set('color', 'warmup'));
-    const samples: number[] = [];
-    for (let index = 0; index < 41; index++) {
-      const start = process.hrtime.bigint();
-      f.run(() => card(f).set('color', `snapshot-${index}`));
-      samples.push(Number(process.hrtime.bigint() - start) / 1_000_000);
-    }
-    samples.sort((a, b) => a - b);
-    const median = samples[Math.floor(samples.length / 2)];
-    console.log(`[tracker guard timing] 10,000 objects, 150 linked cards: median ${median.toFixed(3)} ms`);
-    expect(f.objects.size).toBe(10_000);
-    expect(card(f).get('color')).toBe('snapshot-40');
-    expect(median).toBeLessThan(10);
-    f.close();
+  it('takes the same snapshots in a 10k-object room as in a small one: the work follows the linked cards, not the room', () => {
+    const measure = (extraShapes: number) => {
+      const f = fixture({ linked: 150 });
+      for (let index = 0; index < extraShapes; index++) f.put(`shape-${index}`, 'shape', { x: index, y: index });
+      f.run(() => card(f).set('color', 'warmup'));
+      const work = countWork(f, () => {
+        for (let index = 0; index < 5; index++) f.run(() => card(f).set('color', `snapshot-${index}`));
+      });
+      const size = f.objects.size;
+      const color = card(f).get('color');
+      f.close();
+      return { work, size, color };
+    };
+    const small = measure(0);
+    const large = measure(10_000 - small.size);
+    expect(large.size).toBe(10_000);
+    expect(large.color).toBe('snapshot-4');
+    expect(large.work.snapshots).toBeGreaterThan(0);
+    expect(large.work).toEqual(small.work);
   });
 
   it('prunes idle per-user windows after two minutes using the injected clock', () => {

@@ -29,6 +29,7 @@ import type { CustomTemplate } from './custom-templates';
 import { applyImported, type ImportedBoard } from './exporters';
 import { toast } from './ui/common';
 import { trackerEnabled } from './tracker-gate';
+import { syncChatDock } from './ui/chat-dock';
 import { commentNoticeText } from './comments';
 import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
@@ -69,6 +70,9 @@ if (!DEMO) onRestoring(() => showRestoring());
 const RETURN_KEY = 'driftboard:return';
 
 const root = document.getElementById('app')!;
+// The overlay layer at the app root: what stays on screen while the page behind it changes (the chat dock).
+const overlay = Object.assign(document.createElement('div'), { id: 'overlay' });
+document.body.append(overlay);
 const trackerFoundationVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).get('debug') === 'tracker-foundation';
 const trackerMockVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).has('debug') && new URLSearchParams(location.search).get('trackerMock') === '1';
 const trackerBoardMockVisual = !DEMO && import.meta.env.MODE === 'visual' && new URLSearchParams(location.search).has('debug') && new URLSearchParams(location.search).get('trackerMock') === 'board';
@@ -623,12 +627,18 @@ async function boot() {
     }
   };
   syncMentions();
+  const syncDock = () => {
+    const a = authState();
+    syncChatDock(overlay, (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.id : null, chatAvailable(), (a.mode === 'signed-in' || a.mode === 'offline') && a.me ? a.me.user.name : undefined);
+  };
+  syncDock();
   onAuth((s) => {
     if (needsSignIn(resolveRoute(location.hash, s.mode, location.pathname, location.search), s.mode)) {
       saveReturn(location.hash);
       location.replace('#/signin');
     }
     syncMentions();
+    syncDock();
   });
   if (!DEMO && isDesktop()) {
     try {
