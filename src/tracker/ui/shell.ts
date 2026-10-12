@@ -255,6 +255,14 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   offlineLine, errorBanner, content, live);
   parent.appendChild(root);
   root.dataset.width = String(layoutWidth);
+  // the soft keyboard shrinks the visual viewport, not the layout one: the phone's suggestion sheet rides on top of it (--trk-kb)
+  const publishKeyboard = () => {
+    const vv = window.visualViewport;
+    root.style.setProperty('--trk-kb', `${Math.round(vv ? Math.max(0, window.innerHeight - (vv.offsetTop + vv.height)) : 0)}px`);
+  };
+  window.visualViewport?.addEventListener('resize', publishKeyboard);
+  window.visualViewport?.addEventListener('scroll', publishKeyboard);
+  publishKeyboard();
 
   const announce = (message: string) => { live.textContent = message; };
   const destroyInbox = () => {
@@ -1042,6 +1050,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         return card;
       });
       const laneBody = h('div', { class: 'trk-board-lane-cards' }, ...cards,
+        cards.length === 0 && !cache.nextCursor ? h('p', { class: 'trk-board-lane-empty' }, 'No issues') : null,
         cache.nextCursor ? h('button', {
           class: 'trk-load-more', type: 'button', disabled: cache.loadingMore,
           onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showBoardError(error instanceof Error ? error.message : 'Could not load more issues.', entry?.query ?? boardQuery(item))),
@@ -1312,6 +1321,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       if (debounce !== undefined) clearTimeout(debounce);
       window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOnline);
       window.removeEventListener('resize', onWindowResize);
+      window.visualViewport?.removeEventListener('resize', publishKeyboard);
+      window.visualViewport?.removeEventListener('scroll', publishKeyboard);
       root.remove();
     },
   };

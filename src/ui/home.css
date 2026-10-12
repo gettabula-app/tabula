@@ -142,6 +142,8 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .tpl-toolbar .home-search { flex: 0 1 320px; width: 100%; margin-top: 0; }
 .tpl-count { margin: 0 0 24px; padding-top: 12px; border-top: 2px solid var(--ink); }
 .tpl-results > .home-empty { border-top: 0; }
+/* an empty section in the Templates page is a quiet line, not a table edge */
+.tpl-section > .home-empty { padding: 4px 0 16px; border: 0; color: var(--graphite); font-size: 14px; }
 .tpl-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .tpl-card {
   display: flex; flex-direction: column; align-items: flex-start; gap: 8px; height: 100%; padding: 24px;
