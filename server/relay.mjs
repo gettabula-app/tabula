@@ -1204,9 +1204,27 @@ function sendFile(res, file, status, cache) {
   fs.createReadStream(file).pipe(res);
 }
 
+// True only for dir itself or a path below it. A bare startsWith(dir) would also accept a sibling such as dist-old.
+function insideDir(file, dir) {
+  return file === dir || file.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
+}
+
+// decodeURIComponent throws on a malformed escape such as %E0%A4%A; null means answer 400.
+function decodePathname(pathname) {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+}
+
 // The user guide: files are resolved inside dist/docs only and never fall back to the app shell.
 function serveDocs(req, res, url) {
-  const decoded = decodeURIComponent(url.pathname);
+  const decoded = decodePathname(url.pathname);
+  if (decoded === null) {
+    res.writeHead(400).end();
+    return;
+  }
   const notFound = () => {
     const page = path.join(DOCS, '404.html');
     if (fs.existsSync(page)) sendFile(res, page, 404, 'no-cache');
@@ -1219,7 +1237,7 @@ function serveDocs(req, res, url) {
   const rel = decoded.slice('/docs'.length).replace(/^\/+|\/+$/g, '');
   const ext = path.extname(rel);
   const file = path.resolve(DOCS, rel === '' ? 'index.html' : ext ? rel : path.join(rel, 'index.html'));
-  if (!file.startsWith(DOCS + path.sep)) {
+  if (file === DOCS || !insideDir(file, DOCS)) {
     res.writeHead(404).end();
     return;
   }
@@ -1253,9 +1271,11 @@ function serveIcons(req, res, url) {
     res.writeHead(405, { allow: 'GET, HEAD' }).end();
     return;
   }
-  const file = path.resolve(ICONS_DIR, decodeURIComponent(url.pathname).slice('/icons/'.length));
+  const decodedIcon = decodePathname(url.pathname);
+  if (decodedIcon === null) return sendJson(res, 400, { error: 'bad_request' });
+  const file = path.resolve(ICONS_DIR, decodedIcon.slice('/icons/'.length));
   // checked before any file system call, so a path outside the icons folder is never even looked at
-  if (!file.startsWith(ICONS_DIR + path.sep) || file.endsWith('.gz') || file.includes('\0')) return sendJson(res, 404, { error: 'not_found' });
+  if (file === ICONS_DIR || !insideDir(file, ICONS_DIR) || file.endsWith('.gz') || file.includes('\0')) return sendJson(res, 404, { error: 'not_found' });
   const isFile = (f) => fs.existsSync(f) && fs.statSync(f).isFile();
   const zipped = isFile(`${file}.gz`);
   const source = zipped ? `${file}.gz` : file;
@@ -1290,9 +1310,13 @@ function serveStatic(req, res, url) {
     serveDocs(req, res, url);
     return;
   }
-  let rel = decodeURIComponent(url.pathname);
+  const rel = decodePathname(url.pathname);
+  if (rel === null || rel.includes('\0')) {
+    res.writeHead(400).end();
+    return;
+  }
   let file = path.resolve(DIST, '.' + rel);
-  if (!file.startsWith(DIST)) {
+  if (!insideDir(file, DIST)) {
     res.writeHead(403).end();
     return;
   }
