@@ -41,11 +41,27 @@ const CALLS_PER_WINDOW = 120;
 const WRITES_PER_WINDOW = 30;
 const FAILURES_PER_WINDOW = 20;
 const TOUCH_MS = 60_000;
+const MCP_DAY_MS = 24 * 60 * 60 * 1000;
+const MCP_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
+const MCP_REQUEST_RESULT_MAX_BYTES = 64 * 1024;
 const BEARER_RE = /^bearer +(\S+)$/i;
 const RANK = { read: 1, comment: 2, write: 3 };
 const ROLE_RANK = { owner: 3, editor: 3, commenter: 2, viewer: 1 };
 const ACCESS_NAMES = [null, 'read', 'comment', 'write'];
 const READ_ONLY_MESSAGE = 'This workspace is read-only. Ask the workspace owner to check billing.';
+const CLIENT_REQUESTABLE_TOOLS = new Set([
+  'create_objects', 'add_kanban_card', 'add_kanban_cards', 'create_kanban', 'use_template', 'add_comment', 'reply_to_comment',
+]);
+const FENCED_REPLAY_TOOLS = new Set(['add_kanban_card', 'add_kanban_cards', 'create_kanban', 'use_template']);
+const SINGLE_DAILY_WRITE_TOOLS = new Set([
+  'add_kanban_card', 'update_kanban_card', 'move_kanban_card', 'create_kanban',
+  'create_kanban_label', 'update_kanban_label', 'delete_kanban_label',
+  'add_kanban_lane', 'update_kanban_lane', 'delete_kanban_lane', 'add_comment', 'reply_to_comment',
+]);
+const DAILY_WRITE_TOOLS = new Set([
+  ...SINGLE_DAILY_WRITE_TOOLS, 'create_objects', 'update_objects', 'delete_objects',
+  'add_kanban_cards', 'move_kanban_cards', 'use_template',
+]);
 
 const INSTRUCTIONS = [
   'This server reads and edits whiteboards.',
@@ -66,6 +82,18 @@ const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 const rpcError = (id, code, message, data) => ({ jsonrpc: '2.0', id, error: { code, message, ...(data === undefined ? {} : { data }) } });
 const textResult = (text, isError = false) => ({ content: [{ type: 'text', text }], ...(isError ? { isError: true } : {}) });
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest();
+const clientRequestIdSchema = {
+  type: 'string', minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9_-]{8,64}$',
+  description: 'Optional. Reuse the same value to retry safely after a lost answer.',
+};
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
 
 // ---------------------------------------------------------------- tool schemas (JSON Schema, no board text in any description)
 
@@ -168,6 +196,7 @@ function linkValue(value, path) {
  */
 export function createMcp({ config, directory, cloud = null, canWriteRoom, roomAccess, log, now = Date.now, snapshotBarrier = null }) {
   const open = config.mcp.mode === 'open';
+  const dailyWriteCap = config.mcp.dailyWrites ?? 2000;
   for (const name of config.mcp.ignored ?? []) log(`${name} is ignored: it only applies in open mode`);
 
   const failures = createWindowLimiter(FAILURES_PER_WINDOW, now);
@@ -176,6 +205,19 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   const ticketCreates = createWindowLimiter(TICKET_CREATES_PER_WINDOW, now);
   const lastTouch = new Map();
   const openDigest = open ? sha256(config.mcp.token) : null;
+
+  const usageActor = (actor) => {
+    if (open || !directory) return null;
+    return actor.source === 'oauth'
+      ? { kind: 'grant', id: actor.grantId }
+      : { kind: 'token', id: actor.tokenId };
+  };
+  const requestActor = (actor) => actor.source === 'oauth'
+    ? { kind: 'grant', id: actor.grantId }
+    : { kind: 'token', id: actor.tokenId };
+
+  const utcDay = (timestamp) => new Date(timestamp).toISOString().slice(0, 10);
+  const resetsAt = (timestamp) => new Date((Math.floor(timestamp / MCP_DAY_MS) + 1) * MCP_DAY_MS).toISOString();
 
   const clientIp = (req) => clientIpOf(req, config);
 
@@ -478,8 +520,8 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     if (typeof boardId !== 'string' || !TOKEN_BOARD_ID_RE.test(boardId)) throw new OpsError('invalid_input', 'Must be a board id', 'boardId');
     return boardId;
   };
-  const plain = (data) => ({ text: JSON.stringify(data) });
-  const fenced = (data) => ({ text: fence(data) });
+  const plain = (data) => ({ text: JSON.stringify(data), data, format: 'plain' });
+  const fenced = (data) => ({ text: fence(data), data, format: 'fenced' });
   const encodeOffsetCursor = (offset) => Buffer.from(String(offset)).toString('base64url');
   function decodeOffsetCursor(cursor) {
     try {
@@ -742,10 +784,19 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       inputSchema: objectSchema({}, []),
       run(actor, args) {
         check.record(args, '', []);
+        const timestamp = now();
+        const usage = usageActor(actor);
         return fenced({
           mode: actor.mode,
           user: open ? null : { id: actor.userId, name: cleanForModel(actor.userName, 100).text },
           token: { name: cleanForModel(actor.tokenName, 100).text, scope: actor.scope, expiresAt: actor.expiresAt, boardIds: actor.boardIds },
+          ...(!usage ? {} : {
+            dailyWrites: {
+              used: directory.mcpWritesToday(usage, utcDay(timestamp)),
+              cap: dailyWriteCap === 0 ? null : dailyWriteCap,
+              resetsAt: resetsAt(timestamp),
+            },
+          }),
           workspaceReadOnly: readOnlyNow(),
           ...(actor.source === 'oauth' ? { connector: cleanForModel(actor.clientName, 100).text } : {}),
         });
@@ -857,6 +908,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: objectSchema({
         boardId: boardIdSchema,
+        clientRequestId: clientRequestIdSchema,
         name: { type: 'string', minLength: 1, maxLength: KANBAN_LIMITS.containerName },
         x: num('Left edge. Give x and y together, or omit both to place beside existing content.'),
         y: num('Top edge. Give x and y together, or omit both to place beside existing content.'),
@@ -872,7 +924,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         },
       }, ['boardId']),
       run(actor, args) {
-        const boardId = boardArgs(args, ['name', 'x', 'y', 'parent', 'lanes']);
+        const boardId = boardArgs(args, ['clientRequestId', 'name', 'x', 'y', 'parent', 'lanes']);
         const input = {};
         for (const key of ['name', 'x', 'y', 'parent', 'lanes']) if (Object.hasOwn(args, key)) input[key] = args[key];
         return boardPlan(actor, boardId, (doc) => planCreateKanban(doc, input, { createdBy: actor.createdBy, now: now() }));
@@ -1114,6 +1166,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       inputSchema: objectSchema(
         {
           boardId: boardIdSchema,
+          clientRequestId: clientRequestIdSchema,
           kanbanId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
           laneId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
           stage: { enum: STAGES },
@@ -1130,7 +1183,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         ['boardId', 'kanbanId', 'title'],
       ),
       run(actor, args) {
-        const boardId = boardArgs(args, ['kanbanId', 'laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']);
+        const boardId = boardArgs(args, ['clientRequestId', 'kanbanId', 'laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']);
         const kanbanId = check.idString(check.required(args, 'kanbanId', ''), 'kanbanId');
         const fields = {};
         for (const key of ['laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']) {
@@ -1274,6 +1327,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: objectSchema({
         boardId: boardIdSchema,
+        clientRequestId: clientRequestIdSchema,
         kanbanId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' },
         cards: {
           type: 'array', minItems: 1, maxItems: 25,
@@ -1291,7 +1345,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         },
       }, ['boardId', 'kanbanId', 'cards']),
       run(actor, args) {
-        const boardId = boardArgs(args, ['kanbanId', 'cards']);
+        const boardId = boardArgs(args, ['clientRequestId', 'kanbanId', 'cards']);
         const kanbanId = check.idString(check.required(args, 'kanbanId', ''), 'kanbanId');
         const cards = check.listOf(check.required(args, 'cards', ''), 'cards', 1, 25);
         const steps = cards.map((item, i) => ({ item, path: `cards[${i}]` }));
@@ -1341,9 +1395,9 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: false },
-      inputSchema: objectSchema({ boardId: boardIdSchema, objects: { type: 'array', items: createItemSchema, minItems: 1, maxItems: LIMITS.createItems } }, ['boardId', 'objects']),
+      inputSchema: objectSchema({ boardId: boardIdSchema, clientRequestId: clientRequestIdSchema, objects: { type: 'array', items: createItemSchema, minItems: 1, maxItems: LIMITS.createItems } }, ['boardId', 'objects']),
       run(actor, args) {
-        const boardId = boardArgs(args, ['objects']);
+        const boardId = boardArgs(args, ['clientRequestId', 'objects']);
         const objects = check.required(args, 'objects', '');
         const plan = makeCtx(actor, boardId).writeBoard((doc) => {
           const planned = planCreate(doc, objects, { createdBy: actor.createdBy, now: now() });
@@ -1447,11 +1501,11 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       accountsOnly: true,
       annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: objectSchema(
-        { boardId: boardIdSchema, templateId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' }, x: num('Left edge. Give x and y together.'), y: num('Top edge.') },
+        { boardId: boardIdSchema, clientRequestId: clientRequestIdSchema, templateId: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' }, x: num('Left edge. Give x and y together.'), y: num('Top edge.') },
         ['boardId', 'templateId'],
       ),
       run(actor, args) {
-        const boardId = boardArgs(args, ['templateId', 'x', 'y']);
+        const boardId = boardArgs(args, ['clientRequestId', 'templateId', 'x', 'y']);
         const templateId = check.required(args, 'templateId', '');
         if (typeof templateId !== 'string' || !TOKEN_BOARD_ID_RE.test(templateId)) throw new OpsError('invalid_input', 'Must be a template id', 'templateId');
         if ((args.x === undefined) !== (args.y === undefined)) throw new OpsError('invalid_input', 'Give x and y together or neither', args.x === undefined ? 'x' : 'y');
@@ -1497,11 +1551,11 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: objectSchema(
-        { boardId: boardIdSchema, text: { type: 'string', minLength: 1, maxLength: LIMITS.text }, objectId: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' } },
+        { boardId: boardIdSchema, clientRequestId: clientRequestIdSchema, text: { type: 'string', minLength: 1, maxLength: LIMITS.text }, objectId: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' } },
         ['boardId', 'text'],
       ),
       run(actor, args) {
-        const boardId = boardArgs(args, ['text', 'objectId', 'x', 'y']);
+        const boardId = boardArgs(args, ['clientRequestId', 'text', 'objectId', 'x', 'y']);
         const body = check.required(args, 'text', '');
         const ctx = makeCtx(actor, boardId);
         const anchor = ctx.readBoard((doc) => resolveAnchor(doc, args));
@@ -1517,11 +1571,11 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: false },
       inputSchema: objectSchema(
-        { boardId: boardIdSchema, threadId: { type: 'string' }, text: { type: 'string', minLength: 1, maxLength: LIMITS.text } },
+        { boardId: boardIdSchema, clientRequestId: clientRequestIdSchema, threadId: { type: 'string' }, text: { type: 'string', minLength: 1, maxLength: LIMITS.text } },
         ['boardId', 'threadId', 'text'],
       ),
       run(actor, args) {
-        const boardId = boardArgs(args, ['threadId', 'text']);
+        const boardId = boardArgs(args, ['clientRequestId', 'threadId', 'text']);
         const threadId = check.required(args, 'threadId', '');
         const body = check.required(args, 'text', '');
         const ctx = makeCtx(actor, boardId);
@@ -2056,6 +2110,122 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     },
   ];
 
+  function dailyWriteCount(tool, args, actor) {
+    if (!tool?.mutating || !args || typeof args !== 'object' || Array.isArray(args)) return 0;
+    const itemCount = (key, max) => Array.isArray(args[key]) && args[key].length > 0 && args[key].length <= max ? args[key].length : 0;
+    switch (tool.name) {
+      case 'create_objects': return itemCount('objects', LIMITS.createItems);
+      case 'update_objects': return itemCount('updates', LIMITS.updateItems);
+      case 'delete_objects': return itemCount('ids', LIMITS.deleteIds);
+      case 'add_kanban_cards': return itemCount('cards', 25);
+      case 'move_kanban_cards': return itemCount('moves', 25);
+      case 'use_template': {
+        if (typeof args.templateId !== 'string' || !TOKEN_BOARD_ID_RE.test(args.templateId)) return 0;
+        const template = directory?.getTemplateFor(actor.user, args.templateId);
+        return Number.isSafeInteger(template?.objectCount) && template.objectCount > 0 ? template.objectCount : 0;
+      }
+      default: return SINGLE_DAILY_WRITE_TOOLS.has(tool.name) ? 1 : 0;
+    }
+  }
+
+  const toolError = (code, message, path) => ({
+    result: textResult(JSON.stringify({ error: code, message, ...(path ? { path } : {}) }), true),
+  });
+
+  function requestIdOf(tool, args) {
+    if (!CLIENT_REQUESTABLE_TOOLS.has(tool.name) || !Object.hasOwn(args, 'clientRequestId')) return { id: null };
+    const id = args.clientRequestId;
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+      return { error: toolError('invalid_input', 'Must be 8 to 64 letters, digits, underscores or dashes', 'clientRequestId') };
+    }
+    return { id };
+  }
+
+  function replayResult(toolName, resultJson) {
+    const data = JSON.parse(resultJson);
+    const replayed = { ...data, replayed: true };
+    return textResult(FENCED_REPLAY_TOOLS.has(toolName) ? fence(replayed) : JSON.stringify(replayed));
+  }
+
+  function canPreflightBoardWrite(actor, tool, args) {
+    if (!DAILY_WRITE_TOOLS.has(tool.name)) return true;
+    const boardId = args.boardId;
+    if (typeof boardId !== 'string' || !TOKEN_BOARD_ID_RE.test(boardId)) return false;
+    const kind = tool.scope === 'comment' ? 'comments' : 'board';
+    try {
+      authorise(actor, boardId, tool.scope, kind);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function callWithPolicies(actor, tool, params) {
+    if (!tool) return callTool(actor, params);
+    const rawArgs = params.arguments === undefined ? {} : params.arguments;
+    if (typeof rawArgs !== 'object' || rawArgs === null || Array.isArray(rawArgs)) return callTool(actor, params);
+    const args = rawArgs;
+    const requested = requestIdOf(tool, args);
+    if (requested.error) return requested.error;
+    if (!canPreflightBoardWrite(actor, tool, args)) return callTool(actor, params);
+
+    const usage = usageActor(actor);
+    const requestKey = requestActor(actor);
+    const timestamp = now();
+    const argsHash = requested.id === null || !directory
+      ? null
+      : sha256(canonicalJson(Object.fromEntries(Object.entries(args).filter(([key]) => key !== 'clientRequestId')))).toString('hex');
+
+    if (requested.id !== null && directory) {
+      const previous = directory.getMcpRequest(requestKey, tool.name, requested.id);
+      if (previous && timestamp >= previous.createdAt && timestamp - previous.createdAt < MCP_REQUEST_TTL_MS) {
+        if (previous.argsHash !== argsHash) {
+          return toolError('request_id_reused', 'That clientRequestId was already used with different arguments.');
+        }
+        try {
+          return { result: replayResult(tool.name, previous.resultJson) };
+        } catch {
+          // A malformed record is treated as absent; the tool's normal validation remains authoritative.
+        }
+      }
+    }
+
+    const writes = dailyWriteCount(tool, args, actor);
+    if (usage && writes > 0) {
+      const day = utcDay(timestamp);
+      const used = directory.mcpWritesToday(usage, day);
+      if (dailyWriteCap > 0 && used + writes > dailyWriteCap) {
+        const remaining = Math.max(0, dailyWriteCap - used);
+        const subject = actor.source === 'oauth' ? 'this grant' : 'this token';
+        return toolError('daily_limit', `Daily write limit reached for ${subject}: ${remaining} writes left of ${dailyWriteCap}. It resets at 00:00 UTC.`);
+      }
+    }
+
+    const done = callTool(actor, params);
+    if (done.rpc || done.result?.isError === true) return done;
+
+    if (usage && writes > 0) {
+      try {
+        directory.addMcpWrites(usage, utcDay(timestamp), writes);
+      } catch (err) {
+        log('mcp: could not record daily writes', err?.message);
+      }
+    }
+
+    if (requested.id !== null && directory && done.data !== null && typeof done.data === 'object' && !Array.isArray(done.data)) {
+      const resultJson = JSON.stringify(done.data);
+      if (Buffer.byteLength(resultJson, 'utf8') <= MCP_REQUEST_RESULT_MAX_BYTES
+        && Buffer.byteLength(done.result.content[0].text, 'utf8') <= MCP_REQUEST_RESULT_MAX_BYTES) {
+        try {
+          directory.putMcpRequest(requestKey, tool.name, requested.id, argsHash, resultJson, timestamp);
+        } catch (err) {
+          log('mcp: could not record a client request', err?.message);
+        }
+      }
+    }
+    return { result: done.result };
+  }
+
   // A ticket tool exists only for a token with the tracker capability (and the flag on); every other tool is always
   // callable and refuses by scope inside its run, as before.
   const trackerVisible = (actor, t) => {
@@ -2075,7 +2245,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     try {
       const out = tool.run(actor, args);
       if (out.audit) recordAudit(actor, tool.name, out.audit.boardId, out.audit.room, out.audit);
-      return { result: textResult(out.text) };
+      return { result: textResult(out.text), data: out.data, format: out.format };
     } catch (err) {
       if (err instanceof OpsError) {
         return { result: textResult(JSON.stringify({ error: err.code, message: err.message, ...(err.path ? { path: err.path } : {}), ...(err.floor ? { floor: err.floor } : {}) }), true) };
@@ -2114,6 +2284,13 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         return { status: 200, body: rpcError(id, -32602, 'params.name must be a tool name') };
       }
       const tool = tools.find((t) => t.name === params.name && !(open && t.accountsOnly) && trackerVisible(actor, t));
+      if (directory?.sweepMcp) {
+        try {
+          directory.sweepMcp(now());
+        } catch (err) {
+          log('mcp: could not sweep usage records', err?.message);
+        }
+      }
       if (actor.source === 'oauth' && tool && RANK[actor.scope] < RANK[tool.scope]) {
         const metadata = `${config.mcp.issuer}/.well-known/oauth-protected-resource/mcp`;
         return {
@@ -2136,8 +2313,8 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         }
       }
       const done = tool?.mutating && snapshotBarrier
-        ? await snapshotBarrier.runWriter(() => callTool(actor, params))
-        : callTool(actor, params);
+        ? await snapshotBarrier.runWriter(() => callWithPolicies(actor, tool, params))
+        : callWithPolicies(actor, tool, params);
       if (done.rpc) return { status: 200, body: rpcError(id, done.rpc[0], done.rpc[1]) };
       return { status: 200, body: rpcResult(id, done.result) };
     }

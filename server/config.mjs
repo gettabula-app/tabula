@@ -28,7 +28,19 @@ export function normaliseEmail(value) {
 // MCP endpoint (docs/mcp.md). The old MIRA_ spelling is mapped to TABULA_ by withLegacyEnv, not here.
 const MCP_SCOPES = ['read', 'comment', 'write'];
 const MCP_TOKEN_MIN = 32;
+const MCP_DAILY_WRITES_DEFAULT = 2000;
+const MCP_DAILY_WRITES_MAX = 1_000_000;
 const mcpVar = (env, name) => (env[`TABULA_${name}`] ?? '').trim();
+
+function parseMcpDailyWrites(env) {
+  const raw = mcpVar(env, 'MCP_DAILY_WRITES');
+  if (!raw) return MCP_DAILY_WRITES_DEFAULT;
+  const value = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(value) || value < 0 || value > MCP_DAILY_WRITES_MAX) {
+    throw new Error(`TABULA_MCP_DAILY_WRITES must be an integer from 0 to ${MCP_DAILY_WRITES_MAX}`);
+  }
+  return value;
+}
 
 function parseOAuthRedirectHosts(raw) {
   const value = (raw ?? '').trim();
@@ -69,6 +81,7 @@ function parseOAuthRedirectSchemes(raw) {
 
 // null when off. Accounts mode: per-user access tokens. Open mode: one shared token with a fixed scope.
 function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
+  const dailyWrites = parseMcpDailyWrites(env);
   const mode = mcpVar(env, 'MCP') || 'off';
   if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_MCP must be on or off (got "${mode.slice(0, 20)}")`);
   const oauthMode = mcpVar(env, 'MCP_OAUTH') || 'off';
@@ -102,7 +115,7 @@ function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
       }
     }
     return {
-      mode: 'accounts', oauth, issuer, redirectKnown, redirectHosts, redirectWildcard, redirectSchemes, hosted: Boolean(hosted),
+      mode: 'accounts', oauth, issuer, redirectKnown, redirectHosts, redirectWildcard, redirectSchemes, hosted: Boolean(hosted), dailyWrites,
       ignored: [token && 'TABULA_MCP_TOKEN', scope && 'TABULA_MCP_SCOPE'].filter(Boolean),
     };
   }
@@ -111,7 +124,7 @@ function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
     throw new Error(`TABULA_MCP_TOKEN must be set, at least ${MCP_TOKEN_MIN} characters without spaces, when TABULA_MCP=on in open mode`);
   }
   if (scope && !MCP_SCOPES.includes(scope)) throw new Error(`TABULA_MCP_SCOPE must be one of ${MCP_SCOPES.join(', ')} (got "${scope.slice(0, 20)}")`);
-  return { mode: 'open', token, scope: scope || 'read', oauth: false, issuer: null, redirectKnown, redirectHosts: [], redirectWildcard: false, redirectSchemes: [], hosted: false, ignored: [] };
+  return { mode: 'open', token, scope: scope || 'read', oauth: false, issuer: null, redirectKnown, redirectHosts: [], redirectWildcard: false, redirectSchemes: [], hosted: false, dailyWrites, ignored: [] };
 }
 
 // Images on a board (docs/images.md). Sizes are bytes, with an optional K, M or G suffix (powers of 1024).
