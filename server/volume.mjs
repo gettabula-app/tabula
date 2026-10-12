@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { clearRunState } from './backup.mjs';
 import { fsyncDir, restorePending, writeFileDurable } from './restore.mjs';
+import { restoreGateValue, TRACKER_RESTORE_GATE_KEY } from './tracker/gate.mjs';
 
 export const MARKER = 'volume.json';
 export const MARKER_VERSION = 1;
@@ -220,6 +221,23 @@ export function planVolume({ dataDir, env, workspaceId, now = Date.now() }) {
 }
 
 /**
+ * An adopted disk can be older than the workspace's last ticket: the key counter on it may be behind the keys already given out.
+ * So a disk that holds tracker data is closed to tracker writes the way a whole restore closes it (the restore gate, floor pending),
+ * and the tracker restore recovery (search index, board reconcile) and the owner's readiness check run before it opens. A disk that
+ * never used the tracker is left alone.
+ */
+function closeTrackerAfterAdoption(directory, nowMs) {
+  const db = directory.db;
+  const has = (table) => db.prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
+  if (!has('tickets') || !has('ticket_counters')) return;
+  const tickets = Number(db.prepare('SELECT COUNT(*) AS n FROM tickets').get().n);
+  const counters = Number(db.prepare('SELECT COUNT(*) AS n FROM ticket_counters WHERE next_number > 1').get().n);
+  if (tickets === 0 && counters === 0) return;
+  directory.setSetting(TRACKER_RESTORE_GATE_KEY, restoreGateValue({ since: nowMs, reason: 'volume', floor: 'pending' }));
+  db.prepare('DELETE FROM settings WHERE key = ? OR key = ?').run('tracker.reconcile_done', 'tracker.fts_ready');
+}
+
+/**
  * Carries out a plan: for an adoption, every step in order, and the marker last. Throws on the first step that fails
  * (the relay then exits); the next start finds the old marker and adopts again, which is safe to repeat.
  * @param {{ dataDir: string, plan: ReturnType<typeof decideVolume>, directory?: any, log?: (...args: any[]) => void }} options
@@ -241,6 +259,7 @@ export function applyVolume({ dataDir, plan, directory = null, log = () => {} })
         if (plan.reason === 'operator') directory.revokeAllGrants();
         // OAuth credentials are instance-bound even when a restored copy keeps its personal tokens and clients.
         directory.invalidateOauthAfterRestore('adopt', plan.marker.adoptedAt ?? Date.now(), plan.reason === 'operator');
+        closeTrackerAfterAdoption(directory, plan.marker.adoptedAt ?? Date.now());
         directory.audit(null, AUDIT_ACTION, { from: plan.from, to: plan.to, reason: plan.reason });
       });
     }
