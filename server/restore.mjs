@@ -1106,7 +1106,12 @@ export function createRestore({
         if (has('invites')) db.exec('UPDATE invites SET revoked = 1 WHERE revoked = 0');
         db.exec("DELETE FROM settings WHERE key = 'backup.status' OR key LIKE 'cloud.%'");
         db.exec("DELETE FROM audit WHERE action IN ('backup.run', 'backup.failed')");
-        for (const [key, value] of Object.entries(carried)) if (value !== null) upsert.run(key, value);
+        // what this instance has now wins: a telemetry choice or install id that is not set here must not come back from the backup
+        const unset = db.prepare('DELETE FROM settings WHERE key = ?');
+        for (const [key, value] of Object.entries(carried)) {
+          if (value !== null) upsert.run(key, value);
+          else if (key.startsWith('telemetry.')) unset.run(key);
+        }
         upsert.run(PROTECTED_KEY, JSON.stringify(protectedNow));
         upsert.run(KEEP_KEY, JSON.stringify(keep));
 

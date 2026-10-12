@@ -51,6 +51,30 @@ describe('telemetry settings across restore', () => {
     }
   });
 
+  it('does not bring back telemetry settings the live instance does not have', async () => {
+    h = await harness({ accounts: true });
+    seedA(h);
+    h.directory!.setSetting('telemetry.enabled', '1');
+    h.directory!.setSetting('telemetry.install_id', 'backup-install-id');
+    const engine = rig(h);
+    const backup = await backupNow(engine.backup);
+    const owner = ownerOf(h);
+
+    // live: neither key was ever set (a fresh install restoring an older backup), and cloud.* behaviour is unchanged
+    h.directory!.db.prepare("DELETE FROM settings WHERE key LIKE 'telemetry.%'").run();
+    expect(setting(h.directory!, 'telemetry.enabled')).toBeNull();
+    expect(setting(h.directory!, 'telemetry.install_id')).toBeNull();
+    await engine.restore.restoreWorkspace({ manifest: backup.manifest, confirm: 'RESTORE', actor: owner });
+
+    const restored = reopen(h);
+    try {
+      expect(setting(restored, 'telemetry.enabled')).toBeNull();
+      expect(setting(restored, 'telemetry.install_id')).toBeNull();
+    } finally {
+      restored.close();
+    }
+  });
+
   it('does not change live telemetry settings when restoring one board as a copy', async () => {
     h = await harness({ accounts: true });
     seedA(h);

@@ -3,7 +3,6 @@
 // check-then-act sequence runs without interleaving with another request.
 
 import fs from 'node:fs';
-import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
@@ -11,6 +10,7 @@ import { SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
 import { createTelemetryCollector } from './telemetry/collector.mjs';
+import { createDataBytes } from './telemetry/data-bytes.mjs';
 import {
   MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
 } from './templates.mjs';
@@ -370,26 +370,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     eventLoopDelay?.reset();
   }
 
-  function dataBytesOnDisk() {
-    let bytes = 0;
-    const pending = [dataDir];
-    try {
-      while (pending.length) {
-        const dir = pending.pop();
-        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          const file = path.join(dir, entry.name);
-          if (entry.isDirectory()) pending.push(file);
-          else if (entry.isFile()) {
-            bytes += fs.statSync(file).size;
-            if (!Number.isSafeInteger(bytes)) return Number.MAX_SAFE_INTEGER;
-          }
-        }
-      }
-      return bytes;
-    } catch {
-      return null;
-    }
-  }
+  const dataBytesOnDisk = createDataBytes({ dir: dataDir, now });
 
   function privacyState() {
     const auditActions = new Set(['telemetry.enabled', 'telemetry.disabled', 'telemetry.settings', 'settings.telemetry']);

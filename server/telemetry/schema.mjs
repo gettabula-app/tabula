@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-const schemaText = readFileSync(new URL('../../docs/telemetry-schema.json', import.meta.url), 'utf8');
+const schemaText = readFileSync(new URL('./schema.json', import.meta.url), 'utf8');
 
 /** Freeze JSON-shaped values recursively without changing their shape. */
 export function deepFreezeJson(value, seen = new WeakSet()) {

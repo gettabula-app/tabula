@@ -25,7 +25,7 @@ self-hosted (opt-in): instance ──POST https://telemetry.<tabula domain>/v1/t
 ```
 
 **What needs code in the app (`tabula`)**
-1. `server/telemetry/schema.mjs` (generated from `docs/telemetry-schema.json`): the allowlist, shared by the instance and the control plane (the control plane carries a copy, checked by a test that compares hashes).
+1. `server/telemetry/schema.mjs` (generated from `server/telemetry/schema.json`): the allowlist, shared by the instance and the control plane (the control plane carries a copy, checked by a test that compares hashes).
 2. `server/telemetry/collector.mjs`: in-memory counters and histograms (fixed buckets), `count(name, labels)`, `observe(name, ms, labels)`, `flush()` once an hour and on shutdown (the unflushed hour is at most 50 KB in a `telemetry_outbox` table so a crash does not lose it).
 3. Call sites: a handful of one-line `count()` calls in the API, sync, MCP, OAuth, backup and tracker modules, and a wrapper in the error paths (section 5).
 4. A browser beacon: `POST /api/telemetry/ui` with a body of enum event names and counts only (no strings, no ids), batched per tab session, rate limited. The instance aggregates it with everything else. The page loads no third-party scripts, so the CSP does not change.
@@ -138,7 +138,7 @@ Lives in `src/telemetry/scrub.mjs` (control plane) with the same schema on the i
 5. **Size limits.** 256 KB per post, 1,000 events per post.
 6. **No raw pass-through.** The forwarders build their payloads from the validated structure, never from the original JSON.
 7. **Tests.** A table-driven test per schema entry, a fuzz test that feeds random strings, emails, URLs and 10 KB blobs into every field and asserts none reaches a sink, and a test that fails if a sink payload contains any email-, URL- or token-shaped string.
-8. **Change control.** `docs/telemetry-schema.json` changes only through a reviewed commit; proposed: a rule in AGENTS.md that the tech lead reviews any change to it, and the designer/legal wording in the Privacy panel changes with it.
+8. **Change control.** `server/telemetry/schema.json` changes only through a reviewed commit; proposed: a rule in AGENTS.md that the tech lead reviews any change to it, and the designer/legal wording in the Privacy panel changes with it.
 
 ## 3. Opt-out, opt-in, and what the owner sees
 

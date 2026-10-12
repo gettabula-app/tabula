@@ -172,7 +172,7 @@ describe('telemetry schema catalogue', () => {
   });
 
   it('freezes the parsed JSON helpers and hashes the exact schema bytes', () => {
-    const source = readFileSync(new URL('../docs/telemetry-schema.json', import.meta.url));
+    const source = readFileSync(new URL('../server/telemetry/schema.json', import.meta.url));
     expect(SCHEMA_HASH).toBe(createHash('sha256').update(source).digest('hex'));
     expect(SCHEMA_HASH).toMatch(/^[0-9a-f]{64}$/u);
     expect(Object.isFrozen(TELEMETRY_SCHEMA)).toBe(true);

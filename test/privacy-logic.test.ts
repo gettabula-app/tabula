@@ -5,12 +5,12 @@ describe('Privacy panel copy and rules', () => {
   it('uses the required switch label and describes the hosted and self-hosted defaults', () => {
     expect(privacySwitchLabel('hosted')).toBe('Product analytics');
     expect(privacySwitchLabel('self')).toBe('Send telemetry to Tabula');
-    expect(privacyModeIntro('hosted')).toBe('Hosted workspaces send product analytics by default. The owner can turn it off. Operating data and error reports stay on either way.');
-    expect(privacyModeIntro('self')).toBe('Off by default. When on, this instance sends the items below to Tabula once an hour, and nowhere else.');
+    expect(privacyModeIntro('hosted')).toBe('Product analytics is on by default for hosted workspaces. The owner can turn it off. Operating data stays on either way.');
+    expect(privacyModeIntro('self')).toBe('Off by default. When on, this instance prepares the items below once an hour for Tabula and nothing else. Sending starts in a later version.');
     expect(privacyStayOnHeading('hosted')).toBe('Stays on either way');
     expect(privacyStayOnLead('hosted')).toBe('We need these to run, back up and fix your workspace.');
     expect(privacyStayOnHeading('self')).toBe('Also sent when this is on');
-    expect(privacyStayOnLead('self')).toBe('Operating data and error reports.');
+    expect(privacyStayOnLead('self')).toBe('Operating data.');
     expect(PRIVACY_COPY.analyticsText).toBe('Sends counts and durations of feature use for this workspace to Tabula so we can see what is used and improve it. Never includes anything from your boards, comments or chat, and no names, email addresses or identifiers of people.');
     expect(privacySharingState(true)).toBe('On');
     expect(privacySharingState(false)).toBe('Off');
@@ -29,13 +29,16 @@ describe('Privacy panel copy and rules', () => {
 
   it('renders category keys through the reviewed plain-language copy', () => {
     expect(privacyCategoryText('feature_counts')).toBe(PRIVACY_COPY.categories.feature_counts);
-    expect(privacyCategoryText('workspace_scale')).toBe('sizes only: how many boards, members and items this workspace holds, never their content');
-    expect(privacyCategoryText('error_codes')).toBe('Error reports are not collected yet. When they are added they will stay on and contain only an error code and the software version, never anything from your boards.');
-    expect(privacyCategoryText('backup state')).toContain('approved error-code labels');
+    expect(privacyCategoryText('workspace_scale')).toBe('Sizes only: how many boards and members this workspace holds, never their content.');
+    expect(privacyCategoryText('error_codes')).toBe('Error reports (with an error code and the version; not collected yet)');
+    expect(privacyCategoryText('backup state')).toBe('Backup and restore run counts, durations, bytes, and the outcome code of each run, never a message or a path.');
     expect(privacyCategoryText('performance')).toContain('current and hourly peak connection totals');
     expect(PRIVACY_COPY.categories.feature_counts).toContain('Counts of device types (phone, tablet, computer), browser families and operating systems, never the browser string itself.');
     expect(PRIVACY_COPY.categories.feature_counts).toContain('The raw User-Agent and browser strings are read on this instance and discarded.');
-    expect(privacyCategoryText('unknown')).toBe('unknown');
+    // a key this build has no sentence for is not shown
+    expect(privacyCategoryText('unknown')).toBeNull();
+    expect(privacyCategoryText('device_class')).toBeNull();
+    expect(privacyCategoryText('constructor')).toBeNull();
   });
 
   it('keeps the never-sent catalogue and later-send explanation in the reviewed copy module', () => {
@@ -51,7 +54,7 @@ describe('Privacy panel copy and rules', () => {
     expect(PRIVACY_COPY.noSent).toBe('Nothing has been sent yet.');
     expect(PRIVACY_COPY.previewButton).toBe('Show what would be sent');
     expect(PRIVACY_COPY.confirmSelfOnTitle).toBe('Send telemetry to Tabula?');
-    expect(PRIVACY_COPY.confirmSelfOnText).toBe('This instance will send the items listed on this page to Tabula once an hour. You can turn it off at any time.');
+    expect(PRIVACY_COPY.confirmSelfOnText).toBe('This instance will prepare the items listed on this page once an hour for Tabula and send nothing else. You can turn it off at any time.');
     expect(PRIVACY_COPY.cancel).toBe('Cancel');
     expect(PRIVACY_COPY.turnOn).toBe('Turn on');
   });

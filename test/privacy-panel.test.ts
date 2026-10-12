@@ -92,6 +92,49 @@ describe('Admin Privacy', () => {
     expect(textOf(panel())).toContain(PRIVACY_COPY.selfIntro);
   });
 
+  it('keeps Backups, Privacy and Audit in that order in the rendered Admin tabs', async () => {
+    renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
+    await flush();
+    const hrefs = root.querySelectorAll('.admin-tab').map((el) => el.getAttribute('href'));
+    const at = (name: string) => hrefs.indexOf(`#/admin/${name}`);
+    expect(at('backups')).toBeGreaterThanOrEqual(0);
+    expect(at('backups')).toBeLessThan(at('privacy'));
+    expect(at('privacy')).toBeLessThan(at('audit'));
+    expect(at('audit')).toBe(hrefs.length - 1);
+  });
+
+  it('lays out the switch, its description, the state note, then the lists under their subheadings', async () => {
+    renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
+    await flush();
+    const kids = need(panel(), '.privacy-admin').children.map((el) => ({ cls: el.className }));
+    const at = (cls: string) => kids.findIndex((k) => k.cls.split(' ').includes(cls));
+    // the description sits directly under the switch, then the state note, then the first rule (the first section)
+    expect(at('privacy-description')).toBe(at('privacy-toggle') + 1);
+    expect(at('privacy-state-note')).toBe(at('privacy-description') + 1);
+    expect(at('privacy-section')).toBeGreaterThan(at('privacy-state-note'));
+    expect(textOf(need(panel(), '.privacy-description'))).toBe(PRIVACY_COPY.analyticsText);
+    const subheads = panel().querySelectorAll('.privacy-subhead').map((el) => textOf(el));
+    expect(subheads).toEqual(['What this switch covers', 'Stays on either way']);
+    // the error-reports line is under "Stays on either way", not in the switch list
+    const lists = panel().querySelectorAll('.privacy-section');
+    expect(textOf(lists[0])).not.toContain('Error reports');
+    expect(textOf(lists[1])).toContain('Error reports (with an error code and the version; not collected yet)');
+
+    state = settings({ mode: 'self', enabled: false });
+    renderAdmin(root as unknown as HTMLElement, 'privacy', selfOwner);
+    await flush();
+    expect(panel().querySelectorAll('.privacy-subhead').map((el) => textOf(el))[0]).toBe('Sent when this is on');
+  });
+
+  it('leaves out a category key this build has no sentence for', async () => {
+    state = settings({ categories: ['feature_counts', 'device_class'], operational: ['performance', 'something_new'] });
+    renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
+    await flush();
+    expect(textOf(panel())).not.toContain('device_class');
+    expect(textOf(panel())).not.toContain('something_new');
+    expect(textOf(panel())).toContain(PRIVACY_COPY.categories.feature_counts);
+  });
+
   it('lets an owner change the setting and reports the saved state', async () => {
     renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
     await flush();
@@ -161,7 +204,7 @@ describe('Admin Privacy', () => {
     expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(0);
     const modal = browser.document.body.querySelector('.modal') as FakeElement;
     expect(textOf(modal)).toContain('Send telemetry to Tabula?');
-    expect(textOf(modal)).toContain('This instance will send the items listed on this page to Tabula once an hour. You can turn it off at any time.');
+    expect(textOf(modal)).toContain('This instance will prepare the items listed on this page once an hour for Tabula and send nothing else. You can turn it off at any time.');
     const buttons = modal.querySelectorAll('.modal-actions button');
     expect(buttons.map(textOf)).toEqual(['Cancel', 'Turn on']);
     buttons[0].click();

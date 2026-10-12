@@ -3,7 +3,7 @@ import { ApiError, api, type AdminPrivacy, type AdminPrivacyPreview, type Me } f
 import { setSignedOut } from '../auth';
 import { dialog } from './common';
 import { h } from './dom';
-import { PRIVACY_COPY, privacyCategoryText, privacyEditState, privacyLastChangedBy, privacyModeIntro, privacySharingState, privacyStayOnHeading, privacyStayOnLead, privacySwitchLabel, privacyTimestamp } from './privacy-logic';
+import { PRIVACY_COPY, privacyCategoryText, privacyCoversHeading, privacyEditState, privacyLastChangedBy, privacyModeIntro, privacySharingState, privacyStayOnHeading, privacyStayOnLead, privacySwitchLabel, privacyTimestamp } from './privacy-logic';
 
 const PREVIEW_ID = 'privacy-preview-content';
 
@@ -162,6 +162,11 @@ export function privacyAdminPanel(me: Me): HTMLElement {
       }),
       h('span', null, privacySwitchLabel(saved.mode)));
 
+    // a key this build has no sentence for (a newer server) is left out rather than shown as an internal name
+    const categoryLines = (keys: readonly string[]) => keys.flatMap((key) => {
+      const text = privacyCategoryText(key);
+      return text === null ? [] : [h('li', null, text)];
+    });
     const previewText = previewReply?.preview ? JSON.stringify(previewReply.preview, null, 2) : '';
     const previewBuilt = previewReply ? privacyTimestamp(previewReply.builtAt) : null;
     const lastChangedBy = privacyLastChangedBy(saved.lastChangedBy);
@@ -185,16 +190,17 @@ export function privacyAdminPanel(me: Me): HTMLElement {
     root.replaceChildren(
       h('p', { class: 'privacy-intro' }, privacyModeIntro(saved.mode)),
       toggle,
+      h('p', { class: 'privacy-description' }, PRIVACY_COPY.analyticsText),
       h('p', { id: helpId, class: 'privacy-state-note', role: 'status', 'aria-live': 'polite' }, h('strong', null, stateText), ' ', PRIVACY_COPY.hourlyNote),
       h('p', { id: accessId, class: 'privacy-access' }, reasonText),
       ...(lastChangedBy ? [h('p', { class: 'privacy-last-changed' }, lastChangedBy)] : []),
-      h('section', { class: 'privacy-section', 'aria-label': PRIVACY_COPY.switchLabel },
-        h('p', { class: 'privacy-lead' }, PRIVACY_COPY.analyticsText),
-        h('ul', { class: 'privacy-list' }, saved.categories.map((category) => h('li', null, privacyCategoryText(category))))),
+      h('section', { class: 'privacy-section', 'aria-labelledby': 'privacy-covers-heading' },
+        h('h3', { class: 'privacy-subhead', id: 'privacy-covers-heading' }, privacyCoversHeading(saved.mode)),
+        h('ul', { class: 'privacy-list' }, categoryLines(saved.categories))),
       h('section', { class: 'privacy-section', 'aria-labelledby': 'privacy-operational-heading' },
         h('h3', { class: 'privacy-subhead', id: 'privacy-operational-heading' }, privacyStayOnHeading(saved.mode)),
         h('p', { class: 'privacy-lead' }, privacyStayOnLead(saved.mode)),
-        h('ul', { class: 'privacy-list' }, saved.operational.map((item) => h('li', null, privacyCategoryText(item))))),
+        h('ul', { class: 'privacy-list' }, categoryLines(saved.operational))),
       h('details', { class: 'privacy-section' },
         h('summary', null, PRIVACY_COPY.neverHeading),
         h('ul', { class: 'privacy-list' }, PRIVACY_COPY.neverSent.map((item) => h('li', null, item)))),

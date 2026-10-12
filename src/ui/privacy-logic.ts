@@ -12,8 +12,8 @@ export const PRIVACY_COPY = {
   retry: 'Retry',
   switchLabel: 'Product analytics',
   selfSwitchLabel: 'Send telemetry to Tabula',
-  hostedIntro: 'Hosted workspaces send product analytics by default. The owner can turn it off. Operating data and error reports stay on either way.',
-  selfIntro: 'Off by default. When on, this instance sends the items below to Tabula once an hour, and nowhere else.',
+  hostedIntro: 'Product analytics is on by default for hosted workspaces. The owner can turn it off. Operating data stays on either way.',
+  selfIntro: 'Off by default. When on, this instance prepares the items below once an hour for Tabula and nothing else. Sending starts in a later version.',
   ownerOnly: 'Only the owner can change this setting.',
   envLocked: 'This setting is locked by the operator environment setting TABULA_TELEMETRY.',
   enabled: 'On',
@@ -23,14 +23,16 @@ export const PRIVACY_COPY = {
   categories: {
     feature_counts: 'Feature-use counts and durations: boards opened, polls run, timers, AI runs, and chat message counts. Counts of device types (phone, tablet, computer), browser families and operating systems, never the browser string itself. The raw User-Agent and browser strings are read on this instance and discarded.',
     performance: 'Request counts and durations by route template, current and hourly peak connection totals, and process resource use.',
-    error_codes: 'Error reports are not collected yet. When they are added they will stay on and contain only an error code and the software version, never anything from your boards.',
-    'backup state': 'Backup and restore run counts, durations, bytes, and approved error-code labels.',
-    workspace_scale: 'sizes only: how many boards, members and items this workspace holds, never their content',
+    error_codes: 'Error reports (with an error code and the version; not collected yet)',
+    'backup state': 'Backup and restore run counts, durations, bytes, and the outcome code of each run, never a message or a path.',
+    workspace_scale: 'Sizes only: how many boards and members this workspace holds, never their content.',
   },
+  coversHeading: 'What this switch covers',
+  selfCoversHeading: 'Sent when this is on',
   stayOnHeading: 'Stays on either way',
   operationalLead: 'We need these to run, back up and fix your workspace.',
   selfAlsoHeading: 'Also sent when this is on',
-  selfAlsoLead: 'Operating data and error reports.',
+  selfAlsoLead: 'Operating data.',
   neverHeading: 'What is never sent',
   neverSent: [
     'Anything you write or upload: board, card and ticket titles and text, comments, chat, file names and contents, search text, AI prompts and answers.',
@@ -54,7 +56,7 @@ export const PRIVACY_COPY = {
   catalogue: 'Read the telemetry data catalogue',
   catalogueHref: '/docs/telemetry',
   confirmSelfOnTitle: 'Send telemetry to Tabula?',
-  confirmSelfOnText: 'This instance will send the items listed on this page to Tabula once an hour. You can turn it off at any time.',
+  confirmSelfOnText: 'This instance will prepare the items listed on this page once an hour for Tabula and send nothing else. You can turn it off at any time.',
   cancel: 'Cancel',
   turnOn: 'Turn on',
 } as const;
@@ -92,8 +94,13 @@ export function privacySharingState(enabled: boolean): string {
   return enabled ? PRIVACY_COPY.enabled : PRIVACY_COPY.disabled;
 }
 
-export function privacyCategoryText(category: string): string {
-  return PRIVACY_COPY.categories[category as keyof typeof PRIVACY_COPY.categories] ?? category;
+/** The reviewed sentence for a category key, or null for a key this build has no copy for (it is left out, never shown raw). */
+export function privacyCategoryText(category: string): string | null {
+  return Object.hasOwn(PRIVACY_COPY.categories, category) ? PRIVACY_COPY.categories[category as keyof typeof PRIVACY_COPY.categories] : null;
+}
+
+export function privacyCoversHeading(mode: 'hosted' | 'self'): string {
+  return mode === 'hosted' ? PRIVACY_COPY.coversHeading : PRIVACY_COPY.selfCoversHeading;
 }
 
 export function privacyTimestamp(value: number): { iso: string; label: string } | null {

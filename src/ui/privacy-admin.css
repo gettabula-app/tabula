@@ -5,6 +5,7 @@
 .privacy-toggle { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 44px; font-weight: 600; line-height: 1.4; cursor: pointer; }
 .privacy-toggle input { flex: none; width: 20px; height: 20px; accent-color: var(--ink); }
 .privacy-toggle input:disabled { opacity: 0.55; }
+.privacy-description { margin: 0 0 0 30px; max-width: 72ch; color: var(--graphite); font-size: 13px; line-height: 1.55; }
 .privacy-state-note { margin: 8px 0 0 30px; max-width: 72ch; color: var(--graphite); font-size: 13px; line-height: 1.5; }
 .privacy-state-note strong { margin-right: 4px; color: var(--ink); font-weight: 600; }
 .privacy-access,
@@ -17,7 +18,7 @@
 .privacy-lead { margin-bottom: 10px; }
 .privacy-list { margin: 0; padding-left: 22px; max-width: 72ch; line-height: 1.55; }
 .privacy-list li + li { margin-top: 8px; }
-.privacy-facts { margin: 24px 0 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.privacy-facts { margin: 24px 0 0; border-top: 1px solid var(--rule); }
 .privacy-fact { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 16px; padding: 12px 0; border-top: 1px solid var(--rule); }
 .privacy-fact:first-child { border-top: 0; }
 .privacy-fact dt { color: var(--graphite); font-size: 13px; }
@@ -28,7 +29,7 @@
 .privacy-preview { min-width: 0; margin-top: 16px; }
 .privacy-preview[hidden] { display: none; }
 .privacy-preview-time { margin: 0 0 12px; color: var(--graphite); font-size: 13px; }
-.privacy-json { box-sizing: border-box; max-width: 100%; max-height: 320px; margin: 0; padding: 14px; overflow: auto; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.privacy-json { box-sizing: border-box; max-width: 100%; max-height: 320px; margin: 0; padding: 14px; overflow: auto; border: 1px solid var(--rule); border-radius: var(--radius-sm, 8px); background: var(--paper); color: var(--ink); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .privacy-outcome { min-height: 20px; margin: 12px 0 0; font-size: 13px; line-height: 1.5; }
 .privacy-outcome:empty { min-height: 0; margin: 0; }
 
@@ -40,6 +41,7 @@
   .privacy-actions { align-items: stretch; flex-direction: column; }
   .privacy-actions .btn,
   .privacy-doc-link { width: 100%; }
+  .privacy-description,
   .privacy-state-note,
   .privacy-access,
   .privacy-last-changed { margin-left: 0; }
