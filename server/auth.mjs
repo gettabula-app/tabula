@@ -78,7 +78,7 @@ export function csrfOk(req) {
   }
 }
 
-export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, notifications = null }) {
+export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, notifications = /** @type {any} */ (null) }) {
   const allow = createLimiter(now);
 
   const cookieFlags = `Path=/; HttpOnly; SameSite=Lax${config.secureCookies ? '; Secure' : ''}`;
