@@ -209,11 +209,22 @@ The **Privacy** tab shows what Tabula collects about how this workspace is used,
 
 Changes to the setting are recorded in the [audit log](#audit-log) under **Privacy**.
 
+### Link previews
+
+Below the analytics setting, the **Privacy** tab has a **Link previews** switch. When it is on, a link card on a board shows the page's title, description and picture. Tabula's server reads the linked page once when someone adds or refreshes the card, and nobody's browser contacts the site (see [Link cards](link-cards.md#privacy)). Admins and the owner can change it.
+
+- On a hosted workspace it is on by default.
+- On a server you run yourself it is off until you turn it on, because it makes your server request web pages on people's behalf. Read [Link previews](link-previews.md) first if your server runs next to internal services.
+- If whoever runs your server has set `TABULA_LINK_PREVIEWS=off`, the switch is disabled and says "Turned off in the server's settings."
+- With previews off, link cards still work: they show the address only.
+
+Changes to the switch are recorded in the [audit log](#audit-log) under **Link previews**.
+
 ## Audit log
 
 A record of changes, newest first. Each entry reads as a sentence, for example who changed whose role. Actions the system takes on its own, such as the trial-ending notice to workspace owners, show **System** as the person. Backups and restores read as sentences too, naming the backup by its date. Hover an entry to see the underlying action name.
 
-- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **AI tool access**, **Images**, **Chat**, **Privacy**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added, tested or removed; **AI tool access** shows access tokens being created and revoked (with their names, never their secrets). **Backups** shows the automatic backup runs (and failures, and how many damaged or missing files a run put back) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
+- Filter by **All**, **Members**, **Teams**, **Boards**, **Templates**, **Invites**, **Sign-ins**, **Sessions**, **AI**, **AI tool access**, **Images**, **Chat**, **Privacy**, **Link previews**, **Backups** or **Restores**. The **AI** filter shows changes to the AI settings and when keys are added, tested or removed; **AI tool access** shows access tokens being created and revoked (with their names, never their secrets). **Backups** shows the automatic backup runs (and failures, and how many damaged or missing files a run put back) and when an owner looked at them; **Restores** shows whole-workspace restores, board copies and when the old data of a restore was removed, with the date of the backup each came from.
 - Select **Load more** to go further back.
 
 Entries with no person are shown as the system, for example when a hosted workspace is locked or unlocked.
