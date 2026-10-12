@@ -128,6 +128,10 @@ Every rate limit (sign-in links, MCP tokens, the AI routes, uploads) counts by t
 | Variable | Value | Meaning |
 | --- | --- | --- |
 | `TABULA_TRUST_PROXY` | `1` | Believe the header below at all. Without it the connection's address counts and both headers are ignored, so every visitor behind the edge shares one limit |
+
+### Slow request log
+
+The relay writes one line for every API request that takes `TABULA_SLOW_REQUEST_MS` milliseconds or more (default 300; `0` turns it off): `slow request GET /api/boards 200 412ms`. It names the route pattern, the status and the time, never ids, names or addresses. Once a minute, and only when the event loop stalled for 100 ms or more, it also writes `event loop delay p99 120ms max 480ms in the last minute`. Read the two together after a slow moment: slow requests with a quiet loop point at disk or the database, a stalled loop at the machine's CPU.
 | `TABULA_CLIENT_IP_HEADER` | `fly-client-ip` | **Set this on Fly.** The address Fly's edge saw. Fly's documentation (https://docs.fly.io/networking/request-headers) describes it as the IP address of the client from the perspective of Fly Proxy; it does not say in so many words that a visitor's own value is overwritten or that it stays the visitor's address through `fly-replay`, so the check below is what confirms both on a real deploy (the fake edge in `test/proxy.test.ts` only shows what the instance does with the header) |
 | | `x-forwarded-for` (the default) | The rightmost `X-Forwarded-For` entry, for a single reverse proxy (Caddy, nginx) that appends the client address. Behind Fly with `fly-replay`, the rightmost entry can be the replaying machine, and then every visitor would share its limit |
 
