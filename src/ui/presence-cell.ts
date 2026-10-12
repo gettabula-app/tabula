@@ -59,9 +59,14 @@ export function presenceCell(store: PresenceStore, boardId: string, link: () => 
     refit();
   }
 
-  /** On a phone, two names that do not fit become one and the count; the names are cut only when one name alone does not fit. */
+  /**
+   * On a phone (proto/designer-preview/presence/SPEC.md): the first of these that fits whole in the free width, measured now, not by
+   * a breakpoint: two names and the count, one name and the count, nothing (the squares carry the count, and the cell's label has the
+   * names for a screen reader). A name is never cut beside a count; with two people or fewer there is no count, and a long name may be cut.
+   */
   function fit(names: HTMLElement, head: HTMLElement, tail: HTMLElement, view: NonNullable<ReturnType<typeof presenceView>>) {
-    if (getComputedStyle(names).display === 'none') return;
+    names.removeAttribute('data-fit');
+    if (getComputedStyle(names).display === 'none') return; // not a phone: the hover list is the long form
     const write = (max: number) => {
       const p = view.phoneWith(max);
       head.textContent = p.head;
@@ -69,7 +74,11 @@ export function presenceCell(store: PresenceStore, boardId: string, link: () => 
       tail.hidden = !p.tail;
     };
     write(2);
-    if (head.scrollWidth > head.clientWidth && view.phone.tail !== view.phoneWith(1).tail) write(1);
+    if (!view.phone.tail) return; // at most two people: one text, cut only if one name alone is too long
+    if (head.scrollWidth <= head.clientWidth) return;
+    write(1);
+    if (head.scrollWidth <= head.clientWidth) return;
+    names.setAttribute('data-fit', 'hidden');
   }
 
   paint();

@@ -115,38 +115,59 @@ describe.skipIf(!available)('here now', () => {
     await page.close();
   });
 
-  it('on a phone cuts a single name that does not fit, and never the "and N more" tail', async () => {
+  const tailOf = async (row: import('playwright').Locator) => ({
+    shown: await row.locator('.here-names').evaluate((e) => getComputedStyle(e).display !== 'none'),
+    head: await row.locator('.here-names-head').textContent(),
+    tail: (await row.locator('.here-names-tail').textContent()) ?? '',
+    cut: await row.locator('.here-names-head').evaluate((e) => e.scrollWidth > e.clientWidth),
+  });
+  const put = (page: Page, count: number, names: string[]) => page.evaluate(([c, n]) => (window as any).__store.set('empty', {
+    boardId: 'empty', count: c, people: (n as string[]).map((name, i) => ({ userId: `p${i}`, name, joinedAt: i + 1 })),
+  }), [count, names] as const);
+
+  it('on a phone hides the text, and never shows a cut name beside the count, when nothing fits whole', async () => {
     const page = await open(390);
-    await page.evaluate(() => (window as any).__store.set('empty', {
-      boardId: 'empty', count: 6, people: [
-        { userId: 'a', name: 'Wolfeschlegelsteinhausen Bergerdorff', joinedAt: 1 },
-        { userId: 'b', name: 'Hubert Blaine Wolfeschlegelstein', joinedAt: 2 },
-      ],
-    }));
+    await put(page, 6, ['Wolfeschlegelsteinhausen Bergerdorff', 'Hubert Blaine Wolfeschlegelstein']);
     const row = page.locator('.board-row', { hasText: 'Alone' });
-    const head = row.locator('.here-names-head');
-    const tail = row.locator('.here-names-tail');
-    expect(await head.textContent()).toBe('Wolfeschlegelsteinhausen'); // two do not fit, so one name and the count
-    expect(await tail.textContent()).toBe(' and 5 more');
-    const [h, t] = await Promise.all([head.evaluate((e) => e.scrollWidth > e.clientWidth), tail.evaluate((e) => e.scrollWidth <= e.clientWidth)]);
-    expect([h, t]).toEqual([true, true]); // the head is cut with an ellipsis, the tail is whole
-    const tailBox = await tail.boundingBox();
-    expect(tailBox!.x + tailBox!.width).toBeLessThanOrEqual(390);
+    await page.waitForFunction(() => document.querySelectorAll('.board-row')[2].querySelector('.here-names')?.getAttribute('data-fit') === 'hidden');
+    expect((await tailOf(row)).shown).toBe(false);
+    // the squares and the label still carry it
+    expect(await row.locator('.board-here').getAttribute('aria-label')).toBe('Wolfeschlegelsteinhausen Bergerdorff, Hubert Blaine Wolfeschlegelstein and 4 more are here now');
     await page.close();
   });
 
-  it('on a phone writes one name and the count when two names do not fit', async () => {
+  it('on a phone writes one name and the count when two names do not fit, and keeps two when they do', async () => {
     const page = await open(390);
-    await page.evaluate(() => (window as any).__store.set('empty', {
-      boardId: 'empty', count: 5, people: [
-        { userId: 'a', name: 'Maximilian Rosenberg', joinedAt: 1 },
-        { userId: 'b', name: 'Bartholomew Winterbourne', joinedAt: 2 },
-      ],
-    }));
+    await put(page, 3, ['Maximilian Rosenberg', 'Bartholomew Winterbourne', 'Cy']);
     const row = page.locator('.board-row', { hasText: 'Alone' });
-    await page.waitForFunction(() => document.querySelectorAll('.board-row')[2].querySelector('.here-names-tail')?.textContent === ' and 4 more');
-    expect(await row.locator('.here-names-head').textContent()).toBe('Maximilian');
+    await page.waitForFunction(() => document.querySelectorAll('.board-row')[2].querySelector('.here-names-tail')?.textContent === ' and 2 more');
+    expect(await tailOf(row)).toMatchObject({ shown: true, head: 'Maximilian', cut: false });
+    await put(page, 3, ['Ana', 'Bo', 'Cy']);
+    await page.waitForFunction(() => document.querySelectorAll('.board-row')[2].querySelector('.here-names-head')?.textContent === 'Ana, Bo');
+    expect(await tailOf(row)).toMatchObject({ shown: true, tail: ' and 1 more', cut: false });
     await page.close();
+  });
+
+  it('on a phone may cut a long name when there are two people or fewer (no count to protect)', async () => {
+    const page = await open(390);
+    await put(page, 2, ['Wolfeschlegelsteinhausen Bergerdorff', 'Hubert Blaine Wolfeschlegelstein']);
+    const row = page.locator('.board-row', { hasText: 'Alone' });
+    await page.waitForFunction(() => document.querySelectorAll('.board-row')[2].querySelector('.here-names-head')?.textContent === 'Wolfeschlegelsteinhausen and Hubert');
+    expect(await tailOf(row)).toMatchObject({ shown: true, tail: '', cut: true });
+    await page.close();
+  });
+
+  it('picks the step from the real width: a 360 px phone and a 430 px phone can differ', async () => {
+    const small = await open(360);
+    const large = await open(430);
+    for (const p of [small, large]) await put(p, 3, ['Maximilian', 'Bartholomew', 'Cy']);
+    const rowOf = (p: Page) => p.locator('.board-row', { hasText: 'Alone' });
+    await large.waitForFunction(() => document.querySelectorAll('.board-row')[2].querySelector('.here-names-tail') !== null);
+    const [a, b] = [await tailOf(rowOf(small)), await tailOf(rowOf(large))];
+    for (const t of [a, b]) expect(t.shown ? !(t.tail && t.cut) : true).toBe(true); // never a cut name beside a count
+    expect(b.shown || !a.shown).toBe(true); // wider never shows less than narrower
+    await small.close();
+    await large.close();
   });
 
   it('draws each person in their own colour and falls back to the ink with the paper as text', async () => {

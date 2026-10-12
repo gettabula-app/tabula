@@ -31,5 +31,7 @@
   .here-sq:not(.you) { width: 20px; }
   .here-more { min-width: 20px; }
   .here-names { display: flex; }
+  /* neither candidate fits whole: the squares carry the count, and the cell's label still names everyone */
+  .here-names[data-fit='hidden'] { display: none; }
   .here-tip, .board-here:hover .here-tip, .board-row:focus-within .here-tip { display: none; }
 }
