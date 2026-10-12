@@ -148,6 +148,24 @@ export interface AdminUpdates {
   securityAlwaysApplied: true;
 }
 
+/** GET and PUT /api/admin/privacy. */
+export interface AdminPrivacy {
+  enabled: boolean;
+  locked: null | 'env';
+  mode: 'hosted' | 'self';
+  operational: string[];
+  categories: string[];
+  lastBuiltAt: number | null;
+  lastChangedBy: { name: string; at: number } | null;
+}
+
+/** GET /api/admin/privacy/preview. The preview is the exact report structure shown to the owner. */
+export interface AdminPrivacyPreview {
+  preview: Record<string, unknown> | null;
+  builtAt: number;
+  note: 'Nothing has been sent';
+}
+
 export interface ChatUnread { kind: string; ref: string; lastId: number; unread: number; mentions: number }
 
 /** What the server stored for an upload. */
@@ -901,6 +919,9 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     setAdminChat: (patch: Partial<ChatSettings>) => call<ChatSettings>('PUT', '/api/admin/chat', patch),
     adminUpdates: () => call<AdminUpdates>('GET', '/api/admin/updates'),
     setAdminUpdates: (auto: boolean) => call<AdminUpdates>('PUT', '/api/admin/updates', { auto }),
+    adminPrivacy: () => call<AdminPrivacy>('GET', '/api/admin/privacy'),
+    setAdminPrivacy: (enabled: boolean) => call<AdminPrivacy>('PUT', '/api/admin/privacy', { enabled }),
+    adminPrivacyPreview: () => call<AdminPrivacyPreview>('GET', '/api/admin/privacy/preview'),
 
     adminAudit: (opts: { limit?: number; before?: number; action?: string } = {}) =>
       call<AuditPage>('GET', `/api/admin/audit${qs({ limit: opts.limit, before: opts.before, action: opts.action })}`),
