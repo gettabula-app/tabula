@@ -127,7 +127,7 @@ Alla medlemmar kan välja **Leave team** (Lämna teamet). Då förlorar du åtko
 2. Välj **Expires after** (Upphör efter): 1, 7, 14 eller 30 dagar.
 3. Välj **Create invite link** (Skapa inbjudningslänk) och sedan **Copy** (Kopiera).
 
-Alla med länken som bekräftar sin e-postadress kan ansluta till teamet. På inbjudningssidan visas teamnamnet och knappen **Join team** (Gå med i teamet). Om arbetsytan har en gräns för hur många medlemmar den rymmer och den är full, avvisas inbjudan tills någon har tagits bort eller inaktiverats. Gäster räknas inte mot gränsen.
+Alla med länken som bekräftar sin e-postadress kan ansluta till teamet. På inbjudningssidan visas teamnamnet och knappen **Join team** (Gå med i teamet). Om arbetsytan är en gratisarbetsyta med en medlemsgräns och den är full, avvisas inbjudan med meddelandet ”This workspace has reached its member limit. Remove or disable a member to make room.” (Den här arbetsytan har nått sin medlemsgräns. Ta bort eller inaktivera en medlem för att få plats.) Gäster räknas inte mot gränsen.
 
 ### Arbetsytans medlemmar
 

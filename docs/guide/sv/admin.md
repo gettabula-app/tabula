@@ -34,7 +34,7 @@ Antal för hela arbetsytan:
 
 Under antalen visar **Instance** (Instans) serveradressen, hur e-post skickas, versionen och om konton är aktiverade.
 
-I en hostad arbetsyta ser ägaren också **Manage billing** (Hantera fakturering). Den öppnar faktureringsportalen i samma flik. Där kan du ändra abonnemang och betalningsmetod. Medan arbetsytan har en kostnadsfri provperiod ser ägaren också ”Kostnadsfri provperiod till” och slutdatumet bredvid. Administratörer som inte är ägare ser det inte. En arbetsyta som tillhandahålls kostnadsfritt för utbildning eller internt bruk har inget att fakturera. Därför visas i stället ”Den här arbetsytan tillhandahålls kostnadsfritt för utbildning eller internt bruk. Det finns inget att fakturera.” här och på fliken Backups.
+I en hostad arbetsyta ser ägaren också **Manage billing** (Hantera fakturering). Den öppnar faktureringsportalen i samma flik. Där kan du ändra abonnemang och betalningsmetod. Medan arbetsytan har en kostnadsfri provperiod ser ägaren också ”Kostnadsfri provperiod till” och slutdatumet bredvid. Administratörer som inte är ägare ser det inte. En arbetsyta som tillhandahålls utan kostnad (en komparbetsyta) har inget att fakturera. Därför visas i stället ”Den här arbetsytan tillhandahålls utan kostnad. Det finns inget att fakturera.” här och på fliken Backups.
 
 <!-- screenshot: avsnittet Översikt med statistikrutorna och instanslistan -->
 
@@ -51,7 +51,7 @@ En sökbar lista över alla med ett konto: namn, e-postadress, roll, senaste akt
 - **Sign out everywhere** avslutar alla personens sessioner utan att inaktivera kontot. Du kan använda den på dig själv.
 - **Remove** tar bort kontot, loggar ut personen och tar bort personens åtkomst.
 
-Rollerna förklaras i [Dela, roller och team](sharing.md). Om en hostad arbetsyta har en gräns för hur många medlemmar den rymmer och den är full, nekas du att aktivera en person eller befordra en gäst tills någon har tagits bort eller inaktiverats. Gäster räknas inte mot gränsen.
+Rollerna förklaras i [Dela, roller och team](sharing.md). En gratisarbetsyta har en gräns för hur många medlemmar den rymmer. När den är full nekas du att aktivera en person eller befordra en gäst med meddelandet ”This workspace has reached its member limit. Remove or disable a member to make room.” (Den här arbetsytan har nått sin medlemsgräns. Ta bort eller inaktivera en medlem för att få plats.) Gäster räknas inte mot gränsen.
 
 ## Team
 
@@ -131,7 +131,7 @@ Granskningsloggen har filtret **Chat** (Chatt). Det visar ändringar i de här i
 
 Avsnittet **Backups** är till för arbetsytans ägare. Säkerhetskopior är kopior av allt i arbetsytan. De lagras separat från servern och krypteras innan de skickas iväg. Här kan du se hur det går och återställa en tavla eller hela arbetsytan.
 
-Avsnittet visas för alla ägare. När säkerhetskopior är avstängda står det **Not set up** (Inte konfigurerat). I en hostad arbetsyta erbjuds **Add backups** (Lägg till säkerhetskopior), som öppnar faktureringen i samma flik. På en server du själv kör länkar sidan hit: aktivera säkerhetskopior med inställningarna nedan och starta sedan om servern.
+Avsnittet visas för alla ägare. När säkerhetskopior är avstängda står det **Not set up** (Inte konfigurerat). På en server du själv kör länkar sidan hit: aktivera säkerhetskopior med inställningarna nedan och starta sedan om servern.
 
 ### Aktivera säkerhetskopior
 
@@ -196,7 +196,7 @@ Om något misslyckas före bytet ändras inget, och sidan förklarar det med tyd
 
 Bara ägare ser fliken **Backups**. Den finns mellan **AI** och granskningsloggen. Administratörer som inte är ägare ser den inte, och adressen visar dem **Overview**.
 
-Om säkerhetskopior inte är aktiverade står det **Not set up**. I en hostad arbetsyta finns knappen **Add backups**, som öppnar faktureringen på samma sätt som **Manage billing**. På en egen server länkar fliken till installationsanvisningarna och personen som sköter servern.
+Om säkerhetskopior inte är aktiverade står det **Not set up**. På en egen server länkar fliken till installationsanvisningarna och personen som sköter servern.
 
 När säkerhetskopior är aktiverade visar fliken:
 
