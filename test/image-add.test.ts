@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   toasts: vi.fn<(...args: unknown[]) => void>(),
 }));
 
-vi.mock('../src/board-images', () => ({ assetCache: { put: mocks.assetPut } }));
+vi.mock('../src/board-images', () => ({ assetCache: { put: mocks.assetPut, backend: { deleteBlob: async () => undefined } } }));
 vi.mock('../src/ui/common', () => ({ toast: mocks.toasts }));
 
 type EncodeCall = { width: number; height: number; type: string; quality?: number };
@@ -131,5 +131,25 @@ describe('hosted image preparation', () => {
     expect(enqueued).toEqual([expect.objectContaining({ bytes: 1_500_000 })]);
     expect(calls).toHaveLength(2);
     expect(mocks.toasts).not.toHaveBeenCalled();
+  });
+
+  it('adds no image, and says why, when the browser will not keep a copy to upload', async () => {
+    const gif = () => new Blob([makeGif(), new Uint8Array(100)], { type: 'image/gif' });
+    const { app: target, added, enqueued } = app(false);
+    mocks.assetPut.mockRejectedValueOnce(new Error('quota'));
+
+    // the first image cannot be kept, the second can: only the second goes on the board
+    expect(await addImages(target, [gif(), gif()])).toBe(1);
+    expect(added).toHaveLength(1);
+    expect(enqueued).toHaveLength(1);
+    expect(toast).toHaveBeenCalledWith('The image was not added: this browser could not save a copy to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add it again.', 10_000);
+
+    mocks.assetPut.mockRejectedValue(new Error('quota'));
+    mocks.toasts.mockClear();
+    expect(await addImages(target, [gif(), gif()])).toBe(0);
+    expect(added).toHaveLength(1);
+    expect(toast).toHaveBeenCalledWith('2 images were not added: this browser could not save copies to upload. Its storage may be full, or site data may be blocked. Free up space or allow site data, then add them again.', 10_000);
+    mocks.assetPut.mockReset();
+    mocks.assetPut.mockImplementation(async () => {});
   });
 });
