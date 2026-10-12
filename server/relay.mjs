@@ -23,6 +23,7 @@ import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
+import { filterAwarenessUpdate } from './awareness-guard.mjs';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -974,9 +975,22 @@ class Room {
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
         const update = decoding.readVarUint8Array(dec);
-        const safeUpdate = ws.guest
-          ? awarenessProtocol.modifyAwarenessUpdate(update, (state) => cleanGuestAwarenessState(state, ws))
-          : update;
+        // Every socket may only write the clientIDs it controls; guests and read-only viewers also get sanitised state.
+        const others = [];
+        for (const [other, ids] of this.conns) if (other !== ws) others.push(ids);
+        const clean = ws.guest
+          ? (state) => cleanGuestAwarenessState(state, ws)
+          : ws.canWrite !== true ? (state) => cleanGuestAwarenessValue(state) : undefined;
+        const verdict = filterAwarenessUpdate(update, { own: this.conns.get(ws) ?? new Set(), others, clean });
+        if (verdict.oversized || verdict.dropped) {
+          const now = Date.now();
+          if (!(now - (ws.awarenessDropLogAt ?? 0) < 10_000)) {
+            ws.awarenessDropLogAt = now;
+            if (process.env.DEBUG_AWARENESS === '1') log(`room ${this.name}: awareness ${verdict.oversized ? 'oversized update' : 'foreign client ids'} dropped`);
+          }
+        }
+        if (!verdict.update) return;
+        const safeUpdate = verdict.update;
         awarenessProtocol.applyAwarenessUpdate(this.awareness, safeUpdate, ws);
       }
     } catch (err) {
