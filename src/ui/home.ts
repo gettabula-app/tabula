@@ -144,7 +144,7 @@ function startPresence(alive: () => boolean) {
     onFrame: onPresenceFrame,
     keepSocket: watchChat,
     watch: setPresenceWatch,
-    fetchList: async () => (await api.boardsPresence()).presence,
+    fetchList: async () => (await api.presenceList()).presence,
   }));
 }
 
