@@ -668,7 +668,7 @@
           },
           "instant": true,
           "format": "table",
-          "expr": "last_over_time(tabula_fleet_workspace_info[3h])",
+          "expr": "topk by (workspace) (1, timestamp(last_over_time(tabula_fleet_workspace_info[3h])))",
           "legendFormat": "",
           "refId": "A"
         },
@@ -778,7 +778,7 @@
           }
         }
       ],
-      "description": "One row per workspace id, from the control plane (state, plan, machine, seats, backup, disk, version). Ids only: no names or emails exist in the data."
+      "description": "One row per workspace id, from the control plane (state, plan, machine, seats, backup, disk). The image version is in the lake (events, workspace_hour), not in a label. Ids only: no names or emails exist in the data."
     },
     {
       "id": 16,

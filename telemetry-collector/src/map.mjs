@@ -46,7 +46,7 @@ export function fleetToVm(clean, receivedAt) {
   for (const { event, ...fields } of clean.events) {
     if (event !== 'workspace_hour') continue;
     const info = { ...ws, state: fields.state, plan: fields.plan, machine: fields.machine, backup_state: fields.backup_state };
-    if (typeof fields.app_version === 'string') info.app_version = fields.app_version;
+    // The image version is not a label (a series per release per workspace); it stays in the lake row.
     out.push(sample('tabula_fleet_workspace_info', info, 1, at));
     out.push(sample('tabula_fleet_machine_started', ws, fields.machine === 'started' ? 1 : 0, at));
     for (const [field, name] of Object.entries(FLEET_GAUGES)) if (Number.isFinite(fields[field])) out.push(sample(name, ws, fields[field], at));

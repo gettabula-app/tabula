@@ -74,7 +74,8 @@ describe('mapping a fleet report', () => {
   it('writes the fleet gauges at the report hour with the enums as labels of one info series', () => {
     const lines = reportToVm(clean(), NOW) as any[];
     const byName = Object.fromEntries(lines.map((l) => [l.metric.__name__, l]));
-    expect(byName.tabula_fleet_workspace_info.metric).toEqual({ __name__: 'tabula_fleet_workspace_info', workspace: WORKSPACE, state: 'active', plan: 'paid', machine: 'stopped', backup_state: 'ok', app_version: 'v5.3.1' });
+    expect(byName.tabula_fleet_workspace_info.metric).toEqual({ __name__: 'tabula_fleet_workspace_info', workspace: WORKSPACE, state: 'active', plan: 'paid', machine: 'stopped', backup_state: 'ok' });
+    expect(JSON.stringify(lines)).not.toContain('v5.3.1'); // the version is not a label or a value here
     expect(byName.tabula_fleet_machine_started.values).toEqual([0]);
     expect(byName.tabula_fleet_seats_used.values).toEqual([7]);
     expect(byName.tabula_fleet_backup_age_hours.values).toEqual([5]);
@@ -90,6 +91,10 @@ describe('mapping a fleet report', () => {
     expect(byName.tabula_fleet_machine_started.values).toEqual([1]);
     expect(byName.tabula_fleet_seats_used).toBeUndefined();
     expect(byName.tabula_fleet_workspace_info.metric).not.toHaveProperty('app_version');
+  });
+
+  it('keeps the image version in the lake row', () => {
+    expect(JSON.parse((reportToRows(clean(), NOW) as any[])[0].data)).toMatchObject({ app_version: 'v5.3.1' });
   });
 
   it('puts nothing in Loki and one events row in the lake, flat and without the instance status row', () => {

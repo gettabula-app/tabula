@@ -80,7 +80,8 @@ const dashboards = {
     ]),
     // The control plane's own view (fleet snapshots): every workspace, also the ones that auto-stop and send no instance report.
     table('All workspaces, control plane view', 0, 44, 24, 9, [
-      { expr: fleetGauge('tabula_fleet_workspace_info'), legendFormat: '' },
+      // Newest info sample per workspace: a changed label (state, machine, backup) leaves the old series in the 3 h window, and only the latest may show.
+      { expr: 'topk by (workspace) (1, timestamp(last_over_time(tabula_fleet_workspace_info[3h])))', legendFormat: '' },
       { expr: fleetGauge('tabula_fleet_seats_used'), legendFormat: '' },
       { expr: fleetGauge('tabula_fleet_seats_paid'), legendFormat: '' },
       { expr: fleetGauge('tabula_fleet_members_used'), legendFormat: '' },
@@ -93,7 +94,7 @@ const dashboards = {
         excludeByName: { Time: true, 'Time 1': true, 'Time 2': true, 'Time 3': true, 'Time 4': true, 'Time 5': true, 'Time 6': true, 'Time 7': true, 'Value #A': true, __name__: true, 'Value #A 1': true },
         renameByName: { 'Value #B': 'Seats used', 'Value #C': 'Seats paid', 'Value #D': 'Members', 'Value #E': 'Backup age (h)', 'Value #F': 'Disk used', 'Value #G': 'Disk total' },
       } },
-    ], { description: 'One row per workspace id, from the control plane (state, plan, machine, seats, backup, disk, version). Ids only: no names or emails exist in the data.' }),
+    ], { description: 'One row per workspace id, from the control plane (state, plan, machine, seats, backup, disk). The image version is in the lake (events, workspace_hour), not in a label. Ids only: no names or emails exist in the data.' }),
     ts('Machines started and stopped', 0, 53, 8, 8, [
       { expr: `sum(${fleetGauge('tabula_fleet_machine_started')})`, legendFormat: 'started' },
       { expr: `count(${fleetGauge('tabula_fleet_machine_started')}) - sum(${fleetGauge('tabula_fleet_machine_started')})`, legendFormat: 'stopped or other' },
