@@ -26,6 +26,7 @@ function newState() {
     metricLabels: new Map(),
     metricSeries: new Set(),
     fingerprints: new Set(),
+    workspaceHourSeen: false,
   };
 }
 
@@ -335,17 +336,33 @@ for (const [eventName, eventDefinition] of Object.entries(TELEMETRY_SCHEMA.event
   }
 }
 
-function processEvent(value, state) {
+function processEvent(value, state, source) {
   const fields = readRecord(value, state);
   if (!fields) return null;
   const name = fields.get('event');
-  if (typeof name !== 'string' || !getEventDefinition(name)) {
+  if (typeof name !== 'string') {
     drop(state, 'unknown_event');
     return null;
   }
+  const definition = getEventDefinition(name);
+  if (!definition) {
+    drop(state, 'unknown_event');
+    return null;
+  }
+  if (definition.source === 'control_plane' && source !== 'control_plane') {
+    drop(state, 'wrong_event');
+    return null;
+  }
+  if (source === 'control_plane' && name === 'workspace_hour') {
+    if (state.workspaceHourSeen) {
+      drop(state, 'duplicate_event');
+      return null;
+    }
+    state.workspaceHourSeen = true;
+  }
   const eventFields = new Map(fields);
   eventFields.delete('event');
-  const projected = projectFields(eventFields, getEventDefinition(name).fields, state, { eventOwners: eventFieldOwners });
+  const projected = projectFields(eventFields, definition.fields, state, { eventOwners: eventFieldOwners });
   if (!projected.ok) return null;
   return { event: name, ...projected.value };
 }
@@ -394,6 +411,14 @@ function rejectInstanceAlerts(input, state) {
   if (length !== null && length > 0) drop(state, 'wrong_event', length);
 }
 
+function processAlerts(input, source, output, state) {
+  if (source === 'control_plane') {
+    processArray(input, 'alerts', (value, current) => processFixedEvent(value, TELEMETRY_SCHEMA.alerts, current), output, state);
+    return;
+  }
+  rejectInstanceAlerts(input, state);
+}
+
 function encodedBytes(value) {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
@@ -412,9 +437,16 @@ function enforceSize(clean, state) {
   return size <= limit;
 }
 
-/** Validate and project a report. The clean value contains only schema fields. */
-export function scrubReport(input) {
+/**
+ * Validate and project a report. The clean value contains only schema fields.
+ * `options.source` is `instance` by default, which drops control-plane-only events
+ * with `wrong_event`; `control_plane` enables those events for control-plane reports.
+ * Events declared for instances remain accepted in either mode.
+ * @param {{ source?: 'instance' | 'control_plane' }} [options]
+ */
+export function scrubReport(input, options = {}) {
   const state = newState();
+  const source = options?.source === 'control_plane' ? 'control_plane' : 'instance';
   try {
     const fields = readRecord(input, state);
     if (!fields) {
@@ -435,8 +467,8 @@ export function scrubReport(input) {
     const clean = { ...envelope.value, metrics: [], errors: [], events: [], alerts: [] };
     processArray(fields.get('metrics'), 'metrics', processMetric, clean.metrics, state);
     processArray(fields.get('errors'), 'errors', (value, current) => processFixedEvent(value, TELEMETRY_SCHEMA.errors, current), clean.errors, state);
-    processArray(fields.get('events'), 'events', processEvent, clean.events, state);
-    rejectInstanceAlerts(fields.get('alerts'), state);
+    processArray(fields.get('events'), 'events', (value, current) => processEvent(value, current, source), clean.events, state);
+    processAlerts(fields.get('alerts'), source, clean.alerts, state);
 
     if (!enforceSize(clean, state)) {
       drop(state, 'invalid_report');

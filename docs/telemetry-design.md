@@ -104,6 +104,21 @@ Sent from the control plane, never from the browser, as **daily rollups** per wo
 
 Feature enum (fixed list, extended by changing the schema): `board_text`, `board_kanban`, `board_sticky`, `board_drawing`, `board_image`, `tracker_ticket`, `tracker_view`, `tracker_import`, `chat`, `mcp_token`, `mcp_oauth`, `backup_restore`, `ai_assist`, `export`, `guest_invite`.
 
+### 2.4a Fleet workspace-hour event
+
+The control plane emits at most one `workspace_hour` event for each workspace in an hourly report. It records fleet operating state and capacity; it is not a product-analytics event. The control-plane scrubber accepts control-plane events only when called with `source: 'control_plane'`. The default `source: 'instance'` rejects them as `wrong_event`. Downstream deduplication uses the workspace id, report hour, and kind `fleet`.
+
+| Field | Values | Purpose |
+| --- | --- | --- |
+| `state` | `trial`, `active`, `past_due`, `suspended`, `canceled`, `provisioning`, `deleting`, `other` | workspace lifecycle state |
+| `machine` | `started`, `stopped`, `suspended`, `missing`, `unknown`, `other` | machine state |
+| `plan` | `trial`, `paid`, `comp`, `other` | plan class |
+| `seats_paid`, `seats_used`, `guests_used`, `members_used` | integers from 0 to 100,000 | workspace capacity and usage |
+| `backup_state` | `off`, `unsupported`, `ok`, `failing`, `stale`, `never`, `other` | backup health |
+| `backup_age_hours` | integer from 0 to 100,000 or null | age of the latest backup |
+| `disk_used_bytes`, `disk_total_bytes` | integer from 0 to 2^53−1 or null | workspace disk usage and capacity |
+| `app_version` | release label matching the envelope pattern, or null | deployed version |
+
 ### 2.5 Never sent
 
 No field of the following kinds exists in the schema, so none can be added without a reviewed schema change:

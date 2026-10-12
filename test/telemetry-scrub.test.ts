@@ -22,6 +22,22 @@ function validEvent(name: string): any {
   switch (name) {
     case 'workspace_day':
       return { event: name, dau: 4, wau: 8, boards: 3, tickets: 2, features_used: ['board_text', 'chat'], app_version: 'v1.2.3', mode: 'hosted' };
+    case 'workspace_hour':
+      return {
+        event: name,
+        state: 'active',
+        machine: 'started',
+        plan: 'paid',
+        seats_paid: 4,
+        seats_used: 3,
+        guests_used: 1,
+        members_used: 2,
+        backup_state: 'ok',
+        backup_age_hours: 2,
+        disk_used_bytes: 1024,
+        disk_total_bytes: 4096,
+        app_version: 'v1.2.3',
+      };
     case 'feature_used':
       return { event: name, feature: 'board_text', count: 4 };
     case 'milestone':
@@ -87,7 +103,7 @@ function expectMutationAbsent(serialized: string, value: unknown, allowWorkspace
 
 function scrubOnceWithoutThrow(input: unknown): ReturnType<typeof scrubReport> {
   let result: ReturnType<typeof scrubReport> | undefined;
-  expect(() => { result = scrubReport(input); }).not.toThrow();
+  expect(() => { result = scrubReport(input, { source: 'control_plane' }); }).not.toThrow();
   if (!result) throw new Error('scrubReport did not return a result');
   return result;
 }
@@ -153,7 +169,7 @@ function mutationPoints(report: any): { label: string; path: (string | number)[]
 describe('scrubReport', () => {
   it('projects the complete catalogue into a clean report without drops', () => {
     const report = validReport();
-    const result = scrubReport(report);
+    const result = scrubReport(report, { source: 'control_plane' });
     expect(result.dropped.total).toBe(0);
     expect(result.clean).toEqual(report);
     expectNoSensitiveText(result.clean);
@@ -175,19 +191,91 @@ describe('scrubReport', () => {
   it.each(Object.keys(schema.events))('validates product event entry %s', (name) => {
     const report = validReport();
     report.events = [validEvent(name)];
-    const result = scrubReport(report);
+    const result = scrubReport(report, { source: 'control_plane' });
     expect(result.clean?.events).toEqual([validEvent(name)]);
 
     const invalid = structuredClone(report);
     const firstField = Object.keys(schema.events[name].fields)[0];
     invalid.events[0][firstField] = 'https://private.example/path?token=sk_live_0123456789';
-    const rejected = scrubReport(invalid);
+    const rejected = scrubReport(invalid, { source: 'control_plane' });
     expectNoSensitiveText(rejected.clean);
     expect(rejected.clean?.events).toEqual([]);
   });
 
+  it('gates control-plane events by source and keeps one workspace-hour event per report', () => {
+    const report = validReport();
+    report.events = [validEvent('workspace_hour')];
+
+    const controlPlane = scrubReport(report, { source: 'control_plane' });
+    expect(controlPlane.clean?.events).toEqual([validEvent('workspace_hour')]);
+    expect(controlPlane.dropped.total).toBe(0);
+
+    const instance = scrubReport(report);
+    expect(instance.clean?.events).toEqual([]);
+    expect(instance.dropped.byReason.wrong_event).toBe(1);
+
+    report.events = [validEvent('workspace_hour'), validEvent('workspace_hour')];
+    const duplicates = scrubReport(report, { source: 'control_plane' });
+    expect(duplicates.clean?.events).toEqual([validEvent('workspace_hour')]);
+    expect(duplicates.dropped.byReason.duplicate_event).toBe(1);
+  });
+
+  it('rejects unknown workspace-hour enum values and validates bounded and nullable fields', () => {
+    const enumFields = ['state', 'machine', 'plan', 'backup_state'];
+    for (const field of enumFields) {
+      const report = validReport();
+      report.events = [{ ...validEvent('workspace_hour'), [field]: 'invented_value' }];
+      const result = scrubReport(report, { source: 'control_plane' });
+      expect(result.clean?.events).toEqual([]);
+      expect(result.dropped.byReason.invalid_enum).toBe(1);
+    }
+
+    const bounds: Record<string, { min: number; max: number }> = {
+      seats_paid: { min: 0, max: 100000 },
+      seats_used: { min: 0, max: 100000 },
+      guests_used: { min: 0, max: 100000 },
+      members_used: { min: 0, max: 100000 },
+      backup_age_hours: { min: 0, max: 100000 },
+      disk_used_bytes: { min: 0, max: Number.MAX_SAFE_INTEGER },
+      disk_total_bytes: { min: 0, max: Number.MAX_SAFE_INTEGER },
+    };
+    for (const [field, { min, max }] of Object.entries(bounds)) {
+      for (const value of [min, max]) {
+        const report = validReport();
+        report.events = [{ ...validEvent('workspace_hour'), [field]: value }];
+        expect(scrubReport(report, { source: 'control_plane' }).clean?.events).toEqual(report.events);
+      }
+      for (const value of [min - 1, max + 1]) {
+        const report = validReport();
+        report.events = [{ ...validEvent('workspace_hour'), [field]: value }];
+        const result = scrubReport(report, { source: 'control_plane' });
+        expect(result.clean?.events).toEqual([]);
+        expect(result.dropped.byReason[max === Number.MAX_SAFE_INTEGER && value > max ? 'wrong_type' : 'out_of_range']).toBe(1);
+      }
+    }
+
+    const nullable = validReport();
+    nullable.events = [{
+      ...validEvent('workspace_hour'),
+      backup_age_hours: null,
+      disk_used_bytes: null,
+      disk_total_bytes: null,
+      app_version: null,
+    }];
+    expect(scrubReport(nullable, { source: 'control_plane' }).clean?.events).toEqual(nullable.events);
+  });
+
+  it('drops unknown workspace-hour fields while keeping the valid event', () => {
+    const report = validReport();
+    report.events = [{ ...validEvent('workspace_hour'), unlisted: 'not-kept' }];
+    const result = scrubReport(report, { source: 'control_plane' });
+    expect(result.clean?.events).toEqual([validEvent('workspace_hour')]);
+    expect(result.dropped.byReason.unknown_field).toBe(1);
+  });
+
   it('validates error fields and keeps control-plane alerts out of instance reports', () => {
     const report = validReport();
+    report.events = [];
     const valid = scrubReport(report);
     expect(valid.clean?.errors).toEqual([validError()]);
     expect(valid.clean?.alerts).toEqual([]);
@@ -210,6 +298,11 @@ describe('scrubReport', () => {
     const rejectedPrivateAlert = scrubReport(privateAlert);
     expectNoSensitiveText(rejectedPrivateAlert.clean);
     expect(rejectedPrivateAlert.clean?.alerts).toEqual([]);
+
+    const controlPlaneAlert = structuredClone(report);
+    controlPlaneAlert.alerts = [validAlert()];
+    const acceptedAlert = scrubReport(controlPlaneAlert, { source: 'control_plane' });
+    expect(acceptedAlert.clean?.alerts).toEqual([validAlert()]);
   });
 
   it('requires histogram bucket arrays to match the descriptor and stay cumulative', () => {
@@ -246,7 +339,7 @@ describe('scrubReport', () => {
     report.metrics.push({ name: 'invented_metric', labels: { url: 'https://private.example' }, value: 1 });
     report.metrics.push({ name: 'scrubber_dropped_total', labels: { reason: 'unknown_field' }, value: 5 });
     report.events.push({ event: 'milestone', feature: 'board_text' });
-    const result = scrubReport(report);
+    const result = scrubReport(report, { source: 'control_plane' });
     expect(result.clean).not.toHaveProperty('unlisted');
     expect(result.clean?.metrics.some((metric: any) => metric.name === 'invented_metric' || metric.name === 'scrubber_dropped_total')).toBe(false);
     expect(result.clean?.events.some((event: any) => event.event === 'milestone' && event.feature !== undefined)).toBe(false);
@@ -302,10 +395,10 @@ describe('scrubReport', () => {
     report.errors = [];
     report.metrics = validReport().metrics;
     report.events = Array.from({ length: 1001 }, (_, index) => ({ event: 'feature_used', feature: index % 2 ? 'chat' : 'board_text', count: 1 }));
-    const eventsResult = scrubReport(report);
+    const eventsResult = scrubReport(report, { source: 'control_plane' });
     expect(eventsResult.clean?.events).toHaveLength(1000);
     expect(eventsResult.dropped.byReason.too_many_events).toBe(1);
-    expect(scrubReport(report)).toEqual(eventsResult);
+    expect(scrubReport(report, { source: 'control_plane' })).toEqual(eventsResult);
   });
 
   it('keeps serialized clean output within the byte limit while recording trimmed entries', () => {
@@ -318,7 +411,7 @@ describe('scrubReport', () => {
       event: 'workspace_day', dau: 9007199254740991, wau: 9007199254740991, boards: 9007199254740991, tickets: 9007199254740991,
       features_used: schema.events.workspace_day.fields.features_used.items.values, app_version: longVersion, mode: 'hosted',
     }));
-    const result = scrubReport(report);
+    const result = scrubReport(report, { source: 'control_plane' });
     expect(result.clean).not.toBeNull();
     expect(new TextEncoder().encode(JSON.stringify(result.clean)).byteLength).toBeLessThanOrEqual(schema.limits.maxBytes);
     expect(result.dropped.byReason.payload_limit).toBeGreaterThan(0);
@@ -329,7 +422,7 @@ describe('scrubReport', () => {
     Object.defineProperty(report, 'constructor', { value: 'secret_key_0123456789', enumerable: true });
     Object.defineProperty(report.events[0], '__proto__', { value: 'secret_key_0123456789', enumerable: true });
     Object.defineProperty(report.metrics[0].labels ?? report.metrics[0], 'prototype', { value: 'secret_key_0123456789', enumerable: true });
-    const result = scrubReport(report);
+    const result = scrubReport(report, { source: 'control_plane' });
     expectNoSensitiveText(result.clean);
     expect(result.clean).not.toHaveProperty('constructor');
     expect(result.dropped.byReason.prototype_key).toBeGreaterThan(0);

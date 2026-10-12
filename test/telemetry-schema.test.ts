@@ -127,7 +127,7 @@ describe('telemetry schema catalogue', () => {
 
   it('declares every event, error, alert and envelope field with explicit constraints', () => {
     expect(Object.keys(TELEMETRY_SCHEMA.events).sort()).toEqual([
-      'error_rate_day', 'feature_used', 'milestone', 'upgrade_result', 'workspace_day',
+      'error_rate_day', 'feature_used', 'milestone', 'upgrade_result', 'workspace_day', 'workspace_hour',
     ]);
     expect(Object.keys(TELEMETRY_SCHEMA.envelope.fields).sort()).toEqual([
       'app_version', 'connections_now', 'connections_peak', 'hour', 'last_activity_at', 'mode', 'node_major',
@@ -137,6 +137,7 @@ describe('telemetry schema catalogue', () => {
     expect(Object.keys(TELEMETRY_SCHEMA.alerts.fields).sort()).toEqual(['at', 'kind', 'severity', 'workspace']);
     const eventFields = {
       workspace_day: ['app_version', 'boards', 'dau', 'features_used', 'mode', 'tickets', 'wau'],
+      workspace_hour: ['app_version', 'backup_age_hours', 'backup_state', 'disk_total_bytes', 'disk_used_bytes', 'guests_used', 'machine', 'members_used', 'plan', 'seats_paid', 'seats_used', 'state'],
       feature_used: ['count', 'feature'],
       milestone: ['name'],
       upgrade_result: ['duration_ms', 'from', 'result', 'to'],
@@ -161,6 +162,10 @@ describe('telemetry schema catalogue', () => {
   });
 
   it('includes the approved feature and milestone enum values', () => {
+    expect(TELEMETRY_SCHEMA.events.workspace_hour.source).toBe('control_plane');
+    expect(TELEMETRY_SCHEMA.events.workspace_hour.fields.state.values).toEqual([
+      'trial', 'active', 'past_due', 'suspended', 'canceled', 'provisioning', 'deleting', 'other',
+    ]);
     expect(TELEMETRY_SCHEMA.events.workspace_day.fields.features_used.items.values).toEqual([
       'board_text', 'board_kanban', 'board_sticky', 'board_drawing', 'board_image', 'tracker_ticket', 'tracker_view',
       'tracker_import', 'chat', 'mcp_token', 'mcp_oauth', 'backup_restore', 'ai_assist', 'export', 'guest_invite',
@@ -181,6 +186,7 @@ describe('telemetry schema catalogue', () => {
     expect(getMetricDefinition('constructor')).toBeUndefined();
     expect(getMetricDefinition('__proto__')).toBeUndefined();
     expect(getEventDefinition('workspace_day')).toBe(TELEMETRY_SCHEMA.events.workspace_day);
+    expect(getEventDefinition('workspace_hour')).toBe(TELEMETRY_SCHEMA.events.workspace_hour);
     expect(getEventDefinition('unknown')).toBeUndefined();
 
     const cyclic: Record<string, unknown> = {};

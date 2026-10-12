@@ -177,13 +177,31 @@
       "kind": "counter",
       "source": "control_plane",
       "labels": {
-        "reason": { "type": "enum", "values": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"] }
+        "reason": { "type": "enum", "values": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_event", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"] }
       },
       "min": 0,
       "max": 9007199254740991
     }
   },
   "events": {
+    "workspace_hour": {
+      "kind": "event",
+      "source": "control_plane",
+      "fields": {
+        "state": { "type": "enum", "values": ["trial", "active", "past_due", "suspended", "canceled", "provisioning", "deleting", "other"] },
+        "machine": { "type": "enum", "values": ["started", "stopped", "suspended", "missing", "unknown", "other"] },
+        "plan": { "type": "enum", "values": ["trial", "paid", "comp", "other"] },
+        "seats_paid": { "type": "int", "min": 0, "max": 100000 },
+        "seats_used": { "type": "int", "min": 0, "max": 100000 },
+        "guests_used": { "type": "int", "min": 0, "max": 100000 },
+        "members_used": { "type": "int", "min": 0, "max": 100000 },
+        "backup_state": { "type": "enum", "values": ["off", "unsupported", "ok", "failing", "stale", "never", "other"] },
+        "backup_age_hours": { "type": "int", "min": 0, "max": 100000, "nullable": true },
+        "disk_used_bytes": { "type": "int", "min": 0, "max": 9007199254740991, "nullable": true },
+        "disk_total_bytes": { "type": "int", "min": 0, "max": 9007199254740991, "nullable": true },
+        "app_version": { "type": "string", "pattern": "^(?:v\\d+(?:\\.\\d+){0,2}|[0-9a-f]{7,12})$", "maxLength": 64, "nullable": true }
+      }
+    },
     "workspace_day": {
       "kind": "event",
       "source": "control_plane",
@@ -262,5 +280,5 @@
       "at": { "type": "int", "min": 0, "max": 9007199254740991 }
     }
   },
-  "droppedReasons": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"]
+  "droppedReasons": ["unknown_event", "unknown_metric", "unknown_field", "wrong_event", "wrong_type", "out_of_range", "invalid_enum", "invalid_string", "invalid_shape", "invalid_report", "invalid_label", "cardinality_limit", "duplicate_series", "duplicate_error", "duplicate_event", "duplicate_value", "too_many_events", "payload_limit", "prototype_key", "other"]
 }
