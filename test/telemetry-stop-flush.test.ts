@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { scrubReport } from '../server/telemetry/scrub.mjs';
+import { isWindows } from './platform';
 import { startRelayProcess } from './start-relay';
 
 // A hosted machine that stops between hours (Fly autostop) must not lose the running hour: on SIGTERM the relay writes it to
@@ -41,12 +42,19 @@ const stop = (proc: ChildProcess) => new Promise<{ code: number | null; ms: numb
   proc.kill('SIGTERM');
 });
 
-afterEach(() => {
-  for (const p of procs.splice(0)) if (p.exitCode === null) p.kill('SIGKILL');
-  for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+afterEach(async () => {
+  // every relay is gone (and its files closed) before its directory is removed: Windows refuses otherwise
+  await Promise.all(procs.splice(0).map((p) => new Promise<void>((resolve) => {
+    if (p.exitCode !== null || p.signalCode !== null) return resolve();
+    p.once('exit', () => resolve());
+    p.kill('SIGKILL');
+  })));
+  for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 });
 
-describe('a hosted relay that is stopped with SIGTERM', () => {
+// Windows has no SIGTERM handler for a child: kill() is a hard stop (TerminateProcess), so no graceful flush can run there. The hosted
+// machines are Linux, where Fly sends SIGTERM/SIGINT; the in-process flush is covered on every platform in telemetry-internal-route.test.ts.
+describe.skipIf(isWindows)('a hosted relay that is stopped with SIGTERM', () => {
   it('writes the running hour to telemetry-last.json without delaying the stop, and the next start hands it over after the hour', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-stopflush-'));
     dirs.push(dir);

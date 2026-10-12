@@ -10,7 +10,7 @@ const tmp = () => {
   dirs.push(dir);
   return dir;
 };
-afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
+afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })));
 
 describe('data_bytes', () => {
   it('adds up the files below the directory', async () => {

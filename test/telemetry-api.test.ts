@@ -31,6 +31,7 @@ async function setup(extraEnv: Record<string, string> = {}) {
   const auth = createAuth({ directory, config, mailer: { send: async () => {} } });
   const cloud = {
     limits: () => ({ readOnly: true }),
+    workspaceView: () => ({ readOnly: true, banner: null, seatLimit: null, seatsUsed: 0 }),
     tokenOk: () => false,
     workspaceId: config.cloud?.workspaceId,
   };
@@ -71,7 +72,7 @@ async function setup(extraEnv: Record<string, string> = {}) {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     directory.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   };
   return { config, directory, signIn, call, close };
 }

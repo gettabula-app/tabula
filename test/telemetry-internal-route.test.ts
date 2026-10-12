@@ -38,6 +38,7 @@ async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now
   const cloud = hosted
     ? {
       limits: () => ({ readOnly: false }),
+      workspaceView: () => ({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 0 }),
       tokenOk: (header: string | undefined) => header === `Bearer ${TOKEN}`,
       workspaceId: config.cloud?.workspaceId,
       seatUsage: () => ({}),
@@ -76,7 +77,7 @@ async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       directory.close();
-      if (!opts.dir) fs.rmSync(dir, { recursive: true, force: true });
+      if (!opts.dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     },
   };
   worlds.push(world);
@@ -346,7 +347,11 @@ describe('a report kept across a stop', () => {
   const base = startOfHour(1_800_000_000_000);
   const dirs: string[] = [];
   const freshDir = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-telemetry-keep-')); dirs.push(d); return d; };
-  afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });
+  // the servers on these directories are closed first (the file-level hook runs after this one), then the directories go, with retries for Windows
+  afterEach(async () => {
+    await Promise.all(worlds.splice(0).map((w) => w.close()));
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  });
   const stored = (dir: string) => JSON.parse(fs.readFileSync(path.join(dir, 'telemetry-last.json'), 'utf8'));
 
   it('writes the finished hour to one small file and serves it after a restart that has no report in memory', async () => {
