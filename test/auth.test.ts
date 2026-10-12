@@ -506,23 +506,25 @@ describe('the last use of an invite', () => {
 });
 
 describe('rate limits', () => {
-  it('allow five requests per email per hour, known or not', async () => {
+  it('allow five requests per email per client address per hour, known or not', async () => {
     const c = setup();
     c.d.createUser({ email: 'known@example.com', role: 'member' });
     for (const email of ['known@example.com', 'unknown@example.com']) {
       for (let i = 0; i < 5; i++) {
-        expect(await c.auth.requestLogin({ email, ip: `10.0.${email.length}.${i}` })).toEqual({ ok: true });
+        expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toEqual({ ok: true });
       }
-      expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toMatchObject({ limited: true });
+      expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toMatchObject({ limited: true, scope: 'pair' });
     }
     expect(await c.auth.requestLogin({ email: 'other@example.com', ip: '10.9.9.9' })).toEqual({ ok: true });
-    expect(c.sent).toHaveLength(5);
+    // another client address has its own allowance for the same email
+    expect(await c.auth.requestLogin({ email: 'known@example.com', ip: '10.8.8.8' })).toEqual({ ok: true });
+    expect(c.sent).toHaveLength(6);
   });
 
   it('is case-insensitive about the address', async () => {
     const c = setup();
-    for (let i = 0; i < 5; i++) await c.auth.requestLogin({ email: `Same@Example.com${' '.repeat(i)}`, ip: `10.0.0.${i}` });
-    expect(await c.auth.requestLogin({ email: 'same@example.com', ip: '10.0.0.9' })).toMatchObject({ limited: true });
+    for (let i = 0; i < 5; i++) await c.auth.requestLogin({ email: `Same@Example.com${' '.repeat(i)}`, ip: '10.0.0.1' });
+    expect(await c.auth.requestLogin({ email: 'same@example.com', ip: '10.0.0.1' })).toMatchObject({ limited: true });
   });
 
   it('allows twenty requests per IP per hour', async () => {
@@ -823,6 +825,7 @@ describe('loadConfig', () => {
       port: 8787,
       trustProxy: false,
       authIpLimit: 300,
+      authEmailLimit: 30,
       clientIpHeader: 'x-forwarded-for',
       sourcePolicy: { mode: 'off', sources: [] },
       mail: { mode: 'log', webhookUrl: null, webhookToken: null, smtpUrl: null, from: 'Tabula <no-reply@localhost>' },

@@ -1,12 +1,18 @@
 import crypto from 'node:crypto';
 import { normaliseEmail } from './config.mjs';
 import { mailFailureDetails } from './mail-health.mjs';
+import { rateKeyOf } from './client-ip.mjs';
 
 const HOUR_MS = 60 * 60 * 1000;
-const EMAIL_LIMIT = 5;
+/** Sign-in link requests per hour for one email address from one client (the pair), so another address cannot use up the owner's own allowance. */
+const PAIR_LIMIT = 5;
+const DEFAULT_EMAIL_LIMIT = 30;
 const DEFAULT_IP_LIMIT = 300;
 const SWEEP_MS = 60 * 1000;
 const MAX_LIMITER_KEYS = 50_000;
+/** A full table sends a new key to one of this many overflow shards, each allowing this many times the per-key limit. */
+const OVERFLOW_SHARDS = 256;
+const SHARD_FACTOR = 6;
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /** The header every state-changing API request must carry; another site cannot add it without a CORS preflight the server never grants. */
 export const CSRF_HEADER = 'x-tabula';
@@ -26,49 +32,84 @@ export class SeatLimitError extends Error {
   }
 }
 
-function createLimiter(now, ipLimit) {
-  const byEmail = new Map();
-  const byIp = new Map();
+// Three in-memory buckets, each an hour long. A request that is limited counts against none of them.
+//   pair:  one email address asked for by one client (PAIR_LIMIT). Keyed by both, so a stranger who asks for your address
+//          from their own address fills their pair, never yours.
+//   email: one email address from anyone (emailLimit, default 30). Bounds how much mail a mailbox can be sent.
+//   ip:    one client address, any email (ipLimit).
+// Whether the account exists is never an input: the same counts apply to known and unknown addresses, so a 429 tells
+// nothing about who has an account.
+//
+// Each table holds at most MAX_LIMITER_KEYS keys. A live key is never evicted (forgetting it would hand its owner a fresh
+// allowance, so an attacker could reset a victim's quota by flooding the table with other keys). When a table is full,
+// keys with no hit in the last hour are purged first; if it is still full, a new key goes to one of OVERFLOW_SHARDS shards
+// of that table, picked by a keyed hash (a secret random per process, so nobody can aim at a shard). Each shard is its own
+// bucket with SHARD_FACTOR times the per-key limit and its own window. Memory stays bounded (256 small arrays per table).
+// This is not a cure: an attacker who fills a table can exhaust shards, and the keys that hash to them are refused until
+// the hour is up; sharding makes that cost 256 times larger than one shared bucket, not impossible.
+/** The default shard of a key: the first 4 bytes of an HMAC-SHA256 under a random per-process secret, mod OVERFLOW_SHARDS. */
+function keyedShardOf() {
+  const secret = crypto.randomBytes(32);
+  return (scope, key) => crypto.createHmac('sha256', secret).update(`${scope}\u0000${key}`).digest().readUInt32BE(0) % OVERFLOW_SHARDS;
+}
+
+/** @param {(scope: string, key: string) => number} [shardOf] test seam: which overflow shard (0 to 255) a key falls in */
+function createLimiter(now, ipLimit, emailLimit, shardOf = keyedShardOf()) {
+  const table = (limit) => ({ map: new Map(), limit, shards: new Map(), lastPurge: 0 });
+  const tables = { pair: table(PAIR_LIMIT), email: table(emailLimit), ip: table(ipLimit) };
   let lastSweep = 0;
 
-  const recent = (map, key, t) => (map.get(key) ?? []).filter((ts) => ts > t - HOUR_MS);
+  const live = (hits, t) => hits.filter((ts) => ts > t - HOUR_MS);
 
-  // a key in use goes to the back of the map, so the bound forgets the key idle longest, never one that is busy
-  function remember(map, key, hits) {
-    map.delete(key);
-    map.set(key, hits);
-    if (map.size > MAX_LIMITER_KEYS) map.delete(map.keys().next().value);
+  function purge(tb, t) {
+    for (const [key, hits] of tb.map) {
+      if (!hits.some((ts) => ts > t - HOUR_MS)) tb.map.delete(key);
+    }
+    tb.lastPurge = t;
   }
 
   function sweep(t) {
     if (t - lastSweep < SWEEP_MS) return;
     lastSweep = t;
-    for (const map of [byEmail, byIp]) {
-      for (const [key, hits] of map) {
-        if (!hits.some((ts) => ts > t - HOUR_MS)) map.delete(key);
-      }
+    for (const tb of Object.values(tables)) {
+      purge(tb, t);
+      for (const [id, hits] of tb.shards) if (!hits.some((ts) => ts > t - HOUR_MS)) tb.shards.delete(id);
     }
   }
 
-  // Returns null when the request may go on, else which limit was hit and the real seconds until the oldest hit leaves the window.
+  // Where this key's hits live: its own entry, or its overflow shard when the table is full of live keys.
+  function locate(scope, key, t) {
+    const tb = tables[scope];
+    if (!tb.map.has(key) && tb.map.size >= MAX_LIMITER_KEYS && t - tb.lastPurge >= 1000) purge(tb, t);
+    const overflow = !tb.map.has(key) && tb.map.size >= MAX_LIMITER_KEYS;
+    const shard = overflow ? Math.abs(Math.trunc(Number(shardOf(scope, key)))) % OVERFLOW_SHARDS : -1;
+    const hits = live(overflow ? (tb.shards.get(shard) ?? []) : (tb.map.get(key) ?? []), t);
+    return { scope, tb, key, overflow, shard, hits, limit: overflow ? tb.limit * SHARD_FACTOR : tb.limit };
+  }
+
+  // Returns null when the request may go on, else which limit was hit (the one with the longest wait) and the real
+  // seconds until the oldest hit in it leaves the window. Scope 'pair' and 'email' both mean "this email address".
   return function allow(email, ip) {
     const t = now();
     sweep(t);
-    const ipKey = String(ip || 'unknown').slice(0, 64);
-    const emailHits = recent(byEmail, email, t);
-    const ipHits = recent(byIp, ipKey, t);
-    const emailFull = emailHits.length >= EMAIL_LIMIT;
-    const ipFull = ipHits.length >= ipLimit;
-    if (emailFull || ipFull) {
-      if (emailHits.length) remember(byEmail, email, emailHits);
-      if (ipHits.length) remember(byIp, ipKey, ipHits);
-      const wait = (hits) => Math.max(1, Math.ceil((hits[0] + HOUR_MS - t) / 1000));
-      const emailWait = emailFull ? wait(emailHits) : 0;
-      const ipWait = ipFull ? wait(ipHits) : 0;
-      return emailWait >= ipWait ? { scope: 'email', retryAfterSec: emailWait } : { scope: 'ip', retryAfterSec: ipWait };
+    const ipKey = String(rateKeyOf(ip) || 'unknown').slice(0, 64);
+    const buckets = [
+      locate('pair', `${ipKey}\u0000${email}`, t),
+      locate('email', email, t),
+      locate('ip', ipKey, t),
+    ];
+    const wait = (hits) => Math.max(1, Math.ceil((hits[0] + HOUR_MS - t) / 1000));
+    let blocked = null;
+    for (const b of buckets) {
+      if (b.hits.length < b.limit) continue;
+      const retryAfterSec = wait(b.hits);
+      if (!blocked || retryAfterSec > blocked.retryAfterSec) blocked = { scope: b.scope, retryAfterSec };
     }
-    remember(byEmail, email, [...emailHits, t]);
-    remember(byIp, ipKey, [...ipHits, t]);
+    if (blocked) return blocked;
+    for (const b of buckets) {
+      if (b.overflow) b.tb.shards.set(b.shard, [...b.hits, t]);
+      else b.tb.map.set(b.key, [...b.hits, t]);
+    }
     return null;
   };
 }
@@ -88,8 +129,8 @@ export function csrfOk(req) {
   }
 }
 
-export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, log = (/** @type {string} */ _line) => {}, notifications = /** @type {any} */ (null) }) {
-  const allow = createLimiter(now, config.authIpLimit ?? DEFAULT_IP_LIMIT);
+export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, log = (/** @type {string} */ _line) => {}, notifications = /** @type {any} */ (null), limiterShardOf = /** @type {((scope: string, key: string) => number) | undefined} */ (undefined) }) {
+  const allow = createLimiter(now, config.authIpLimit ?? DEFAULT_IP_LIMIT, config.authEmailLimit ?? DEFAULT_EMAIL_LIMIT, limiterShardOf);
 
   const cookieFlags = `Path=/; HttpOnly; SameSite=Lax${config.secureCookies ? '; Secure' : ''}`;
 
