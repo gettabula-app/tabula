@@ -41,6 +41,18 @@ self-hosted (opt-in): instance ──POST https://telemetry.<tabula domain>/v1/t
 
 **What runs outside the repos (decided 2026-10-11): the telemetry stack is self-hosted on the Helsinki VPS**, not on Fly and not on Grafana Cloud. See section 4a for the layout. The control plane holds the sink URLs and keys as Fly secrets, listed by name in the dashboard config screen, and nothing else about the VPS.
 
+### 1a. How a report leaves a hosted instance (built)
+
+The design above has the instance post each hour to the control plane. What is built is the other direction, which needs no new egress or token on the tenant: the control plane **pulls** the report over Flycast with the control token it already uses for `/api/internal/usage`, and forwards it.
+
+- **`GET /api/internal/telemetry`** (hosted instances only; a self-hosted server has no route and sends nothing). Bearer token only, like the other `internal` routes: a browser session, a guest cookie or the CSRF header counts for nothing, and the answer to anything else is `401`.
+- **`200`** with the report document itself as the body: the last *finished* hour, built by the same collector and scrubber as the Privacy tab's preview, so it already has the schema's shape, is at most 256 KB, carries the workspace id (`ws_...`) and the instance's aggregate counts, and holds no content and no identifier of a person. Asking again for the same hour answers the same document (the collector on the other side drops a duplicate for a workspace and hour).
+- **`204`** with no body when collection is off: `TABULA_TELEMETRY=off` forces it. Nothing is built then.
+- **`503`** with `no_report_yet` until the first hour after a start has finished, and with `restoring` while a restore has the workspace. Both mean "ask again next hour".
+- **When it is built.** Once an hour, in the last 15 seconds of it, in memory only. A restart loses it, so the hour a process starts in is partial, and the hour a restart interrupts may never be reported.
+- **The owner's switch.** As in section 3, turning product analytics off keeps operating data on and removes feature counts. The report therefore still answers `200` but without feature-use series, and the hour built before the switch was turned is discarded, so no feature count from before an opt-out is handed out afterwards.
+- **Nothing is sent by the instance.** Delivery to the collector is the control plane's job (tabula-cloud); until that is deployed the report is only ever read by the control plane and by nobody else.
+
 ## 2. Catalogue: what is sent
 
 Every name below is in the schema. Labels are enums from fixed lists; numbers are counts, durations in milliseconds, or bytes. A field that is a free string does not exist in the schema.

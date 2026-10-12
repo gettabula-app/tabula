@@ -373,6 +373,34 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const dataBytesOnDisk = createDataBytes({ dir: dataDir, now });
 
+  // The report of the last finished hour, for the control plane to pull (docs/telemetry-design.md, "How reports leave an instance"). It
+  // is built once, a few seconds before each hour ends, by the same collector and scrubber as the Privacy tab's preview, and kept in
+  // memory only: a restart loses it, and so does an owner turning product analytics off.
+  const TELEMETRY_HOUR_MS = 3_600_000;
+  const TELEMETRY_CAPTURE_MARGIN_MS = 15_000;
+  let completedTelemetry = null;
+  let lastCapturedTelemetryHour = null;
+
+  function captureTelemetryHour() {
+    if (!telemetryCollectionEnabled()) {
+      completedTelemetry = null;
+      return;
+    }
+    collectTelemetryGauges();
+    completedTelemetry = telemetryCollector.snapshot().clean;
+  }
+
+  /** Called every few seconds: captures once per hour, in the last seconds of it. */
+  function telemetryTick() {
+    const at = now();
+    const hour = Math.floor(at / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS;
+    if (at - hour < TELEMETRY_HOUR_MS - TELEMETRY_CAPTURE_MARGIN_MS || lastCapturedTelemetryHour === hour) return;
+    lastCapturedTelemetryHour = hour;
+    captureTelemetryHour();
+  }
+  // only a hosted workspace has a control plane to pull the report (the internal route below), so only it builds one
+  if (cloud) setInterval(telemetryTick, 5_000).unref?.();
+
   function privacyState() {
     const auditActions = new Set(['telemetry.enabled', 'telemetry.disabled', 'telemetry.settings', 'settings.telemetry']);
     const changes = [];
@@ -830,9 +858,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, body.enabled ? 'telemetry.enabled' : 'telemetry.disabled', {});
       });
       if (hostedWorkspaceId()) {
-        if (!body.enabled) telemetryCollector.resetProductAnalytics();
+        if (!body.enabled) {
+          telemetryCollector.resetProductAnalytics();
+          completedTelemetry = null; // the finished hour held feature counts too: it is not handed out after an opt-out
+        }
       } else {
         telemetryCollector.reset();
+        completedTelemetry = null;
       }
       if (!telemetryCollectionEnabled()) {
         eventLoopDelay?.disable();
@@ -1873,6 +1905,14 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'internal/backup-status', { internal: true }, () => [200, backupStatus()]),
           // TAB-200: which volume this is and its last adoption (docs/cloud.md, "Volumes"); ids only.
           compile('GET', 'internal/volume', { internal: true }, () => [200, volumeStatus()]),
+          // The last finished hour's telemetry report, exactly as the Privacy tab previews it (already scrubbed, at most 256 KB, no content and
+          // no new identifier): 200 with the report as the body; 204 when collection is off (TABULA_TELEMETRY=off); 503 until the first hour has
+          // finished. Bearer token only, like the routes around it. The control plane forwards it; the instance sends nothing itself.
+          compile('GET', 'internal/telemetry', { internal: true }, () => {
+            if (!telemetryCollectionEnabled()) return [204];
+            if (!completedTelemetry) throw new HttpError(503, 'no_report_yet', 'No hour has finished yet');
+            return [200, completedTelemetry];
+          }),
           // TAB-225: which build this is and which schema it and its files are on (docs/migrations.md); never a secret.
           compile('GET', 'internal/version', { internal: true }, () => [200, versionReport()]),
           compile('GET', 'admin/updates', {}, ({ user }) => {
@@ -2143,5 +2183,5 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     return true;
   }
 
-  return { handle };
+  return { handle, captureTelemetryHour, telemetryTick };
 }

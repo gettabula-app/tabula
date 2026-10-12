@@ -6,4 +6,4 @@ The Privacy panel shows the exact scrubbed report the instance would build. Alwa
 
 Device, browser-family and operating-system classes are sent only as counts under product analytics. The raw User-Agent and browser strings are read on the instance and discarded; neither is sent. Error reports are not collected yet. When they are added they will stay on and contain only an error code and the software version, never anything from your boards.
 
-This version does not send telemetry anywhere. The preview says “Nothing has been sent”; delivery will be added in a later version.
+The instance does not send telemetry anywhere. A hosted instance keeps the report of the last finished hour in memory and hands it to the control plane when the control plane asks for it (`GET /api/internal/telemetry`, bearer token only, see `docs/telemetry-design.md`, section 1a). The preview says “Nothing has been sent” because the instance sends nothing; whether anything is forwarded is the control plane's doing.
