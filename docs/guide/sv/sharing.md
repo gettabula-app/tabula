@@ -53,7 +53,7 @@ Skärmbilderna visar gränssnittet på engelska.
 
 Om länken har upphört att gälla begär du en ny. Den första personen som loggar in med ägaradressen blir arbetsytans ägare. Alla andra behöver en inbjudan eller ett konto som en administratör redan har skapat.
 
-Om du vill logga ut öppnar du tavlans meny och väljer **Sign out** (Logga ut) under **Account**, eller väljer **Sign out** i startskärmens övre verktygsfält. **Sign out everywhere** (Logga ut överallt) avslutar alla dina sessioner på alla enheter.
+Om du vill logga ut öppnar du tavlans meny och väljer **Sign out** (Logga ut) under **Account**, eller öppnar ditt namn i startskärmens övre fält och väljer **Sign out**. **Sign out everywhere** (Logga ut överallt) avslutar alla dina sessioner på alla enheter.
 
 Under **Your name and colour** (Ditt namn och din färg) i tavlans meny kan du ändra namnet som visas bredvid pekaren. Om du har ett konto sparas namnet på kontot. Färgen sparas på den här enheten. Om du ansluter med en gästlänk kommer ditt namn från anslutningsformuläret; tavlans meny döljer **Your name and colour** och **Save board as template**. Gästnamn har märket **Guest** (Gäst) bredvid sig i pekaretiketter och kommentarer.
 

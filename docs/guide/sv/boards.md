@@ -4,7 +4,7 @@ Sidan **Boards** (Tavlor) listar dina tavlor, och här skapar, öppnar, importer
 
 ## Sidan Boards
 
-I det övre fältet finns Tabulas ordmärke (klicka på det för att komma tillbaka hit) och länkarna **Boards** och **Templates** (Mallar). Om din arbetsyta använder inloggning visas även ditt namn och **Sign out** (Logga ut). Arbetsytans ägare och administratörer ser också **Admin** (Administratör).
+I det övre fältet finns Tabulas ordmärke (klicka på det för att komma tillbaka hit) och länkarna **Boards** och **Templates** (Mallar). Om din arbetsyta använder inloggning visas även ditt namn, som är kontomenyn: ditt namn och din färg, **AI tool access** (om administratören har aktiverat AI-verktyg), **Your AI key** (om du får använda din egen), chattaviseringar och **Sign out** (Logga ut). Arbetsytans ägare och administratörer ser också **Admin** (Administratör), och arbetsytor som har spåraren visar en länk **Tracker**.
 
 Under det övre fältet:
 

@@ -4,7 +4,7 @@ Verktygsfältet till vänster på en tavla innehåller allt du kan rita med. Den
 
 ## Verktygsfältet
 
-Varje verktyg har ett kortkommando på en bokstav. Håll pekaren över en knapp eller flytta tangentbordsfokus till den för att se dess namn och kortkommando. I ett smalt fönster går det att rulla i verktygsfältet, och kanten tonas ut där fler verktyg fortsätter.
+Varje verktyg har ett kortkommando på en bokstav. Håll pekaren över en knapp eller flytta tangentbordsfokus till den för att se dess namn och kortkommando. I ett lågt fönster är verktygen kompaktare med mus eller styrplatta, så att fler ryms. Ryms de ändå inte går det att rulla i verktygsfältet: en vinkelknapp och ett smalt rullningsspår visar att det finns fler verktyg, och en liten toning markerar kanten där fler fortsätter.
 
 | Tangent | Verktyg |
 |---|---|
@@ -58,7 +58,7 @@ Om du vill redigera text i en form, lapp, kopplingslinje eller ramrubrik dubbelk
 - `Esc` eller `Ctrl+Enter` (`Cmd+Enter` på Mac) avslutar redigeringen.
 - `Tab` avslutar redigeringen.
 - I former, lappar och textrutor skapar `Enter` en ny rad. I ramnamn och kopplingslinjeetiketter avslutar `Enter` redigeringen.
-- Välj **Add emoji** (Lägg till emoji) i det lilla fältet bredvid textrutan för att öppna emojiväljaren: skriv för att söka, använd piltangenterna eller tryck för att välja en emoji, så infogas den vid markören. Senast använda emoji visas först. Emoji som består av flera delar, till exempel flaggor och familjer, hålls ihop när en rad bryts och exporteras som en hel emoji i PNG- och Markdown-filer och visas så för alla andra på tavlan.
+- Välj **Add emoji** (Lägg till emoji) (knappen i det nedre vänstra hörnet av anteckningen du redigerar) för att öppna emojiväljaren (på en anteckning som är för liten på skärmen för att rymma knappen sitter den ovanför eller under anteckningen): skriv för att söka, använd piltangenterna eller tryck för att välja en emoji, så infogas den vid markören. Senast använda emoji visas först. Emoji som består av flera delar, till exempel flaggor och familjer, hålls ihop när en rad bryts och exporteras som en hel emoji i PNG- och Markdown-filer och visas så för alla andra på tavlan.
 
 ### Justering
 
@@ -158,7 +158,7 @@ Lås upp genom att hålla fingret på objektet i 0,6 sekunder. En ring fylls, se
 
 ## Lager
 
-**Layers** (Lager) i verktygsfältet (eller `Alt+L` eller **Layers** i tavlans meny) visar allt på tavlan med objektet som ligger överst först. Ramar visas sist eftersom de alltid ligger bakom allt annat, och objekten inuti en ram visas under den; klicka på triangeln för att fälla ihop ramen.
+**Layers** (Lager) i verktygsfältet (eller `Alt+L` eller **Layers** i tavlans meny) visar allt på tavlan med objektet som ligger överst först. Ramar visas sist eftersom de alltid ligger bakom allt annat, och objekten inuti en ram visas under den; klicka på triangeln för att fälla ihop ramen. En ram som du ritar inuti en annan ram hamnar precis ovanför den ramen, så att den inte döljs under den.
 
 - Klicka på ett objekt för att markera det på tavlan och håll ned `Shift`, `Ctrl` eller `Cmd` för att lägga till eller ta bort objekt.
 - Dra ett objekt uppåt eller nedåt för att placera det ovanför eller nedanför ett annat objekt intill det. På en telefon drar du det i handtaget till höger. Med tangentbordet flyttar `Alt+Up` och `Alt+Down` det fokuserade objektet en plats.

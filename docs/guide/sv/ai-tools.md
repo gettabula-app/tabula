@@ -2,7 +2,7 @@
 
 En åtkomsttoken låter ett AI-verktyg som Claude Code arbeta med dina tavlor åt dig. Verktyget kan läsa tavlor och kommentera på dem, och om du tillåter det även redigera dem medan andra ser ändringarna direkt.
 
-> Den här funktionen måste aktiveras av den som kör din Tabula-server. Om **AI tool access** (AI-verktygsåtkomst) saknas i det övre verktygsfältet och tavlans meny ber du serveransvarig att aktivera den. Funktionen finns i arbetsytor med inloggning.
+> Den här funktionen måste aktiveras av den som kör din Tabula-server. Om **AI tool access** (AI-verktygsåtkomst) saknas i menyn under ditt namn och i tavlans meny ber du serveransvarig att aktivera den. Funktionen finns i arbetsytor med inloggning.
 
 ## Vad ett AI-verktyg kan göra
 
@@ -25,7 +25,7 @@ Två skydd gäller för varje token:
 
 Administratörer kan också välja **Create a token** (Skapa en token) i avsnittet **Access tokens** (Åtkomsttoken) på administratörssidan. Samma formulär öppnas och en token skapas åt dig, och listan där uppdateras.
 
-1. Välj **AI tool access** i det övre verktygsfältet på sidan **Boards** (Tavlor) eller **Templates** (Mallar), eller öppna tavlans meny och välj alternativet under **Account** (Konto).
+1. Öppna ditt namn i det övre fältet på sidan **Boards** (Tavlor) eller **Templates** (Mallar) och välj **AI tool access**, eller öppna tavlans meny och välj alternativet under **Account** (Konto).
 2. Välj **New token** (Ny token).
 3. Ange ett **Name** (Namn), till exempel ”Claude Code på min bärbara dator”.
 4. Välj en **Access**-nivå (Åtkomst): **Read only**, **Read and comment** eller **Read and edit**. Välj den lägsta nivån verktyget behöver.

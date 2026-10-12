@@ -1,6 +1,6 @@
 # Tangentbord och skärmläsare
 
-Du kan använda det mesta i Tabula utan mus, och en skärmläsare läser upp ändringar på tavlan. Den här sidan går igenom vad som fungerar och vad som ännu inte gör det.
+Du kan använda det mesta i Tabula utan mus, och en skärmläsare läser upp ändringar på tavlan och vad som finns på den. Den här sidan går igenom vad som fungerar och vad som ännu inte gör det.
 
 ## Navigera
 
@@ -31,9 +31,17 @@ Meddelanden som visas på skärmen i några sekunder, till exempel **Låst**, l�
 - I ett högkontrastläge behåller färgrutorna sina färger och det valda alternativet får en kontur.
 - Du kan zooma in på sidan i webbläsaren. På en telefon zoomar en nypgest på verktygsfälten in på sidan. Om du nyper på själva tavlan zoomar du in på tavlan.
 
+## Tavlan med tangentbordet
+
+`Tab` tar dig in på tavlan en gång, och nästa `Tab` tar dig ut igen, så du behöver aldrig trycka på `Tab` en gång per objekt. Inne på tavlan markerar en synlig ring det aktuella objektet, och en skärmläsare säger vad det är (en anteckning, en ram, en bild eller en kopplingslinje, dess ord och dess plats i listan).
+
+- Piltangenterna flyttar till närmaste objekt i den riktningen.
+- `Page Down` och `Page Up` flyttar till nästa och föregående objekt i läsordning, och `Home` och `End` går till det första och det sista.
+- Ingenting på tavlan ändras medan du flyttar dig.
+
 ## Det här fungerar inte än
 
-Själva tavlan går ännu inte att använda med tangentbordet. Du kan inte markera, flytta, ändra storlek på eller koppla ihop befintliga objekt med tangentbordet, och en skärmläsare läser inte upp innehållet på tavlan. Du kan skapa objekt med verktygens kortkommandon och, när något är markerat, flytta det lite med piltangenterna, redigera texten med `Enter`, duplicera och ta bort det samt ändra dess lagerordning. Det här är planerat.
+Du kan ännu inte markera, flytta, ändra storlek på eller koppla ihop befintliga objekt med tangentbordet; att markera och redigera med tangentbordet kommer härnäst. Du kan skapa objekt med verktygens kortkommandon och, när något är markerat, flytta det lite med piltangenterna, redigera texten med `Enter`, duplicera och ta bort det samt ändra dess lagerordning.
 
 ## Relaterat
 
