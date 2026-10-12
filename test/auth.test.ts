@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 function setup(env: Record<string, string> = {}) {
-  const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, PORT: '8787', ...env });
+  const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, PORT: '8787', TABULA_AUTH_IP_LIMIT: '20', ...env });
   const d = openDirectory(':memory:');
   opened.push(d);
   const sent: Mail[] = [];
@@ -431,7 +431,7 @@ describe('rate limits', () => {
       for (let i = 0; i < 5; i++) {
         expect(await c.auth.requestLogin({ email, ip: `10.0.${email.length}.${i}` })).toEqual({ ok: true });
       }
-      expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toEqual({ limited: true });
+      expect(await c.auth.requestLogin({ email, ip: '10.9.9.9' })).toMatchObject({ limited: true });
     }
     expect(await c.auth.requestLogin({ email: 'other@example.com', ip: '10.9.9.9' })).toEqual({ ok: true });
     expect(c.sent).toHaveLength(5);
@@ -440,7 +440,7 @@ describe('rate limits', () => {
   it('is case-insensitive about the address', async () => {
     const c = setup();
     for (let i = 0; i < 5; i++) await c.auth.requestLogin({ email: `Same@Example.com${' '.repeat(i)}`, ip: `10.0.0.${i}` });
-    expect(await c.auth.requestLogin({ email: 'same@example.com', ip: '10.0.0.9' })).toEqual({ limited: true });
+    expect(await c.auth.requestLogin({ email: 'same@example.com', ip: '10.0.0.9' })).toMatchObject({ limited: true });
   });
 
   it('allows twenty requests per IP per hour', async () => {
@@ -448,14 +448,14 @@ describe('rate limits', () => {
     for (let i = 0; i < 20; i++) {
       expect(await c.auth.requestLogin({ email: `u${i}@example.com`, ip: '2.2.2.2' })).toEqual({ ok: true });
     }
-    expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '2.2.2.2' })).toEqual({ limited: true });
+    expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '2.2.2.2' })).toMatchObject({ limited: true });
     expect(await c.auth.requestLogin({ email: 'u21@example.com', ip: '3.3.3.3' })).toEqual({ ok: true });
   });
 
   it('shares one bucket between requests without an IP', async () => {
     const c = setup();
     for (let i = 0; i < 20; i++) await c.auth.requestLogin({ email: `u${i}@example.com` });
-    expect(await c.auth.requestLogin({ email: 'late@example.com', ip: undefined })).toEqual({ limited: true });
+    expect(await c.auth.requestLogin({ email: 'late@example.com', ip: undefined })).toMatchObject({ limited: true });
   });
 
   it('use a rolling hour and reset after it', async () => {
@@ -466,16 +466,16 @@ describe('rate limits', () => {
     await ask();
     await ask();
     c.clock.t = T0 + 50 * MIN;
-    expect(await ask()).toEqual({ limited: true });
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
 
     c.clock.t = T0 + HOUR - 1;
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
     c.clock.t = T0 + HOUR;
     expect(await ask()).toEqual({ ok: true });
     expect(await ask()).toEqual({ ok: true });
     expect(await ask()).toEqual({ ok: true });
-    expect(await ask()).toEqual({ limited: true });
+    expect(await ask()).toMatchObject({ limited: true });
 
     c.clock.t = T0 + 3 * HOUR;
     expect(await ask()).toEqual({ ok: true });
@@ -487,7 +487,7 @@ describe('rate limits', () => {
     for (let i = 0; i < 5; i++) await ask();
     for (let m = 1; m < 60; m += 5) {
       c.clock.t = T0 + m * MIN;
-      expect(await ask()).toEqual({ limited: true });
+      expect(await ask()).toMatchObject({ limited: true });
     }
     c.clock.t = T0 + HOUR + 1;
     expect(await ask()).toEqual({ ok: true });
@@ -735,6 +735,7 @@ describe('loadConfig', () => {
       cookieName: 'tabula_session',
       sessionMs: 30 * DAY,
       loginTokenMs: 15 * MIN,
+      authIpLimit: 300,
       dataDir: path.resolve(import.meta.dirname, '..', 'data'),
       port: 8787,
       trustProxy: false,

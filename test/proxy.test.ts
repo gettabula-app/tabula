@@ -33,6 +33,7 @@ const startRelay = (dir: string, env: Record<string, string>) => startRelayProce
     HOST: '127.0.0.1',
     TABULA_AUTH: 'on',
     TABULA_OWNER_EMAIL: OWNER,
+    TABULA_AUTH_IP_LIMIT: '20',
     TABULA_MAIL: 'file',
     ...env,
   }),
@@ -353,7 +354,9 @@ describe('behind a proxy that terminates https, with TABULA_TRUST_PROXY=1', { ti
     const over = await ask(abuser, '7.7.7.200');
     expect(over.status).toBe(429);
     expect(over.body.error).toBe('rate_limited');
-    expect(over.headers['retry-after']).toBe('3600');
+    // the real remaining seconds of the hour window, a little less on a loaded machine
+    expect(Number(over.headers['retry-after'])).toBeGreaterThan(3500);
+    expect(Number(over.headers['retry-after'])).toBeLessThanOrEqual(3600);
 
     // somebody else is not limited, even when they claim to be the abuser, and the abuser cannot become somebody else
     expect((await ask(bystander, abuser)).status).toBe(200);
