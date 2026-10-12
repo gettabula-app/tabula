@@ -47,7 +47,7 @@ function listPrefix(value, configuredPrefix) {
 function objectKey(value, configuredPrefix) {
   if (!isValidDirKey(value)) throw new ExportRequestError('key is not a valid backup key');
   if (!value.startsWith(`${configuredPrefix}/objects/`) && !value.startsWith(`${configuredPrefix}/manifests/`)) {
-    throw new ExportRequestError('key must be an object or manifest');
+    return null;
   }
   return value;
 }
@@ -199,6 +199,11 @@ export function createBackupExport({ backupConfig, dataDir, now = Date.now, log 
       if (kind !== 'object') throw new Error('Unknown backup export route');
       checkQueryNames(query, new Set(['key']));
       const key = objectKey(singleQuery(query, 'key', { required: true }), backupConfig.prefix);
+      if (key === null) {
+        status = 404;
+        bytes = sendNotFound(res, method);
+        return;
+      }
       const head = await client.head(key);
       if (!head) {
         status = 404;

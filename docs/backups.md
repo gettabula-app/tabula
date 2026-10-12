@@ -82,6 +82,8 @@ HEAD /api/backup-export/object?key=<key>
 
 `prefix` is required and can name only the configured prefix's `objects` or `manifests` directory. Pages are sorted by key, default to 1000 entries and are capped at 1000; pass `next` as the exclusive `after` value for the next page. `HEAD` returns the object's size without its bytes. The route allows 120 requests and 400 MB of object bytes per sliding minute per workspace; an over-limit response has `429` and `Retry-After`.
 
+An otherwise valid object key outside the configured `objects` and `manifests` directories returns the same `404` as a missing file.
+
 The route returns only the sealed AES-256-GCM objects and manifests, whose names are keyed hashes or manifest names. The puller cannot decrypt them without the backup key. The route is public to the instance (bearer only, no browser session) so a request can wake a stopped hosted machine; keep the token in the control plane and rotate it by changing the digest and token together.
 
 ### Off-site copy: deleted workspaces
@@ -295,14 +297,16 @@ Errors are shown as plain sentences, never as codes: one table in `src/ui/backup
 ## Rehearsing a restore locally
 
 `npm run drill:local` rehearses, on your own machine, the restore drill of the ops runbook (section 8) as far as it can
-run without Fly: a relay started exactly as `npm start` starts it, backing up to the in-memory S3 of the backup tests,
-with a fake control plane for the hosted parts. It runs `test/drill/*.drill.test.ts` (never part of `npm test` or CI;
+run without Fly: relays started exactly as `npm start` starts them, one backing up to the in-memory S3 of the backup
+tests and one to a local directory export pulled over real HTTP, with a fake control plane for the hosted parts. It runs
+`test/drill/*.drill.test.ts` (never part of `npm test` or CI;
 `test/drill-config.test.ts` checks that) and prints a checklist of the runbook boxes, each passed, failed or not
 rehearsed with the reason and its duration, followed by a filled drill record (section 9). It exits with 1 when a box
-failed, and takes about half a minute.
+failed, and takes about a minute.
 
-It seeds one workspace with every kind of data (an owner, a member and a workspace admin, a team, a board with objects
-and a comment, a board with a picture, a named version and a chat message) and then goes through these boxes:
+The 8.2 drill seeds one workspace with every kind of data (an owner, a member and a workspace admin, a team, a board
+with objects and a comment, a board with a picture, a named version and a chat message). The 8.3 drill seeds a second
+workspace with a board edit. Together they go through these boxes:
 
 - 8.2: a backup runs by itself and its bucket keys say nothing about the workspace; an edit followed by a graceful stop
   is in the bucket; a workspace admin who is not the owner is refused on every backup route; a board restored as a copy,
@@ -311,6 +315,12 @@ and a comment, a board with a picture, a named version and a chat message) and t
   a lost data directory restored from the bucket on an empty server; another key; a damaged object; a key rotation; a
   missing object that the prune reports and the next run repairs; and a search of every log, the audit log and the status
   for the key, the S3 secret and a request signature.
+- 8.3 off-site: `8.3.dir-backup` seals a board edit to the directory target; `8.3.export-auth` checks bearer auth and
+  hides keys outside the object and manifest directories; `8.3.pull` downloads the sealed files and writes pull state
+  and metrics; `8.3.pull-incremental` checks an unchanged run and a later edit; `8.3.restore-check` verifies the pulled
+  copy with the key and in structure-only mode; `8.3.decrypt-restore` restores the newest pulled manifest on an empty
+  relay; `8.3.no-secret` searches relay and puller logs, metrics and state; `8.3.purge` checks grace-period and operator
+  purges.
 - 8.1, local analogue: a copy of the data directory started with a new `TABULA_FLY_VOLUME_ID` is adopted as a restored
   copy (see Volumes and restores).
 

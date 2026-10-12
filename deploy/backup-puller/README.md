@@ -26,7 +26,7 @@ Start from [`puller.example.json`](./puller.example.json). The config file has e
 | `metricsFile` | Atomic Prometheus text exposition file. |
 | `requestTimeoutSeconds` | Timeout for regular requests. The first request to a stopped workspace is allowed 60 seconds. |
 
-All configured paths must be absolute. Workspace slugs match `[a-z0-9-]{1,63}` and ids match `[A-Za-z0-9._-]{1,128}`. The pull master is not accepted on the command line or from an environment variable.
+All configured paths must be absolute and must not pass through a symbolic link: the puller checks every component of `storeDir` and `stateDir` and refuses a path that contains one (configuration error `unsafe_path`, exit status 2), so a copy can never be redirected somewhere else. On the host use real paths such as `/home/tabula-backup/store`; if a directory you configured is reached through a link (for example a symlinked home or a mounted volume linked into place), configure the real target path instead. On macOS `os.tmpdir()` is `/var/folders/...`, a link to `/private/var/...`, so when you try the puller under a temporary directory there, resolve it first (`fs.realpathSync(os.tmpdir())`; the drill does). All configured paths must be absolute. Workspace slugs match `[a-z0-9-]{1,63}` and ids match `[A-Za-z0-9._-]{1,128}`. The pull master is not accepted on the command line or from an environment variable.
 
 ```sh
 node pull.mjs --config /etc/tabula-backup/puller.json

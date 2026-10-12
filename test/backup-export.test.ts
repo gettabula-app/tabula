@@ -264,8 +264,9 @@ describe('public backup export routes', () => {
     expect((await call(ctx.api, 'HEAD', objectUrl(key), bearer)).rawBody).toHaveLength(0);
     expect((await call(ctx.api, 'HEAD', objectUrl(key), bearer)).headers['content-length']).toBe(String(sealed.length));
     expect(await call(ctx.api, 'GET', objectUrl('tabula/objects/missing'), bearer)).toMatchObject({ statusCode: 404, body: { error: 'not_found' } });
+    expect(await call(ctx.api, 'GET', objectUrl('tabula/private/outside'), bearer)).toMatchObject({ statusCode: 404, body: { error: 'not_found' } });
     expect((await call(ctx.api, 'GET', objectUrl('tabula/objects/../outside'), bearer)).statusCode).toBe(400);
-    expect((await call(ctx.api, 'GET', objectUrl('elsewhere/objects/outside'), bearer)).statusCode).toBe(400);
+    expect((await call(ctx.api, 'GET', objectUrl('elsewhere/objects/outside'), bearer)).statusCode).toBe(404);
 
     const outside = path.join(ctx.root, 'outside');
     fs.writeFileSync(outside, 'outside');
