@@ -141,4 +141,48 @@ describe.skipIf(!available)('pending images over IndexedDB', () => {
       await wk.close();
     }
   });
+
+  // IndexedDB missing, throwing on open, erroring on open, or never answering (Q&A's matrix): an added image still uploads, from memory.
+  const BLOCKED: Record<string, string> = {
+    undefined: "Object.defineProperty(window, 'indexedDB', { value: undefined, configurable: true });",
+    throws: "Object.defineProperty(window, 'indexedDB', { value: { open() { throw new Error('blocked'); } }, configurable: true });",
+    errors: "Object.defineProperty(window, 'indexedDB', { value: { open() { const req = {}; setTimeout(() => req.onerror?.(new Event('error')), 10); return req; } }, configurable: true });",
+    hangs: "Object.defineProperty(window, 'indexedDB', { value: { open() { return {}; } }, configurable: true });",
+  };
+  for (const [mode, script] of Object.entries(BLOCKED)) {
+    it(`uploads an added image from memory when IndexedDB ${mode}`, async () => {
+      const context = await browser!.newContext();
+      await context.addInitScript(script);
+      const page = await tab(context);
+      const started = Date.now();
+      const result = await page.evaluate(async () => {
+        const { cache, queue, log } = (window as any).__q;
+        await cache.put({ key: 'pending:m', blob: new Blob([new Uint8Array(500)], { type: 'image/png' }), mime: 'image/png', width: 4, height: 3, boardId: 'b1', pending: true });
+        await queue.enqueue({ id: 'pending:m', boardId: 'b1', objectId: 'o1', hash: 'x' });
+        await queue.run('b1');
+        return { ...log, left: await queue.pending('b1') };
+      });
+      expect(result).toEqual({ uploads: 1, lost: 0, applied: 1, left: 0 });
+      expect(Date.now() - started).toBeLessThan(6000); // an open that never answers waits two seconds, once
+      await context.close();
+    });
+
+    it(`opens a board when IndexedDB ${mode}, without a copy on the device`, async () => {
+      const context = await browser!.newContext();
+      await context.addInitScript(script);
+      const page = await context.newPage();
+      await page.route('**/__blank', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8">' }));
+      await page.goto(`${base}__blank`);
+      await page.addScriptTag({ type: 'module', content: "import { openBoard } from '/src/sync.ts'; window.__openBoard = openBoard; window.__ready = true;" });
+      await page.waitForFunction('window.__ready === true');
+      const opened = await page.evaluate(async () => {
+        const conn = await (window as any).__openBoard('probe', { id: 'u1', name: 'Tester', color: '#326DD3' });
+        const ok = typeof conn.store.cache.size === 'number';
+        conn.destroy();
+        return ok;
+      });
+      expect(opened).toBe(true);
+      await context.close();
+    }, 20_000);
+  }
 });

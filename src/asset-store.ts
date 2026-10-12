@@ -84,6 +84,8 @@ export function memoryBackend(): AssetBackend {
 }
 
 const DB_NAME = 'tabula-assets';
+/** How long opening the database may take before it counts as unavailable. */
+const OPEN_WAIT_MS = 2000;
 
 /** The browser would not keep a write: its storage is full, blocked or unavailable. The bytes are not stored. */
 export class StorageError extends Error {
@@ -175,18 +177,31 @@ export function idbBackend(): AssetBackend {
 function rawIdbBackend(): AssetBackend {
   let opened: Promise<IDBDatabase | null> | null = null;
   const open = () => (opened ??= new Promise<IDBDatabase | null>((resolve) => {
-    if (typeof indexedDB === 'undefined') return resolve(null);
+    if (typeof indexedDB === 'undefined' || !indexedDB) return resolve(null);
+    // A store that never answers (a blocked or hung open) must not hang every image: after OPEN_WAIT_MS it counts as unavailable
+    // and the in-memory fallback takes over. A database that opens after that is closed again.
+    let settled = false;
+    const finish = (db: IDBDatabase | null) => {
+      if (settled) {
+        db?.close();
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve(db);
+    };
+    const timer = setTimeout(() => finish(null), OPEN_WAIT_MS);
     try {
       const req = indexedDB.open(DB_NAME, 1);
       req.onupgradeneeded = () => {
         req.result.createObjectStore('blobs', { keyPath: 'key' });
         req.result.createObjectStore('uploads', { keyPath: 'id' });
       };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => resolve(null);
-      req.onblocked = () => resolve(null);
+      req.onsuccess = () => finish(req.result);
+      req.onerror = () => finish(null);
+      req.onblocked = () => finish(null);
     } catch {
-      resolve(null);
+      finish(null);
     }
   }));
   // Reads act as an empty store when it cannot be used, so images still show. A write that fails (quota, blocked storage, a
