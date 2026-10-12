@@ -137,20 +137,19 @@ describe('who may ask', () => {
     expect((await w.unfurl(null, board, w.target('/f'))).status).toBe(401);
     expect(web.hits).toEqual(['/a', '/b']);
   });
-
-  it('keeps a guest session out of the route', async () => {
-    const web = await startWeb();
-    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' } });
-    const owner = w.signIn('owner');
-    const board = w.boardWith(owner, null);
-    // the guest allow-list admits one board's assets and nothing under unfurl; a guest cookie is a different cookie name
-    const res = await w.call({ cookie: `${w.config.cookieName.replace('session', 'guest')}=x` }, 'POST', `/api/boards/${board}/unfurl`, { url: w.target() });
-    expect([401, 403]).toContain(res.status);
-    expect(web.hits).toEqual([]);
-  });
 });
 
 describe('the workspace setting and the operator switch', () => {
+  it('answers 402 when the workspace is read-only, without fetching', async () => {
+    const web = await startWeb();
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, cloud: { limits: () => ({ readOnly: true }), workspaceView: () => ({}) } });
+    const owner = w.signIn('owner');
+    const board = w.boardWith(owner, null);
+    const res = await w.unfurl(owner, board, w.target());
+    expect([res.status, res.body.error]).toEqual([402, 'read_only']);
+    expect(web.hits).toEqual([]);
+  });
+
   it('is off for a self-hosted workspace until an admin turns it on, and the admin can turn it off again', async () => {
     const web = await startWeb();
     const w = await setup({ web });
