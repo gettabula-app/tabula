@@ -9,6 +9,11 @@
 import { HOSTED_UPLOAD_LIMIT_BYTES, isPending } from './images';
 
 export const BLOB_CACHE_BYTES = 200 * 1024 * 1024;
+/** A read marks the picture as used at most this often. */
+const USE_MARK_MS = 60 * 60 * 1000;
+/** The cache is checked against its cap after this many bytes or puts: listing it reads every picture, so not on each put. */
+const EVICT_EVERY_BYTES = 20 * 1024 * 1024;
+const EVICT_EVERY_PUTS = 20;
 
 export interface BlobRecord {
   key: string;
@@ -88,8 +93,86 @@ export class StorageError extends Error {
   }
 }
 
-/** IndexedDB, opened lazily. Every call resolves (a failure to open acts as an empty, unwritable store) so images still show. */
+/** What IndexedDB holds for a blob: the bytes and their type, not a Blob (WebKit with private or non-persistent storage rejects a Blob). */
+interface StoredBlobRecord extends Omit<BlobRecord, 'blob'> {
+  blob?: Blob;
+  data?: ArrayBuffer;
+  type?: string;
+}
+
+export async function toStored(rec: BlobRecord): Promise<StoredBlobRecord> {
+  const { blob, ...rest } = rec;
+  return { ...rest, data: await blob.arrayBuffer(), type: blob.type };
+}
+
+/** Reads both shapes: records written as bytes, and the Blob records earlier versions left behind. */
+export function fromStored(rec: StoredBlobRecord): BlobRecord {
+  const { data, type, blob, ...rest } = rec;
+  return { ...rest, blob: data instanceof ArrayBuffer ? new Blob([data], { type: type ?? rest.mime }) : blob as Blob };
+}
+
+/**
+ * The backend with a safety net: a write the store refuses is kept in memory for this page's session, so adding an image does not
+ * depend on the browser's storage. Only a reload before the upload has finished loses such an image (the queue then says so). The
+ * browser's storage stays the first choice for everything.
+ */
+export function withMemoryFallback(inner: AssetBackend, warn: (error: unknown) => void = (e) => console.warn('Tabula: this browser would not store an image; keeping it in memory until it is uploaded', e)): AssetBackend {
+  const blobs = new Map<string, BlobRecord>();
+  const uploads = new Map<string, UploadRecord>();
+  return {
+    async getBlob(key) {
+      return (await inner.getBlob(key)) ?? blobs.get(key);
+    },
+    async putBlob(rec) {
+      try {
+        await inner.putBlob(rec);
+        blobs.delete(rec.key);
+      } catch (error) {
+        warn(error);
+        blobs.set(rec.key, rec);
+      }
+    },
+    async deleteBlob(key) {
+      blobs.delete(key);
+      await inner.deleteBlob(key);
+    },
+    async listBlobs() {
+      const stored = await inner.listBlobs();
+      const keys = new Set(stored.map((r) => r.key));
+      return [...stored, ...[...blobs.values()].filter((r) => !keys.has(r.key))];
+    },
+    async putUpload(rec) {
+      try {
+        await inner.putUpload(rec);
+        uploads.delete(rec.id);
+      } catch (error) {
+        warn(error);
+        uploads.set(rec.id, rec);
+      }
+    },
+    async deleteUpload(id) {
+      uploads.delete(id);
+      await inner.deleteUpload(id);
+    },
+    async listUploads() {
+      const stored = await inner.listUploads();
+      const ids = new Set(stored.map((r) => r.id));
+      return [...stored, ...[...uploads.values()].filter((r) => !ids.has(r.id))];
+    },
+    async clear() {
+      blobs.clear();
+      uploads.clear();
+      await inner.clear();
+    },
+  };
+}
+
+/** IndexedDB, opened lazily, with the in-memory safety net. Reads act as an empty store when it cannot be used, so images still show. */
 export function idbBackend(): AssetBackend {
+  return withMemoryFallback(rawIdbBackend());
+}
+
+function rawIdbBackend(): AssetBackend {
   let opened: Promise<IDBDatabase | null> | null = null;
   const open = () => (opened ??= new Promise<IDBDatabase | null>((resolve) => {
     if (typeof indexedDB === 'undefined') return resolve(null);
@@ -128,10 +211,16 @@ export function idbBackend(): AssetBackend {
     });
   };
   return {
-    getBlob: (k) => run<BlobRecord | undefined>('blobs', 'readonly', (s) => s.get(k), undefined),
-    putBlob: (r) => run<void>('blobs', 'readwrite', (s) => s.put(r), undefined, true),
+    getBlob: async (k) => {
+      const r = await run<StoredBlobRecord | undefined>('blobs', 'readonly', (s) => s.get(k), undefined);
+      return r ? fromStored(r) : undefined;
+    },
+    putBlob: async (r) => {
+      const stored = await toStored(r).catch((cause) => { throw new StorageError('The image could not be read for storing', cause); });
+      await run<void>('blobs', 'readwrite', (s) => s.put(stored), undefined, true);
+    },
     deleteBlob: (k) => run<void>('blobs', 'readwrite', (s) => s.delete(k), undefined),
-    listBlobs: () => run<BlobRecord[]>('blobs', 'readonly', (s) => s.getAll(), []),
+    listBlobs: async () => (await run<StoredBlobRecord[]>('blobs', 'readonly', (s) => s.getAll(), [])).map(fromStored),
     putUpload: (r) => run<void>('uploads', 'readwrite', (s) => s.put(r), undefined, true),
     deleteUpload: (id) => run<void>('uploads', 'readwrite', (s) => s.delete(id), undefined),
     listUploads: () => run<UploadRecord[]>('uploads', 'readonly', (s) => s.getAll(), []),
@@ -156,12 +245,18 @@ export function evictionPlan(records: Pick<BlobRecord, 'key' | 'at' | 'pending'>
 }
 
 /** The cache over a backend: put, get (which marks a use) and eviction. */
-export function createBlobCache(backend: AssetBackend, { cap = BLOB_CACHE_BYTES, now = Date.now, persist }: {
+export function createBlobCache(backend: AssetBackend, { cap = BLOB_CACHE_BYTES, now = Date.now, persist, useMarkMs = USE_MARK_MS, evictEveryBytes = EVICT_EVERY_BYTES, evictEveryPuts = EVICT_EVERY_PUTS }: {
   cap?: number;
   now?: () => number;
   persist?: () => Promise<boolean>;
+  /** How seldom a read marks a use (it rewrites the bytes), and how often puts check the cap (listing reads every picture). */
+  useMarkMs?: number;
+  evictEveryBytes?: number;
+  evictEveryPuts?: number;
 } = {}) {
   let persistRequested = false;
+  let putBytes = Infinity; // the first put of a page checks the cap
+  let puts = 0;
   const requestPersistence = persist ?? (async () => {
     try {
       if (typeof navigator === 'undefined' || !navigator.storage?.persist) return false;
@@ -174,8 +269,9 @@ export function createBlobCache(backend: AssetBackend, { cap = BLOB_CACHE_BYTES,
     backend,
     async get(key: string): Promise<BlobRecord | undefined> {
       const rec = await backend.getBlob(key);
-      // marking a use is a courtesy: a store that will not take it must not break reading
-      if (rec) void backend.putBlob({ ...rec, at: now() }).catch(() => undefined);
+      // marking a use is a courtesy, and it rewrites the bytes: once an hour is enough for eviction's oldest-first order, and a store
+      // that will not take it must not break reading
+      if (rec && now() - rec.at >= useMarkMs) void backend.putBlob({ ...rec, at: now() }).catch(() => undefined);
       return rec;
     },
     async put(rec: Omit<BlobRecord, 'at'>): Promise<void> {
@@ -184,6 +280,11 @@ export function createBlobCache(backend: AssetBackend, { cap = BLOB_CACHE_BYTES,
         void Promise.resolve().then(requestPersistence).catch(() => false);
       }
       await backend.putBlob({ ...rec, at: now() });
+      putBytes += rec.blob.size;
+      puts++;
+      if (putBytes < evictEveryBytes && puts < evictEveryPuts) return;
+      putBytes = 0;
+      puts = 0;
       try {
         const all = await backend.listBlobs();
         const drop = evictionPlan(all, new Map(all.map((r) => [r.key, r.blob.size])), cap);
