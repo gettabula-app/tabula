@@ -1011,7 +1011,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       });
       return [
         201,
-        { id: invite.id, url: `${config.baseUrl}/#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt },
+        { id: invite.id, url: `${config.baseUrl}/?invite=1#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt },
       ];
     }),
     compile('GET', 'teams/:id/invites', {}, ({ user, params }) => {

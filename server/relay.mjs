@@ -26,6 +26,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { loadConfig } from './config.mjs';
+import { ogKind, withOgTags } from './og-tags.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
@@ -1119,6 +1120,9 @@ function serveIcons(req, res, url) {
   else body.pipe(res);
 }
 
+// Only the pages a person opens get the tags; a request for a missing asset falls back to the same shell untouched.
+const isShellPath = (pathname) => !path.extname(pathname);
+
 function serveStatic(req, res, url) {
   if (!fs.existsSync(path.join(DIST, 'index.html'))) {
     res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' });
@@ -1139,6 +1143,15 @@ function serveStatic(req, res, url) {
     || url.pathname === '/b' || url.pathname.startsWith('/b/');
   if (appRoute || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
   const ext = path.extname(file);
+  if (file === path.join(DIST, 'index.html') && req.method !== 'HEAD' && isShellPath(url.pathname)) {
+    const html = withOgTags(fs.readFileSync(file, 'utf8'), ogKind(url.pathname, url.searchParams), config.baseUrlSet ? config.baseUrl : null, config.authEnabled);
+    const shell = Buffer.from(html);
+    const shellHeaders = { 'content-type': MIME['.html'], 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'content-security-policy': CSP, 'cache-control': 'no-cache', 'content-length': shell.length };
+    if (!ALLOW_FRAMING) shellHeaders['x-frame-options'] = 'DENY';
+    res.writeHead(200, shellHeaders);
+    res.end(shell);
+    return;
+  }
   const headers = {
     'content-type': MIME[ext] || 'application/octet-stream',
     'x-content-type-options': 'nosniff',
@@ -1148,7 +1161,7 @@ function serveStatic(req, res, url) {
     headers['content-security-policy'] = CSP;
     if (!ALLOW_FRAMING) headers['x-frame-options'] = 'DENY';
   }
-  headers['cache-control'] = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache';
+  headers['cache-control'] = rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : rel.startsWith('/og/') ? 'public, max-age=86400' : 'no-cache';
   res.writeHead(200, headers);
   fs.createReadStream(file).pipe(res);
 }
