@@ -10,7 +10,7 @@ import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
 import {
   ABUSE_CLOSE_MS, UPDATE_BURST, createConnectionCounter, createDocSizeGuard, createSyncFrameLimiter, createUpgradeLimiter,
-  loadSyncCaps, frameLimitFor, MAX_FRAME_BYTES_OTHER, MAX_FRAME_BYTES_OWNER,
+  loadSyncCaps, frameLimitFor, MAX_FRAME_BYTES_COMMENTS, MAX_FRAME_BYTES_OTHER, MAX_FRAME_BYTES_OWNER,
 } from '../server/sync-caps.mjs';
 
 describe('createSyncFrameLimiter', () => {
@@ -121,6 +121,8 @@ describe('loadSyncCaps and frameLimitFor', () => {
     expect(frameLimitFor(d, { role: 'editor' }, true)).toBe(MAX_FRAME_BYTES_OTHER);
     expect(frameLimitFor(d, { role: 'owner' }, true)).toBe(MAX_FRAME_BYTES_OWNER);
     expect(frameLimitFor(d, {}, false)).toBe(MAX_FRAME_BYTES_OWNER);
+    expect(frameLimitFor(d, { role: 'owner' }, true, 'comments')).toBe(MAX_FRAME_BYTES_COMMENTS);
+    expect(MAX_FRAME_BYTES_OTHER).toBeGreaterThanOrEqual(4 * 20.6 * 1024 * 1024);
   });
 });
 
@@ -278,17 +280,118 @@ describe('relay sync caps (accounts mode)', () => {
     await sleep(300);
     const again = connect('10.2.0.5');
     await opened(again);
-    // 12 upgrades a minute per address (this test's env): the 13th from one address is refused with 429 before the handshake.
-    const attempts: Promise<string>[] = [];
+    // 12 upgrades a minute per account (this test's env): later ones complete the handshake and are closed with 4429.
+    const attempts: Promise<number>[] = [];
     for (let i = 0; i < 14; i++) {
       attempts.push(new Promise((r) => {
         const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/capsboard`, { headers: { Origin: `http://127.0.0.1:${port}`, Cookie: cookie, 'x-forwarded-for': '10.9.9.9' } });
-        ws.on('unexpected-response', (_q, res) => r(String(res.statusCode)));
-        ws.on('close', () => r('closed'));
+        ws.on('close', (code) => r(code));
         ws.on('error', () => {});
       }));
     }
-    expect((await Promise.all(attempts)).filter((x) => x === '429').length).toBeGreaterThanOrEqual(2);
+    expect((await Promise.all(attempts)).filter((x) => x === 4429).length).toBeGreaterThanOrEqual(2);
     for (const s of [...socks, again]) s.terminate();
   });
+});
+
+describe('relay sync caps (classroom and big editor updates)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-caps-class-'));
+  let proc: ChildProcess;
+  let port = 0;
+  const OWNER = 'owner@example.com';
+  let ipSeq = 0;
+  const api = async (cookie: string | undefined, method: string, p: string, body?: unknown, extra: Record<string, string> = {}) => {
+    const res = await fetch(`http://127.0.0.1:${port}${p}`, {
+      method,
+      headers: { 'x-tabula': '1', ...(cookie ? { cookie } : {}), ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...extra },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await res.text();
+    return { status: res.status, body: text ? JSON.parse(text) : undefined, headers: res.headers };
+  };
+  const outbox = () => (fs.existsSync(path.join(dir, 'outbox.jsonl')) ? fs.readFileSync(path.join(dir, 'outbox.jsonl'), 'utf8') : '').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  async function signIn(email: string, invite?: string) {
+    const before = outbox().length;
+    const r = await api(undefined, 'POST', '/api/auth/request', { email, invite }, { 'x-forwarded-for': `10.7.${(ipSeq >> 8) & 255}.${ipSeq++ & 255}` });
+    expect(r.status).toBe(200);
+    const mail = outbox()[before];
+    const token = decodeURIComponent(/token=([^\s&]+)/.exec(mail.text)![1]);
+    const v = await api(undefined, 'POST', '/api/auth/verify', { token });
+    return { cookie: /tabula_session=[^;]+/.exec(v.headers.getSetCookie()[0])![0], user: v.body.user };
+  }
+  beforeAll(async () => {
+    const started = await startRelayProcess({
+      envFor: (p) => ({
+        ...(process.env as Record<string, string>), PORT: String(p), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'on',
+        TABULA_OWNER_EMAIL: OWNER, TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${p}`, TABULA_TRUST_PROXY: '1',
+      }),
+    });
+    port = started.port;
+    proc = started.proc;
+  });
+  afterAll(async () => {
+    if (proc && proc.exitCode === null) await new Promise<void>((r) => { proc.once('exit', () => r()); proc.kill('SIGTERM'); });
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const connect = (cookie: string, room: string) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/${room}`, { headers: { Origin: `http://127.0.0.1:${port}`, Cookie: cookie, 'x-forwarded-for': '10.50.0.1' } });
+    ws.binaryType = 'arraybuffer';
+    ws.on('error', () => {});
+    return ws;
+  };
+
+  it('accepts a ~21 MiB and a ~17 MiB update from an editor, and refuses a big frame in a comments room', async () => {
+    const owner = await signIn(OWNER);
+    expect((await api(owner.cookie, 'POST', '/api/boards', { id: 'bigboard' })).status).toBe(201);
+    const team = (await api(owner.cookie, 'POST', '/api/teams', { name: 'Big' })).body;
+    const invite = (await api(owner.cookie, 'POST', `/api/teams/${team.id}/invites`, { role: 'member' })).body.token;
+    const editor = await signIn('editor@example.com', invite);
+    expect((await api(owner.cookie, 'POST', '/api/boards/bigboard/shares', { principalType: 'user', principalId: editor.user.id, role: 'editor' })).status).toBeLessThan(300);
+
+    const watcher = connect(owner.cookie, 'bigboard');
+    const sender = connect(editor.cookie, 'bigboard');
+    const sizes: number[] = [];
+    watcher.on('message', (m: ArrayBuffer) => sizes.push(m.byteLength));
+    await Promise.all([watcher, sender].map((w) => new Promise((r) => w.once('message', r))));
+    sender.on('close', (code) => sizes.push(-code));
+    for (const mib of [21, 17]) {
+      sender.send(updateFrame((d) => d.getText(`t${mib}`).insert(0, 'x'.repeat(Math.floor(mib * 1024 * 1024)))));
+      for (let i = 0; i < 400 && !sizes.some((n) => n > (mib - 1) * 1024 * 1024); i++) await sleep(50);
+      expect(sizes.some((n) => n > (mib - 1) * 1024 * 1024)).toBe(true);
+    }
+    expect(sender.readyState).toBe(WebSocket.OPEN);
+    expect(sizes.filter((n) => n < 0)).toEqual([]);
+
+    const comments = connect(editor.cookie, 'bigboard~comments');
+    await new Promise((r) => comments.once('message', r));
+    const closed = closeOf(comments);
+    comments.send(updateFrame((d) => d.getText('c').insert(0, 'y'.repeat(2 * 1024 * 1024))));
+    expect((await closed).code).toBe(1009);
+    sender.terminate(); watcher.terminate();
+  }, 60_000);
+
+  it('lets 30 pupils with 2 tabs each on one address connect twice in a row without a refusal', async () => {
+    const owner = await signIn(OWNER);
+    const team = (await api(owner.cookie, 'POST', '/api/teams', { name: 'Class' })).body;
+    expect((await api(owner.cookie, 'POST', '/api/boards', { id: 'classboard' })).status).toBe(201);
+    expect((await api(owner.cookie, 'POST', '/api/boards/classboard/shares', { principalType: 'team', principalId: team.id, role: 'editor' })).status).toBeLessThan(300);
+    const pupils = [];
+    for (let i = 0; i < 30; i++) {
+      const invite = (await api(owner.cookie, 'POST', `/api/teams/${team.id}/invites`, { role: 'member' })).body.token;
+      pupils.push(await signIn(`pupil${i}@example.com`, invite));
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      const socks: WebSocket[] = [];
+      for (const p of pupils) for (let tab = 0; tab < 2; tab++) for (const room of ['classboard', 'classboard~comments']) socks.push(connect(p.cookie, room));
+      const results = await Promise.all(socks.map((ws) => new Promise<string>((r) => {
+        ws.once('message', () => r('open'));
+        ws.once('close', (code) => r(`closed ${code}`));
+        setTimeout(() => r('timeout'), 15_000);
+      })));
+      expect(results.filter((x) => x !== 'open')).toEqual([]);
+      for (const ws of socks) ws.terminate(); // the relay restart: everybody drops and comes back
+      await sleep(300);
+    }
+  }, 120_000);
 });

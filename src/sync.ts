@@ -143,6 +143,19 @@ export type DeniedReason = 'unauthenticated' | 'no_access' | 'not_found' | 'acce
 export const RETRY_BASE_MS = 30_000;
 export const RETRY_MAX_MS = 300_000;
 export const retryableReason = (reason: DeniedReason): boolean => reason === 'rate_limited' || reason === 'too_many_connections';
+/**
+ * A connection that fails or drops without a close code (1006: a refused handshake, a restarting relay, a proxy) is retried by
+ * y-websocket at 8 s at most, in step, for everyone. This is slower and spread out: 2 s doubling to 60 s, plus up to 50%
+ * random, so a class reloading after a relay restart does not come back in one wave. Two stable minutes reset it.
+ */
+export const HANDSHAKE_BACKOFF_BASE_MS = 2_000;
+export const HANDSHAKE_BACKOFF_MAX_MS = 60_000;
+export const HANDSHAKE_STABLE_MS = 120_000;
+export function handshakeBackoffMs(failures: number, rand: () => number = Math.random): number {
+  const base = Math.min(HANDSHAKE_BACKOFF_MAX_MS, HANDSHAKE_BACKOFF_BASE_MS * 2 ** Math.max(0, Math.min(failures, 20)));
+  return Math.min(HANDSHAKE_BACKOFF_MAX_MS, Math.round(base * (1 + 0.5 * rand())));
+}
+
 /** Wait before the nth (0-based) automatic retry. */
 export const retryDelayMs = (attempt: number): number => Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.max(0, attempt));
 
@@ -415,6 +428,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     destroy: () => {
       clearTimeout(retryTimer);
       clearTimeout(stableTimer);
+      for (const st of handshake.values()) { clearTimeout(st.timer); clearTimeout(st.stable); }
       provider?.destroy();
       awareness.destroy();
       idb.destroy();
@@ -454,6 +468,26 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
 
   const hinted = () => hintListeners.forEach((l) => l());
 
+  // Close code 1006 (no code from the relay) on either room: reconnect with jittered exponential back-off instead of
+  // y-websocket's own short, unjittered one. Local data is untouched.
+  const handshake = new Map<WebsocketProvider, { failures: number; timer: number; stable: number }>();
+  const guardHandshake = (p: WebsocketProvider) => {
+    const st = { failures: 0, timer: 0, stable: 0 };
+    handshake.set(p, st);
+    p.on('connection-close', (event: CloseEvent | null) => {
+      clearTimeout(st.stable);
+      if (conn.denied || !event || event.code !== 1006 || !p.shouldConnect) return;
+      const wait = handshakeBackoffMs(st.failures++);
+      p.disconnect();
+      clearTimeout(st.timer);
+      st.timer = window.setTimeout(() => { if (!conn.denied) p.connect(); }, wait);
+    });
+    p.on('status', ({ status }: { status: string }) => {
+      clearTimeout(st.stable);
+      if (status === 'connected' && st.failures > 0) st.stable = window.setTimeout(() => { st.failures = 0; }, HANDSHAKE_STABLE_MS);
+    });
+  };
+
   if (url) {
     provider = new WebsocketProvider(url, id, doc, { maxBackoffTime: 8000 });
     awareness = provider.awareness;
@@ -466,6 +500,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
       if (status === 'connected' && retries > 0) stableTimer = window.setTimeout(() => { retries = 0; }, 120_000);
     });
     provider.on('connection-close', onClose);
+    guardHandshake(provider);
     onWorkspaceHint(provider, hinted);
     // registered even with no listener yet, so an app that does not draw runs does not log every message as unknown
     onAiRuns(provider, (message) => aiRunListeners.forEach((l) => l(message)));
@@ -477,6 +512,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     commentsProvider = new WebsocketProvider(url, commentsRoom(id), cdoc, { maxBackoffTime: 8000 });
     commentsProvider.awareness.setLocalState(null);
     commentsProvider.on('connection-close', onClose);
+    guardHandshake(commentsProvider);
     onWorkspaceHint(commentsProvider, hinted);
     onCommentNotice(commentsProvider, (undone) => noticeListeners.forEach((l) => l(undone)));
   } else {

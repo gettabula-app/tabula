@@ -9,17 +9,18 @@ const MiB = 1024 * 1024;
 // --- frame size (Room.onMessage, before anything is decoded or applied) ---
 // The WebSocket maxPayload is the owner limit. Images are board assets, not document content, so a legitimate update is
 // small. Measured (docs/capacity.md): a 5,000-object board with 200-character texts encodes to 2.4 MiB, a drawing-heavy one
-// (2,000 objects plus 2,000 strokes of 500 points) to 16.5 MiB. Sync step 2 of a board created offline is its whole state
-// in one frame, so owners keep 4x the heaviest board measured; editors and commenters (a reconnect sends only a diff) get
-// 16 MiB, more than 6x the large ordinary board.
-export const MAX_FRAME_BYTES_OWNER = 64 * MiB;
-export const MAX_FRAME_BYTES_OTHER = 16 * MiB;
+// to 16.5 MiB, 5,000 objects at 4,000 characters to 20.6 MiB. An import or a history restore is ONE transaction, hence one
+// frame, for an editor too, so editors get more than 4x the largest measured (96 MiB) and owners and open mode 128 MiB.
+export const MAX_FRAME_BYTES_OWNER = 128 * MiB;
+export const MAX_FRAME_BYTES_OTHER = 96 * MiB;
+// Comments rooms hold short threads; nobody needs a big frame there, whatever the role.
+export const MAX_FRAME_BYTES_COMMENTS = 1 * MiB;
 export const CLOSE_FRAME_TOO_BIG = 1009; // the standard "message too big" code
 
 // --- document size (checked on the encoded state, see createDocSizeGuard) ---
-// A very large board is a few MiB encoded and the heaviest measured one 16.5 MiB; 128 MiB leaves 7x over that. TABULA_SYNC_MAX_DOC_BYTES
+// A very large board is a few MiB encoded and the heaviest measured one 16.5 MiB; 256 MiB leaves 15x over that. TABULA_SYNC_MAX_DOC_BYTES
 // overrides it (bytes, or a K/M/G suffix; 0 turns the cap off).
-export const DEFAULT_MAX_DOC_BYTES = 128 * MiB;
+export const DEFAULT_MAX_DOC_BYTES = 256 * MiB;
 // The encoded size is measured again only after this much update traffic has been accepted since the last measurement.
 export const DOC_RECHECK_BYTES = 1 * MiB;
 // A room over its cap still takes small frames (deleting content to get back under, typing) and refuses bigger ones.
@@ -45,7 +46,11 @@ export const MAX_SOCKETS_PER_USER = 40;
 // Guests and open mode count per client address; schools share one address, so this is wider.
 export const MAX_SOCKETS_PER_ADDRESS = 400;
 export const CLOSE_TOO_MANY_SOCKETS = 4430; // reason 'too_many_connections'
-export const UPGRADES_PER_ADDRESS_PER_MINUTE = 120;
+// Per signed-in account (or guest), after authentication: two rooms times several tabs, plus reconnects.
+export const UPGRADES_PER_ACCOUNT_PER_MINUTE = 120;
+// Per client address, only for sockets with no session (and open mode, which has none): wide, because a whole class
+// behind one NAT reloads together after a relay restart.
+export const UPGRADES_PER_ADDRESS_PER_MINUTE = 600;
 export const UPGRADE_WINDOW_MS = 60_000;
 // Bounds for the in-memory maps; when exceeded, idle entries are swept first.
 export const MAX_TRACKED_KEYS = 10_000;
@@ -69,15 +74,18 @@ export function loadSyncCaps(env = process.env) {
   return {
     maxFrameOwner: bytes('TABULA_SYNC_MAX_FRAME_OWNER', MAX_FRAME_BYTES_OWNER),
     maxFrameOther: bytes('TABULA_SYNC_MAX_FRAME_OTHER', MAX_FRAME_BYTES_OTHER),
+    maxFrameComments: bytes('TABULA_SYNC_MAX_FRAME_COMMENTS', MAX_FRAME_BYTES_COMMENTS),
     maxDocBytes: bytes('TABULA_SYNC_MAX_DOC_BYTES', DEFAULT_MAX_DOC_BYTES, { allowZero: true }),
     maxSocketsPerUser: count('TABULA_SYNC_MAX_SOCKETS_PER_USER', MAX_SOCKETS_PER_USER),
     maxSocketsPerAddress: count('TABULA_SYNC_MAX_SOCKETS_PER_ADDRESS', MAX_SOCKETS_PER_ADDRESS),
-    upgradesPerMinute: count('TABULA_SYNC_UPGRADES_PER_MINUTE', UPGRADES_PER_ADDRESS_PER_MINUTE),
+    upgradesPerMinute: count('TABULA_SYNC_UPGRADES_PER_MINUTE', UPGRADES_PER_ACCOUNT_PER_MINUTE),
+    upgradesPerAddressPerMinute: count('TABULA_SYNC_UPGRADES_PER_ADDRESS_PER_MINUTE', UPGRADES_PER_ADDRESS_PER_MINUTE),
   };
 }
 
-/** The frame limit for a socket: owners (and open mode, which has no roles) get the large one. */
-export const frameLimitFor = (caps, ws, authEnabled) => (!authEnabled || ws.role === 'owner' ? caps.maxFrameOwner : caps.maxFrameOther);
+/** The frame limit for a socket: comments rooms are small; owners (and open mode, which has no roles) get the large board limit. */
+export const frameLimitFor = (caps, ws, authEnabled, kind = 'board') => (kind === 'comments' ? caps.maxFrameComments
+  : !authEnabled || ws.role === 'owner' ? caps.maxFrameOwner : caps.maxFrameOther);
 
 function bucket(burst, perSecond, now) {
   let tokens = burst;
@@ -140,7 +148,7 @@ export function createConnectionCounter(max) {
 }
 
 /** Upgrades per key in a fixed window. allow() is false once the window's count is used; the map is swept when large. */
-export function createUpgradeLimiter({ max = UPGRADES_PER_ADDRESS_PER_MINUTE, windowMs = UPGRADE_WINDOW_MS, now = Date.now, maxKeys = MAX_TRACKED_KEYS } = {}) {
+export function createUpgradeLimiter({ max = UPGRADES_PER_ACCOUNT_PER_MINUTE, windowMs = UPGRADE_WINDOW_MS, now = Date.now, maxKeys = MAX_TRACKED_KEYS } = {}) {
   const windows = new Map();
   const sweep = (t) => {
     for (const [k, w] of windows) if (t < w.startedAt || t - w.startedAt >= windowMs) windows.delete(k);

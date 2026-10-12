@@ -497,7 +497,8 @@ const clientIp = (req) => clientRateKeyOf(req, config);
 const syncCaps = loadSyncCaps(process.env);
 const syncUserSockets = createConnectionCounter(syncCaps.maxSocketsPerUser);
 const syncAddressSockets = createConnectionCounter(syncCaps.maxSocketsPerAddress);
-const syncUpgrades = createUpgradeLimiter({ max: syncCaps.upgradesPerMinute });
+const syncAccountUpgrades = createUpgradeLimiter({ max: syncCaps.upgradesPerMinute });
+const syncAddressUpgrades = createUpgradeLimiter({ max: syncCaps.upgradesPerAddressPerMinute });
 const assets = config.assets
   ? (() => {
       const dir = path.join(DATA_DIR, 'assets');
@@ -969,7 +970,7 @@ class Room {
   // (the socket may already have been closed).
   admitFrame(ws, data) {
     const bytes = data.byteLength ?? data.length ?? 0;
-    if (bytes > frameLimitFor(syncCaps, ws, config.authEnabled)) {
+    if (bytes > frameLimitFor(syncCaps, ws, config.authEnabled, this.kind)) {
       log(`room ${this.name}: frame of ${bytes} bytes refused, socket closed`);
       ws.close(CLOSE_FRAME_TOO_BIG, 'message_too_big');
       return false;
@@ -1561,7 +1562,7 @@ async function onRequest(req, res) {
 
 const sourceGate = createSourceGate(config.sourcePolicy, { log });
 const server = http.createServer(onRequest);
-const wss = new WebSocketServer({ noServer: true, maxPayload: Math.max(syncCaps.maxFrameOwner, syncCaps.maxFrameOther) });
+const wss = new WebSocketServer({ noServer: true, maxPayload: Math.max(syncCaps.maxFrameOwner, syncCaps.maxFrameOther, syncCaps.maxFrameComments) });
 // The /chat socket (docs/chat.md): small JSON frames only, so a much smaller limit than the Yjs rooms.
 const chatWss = chatHub ? new WebSocketServer({ noServer: true, maxPayload: (await import('./chat-hub.mjs')).MAX_CLIENT_FRAME }) : null;
 
@@ -1737,13 +1738,6 @@ server.on('upgrade', (req, socket, head) => {
     pathname = null;
   }
   const upgradeAddress = clientIp(req);
-  if (pathname !== '/chat' && !syncUpgrades.allow(upgradeAddress)) {
-    log('sync: too many upgrades from one address');
-    socket.on('error', () => socket.destroy());
-    socket.write('HTTP/1.1 429 Too Many Requests\r\nRetry-After: 60\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
-    socket.destroy();
-    return;
-  }
   if (pathname === '/chat') {
     if (!chatWss) {
       socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
@@ -1777,10 +1771,23 @@ server.on('upgrade', (req, socket, head) => {
     name = null;
   }
   const parsed = parseRoom(name);
-  if (!parsed) {
+  if (!parsed || req.method !== 'GET') {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
     socket.destroy();
     return;
+  }
+  // Charged only now, after the route is known to be a sync room. Over the limit the handshake still completes and the
+  // socket is closed with 4429, so the browser sees a close code (and backs off) instead of a bare 1006.
+  // Accounts mode counts per account (cookie known before the handshake), and per address only for sockets with no session.
+  let upgradeAllowed = true;
+  {
+    let upgradeSession = null;
+    if (config.authEnabled) {
+      try { upgradeSession = auth.authenticate(req.headers.cookie); } catch { upgradeSession = null; }
+    }
+    upgradeAllowed = upgradeSession
+      ? syncAccountUpgrades.allow(upgradeSession.user.id)
+      : syncAddressUpgrades.allow(upgradeAddress);
   }
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.binaryType = 'arraybuffer';
@@ -1790,6 +1797,11 @@ server.on('upgrade', (req, socket, head) => {
 
     if (maintenance) {
       ws.close(CLOSE_RESTORING, 'restoring');
+      return;
+    }
+    if (!upgradeAllowed) {
+      log('sync: too many upgrades from one account or address');
+      ws.close(CLOSE_RATE_LIMITED, 'rate_limited');
       return;
     }
 

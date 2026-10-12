@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { deniedReason, denyOnce, retryableReason, retryDelayMs, RETRY_BASE_MS, RETRY_MAX_MS, type DeniedReason } from '../src/sync';
+import { deniedReason, denyOnce, retryableReason, retryDelayMs, handshakeBackoffMs, HANDSHAKE_BACKOFF_MAX_MS, RETRY_BASE_MS, RETRY_MAX_MS, type DeniedReason } from '../src/sync';
 
 describe('deniedReason', () => {
   it.each([
@@ -78,5 +78,19 @@ describe('the relay sync limits on the client', () => {
     expect(retryableReason('too_large')).toBe(false);
     expect(retryableReason('access_removed')).toBe(false);
     expect([0, 1, 2, 3, 4, 10].map(retryDelayMs)).toEqual([RETRY_BASE_MS, 60_000, 120_000, 240_000, RETRY_MAX_MS, RETRY_MAX_MS]);
+  });
+});
+
+describe('handshakeBackoffMs', () => {
+  it('starts at 2 s, doubles to 60 s and spreads each wait over up to 50% more', () => {
+    expect(handshakeBackoffMs(0, () => 0)).toBe(2000);
+    expect(handshakeBackoffMs(0, () => 1)).toBe(3000);
+    expect(handshakeBackoffMs(1, () => 0)).toBe(4000);
+    expect(handshakeBackoffMs(3, () => 0)).toBe(16000);
+    for (const n of [5, 6, 10, 50]) {
+      expect(handshakeBackoffMs(n, () => 0)).toBeLessThanOrEqual(HANDSHAKE_BACKOFF_MAX_MS);
+      expect(handshakeBackoffMs(n, () => 1)).toBe(HANDSHAKE_BACKOFF_MAX_MS);
+    }
+    expect(new Set(Array.from({ length: 20 }, () => handshakeBackoffMs(2))).size).toBeGreaterThan(5);
   });
 });
