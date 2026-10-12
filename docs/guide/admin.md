@@ -131,7 +131,7 @@ The audit log has a **Chat** filter. It shows changes to these settings, message
 
 The **Backups** section is for the workspace owner. Backups are copies of everything in the workspace, stored away from the server and encrypted before they leave it. Here you see how they are going and bring back one board or the whole workspace.
 
-It is listed for every owner. When backups are off it says **Not set up**. On a server you run yourself it links to this page: turn backups on with the settings below, then restart the server.
+Only owners see the **Backups** tab. It sits between **Chat** and **Settings**. Admins who are not owners do not see it, and its address shows them the **Overview**. When backups are off it says **Not set up**. On a server you run yourself it links to this page: turn backups on with the settings below, then restart the server.
 
 ### Turn backups on
 
@@ -159,7 +159,7 @@ Below that is the list, newest first. Each row has the time (UTC, and how long a
 - **Protected until** a date: the backup cannot be deleted by the normal clean-up until then. A backup you restore, and the safety backup made before a whole restore, are protected for 7 days.
 - **Unreadable** and the reason: the backup is grey and cannot be opened, for example because it was sealed with a key this server does not have, or because it failed its integrity check.
 
-The list shows at most 200 backups. Select **Details** on a row to open that backup.
+The list shows at most 200 backups. Select **Details** on a row to open that backup. Use **Back to the backup** to return from the screens below.
 
 ### One backup
 
@@ -170,9 +170,9 @@ The backup opens in place. It shows when it was made, the version of Tabula, how
 
 ### Restore a board as a copy
 
-Search the boards of the backup by title or team, pick one and select **Make a copy**. The new board is named **Restored:** and the old title and the date, you own it, and it starts without version history. The board you have now is not touched. A link to the new board appears when the copy is ready.
+Search the boards of the backup by title or team (only the 500 boards edited most recently are listed), pick one and select **Make a copy**. The new board is named **Restored:** and the old title and the date, you own it, and it starts without version history. The board you have now is not touched. A link to the new board appears when the copy is ready.
 
-The copy goes into the board's original team if that team still exists and you are in it. Otherwise it goes to your personal space and the page says so. You can make more copies from the same backup. If a hosted workspace is read-only, the button is off and says why.
+The copy goes into the board's original team if that team still exists and you are in it. Otherwise it goes to your personal space and the page says so. A board with no saved content in the backup cannot be copied. You can make more copies from the same backup. If a hosted workspace is read-only, the button is off and says why.
 
 ### Restore the whole workspace
 
@@ -190,45 +190,9 @@ When the server accepts it, the whole window shows **Restoring…**. The page ch
 
 If something fails before the swap, nothing changes and the page says why in plain words, for example that there is not enough disk space or that the safety backup failed. If the whole workspace cannot be restored, the server starts again on the data it had before.
 
-![The Backups tab with the status block and the list of backups, one protected and two unreadable](images/admin-backups.png)
-
-## Backups
-
-Only owners see the **Backups** tab. It sits between **AI** and the audit log. Admins who are not owners do not see it, and its address shows them the **Overview**.
-
-If backups are not turned on, the tab says **Not set up**. On your own server it points to the setup steps and the person who runs the server.
-
-When backups are on, the tab shows:
-
-- **Status**: when the last backup ran and whether it worked, how many failed in a row, when the next one is due, how often they run, the key's short ID and the size stored. One sentence says what happened to the last restore.
-- **All backups**: newest first, with the time, the number of files, the size and the key. A backup shows **Protected** with a date while it cannot be removed, for example after a restore. A backup the server cannot read is greyed with the reason and cannot be opened. Only the newest backups are listed.
-
-Select a backup to see its details: the app version, the counts, the key, the free disk space, and how long the current data would be kept after a restore. Use **Back to the backup** to return from the screens below.
-
-### Restore a board as a copy
-
-Use this to get one board back without touching anything else.
-
-1. Open a backup and find the board under **Boards in this backup**. Use **Search the boards of this backup** to filter. Only the 500 boards edited most recently are listed.
-2. Pick the board, then select **Make a copy**.
-3. A message says **The copy is ready** with a link to the new board.
-
-The copy is a new board named **Restored: <title> <date>**. The live board is not changed. The copy goes to the board's original team if it still exists and you are in it. Otherwise it goes to your personal space, and the message says so. The copy has no version history. A board with no saved content in the backup cannot be copied. On a hosted workspace that is read-only, **Make a copy** is off and says why.
-
-### Restore the whole workspace
-
-Use this only to go back to an earlier state of everything: people, teams, boards, history and settings.
-
-1. Open a backup and select **Restore the whole workspace**.
-2. Read **What will happen**. A safety backup of the current data is made first, and if it fails nothing changes. The workspace is unavailable for about a minute while the server restarts, and everyone is signed out. The current data is moved aside, not deleted, and kept for the time shown.
-3. Type the word shown to confirm (`RESTORE`). **Restore this backup** stays off until you type it exactly, and while there is not enough disk space.
-4. Select **Restore this backup**. The window shows **Restoring…** and reloads when the workspace is back. If it takes longer than expected, the screen says so and offers **Check again**.
-
-Anyone with a board open sees **Restoring…** in the status chip and the board reloads when the workspace is back. Everyone signs in again afterwards.
-
 > Do a practice restore before you need one. A backup you have never restored is not proven.
 
-<!-- screenshot: Backups tab with the status and the list of backups -->
+![The Backups tab with the status block and the list of backups, one protected and two unreadable](images/admin-backups.png)
 
 ## Privacy
 
