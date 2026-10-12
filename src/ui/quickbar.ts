@@ -380,7 +380,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
 
     const text: HTMLElement[] = [];
     if (styleSel.some(HAS_TEXT)) {
-      text.push(menu('text', 'Text', () => {
+      text.push(menu('text', 'Text style', () => {
         const s = styleOf(app.selectedLeaves()[0]);
         const parts: HTMLElement[] = [field('Align', segmented<Align>([
           { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },

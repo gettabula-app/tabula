@@ -62,14 +62,14 @@ describe('dialog()', () => {
   it('starts on its Close button when it has no field or main button', () => {
     page();
     const d = dialog('Icon credits', h('p', null, 'Credits'));
-    expect(active()).toBe(need(d.box as unknown as FakeElement, 'button[aria-label="Close"]'));
+    expect(active()).toBe(need(d.box as unknown as FakeElement, 'button[data-tip="Close"]'));
   });
 
   it('wraps Tab at the last control and Shift+Tab at the first', () => {
     page();
     const d = dialog('Pick', h('div', null, h('input', { 'aria-label': 'A' })), [{ label: 'Cancel' }, { label: 'OK', primary: true }]);
     const box = d.box as unknown as FakeElement;
-    const close = need(box, 'button[aria-label="Close"]');
+    const close = need(box, 'button[data-tip="Close"]');
     const ok = box.querySelectorAll('button').find((b) => b.textContent === 'OK')!;
     ok.focus();
     expect(press('Tab').defaultPrevented).toBe(true);

@@ -363,7 +363,7 @@ const SHOTS = {
     const W = 1100, H = 640;
     const { context, page } = await shapesBoard(browser, open.base, { width: W, height: H, at: [120, 400] });
     await page.evaluate(() => window.__board.setSelection(['docs-ellipse']));
-    await page.locator('.quickbar').getByRole('button', { name: 'Text', exact: true }).click();
+    await page.locator('.quickbar').getByRole('button', { name: 'Text style', exact: true }).click();
     const pop = page.getByText('Text colour', { exact: true });
     await pop.waitFor();
     const panel = page.locator('.popover, .qb-pop, [role="dialog"]').filter({ has: pop }).last();
