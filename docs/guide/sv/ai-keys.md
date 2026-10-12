@@ -2,7 +2,7 @@
 
 **Your AI key** (Din AI-nyckel) låter dig spara en egen API-nyckel i Tabula: en Anthropic-nyckel eller en nyckel för valfri tjänst som använder OpenAI API (NVIDIA:s katalog, OpenAI, OpenRouter eller en egen modellserver). När personliga nycklar är tillåtna använder AI din nyckel i första hand, framför arbetsytans nyckel.
 
-> AI kan använda en nyckel för arbetsytan eller din nyckel om en admin tillåter personliga nycklar. AI måste också vara aktiverat för dig. Tavlan visar AI-kontroller bara när en nyckel eller planens krediter är tillgängliga. Med en hostad plan med AI-krediter används krediterna för körningar utan nyckel; **Admin → AI** (Administration → AI) visar det innan en nyckel för arbetsytan läggs till, och en nyckel som du eller arbetsytan har sparat används alltid först.
+> AI kan använda en nyckel för arbetsytan eller din nyckel om en admin tillåter personliga nycklar. AI måste också vara aktiverat för dig. Tavlan visar AI-kontroller bara när en nyckel är tillgänglig. En nyckel som du eller arbetsytan har sparat används alltid först.
 
 ## När du ser den
 

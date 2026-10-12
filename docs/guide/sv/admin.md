@@ -81,7 +81,7 @@ Aktiva [personliga åtkomsttoken](ai-tools.md) för AI-verktyg i hela arbetsytan
 
 Fliken **AI** (Artificiell intelligens) aktiverar AI-funktioner för arbetsytan och ställer in vad de använder: funktionerna, modellen, om personer får använda egna nycklar, om gäster ingår, timgränserna och arbetsytans nyckel. Till skillnad från **Access tokens** (Åtkomsttoken) visas fliken **AI** alltid i en arbetsyta med inloggning, även om servern ännu inte kan lagra nycklar.
 
-När du aktiverar AI och väljer funktioner blir de tillgängliga för personer som kan redigera en tavla, så länge det finns en användbar nyckel (arbetsytans nyckel, en personlig nyckel där du tillåter sådana, eller planens krediter i en hostad arbetsyta). Utan nyckel visas inte AI-knappen. Se [AI-fältet](ai-bar.md) för vad personer ser.
+När du aktiverar AI och väljer funktioner blir de tillgängliga för personer som kan redigera en tavla, så länge det finns en användbar nyckel (arbetsytans nyckel eller en personlig nyckel där du tillåter sådana). Utan nyckel visas inte AI-knappen. Se [AI-fältet](ai-bar.md) för vad personer ser.
 
 Fliken har följande inställningar. Som standard är allt avstängt, alla funktioner är valda, personliga nycklar är avstängda, gäster tillåts och gränserna är 20 körningar per person och 200 per arbetsyta varje timme.
 

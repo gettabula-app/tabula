@@ -1,6 +1,6 @@
 # AI-verktygsfältet
 
-I AI-verktygsfältet ber du AI att arbeta med tavlan: sammanfatta den, gruppera lappar eller skapa idéer. Fältet visas när AI är aktiverat för dig och du har en arbetsytenyckel, en tillåten personlig nyckel eller AI-krediter via ditt abonnemang. I en hostad arbetsyta vars abonnemang innehåller AI-krediter används krediterna när en körning saknar nyckel. Då står det **Uses AI credits** (Använder AI-krediter) i fältet, och det talar om vad du ska göra när krediterna eller en begärandegräns stoppar körningen. En sparad personlig nyckel eller arbetsytenyckel används alltid först.
+I AI-verktygsfältet ber du AI att arbeta med tavlan: sammanfatta den, gruppera lappar eller skapa idéer. Fältet visas när AI är aktiverat för dig och du har en arbetsytenyckel, en tillåten personlig nyckel. En sparad personlig nyckel eller arbetsytenyckel används alltid först.
 
 Om AI inte kan köras för dig visas inget AI-verktygsfält, ingen knapp, genväg eller menypost på tavlan. Arbetsytans ägare och administratörer konfigurerar AI under **Admin** (Administratör) → **AI** (Artificiell intelligens). Läsare och kommentatörer ser inte fältet, eftersom de inte kan lägga till det som AI föreslår. Se [Din AI-nyckel](ai-keys.md).
 
