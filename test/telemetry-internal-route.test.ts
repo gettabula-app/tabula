@@ -319,6 +319,36 @@ describe('capture timing', () => {
   });
 });
 
+describe('a workspace id the report schema does not accept', () => {
+  it('logs one warning per process (never the id), tells the Privacy preview, and still builds nothing for the control plane', async () => {
+    const lines: string[] = [];
+    let at = 1_800_000_000_000 - (1_800_000_000_000 % HOUR) + HOUR - 5_000;
+    const w = await setup({ env: { TABULA_CLOUD_WORKSPACE_ID: 'qa-ws' }, now: () => at, log: (line: string) => lines.push(line) });
+    const owner = w.signIn('owner');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('TABULA_CLOUD_WORKSPACE_ID');
+    expect(lines[0]).not.toContain('qa-ws');
+    const preview = await w.call(owner, 'GET', '/api/admin/privacy/preview');
+    await w.call(owner, 'GET', '/api/admin/privacy/preview');
+    expect([preview.body.problem, preview.body.preview]).toEqual(['workspace_id', null]);
+    w.api.telemetryTick();
+    at += HOUR;
+    expect((await w.pull()).status).toBe(503);
+    expect(lines).toHaveLength(1);
+  });
+
+  it('says nothing when the id is valid, or when collection is forced off', async () => {
+    const good: string[] = [];
+    const a = await setup({ log: (line: string) => good.push(line) });
+    const preview = await a.call(a.signIn('owner'), 'GET', '/api/admin/privacy/preview');
+    expect(preview.body.problem).toBeUndefined();
+    expect(good).toEqual([]);
+    const off: string[] = [];
+    await setup({ env: { TABULA_CLOUD_WORKSPACE_ID: 'qa-ws', TABULA_TELEMETRY: 'off' }, log: (line: string) => off.push(line) });
+    expect(off).toEqual([]);
+  });
+});
+
 describe('the release label', () => {
   it.each([['5.3.1', 'v5.3.1'], ['v5.3.1', 'v5.3.1'], ['2026.10.09-1', 'v2026.10.09'], ['2026.10.09', 'v2026.10.09'], ['1.2', 'v1.2'], ['abc1234', 'abc1234'], ['0123456789ab', '0123456789ab'], ['weird label', 'v0.1.0'], ['', 'v0.1.0']])('writes %s as %s', (label, expected) => {
     expect(appVersionLabel(label)).toBe(expected);

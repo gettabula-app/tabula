@@ -11,7 +11,7 @@ import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mj
 import { createMailer } from './mailer.mjs';
 import { createTelemetryCollector } from './telemetry/collector.mjs';
 import { createDataBytes } from './telemetry/data-bytes.mjs';
-import { analyticsChoice, appVersionLabel, dropFeatureSeries } from './telemetry/report.mjs';
+import { analyticsChoice, appVersionLabel, dropFeatureSeries, workspaceIdValid } from './telemetry/report.mjs';
 import {
   MAX_TEMPLATES_PER_OWNER, TEMPLATE_BODY_LIMIT, TemplateInputError, copyName, parseTemplateBody,
 } from './templates.mjs';
@@ -296,6 +296,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const telemetryCollectionEnabled = () => telemetryConfig.forced === 'off'
     ? false
     : Boolean(hostedWorkspaceId()) || telemetryEnabled();
+
+  // A workspace id outside the report schema's pattern makes the scrubber reject every report, so none is ever built. Say so once
+  // (the id itself is not logged) and in the Privacy preview, instead of leaving a route that answers 503 for ever.
+  const telemetryIdProblem = hostedWorkspaceId() !== null && !workspaceIdValid(hostedWorkspaceId());
+  if (telemetryIdProblem && telemetryCollectionEnabled()) {
+    log('api: TABULA_CLOUD_WORKSPACE_ID does not fit the telemetry report schema (ws_ followed by 8 to 64 letters, digits, - or _): no telemetry report can be built for this workspace');
+  }
 
   eventLoopDelay = telemetryCollectionEnabled() ? monitorEventLoopDelay({ resolution: 20 }) : null;
   eventLoopDelay?.enable();
@@ -835,7 +842,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       await dataBytesOnDisk.ready();
       collectTelemetryGauges();
       const result = telemetryCollector.snapshot();
-      return [200, { preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: cloud ? 'Collected by Tabula once an hour, as shown' : 'Nothing has been sent' }];
+      return [200, { ...(telemetryIdProblem ? { problem: 'workspace_id' } : {}), preview: result.clean, builtAt: telemetryCollector.lastBuiltAt, note: cloud ? 'Collected by Tabula once an hour, as shown' : 'Nothing has been sent' }];
     }),
     compile('PUT', 'admin/privacy', { body: true, readOnlyOk: true }, ({ user, body }) => {
       requireOwner(user);

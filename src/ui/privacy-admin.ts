@@ -176,6 +176,8 @@ export function privacyAdminPanel(me: Me): HTMLElement {
         ? h('div', { class: 'admin-state admin-error', role: 'alert' },
           h('span', null, PRIVACY_COPY.previewFailed),
           h('button', { class: 'btn', type: 'button', 'data-focus': 'preview', onclick: loadPreview }, PRIVACY_COPY.retry))
+        : previewReply?.problem === 'workspace_id'
+          ? h('p', { class: 'privacy-note', role: 'status' }, PRIVACY_COPY.workspaceIdInvalid)
         : previewReply?.preview === null
           ? h('p', { class: 'privacy-note', role: 'status' }, privacyNoReport(saved.mode))
           : previewReply

@@ -278,6 +278,17 @@ describe('Admin Privacy', () => {
     expect(panel().querySelector('[data-focus=copy]')).toBeNull();
   });
 
+  it('says plainly that the workspace id is not valid for telemetry when no report can be built', async () => {
+    preview = { preview: null, problem: 'workspace_id', builtAt: Date.UTC(2026, 9, 12, 9, 0), note: 'Collected by Tabula once an hour, as shown' };
+    renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
+    await flush();
+    previewButton().click();
+    await flush();
+    expect(textOf(panel())).toContain(PRIVACY_COPY.workspaceIdInvalid);
+    expect(textOf(panel())).not.toContain(PRIVACY_COPY.noSentHosted);
+    expect(panel().querySelector('.privacy-json')).toBeNull();
+  });
+
   it('can retry a failed preview request', async () => {
     failPreviews = 1;
     renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
