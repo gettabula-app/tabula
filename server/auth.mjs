@@ -88,7 +88,7 @@ export function csrfOk(req) {
   }
 }
 
-export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, log = (/** @type {string} */ _line) => {} }) {
+export function createAuth({ directory, config, mailer, now = Date.now, seatsAvailable = () => true, log = (/** @type {string} */ _line) => {}, notifications = /** @type {any} */ (null) }) {
   const allow = createLimiter(now, config.authIpLimit ?? DEFAULT_IP_LIMIT);
 
   const cookieFlags = `Path=/; HttpOnly; SameSite=Lax${config.secureCookies ? '; Secure' : ''}`;
@@ -168,11 +168,8 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
 
   /** @param {string} token @param {{ userAgent?: string | null }} [opts] */
   function verifyLogin(token, { userAgent = null } = {}) {
-    return verifyLoginInTransaction(token, userAgent);
-  }
-
-  function verifyLoginInTransaction(token, userAgent) {
-    return directory.transaction(() => {
+    let inviterToPing = null;
+    const result = directory.transaction(() => {
       const t = now();
       const consumed = directory.consumeLoginToken(token, t);
       if (!consumed) return null;
@@ -195,6 +192,11 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
         const current = directory.getTeamRole(invite.teamId, user.id);
         if (current === null || (current === 'member' && invite.role === 'admin')) {
           directory.addTeamMember(invite.teamId, user.id, invite.role);
+          // The inviter hears that someone joined (a new person joining through the link is the classroom case).
+          if (current === null && invite.createdBy && notifications) {
+            notifications.record({ userId: invite.createdBy, kind: 'team_joined', actorId: user.id, teamId: invite.teamId, ref: invite.id }, { notify: false });
+            inviterToPing = invite.createdBy;
+          }
         }
         // Check-and-increment in one statement: if the last use was taken meanwhile, undo the whole sign-in.
         if (!directory.recordInviteUse(invite.id)) throw new InviteExhaustedError();
@@ -203,6 +205,8 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
       const session = directory.createSession(user.id, { ttlMs: config.sessionMs, now: t, userAgent });
       return { user, sessionToken: session.token, maxAgeMs: config.sessionMs };
     });
+    if (result && inviterToPing) notifications?.ping(inviterToPing);
+    return result;
   }
 
   function authenticate(cookieHeader) {

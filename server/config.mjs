@@ -91,6 +91,12 @@ function parseAuthIpLimit(raw) {
   return value;
 }
 
+/** TABULA_SLOW_REQUEST_MS: log API requests slower than this many ms (default 300; 0 turns the line off). */
+function slowMs(raw) {
+  const value = Number(String(raw ?? '').trim());
+  return String(raw ?? '').trim() !== '' && Number.isInteger(value) && value >= 0 && value <= 600_000 ? value : 300;
+}
+
 function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
   const dailyWrites = parseMcpDailyWrites(env);
   const mode = mcpVar(env, 'MCP') || 'off';
@@ -398,6 +404,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     baseUrl,
     authIpLimit: parseAuthIpLimit(env.TABULA_AUTH_IP_LIMIT),
     baseUrlSet: Boolean((env.TABULA_BASE_URL || '').trim()),
+    slowRequestMs: slowMs(env.TABULA_SLOW_REQUEST_MS),
     origin,
     secureCookies,
     trustProxy: env.TABULA_TRUST_PROXY === '1',

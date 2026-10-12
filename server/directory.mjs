@@ -502,6 +502,21 @@ export const MIGRATIONS = [
   { sql: OAUTH_MIGRATION, minReader: 11 },
   // MCP daily usage and request retries add tables only; keep the schema-11 rollback floor.
   { sql: MCP_USAGE_MIGRATION, minReader: 11 },
+  // Per-person notifications reference their source by id and resolve its content only after checking access.
+  { sql: `
+  CREATE TABLE user_notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    board_id TEXT REFERENCES boards(id) ON DELETE CASCADE,
+    team_id TEXT REFERENCES teams(id) ON DELETE CASCADE,
+    ref TEXT,
+    created_at INTEGER NOT NULL,
+    read_at INTEGER
+  );
+  CREATE INDEX user_notifications_inbox ON user_notifications(user_id, read_at, created_at DESC, id);
+  `, minReader: 11 },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

@@ -45,6 +45,8 @@ export interface Me {
   ai?: { personalKeys: true };
   /** Present (true) when team chat is on for this server (docs/chat.md). */
   chat?: boolean;
+  /** The notification list exists on this server (accounts mode); the bell shows only then. */
+  notifications?: boolean;
   /** Present (true) when this server enables tracker frame creation. */
   tracker?: boolean;
   /** Present only when the relay has one-board guest join codes enabled. */
@@ -328,6 +330,21 @@ export interface ServerBoard {
   role: BoardRole;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface BoardPresencePerson {
+  userId: string;
+  name: string;
+  colour: string | null;
+  joinedAt: number;
+  guest?: true;
+}
+
+export interface BoardPresence {
+  boardId: string;
+  count: number;
+  people: BoardPresencePerson[];
+  me?: true;
 }
 
 export interface Share {
@@ -821,6 +838,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     acceptInvite: (token: string) => call<InvitePreview>('POST', `/api/invites/${seg(token)}/accept`),
 
     boards: () => call<ServerBoard[]>('GET', '/api/boards'),
+    boardsPresence: () => call<{ presence: BoardPresence[] }>('GET', '/api/boards/presence'),
     createBoard: (board: { id: string; title?: string; teamId?: string }) =>
       call<ServerBoard>('POST', '/api/boards', board),
     updateBoard: (id: string, patch: { title?: string; teamId?: string | null }) =>

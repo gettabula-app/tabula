@@ -226,6 +226,7 @@ describe('access tokens in the directory', () => {
       DROP TABLE oauth_grants;
       DROP TABLE oauth_requests;
       DROP TABLE oauth_clients;
+      DROP TABLE user_notifications;
       DROP TABLE mcp_requests;
       DROP TABLE mcp_daily_usage;
       DROP TABLE access_tokens;
