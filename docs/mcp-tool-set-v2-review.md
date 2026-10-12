@@ -5,7 +5,7 @@ Status: review, 2026-10-12. Reads `server/mcp.mjs` (47 tool definitions at origi
 ## 1. Summary
 
 - The act side of the board is mostly there and well built: all-or-nothing batches, `ref` for connectors created in the same call, caps on items, locked-object failures, fenced untrusted text, per-token call and write limits, OAuth and personal tokens through one actor path. The tracker added 25 more tools (tickets, saved views, projects, milestones) that TAB-161 did not list.
-- Of the ticket's list, **6 of 16 items are missing**: board search, `get_session`, `get_changes`, `export`, `propose_changes` / `propose_issues`, `arrange`, `flag`, `run_session`, and the `board://` resources. Two promises of the ticket are **not kept**: "each write is one undo step" and "rate limit and daily change cap per token" (the daily cap does not exist). "Client-supplied ids make retries safe" holds for tickets and ticket comments only.
+- Of the ticket's list, **10 of 18 items are missing**: board search, `get_session`, `get_changes`, `export`, `propose_changes`, `propose_issues`, `arrange`, `flag`, `run_session` and the `board://` resources. Two promises of the ticket are **not kept**: "each write is one undo step" and "rate limit and daily change cap per token" (the daily cap does not exist). "Client-supplied ids make retries safe" holds for tickets and ticket comments only.
 - The biggest risk for v2 is not a missing tool; it is **the size of the tool list** (47 tools in `tools/list`) and **the propose tools**, which need a store and a review screen that do not exist.
 - Recommended order, cheapest and safest first: `get_changes`, `export`, board `search`, `arrange`, client ids on `create_objects`, the daily cap, `flag`; then resources; then the proposal store with `propose_changes`; `run_session` last, and only with the facilitator handover rule.
 
@@ -31,7 +31,7 @@ Status: review, 2026-10-12. Reads `server/mcp.mjs` (47 tool definitions at origi
 | rate limit and daily change cap per token | **limit yes, cap no** | 120 calls and 30 mutating per minute, sliding window in memory (reset by a restart); no per-day cap |
 | boards as MCP resources (`board://id`) | **no** | the server announces `capabilities: { tools: { listChanged: false } }` only |
 
-Added beyond the ticket: kanban tools (14), comment tools (3), tracker tools (25), `whoami`, `get_objects`, `list_templates`.
+Added beyond the ticket: kanban tools, comment tools, ticket, saved-view, project and milestone tools, `whoami`, `get_objects` and `list_templates`.
 
 ## 3. Findings about what exists
 
