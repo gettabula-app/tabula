@@ -65,7 +65,7 @@ The issuer is `config.baseUrl` without a trailing slash and **must be an origin 
   "scopes_supported": ["read", "comment", "write"],
   "bearer_methods_supported": ["header"],
   "resource_name": "Tabula boards",
-  "resource_documentation": "https://HOST/docs/mcp.html"
+  "resource_documentation": "https://HOST/docs/ai-tools/"
 }
 ```
 
@@ -90,7 +90,7 @@ The issuer is `config.baseUrl` without a trailing slash and **must be an origin 
   "revocation_endpoint_auth_methods_supported": ["none"],
   "code_challenge_methods_supported": ["S256"],
   "authorization_response_iss_parameter_supported": true,
-  "service_documentation": "https://HOST/docs/mcp.html"
+  "service_documentation": "https://HOST/docs/ai-tools/"
 }
 ```
 
