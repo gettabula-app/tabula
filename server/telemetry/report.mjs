@@ -1,6 +1,7 @@
 // Instance-side helpers for the hourly report that the control plane pulls (docs/telemetry-design.md, section 1a). Not part of the files
 // that are copied to tabula-cloud.
 import { PRODUCT_ANALYTICS_METRICS } from './collector.mjs';
+import { TELEMETRY_SCHEMA } from './schema.mjs';
 
 /**
  * The report without its feature-use series: what an owner who turned product analytics off may be handed. Operating series stay.
@@ -34,4 +35,11 @@ export function analyticsChoice(telemetryConfig, getSetting, hosted) {
   if (saved === '1') return true;
   if (saved === '0') return false;
   return config.defaultEnabled === true;
+}
+
+const WORKSPACE_PATTERN = new RegExp(TELEMETRY_SCHEMA.envelope.fields.workspace.pattern, 'u');
+
+/** Whether a workspace id fits the report schema; an id that does not makes every report fail the scrubber (so none is built). */
+export function workspaceIdValid(id) {
+  return typeof id === 'string' && WORKSPACE_PATTERN.test(id);
 }

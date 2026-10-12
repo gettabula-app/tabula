@@ -22,6 +22,7 @@ export const PRIVACY_COPY = {
   hourlyNote: 'Nothing has been sent yet: sending starts in a later version. Turning this off stops collection at once, and data that was already sent can be deleted on request.',
   // Hosted workspaces: the hosting service collects the report once an hour (CGO-approved wording). Self-hosted servers still send nothing.
   hourlyNoteHosted: 'Once an hour, Tabula collects the report shown below from this workspace and keeps it. Turning this off stops product analytics at once, and the report of the current hour is not collected. Operating data stays on either way. Data that was already collected can be deleted on request.',
+  workspaceIdInvalid: "This workspace's id is not valid for telemetry, so no report can be built. Ask whoever runs this server to check TABULA_CLOUD_WORKSPACE_ID.",
   noSentHosted: 'This is the report for the current hour. Each hour that ends is collected by Tabula as shown here.',
   previewButtonHosted: "Show this hour's report",
   categories: {

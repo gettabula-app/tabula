@@ -162,6 +162,8 @@ export interface AdminPrivacy {
 /** GET /api/admin/privacy/preview. The preview is the exact report structure shown to the owner. */
 export interface AdminPrivacyPreview {
   preview: Record<string, unknown> | null;
+  /** Set when no report can be built: 'workspace_id' means the hosted workspace's id does not fit the report schema. */
+  problem?: 'workspace_id';
   builtAt: number;
   note: string;
 }
