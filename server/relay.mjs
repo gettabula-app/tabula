@@ -23,7 +23,7 @@ import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
-import { createAwarenessBucket, filterAwarenessUpdate, transferAwarenessOwnership, viewerAwarenessState } from './awareness-guard.mjs';
+import { createAwarenessBucket, filterAwarenessUpdate, transferAwarenessOwnership, accountAwarenessState } from './awareness-guard.mjs';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -146,9 +146,10 @@ function cleanGuestAwarenessState(state, ws) {
   safe.user = { id: ws.userId, name, color: ws.userColor ?? guestPresenceColor(ws.userId), guest: true };
   return safe;
 }
-function cleanViewerAwarenessState(state, ws) {
-  return viewerAwarenessState(state, ws, {
-    cleanValue: cleanGuestAwarenessValue,
+function cleanAccountAwarenessState(state, ws) {
+  return accountAwarenessState(state, ws, {
+    // read-only members get the bounded copy guests get; writers keep their fields as sent (the frame is size-capped)
+    cleanValue: ws.canWrite === true ? (value) => value : cleanGuestAwarenessValue,
     cleanName: (name) => cleanAwarenessString(name, 40).trim(),
     fallbackColor: guestPresenceColor,
   });
@@ -996,7 +997,7 @@ class Room {
         for (const [other, ids] of this.conns) if (other !== ws) others.push({ ids, userId: other.userId, guest: other.guest === true });
         const clean = ws.guest
           ? (state) => cleanGuestAwarenessState(state, ws)
-          : ws.canWrite !== true ? (state) => cleanViewerAwarenessState(state, ws) : undefined;
+          : typeof ws.userId === 'string' && ws.userId !== '' ? (state) => cleanAccountAwarenessState(state, ws) : undefined;
         const verdict = filterAwarenessUpdate(update, { own: this.conns.get(ws) ?? new Set(), others, self: { userId: ws.userId, guest: ws.guest === true }, clean });
         if (verdict.oversized || verdict.dropped) {
           const now = Date.now();
@@ -1007,8 +1008,10 @@ class Room {
         }
         if (!verdict.update) return;
         const safeUpdate = verdict.update;
-        awarenessProtocol.applyAwarenessUpdate(this.awareness, safeUpdate, ws);
+        // Ownership moves first: a takeover is an 'updated' id for y-protocols, and the 'update' listener (and the
+        // presence colour it refreshes) looks the id up on the sending socket, so the old socket closing cannot drop it.
         transferAwarenessOwnership(this.conns, ws, verdict.ids);
+        awarenessProtocol.applyAwarenessUpdate(this.awareness, safeUpdate, ws);
       }
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);

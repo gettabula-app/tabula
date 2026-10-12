@@ -95,10 +95,10 @@ export function transferAwarenessOwnership(conns, ws, ids) {
 const COLOUR_RE = /^#[0-9a-f]{6}$/i;
 
 /**
- * State of a read-only member: cursor and the like come from the client, but who they are comes from the
+ * State of an account socket: cursor and the like come from the client, but who they are comes from the
  * authenticated socket (userId, userName), and only a #RRGGBB colour is kept from the client.
  */
-export function viewerAwarenessState(state, ws, { cleanValue, cleanName, fallbackColor }) {
+export function accountAwarenessState(state, ws, { cleanValue, cleanName, fallbackColor }) {
   if (state === null) return null;
   const cleaned = cleanValue(state);
   const safe = cleaned && typeof cleaned === 'object' && !Array.isArray(cleaned) ? cleaned : Object.create(null);

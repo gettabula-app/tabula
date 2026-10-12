@@ -9,7 +9,7 @@ import { Awareness } from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
-import { createAwarenessBucket, filterAwarenessUpdate, transferAwarenessOwnership, viewerAwarenessState, MAX_AWARENESS_UPDATE_BYTES } from '../server/awareness-guard.mjs';
+import { createAwarenessBucket, filterAwarenessUpdate, transferAwarenessOwnership, accountAwarenessState, MAX_AWARENESS_UPDATE_BYTES } from '../server/awareness-guard.mjs';
 
 const entry = (clientID: number, clock: number, state: unknown) => {
   const enc = encoding.createEncoder();
@@ -65,16 +65,22 @@ describe('takeover keeps the new owner state when the old socket closes', () => 
   });
 });
 
-describe('viewerAwarenessState', () => {
+describe('accountAwarenessState', () => {
   const deps = { cleanValue: (v: unknown) => v, cleanName: (n: string) => n, fallbackColor: () => '#111111' };
+  it('forges nothing: an editor claiming another user.id/name gets its own; other fields pass untouched', () => {
+    const ws = { userId: 'u1', userName: 'Real' };
+    const s = accountAwarenessState({ sel: Array.from({ length: 300 }, (_, i) => `o${i}`), user: { id: 'boss', name: 'Boss', color: '#112233' } }, ws, deps) as any;
+    expect(s.user).toEqual({ id: 'u1', name: 'Real', color: '#112233' });
+    expect(s.sel).toHaveLength(300);
+  });
   it('takes id and name from the socket, keeps cursor and a valid colour only', () => {
     const ws = { userId: 'u1', userName: 'Real' };
-    const s = viewerAwarenessState({ cursor: { x: 1 }, user: { id: 'boss', name: 'Boss', color: '#AbCdEf', extra: 1 } }, ws, deps) as any;
+    const s = accountAwarenessState({ cursor: { x: 1 }, user: { id: 'boss', name: 'Boss', color: '#AbCdEf', extra: 1 } }, ws, deps) as any;
     expect(s.cursor).toEqual({ x: 1 });
     expect(s.user).toEqual({ id: 'u1', name: 'Real', color: '#AbCdEf' });
-    expect((viewerAwarenessState({ user: { color: 'red' } }, ws, deps) as any).user.color).toBe('#111111');
-    expect((viewerAwarenessState({}, ws, deps) as any).user.id).toBe('u1');
-    expect(viewerAwarenessState(null, ws, deps)).toBeNull();
+    expect((accountAwarenessState({ user: { color: 'red' } }, ws, deps) as any).user.color).toBe('#111111');
+    expect((accountAwarenessState({}, ws, deps) as any).user.id).toBe('u1');
+    expect(accountAwarenessState(null, ws, deps)).toBeNull();
   });
 });
 
