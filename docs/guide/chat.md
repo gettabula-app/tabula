@@ -6,7 +6,7 @@ Comments are attached to a place on the board and are for discussing one thing. 
 
 ## Where to chat
 
-- **Board chat**: the people with an account who can open the board. People who joined with a join code have no chat. It is in the right-hand panel on the board, next to comments. On a phone narrower than 380 px, open it from **Chat** in the board **Menu**; a dot on the **Menu** button shows unread messages.
+- **Board chat**: the people with an account who can open the board. People who joined with a join code have no chat. It opens in the chat panel at the right edge of the board; comments stay in their own panel. On a phone narrower than 380 px, open it from **Chat** in the board **Menu**; a dot on the **Menu** button shows unread messages.
 - **Team chat**: the members of a team. People who joined a board with a join code have no chat. Workspace owners and admins can read every team's chat and remove messages, but they can post only in teams they belong to. When a team is archived, its chat is read only.
 - **Workspace chat**: everyone in the workspace except guests. An admin can switch it off (see [Admin dashboard](admin.md#chat)).
 
@@ -25,14 +25,23 @@ Select **Chat** in the top bar of the home screen, or open the address `#/chat`.
 
 The **Chat** link in the top bar shows how many messages you have not read in all your channels. On the **Boards** page, a number beside a board's name shows its unread chat messages.
 
-## Open and close board chat
+## The chat panel
 
-- Select **Chat** in the top bar, next to **Comments**, or press `M`.
-- The right-hand panel has two tabs, **Comments** and **Chat**. Switching between them does not change either.
+Chat opens in a floating panel at the right edge of the screen. It is the same panel on a board, on the **Boards** page and in the tracker, so a conversation stays with you as you move around.
+
+- Select **Chat** in the top bar, or press `M`, to open the panel where you are; you do not leave the page. Pressing `M` again closes it. On the **Boards** page and in the tracker, the **Chat** link in the top bar opens the panel in the same way. When you open it with the keyboard, focus moves into the message box.
+- The panel opens on the channel where someone mentioned you or that has the most unread messages, and otherwise on the one you last used.
+- The button **Open the full Chat page** in the panel header takes you to the [Chat page](#the-chat-page).
 - A badge on the button counts messages you have not read. It has a red outline when someone mentioned you.
-- The board remembers whether you left the chat open, for you only.
+- Across the top of the panel are channel tabs: **This board**, the workspace and your teams, each with its unread count. A **+N** button lists the other channels. A line under them says who is on the board now.
+- The panel has three sizes. Use the buttons in its header to make it **Compact**, to **Minimise** it to a round chat button above the zoom controls, or to **Close** it. The round button shows the unread count for all channels and has a red outline when someone mentioned you. Select it to open the panel again.
+- The panel remembers the size you left it in and the channel you last used, for you only, on this device.
+- On a wide window, the zoom controls, the quick toolbar, the session bar, the poll card, the AI bar and notices move to the left of the open panel, and **Fit board** leaves room for it. Opening **Comments** puts the chat panel away, and opening the chat panel puts **Comments** away.
+- `Esc` keeps focus in the panel (a message box, a menu or an edit uses its first `Esc` itself), and a second `Esc` closes the panel and returns you to the **Chat** button. Focus never falls back to the page when the panel closes or minimises.
+- On a phone (a screen narrower than 600 px) the panel opens as a bottom sheet over the board. Drag the handle down, or tap it, to turn the sheet into the chat button. The buttons are large and the message box stays above the keyboard.
+- The panel does not appear on the sign-in, invitation, join and app-consent pages, or on the Chat page itself, which is already the full chat.
 
-![The Chat tab of the side tray, with replies, a reaction, a mention and object chips](images/chat-tray.png)
+![Board chat with replies, a reaction, a mention and object chips (shown in the earlier side-panel layout)](images/chat-tray.png)
 
 ## Read
 
