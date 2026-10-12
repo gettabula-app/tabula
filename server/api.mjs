@@ -752,7 +752,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   };
 
   const chatOn = Boolean(config.chat && chat);
-  const notificationStore = config.authEnabled && directory
+  // a directory without a database (a test stub, the backup-export routes) has no notification list
+  const notificationStore = config.authEnabled && typeof directory?.db?.prepare === 'function'
     ? notifications ?? createNotifications({
         directory,
         trackerEnabled: config.tracker === true,
