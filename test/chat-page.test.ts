@@ -122,6 +122,12 @@ describe('the Chat page', () => {
     expect(textOf(ops.querySelector('.chat-row-badge'))).toBe('3');
     expect(ops.querySelector('.chat-row-badge')!.classList.contains('mention')).toBe(true);
     expect(ops.getAttribute('aria-label')).toBe('Ops, Team, 3 unread, 1 mentioning you');
+    // a mention shows as an "@" before the pill (no ring), hidden from screen readers; the label says it in words
+    const mark = ops.querySelector('.chat-row-mention')!;
+    expect(mark.classList.contains('show')).toBe(true);
+    expect(mark.getAttribute('aria-hidden')).toBe('true');
+    expect(textOf(mark)).toBe('@');
+    expect(rowsOf(root)[0].querySelector('.chat-row-mention')!.classList.contains('show')).toBe(false);
     expect(rowsOf(root)[0].getAttribute('href')).toBe('#/chat/workspace/main');
   });
 

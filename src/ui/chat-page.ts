@@ -37,7 +37,7 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
   let failed = false;
   let current: Selected | null = selected.kind && selected.ref ? { kind: selected.kind, ref: selected.ref } : null;
   let convLife: AbortController | null = null;
-  const rows = new Map<string, { el: HTMLAnchorElement; badge: HTMLElement; entry: ChatChannelEntry }>();
+  const rows = new Map<string, { el: HTMLAnchorElement; badge: HTMLElement; mark: HTMLElement; entry: ChatChannelEntry }>();
 
   // ---------------------------------------------------------------- the list
   const status = h('p', { class: 'chat-list-status', role: 'status' });
@@ -67,16 +67,18 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
     return channelUnread(e.kind, e.ref);
   }
 
-  function paintBadge(el: HTMLElement, c: { unread: number; mentions: number }) {
+  function paintBadge(el: HTMLElement, mark: HTMLElement, c: { unread: number; mentions: number }) {
     el.textContent = c.unread ? badgeText(c.unread) : '';
     el.classList.toggle('show', c.unread > 0);
     el.classList.toggle('mention', c.mentions > 0);
+    // a mention is an "@" before the pill, so it shows without a ring; the row's accessible label says it in words
+    mark.classList.toggle('show', c.mentions > 0);
   }
 
   function paintRows() {
-    for (const { el, badge, entry } of rows.values()) {
+    for (const { el, badge, mark, entry } of rows.values()) {
       const c = unreadOf(entry);
-      paintBadge(badge, c);
+      paintBadge(badge, mark, c);
       el.setAttribute('aria-label', channelLabel(entry, c));
     }
   }
@@ -88,17 +90,18 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
       h('h2', { class: 'chat-section-title' }, s.title),
       h('ul', { class: 'chat-rows' }, ...s.entries.map((e) => {
         const badge = h('span', { class: 'chat-row-badge', 'aria-hidden': 'true' });
+        const mark = h('span', { class: 'chat-row-mention', 'aria-hidden': 'true' }, '@');
         const name = h('span', { class: 'chat-row-name' });
         name.textContent = e.name;
         const meta = h('span', { class: 'chat-row-meta' });
         meta.textContent = channelMeta(e, Date.now());
-        const el = h('a', { class: 'chat-row', href: channelHash(e.kind, e.ref) }, h('span', { class: 'chat-row-text' }, name, meta), badge);
+        const el = h('a', { class: 'chat-row', href: channelHash(e.kind, e.ref) }, h('span', { class: 'chat-row-text' }, name, meta), mark, badge);
         el.addEventListener('click', (ev) => {
           if (ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
           ev.preventDefault();
           select({ kind: e.kind, ref: e.ref }, { push: true, focus: true });
         });
-        rows.set(keyOf(e.kind, e.ref), { el, badge, entry: e });
+        rows.set(keyOf(e.kind, e.ref), { el, badge, mark, entry: e });
         return h('li', null, el);
       })))));
     paintRows();
