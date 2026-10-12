@@ -326,7 +326,7 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     case 'telemetry.disabled':
     case 'telemetry.settings': {
       const enabled = entry.action === 'telemetry.enabled' ? true : entry.action === 'telemetry.disabled' ? false : flag(d.to) ?? flag(d.enabled);
-      return `${who} turned usage statistics and error reports ${enabled === false ? 'off' : 'on'}`;
+      return `${who} turned product analytics ${enabled === false ? 'off' : 'on'}`;
     }
     case 'ai.settings': {
       const changes: string[] = [];

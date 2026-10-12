@@ -33,6 +33,13 @@
 .privacy-outcome { min-height: 20px; margin: 12px 0 0; font-size: 13px; line-height: 1.5; }
 .privacy-outcome:empty { min-height: 0; margin: 0; }
 
+/* On a touch screen a summary is at least 44px tall (touch.css): centre its text in that box so the closed row has the same space around it as the other blocks */
+@media (pointer: coarse) {
+  details.privacy-section { padding-top: 9px; }
+  details.privacy-section > summary { line-height: var(--touch-target-size, 44px); }
+  details.privacy-section + .privacy-facts { margin-top: 13px; }
+}
+
 @media (max-width: 520px) {
   .privacy-fact { grid-template-columns: minmax(0, 1fr); gap: 4px; }
 }
