@@ -14,7 +14,7 @@ Tabula is free software under AGPL-3.0-only. It is a self-hostable alternative t
 - Smart guides for alignment, spacing and equal-size matching while resizing.
 - Five themes, version history, and import and export in several formats.
 - MCP tools for AI agents, including tools for kanban cards.
-- An AI bar for editors when AI is enabled and a usable key or hosted plan credits are available.
+- An AI bar for editors when AI is enabled and a usable key is available.
 - Built-in user guide at `/docs/`, sourced from [docs/guide](docs/guide/index.md).
 
 ## Run it
@@ -206,8 +206,8 @@ AI features run on the relay with an API key that the workspace or the person br
 | `TABULA_AI_PROVIDER` | `anthropic` | The provider: `anthropic` or `openai-compatible` in open mode; in accounts mode each saved key carries its provider |
 | `TABULA_AI_BASE_URL` | none | Open mode with `openai-compatible`: the API address, for example `https://integrate.api.nvidia.com/v1`; operator-supplied addresses may use `http://`, including a local model server |
 | `TABULA_AI_MODEL` | `claude-opus-5-5` | Default Anthropic model (`claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5`). With `openai-compatible` in open mode, set a model id the provider knows; in accounts mode each key carries its model |
-| `TABULA_AI_PROXY_URL` | none | Hosted accounts mode: base URL for the workspace's Anthropic Messages proxy; HTTPS is required (HTTP is allowed for loopback tests) |
-| `TABULA_AI_PROXY_TOKEN` | none | Hosted accounts mode: credential sent to the AI proxy as `x-api-key`; needed with `TABULA_AI_PROXY_URL` for plan credits |
+| `TABULA_AI_PROXY_URL` | none | Hosted accounts mode: base URL for the workspace's Anthropic Messages proxy; HTTPS is required (HTTP is allowed for loopback tests); not used until hosted AI credits are built |
+| `TABULA_AI_PROXY_TOKEN` | none | Hosted accounts mode: credential sent to the AI proxy as `x-api-key`; needed with `TABULA_AI_PROXY_URL` for plan credits; not used until hosted AI credits are built |
 
 In accounts mode a workspace owner or admin turns AI on, picks the features and the model, and enters the workspace key under **Admin, AI**; with personal keys allowed, each person can add their own under **Your AI key** in the board menu. Keys are checked with the provider when saved, encrypted at rest, shown afterwards only as their last four characters, and never logged. `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored in accounts mode.
 
@@ -263,7 +263,7 @@ Screenshots show demo data.
 | Version history | Browse earlier versions of a board, preview one read-only and restore it (board menu, owners and editors). The relay saves snapshots while people edit, before large deletions and when everyone leaves, and anyone can save a named version; a restore is an ordinary edit that syncs to everyone, shows up as a new version and undoes with Ctrl+Z. See [docs/history.md](docs/history.md) |
 | Import/export | `.drift` board files, JSON snapshots, SVG, PNG (2×, real fonts), Markdown summary, Mermaid and kanban cards as CSV; drop files on the board or open them from the home screen |
 | MCP tools | AI agents can read and edit boards, add comments, manage groups and use kanban card tools (see [docs/mcp.md](docs/mcp.md) and [the tool guide](docs/guide/ai-tools.md)) |
-| AI bar | Generate stickies, summarise a board or selection, and cluster stickies into themes. Shown to editors only when enabled with a usable key or hosted plan credits (see [docs/ai.md](docs/ai.md) and [docs/ai-credits.md](docs/ai-credits.md)) |
+| AI bar | Generate stickies, summarise a board or selection, and cluster stickies into themes. Shown to editors only when enabled with a usable key (see [docs/ai.md](docs/ai.md); hosted AI credits are a later phase, [docs/ai-credits.md](docs/ai-credits.md)) |
 | User guide | Built-in, searchable guide served at `/docs/`; source pages are in [docs/guide](docs/guide/index.md) |
 
 ### Not built yet (from the spec)

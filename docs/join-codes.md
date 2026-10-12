@@ -60,6 +60,6 @@ The script starts an accounts-mode relay on a free local port with a temporary d
 
 ## Later work
 
-- TODO: QR code image for a join link.
-- TODO: guest access to group areas.
-- TODO: facilitator kick UI for ending one guest session before its code expires.
+- Later: a QR code image for a join link.
+- Later: guest access to group areas.
+- Later: a facilitator kick UI for ending one guest session before its code expires.

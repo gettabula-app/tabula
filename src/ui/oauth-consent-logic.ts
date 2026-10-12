@@ -74,13 +74,19 @@ export function hostPresentation(redirectHost: string, redirectUri: string, veri
     } catch {
       // The server has already validated the URI; keep a safe fallback for an unexpected response.
     }
-    label = `an app on this computer (127.0.0.1${port ? `:${port}` : ''})`;
+    const loopbackHost = host === 'localhost' ? 'localhost' : '127.0.0.1';
+    label = `an app on this computer (${loopbackHost}${port ? `:${port}` : ''})`;
   }
   return {
     label,
     verified: verified === true,
     warning: verified === true ? null : OAUTH_UNVERIFIED_WARNING,
   };
+}
+
+export function verifiedBadge(provider: string | null | undefined, verified: boolean): string | null {
+  if (provider) return `Verified: ${provider}`;
+  return verified ? 'Verified host' : null;
 }
 
 export function titleText(clientName: string, clientNameIsClaim: boolean, workspace: string): string {

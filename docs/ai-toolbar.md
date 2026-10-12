@@ -2,7 +2,7 @@
 
 The floating bar where a person asks the AI to work on the board: summarise it, cluster stickies, generate ideas. It is the front door to the features in `docs/ai.md`; it adds no new AI capability.
 
-Status: shipped as part of the normal board (TAB-123, TAB-141). The bar appears when AI is enabled for the person and a workspace key, an allowed personal key or plan credits are available. An interactive static mock lives in `design/ai-toolbar/index.html` (open it from the dev server at `/design/ai-toolbar/`, or as a file). The mock calls no model; every result is faked. Screenshots of every state are in the review folder, named `<state>-<theme>[-390].png`.
+Status: shipped as part of the normal board (TAB-123, TAB-141). The bar appears when AI is enabled for the person and a workspace key, an allowed personal key is available (plan credits are not built). An interactive static mock lives in `design/ai-toolbar/index.html` (open it from the dev server at `/design/ai-toolbar/`, or as a file). The mock calls no model; every result is faked. Screenshots of every state are in the review folder, named `<state>-<theme>[-390].png`.
 
 Read `docs/ai.md` first. This document only covers the bar: how it looks, where it sits, what it does in each state, and the words it uses. Calls, keys, proposals, limits and errors come from there.
 

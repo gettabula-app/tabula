@@ -1,6 +1,6 @@
 # Hosted workspaces
 
-Tabula can run as one workspace of a hosted service: a separate control plane (billing, provisioning) starts the instance, tells it how many seats the customer paid for, and can lock it when the subscription lapses. This page is the instance side of that contract. It is generic: any control plane that speaks it will do, and **an instance without the variables below behaves exactly as described in `docs/accounts.md`**: none of the routes, tables, banners or checks here exist for it.
+Tabula can run as one workspace of a hosted service: a separate control plane (billing, provisioning) starts the instance, tells it the workspace's plan limits, and can lock it when the subscription lapses. This page is the instance side of that contract. It is generic: any control plane that speaks it will do, and **an instance without the variables below behaves exactly as described in `docs/accounts.md`**: none of the routes, tables, banners or checks here exist for it.
 
 Not in it: creating or deleting the instance, Stripe, routing. Those belong to the control plane.
 
@@ -15,6 +15,8 @@ Fly's edge replays hosted requests, but Fly cannot replay request bodies over 1 
 | `TABULA_CLOUD_WORKSPACE_ID` | This workspace's id at the control plane (letters, digits, `.`, `-`, `_`, up to 128). Used in the path of the instance's calls |
 
 Cloud mode is on only when `TABULA_AUTH=on` **and** all three are set.
+
+OAuth's built-in exact provider callbacks are enabled by default (`TABULA_OAUTH_REDIRECTS=known`); set `TABULA_OAUTH_REDIRECTS=none` to disable them or `TABULA_OAUTH_REDIRECT_HOSTS` to add exact callback hosts.
 
 A hosted workspace runs accounts mode, so it has team chat (docs/chat.md) with no variable: chat is on by default there, `chat.sqlite` is created on first use and is in the backups, and `TABULA_CHAT=off` is the operator's opt-out. A workspace gets it when it moves to an image that has this default.
 
@@ -98,7 +100,7 @@ PUT /api/internal/limits  { seatLimit?: number | null, readOnly?: boolean, banne
 
 - Fields that are left out stay as they are; `null` clears `seatLimit`, `banner`, `trialEndsAt` or `state`. The lifecycle fields default to `null`, so older control planes that omit them continue to work. An empty body is `400 Nothing to change`.
 - `billing` (default `true`) is `false` for a workspace that is provided free (education, internal): it has no subscription, so `/api/me` says `workspace.billing: false`, the owner sees "This workspace is provided free (education or internal). There's nothing to bill." where Manage billing would be, and `POST /api/billing/portal` answers `409 no_billing` without calling the control plane.
-- `aiCredits` is optional and defaults to `false` until the control plane pushes it. It tells the hosted AI config whether the workspace plan enables the AI credits capability; `/api/me` exposes it as `workspace.aiCredits`, and `/api/ai/config` returns it as `credits`. Older instances reject this unknown field with `400`, so the control plane must retry the limits push without `aiCredits` when an older instance refuses it.
+- `aiCredits` is optional and defaults to `false` until the control plane pushes it. It tells the hosted AI config whether the workspace plan enables the AI credits capability (not built yet); `/api/me` exposes it as `workspace.aiCredits`, and `/api/ai/config` returns it as `credits`. Older instances reject this unknown field with `400`, so the control plane must retry the limits push without `aiCredits` when an older instance refuses it.
 - `seatLimit` is a whole number from 1 to 100000. `banner` is at most 300 characters on a single line (no control characters), trimmed; an empty text means no banner. Unknown fields are refused with `400`, so a typo cannot silently do nothing.
 - `trialEndsAt` is either null or an ISO 8601 UTC timestamp ending in `Z`, at most 40 characters, with a year from 2000 through 2100; an invalid timestamp is read as `null` and logged as a warning, and the rest of the push is applied (the field is cosmetic, so it must never block a seat limit or read-only change; the other fields stay strict and are refused with `400`). `state` is null or 1–32 lowercase letters, digits, underscores or hyphens; anything else is read as `null` with a warning. The client shows a trial end date only for `state: "trialing"`; other (including unknown) states show no trial label.
 - The limits are stored in the `settings` table (`cloud.limits`, one JSON value; migration 3) and survive restarts. Each change writes an audit row `cloud.limits` with no actor (the dashboard shows "System") and tells the relay, which applies it to open sockets at once.
@@ -126,24 +128,26 @@ Every rate limit (sign-in links, MCP tokens, the AI routes, uploads) counts by t
 | Variable | Value | Meaning |
 | --- | --- | --- |
 | `TABULA_TRUST_PROXY` | `1` | Believe the header below at all. Without it the connection's address counts and both headers are ignored, so every visitor behind the edge shares one limit |
-| `TABULA_CLIENT_IP_HEADER` | `fly-client-ip` | **Set this on Fly.** The address Fly's edge saw. Fly sets it itself, a visitor's own value does not survive the edge, and it stays the visitor's address through `fly-replay` |
+| `TABULA_CLIENT_IP_HEADER` | `fly-client-ip` | **Set this on Fly.** The address Fly's edge saw. Fly's documentation (https://docs.fly.io/networking/request-headers) describes it as the IP address of the client from the perspective of Fly Proxy; it does not say in so many words that a visitor's own value is overwritten or that it stays the visitor's address through `fly-replay`, so the check below is what confirms both on a real deploy (the fake edge in `test/proxy.test.ts` only shows what the instance does with the header) |
 | | `x-forwarded-for` (the default) | The rightmost `X-Forwarded-For` entry, for a single reverse proxy (Caddy, nginx) that appends the client address. Behind Fly with `fly-replay`, the rightmost entry can be the replaying machine, and then every visitor would share its limit |
 
 Any other value refuses startup; `TABULA_CLIENT_IP_HEADER` without `TABULA_TRUST_PROXY=1` is ignored with a warning. A header value that is not an IP address falls back to the connection's address. **Recommended for hosted workspaces: `TABULA_TRUST_PROXY=1` and `TABULA_CLIENT_IP_HEADER=fly-client-ip`.**
 
-**Checking it on the first deploy.** `GET /api/internal/client-ip` (bearer token, like the other internal calls, also while read-only) answers what the instance saw for that very request:
+**Checking it on the first deploy.** Open `GET /api/admin/client-ip` in a browser signed in as a workspace admin or owner. It reports what the instance saw for that request and is never cached:
 
 ```json
 { "address": "203.0.113.7", "trustProxy": true, "header": "fly-client-ip",
-  "seen": { "connection": "fdaa:0:…", "xForwardedFor": "203.0.113.7, 172.19.4.2", "flyClientIp": "203.0.113.7" } }
+  "seen": { "xForwardedFor": "203.0.113.7", "flyClientIp": "203.0.113.7", "internalHops": 1 } }
 ```
 
-1. From your own machine, through the public address (not `fly ssh`), call it: `curl -s -H "Authorization: Bearer $TOKEN" https://<workspace host>/api/internal/client-ip`.
-2. Compare `address` with your public address (`curl -s https://ifconfig.me`). They must be equal.
-3. Look at `seen`: `flyClientIp` should be your address. If `xForwardedFor`'s last entry is not your address (it is a machine address when the request was replayed), `x-forwarded-for` would be wrong for this setup; that is the case TAB-71 was opened for.
-4. Call it from a second network (a phone off Wi-Fi): a different `address`. Then rate limits are per visitor.
+1. Sign in to the workspace as its owner, then open `https://<workspace host>/api/admin/client-ip` in that same browser so it sends the admin session cookie.
+2. Compare `address` with your public address at [ifconfig.me](https://ifconfig.me). They should match.
+3. Look at `seen`: `flyClientIp` should be your address. `internalHops` counts the platform addresses (Fly's proxy range, the private network) that were in `X-Forwarded-For` and are left out of the list and out of this report: when it is above 0 the rightmost entry the instance would have used with the default `x-forwarded-for` setting is such a hop, which is the failure mode TAB-71 covers (`address` then shows that hop when `TABULA_CLIENT_IP_HEADER` is not `fly-client-ip`). This route does not show the connection's own address; the internal route below does.
+4. Sign in on a phone using mobile data, open the same route, and check that `address` is the phone's public address.
 
-Only addresses come back: header values are cut at 300 and 64 characters and nothing else of the request is echoed. The tests (`test/proxy.test.ts`) run a fake Fly edge with a replay hop and show both settings: with `fly-client-ip` each visitor is limited alone, with the default every visitor shares the hop's limit.
+The internal `GET /api/internal/client-ip` remains the control-plane/operator check. It uses the bearer token like the other internal calls and can be reached through a Machines API `exec` or Flycast only; the hosted edge blocks `/api/internal/*` on the public address.
+
+Only the documented report fields come back: header values are cut at 300 and 64 characters and nothing else of the request is echoed. The tests (`test/proxy.test.ts`) run a fake Fly edge with a replay hop and show both settings: with `fly-client-ip` each visitor is limited alone, with the default every visitor shares the hop's limit.
 
 ## Source policy
 
@@ -202,7 +206,7 @@ A seat is an account with the role `owner`, `admin` or `member` that is not disa
 | Finish a sign-in that would create a new member through an invite (`POST /api/auth/verify`) | `409 seat_limit`; nobody is created, and neither the invite nor the emailed link is used up, so the same link works once a seat is free |
 | Enable a disabled owner, admin or member, or turn a guest into a member, admin or owner (`PATCH /api/members/:id`) | `409 seat_limit` |
 
-Everything else keeps working: people who already have an account sign in, roles change between owner, admin and member, people are disabled or removed (which frees a seat), existing members accept invites to more teams. `POST /api/auth/request` does not look at the limit, so it answers every address the same way as before and reveals nothing about a full workspace; the link is mailed and the refusal comes when it is used. The messages say how many seats there are and what to do (free one, or ask the owner to add seats under billing). A limit below the number of seats in use blocks new seats but removes nobody.
+Everything else keeps working: people who already have an account sign in, roles change between owner, admin and member, people are disabled or removed (which frees a place), existing members accept invites to more teams. `POST /api/auth/request` does not look at the limit, so it answers every address the same way as before and reveals nothing about a full workspace; the link is mailed and the refusal comes when it is used. The messages say that the workspace has reached its member limit and what to do (remove or disable a member to make room; the code stays `seat_limit`). The limit is set only for free (comp) workspaces, so there is no billing screen to refer to. A limit below the number of seats in use blocks new seats but removes nobody.
 
 ## What the app shows
 

@@ -222,6 +222,8 @@ The backup engine copies the directory database, room files and history from `DA
 
 ## Desktop
 
+The desktop shell is frozen (docs/desktop.md); this section is kept for reference.
+
 The Tauri shell uses the same page and the same CSP (`img-src 'self' data: blob:`), so blob URLs and same-origin asset URLs work. With the relay off (the shell's default), the board is local-only and images live in `blobs` and in the `.drift` backup copy the shell already writes. No asset protocol is needed. The 200 MB `blobs` cap applies; the shell's data folder backup copies include everything `.drift` includes.
 
 ## Permissions
@@ -284,7 +286,6 @@ Relay (spawned relay like the existing server tests, accounts mode on):
 - Fetching an image from a URL, dragging an image out of another web page by URL, a stock photo search.
 - Per-image comments beyond the existing pins on an object (pins already attach to any object).
 - A storage usage screen in the admin dashboard (the numbers exist; the screen follows), hosted storage billing.
-- Restoring assets from an off-site backup (restore itself is not built yet).
 
 ## Slices
 

@@ -1,7 +1,7 @@
 import './backups.css';
 import { ApiError, api, type BackupBoard, type BackupList, type BackupPreview, type BackupSummary, type BoardCopy, type Me, type TrackerCheckState, type TrackerReadinessReport } from '../api';
 import { setSignedOut } from '../auth';
-import { freeWorkspaceNote, portalTarget } from '../cloud-logic';
+import { freeWorkspaceNote } from '../cloud-logic';
 import { countLabel, matchesQuery } from './admin-logic';
 import {
   ATTESTATION_DISCLAIMER, CONFIRM_WORD, EPOCH_CONFIRM_WORD, EPOCH_WARNING_COPY, LIST_CAP, checkStateSentence, errorSentence, formatSize, formatUtc, gateBannerSentence,
@@ -367,33 +367,17 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
 
   function offView(): Node[] {
     const lead = hosted
-      ? 'This workspace has no backups yet. Backups copy everything to storage away from the server on a schedule, encrypted before it leaves, so a deleted board or a mistake can be undone.'
+      ? 'Backups are not set up for this workspace yet.'
       : 'Backups are off on this server. When they are on, Tabula copies everything to an S3-compatible bucket on a schedule, encrypted before it leaves the server, and you can bring back one board or the whole workspace from here. They are turned on with the TABULA_BACKUP_* settings of the server.';
-    return [
+    const note = hosted ? freeWorkspaceNote(me) : null;
+    return nodes(
       h('h3', { class: 'admin-sub' }, 'Not set up'),
       h('p', { class: 'backups-lead' }, lead),
-      hosted ? (freeWorkspaceNote(me) ? h('p', { class: 'muted' }, freeWorkspaceNote(me)) : addBackups()) : h('a', { class: 'btn', href: BACKUP_DOCS }, 'How to turn on backups'),
-      ...nodes(readinessSection),
-    ];
-  }
-
-  /** The billing portal, by the same owner flow the Overview uses. */
-  function addBackups(): HTMLElement {
-    const button = h('button', { class: 'btn primary' }, 'Add backups');
-    button.addEventListener('click', async () => {
-      button.disabled = true;
-      try {
-        await kit.change(async () => {
-          const { url } = await api.billingPortal();
-          const target = portalTarget(url);
-          if (!target) throw new Error('The billing portal address was not valid');
-          location.assign(target);
-        }, 'Opening billing…');
-      } finally {
-        button.disabled = false;
-      }
-    });
-    return button;
+      hosted
+        ? (note ? h('p', { class: 'muted' }, note) : null)
+        : h('a', { class: 'btn', href: BACKUP_DOCS }, 'How to turn on backups'),
+      readinessSection,
+    );
   }
 
   // ------------------------------------------------------------ the list

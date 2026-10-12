@@ -48,5 +48,24 @@ Johan's rule (2026-10-11): we only deploy when pushing. Production must never ru
 - Every deploy still needs Johan's explicit go for that deploy. A go to push is not a go to deploy.
 - `tabula-cloud` deploys go through `scripts/deploy-guard.sh` (it refuses when the rules above do not hold). Image builds and site deploys follow the same checks by hand until they have a guard.
 
+## Customer-facing text
+Anything a customer can read (site, app strings, emails, docs, press, changelog, store listings) follows the positioning brief and `business/positioning-brief.md`'s claims rules:
+- Every claim has a source line (a test, a doc page, a measured number). No claim about a feature that is behind a flag, in a spec or "not built yet". Current holds: AI credits, backups add-on, SSO, presentation mode, join codes, native apps.
+- Never name a competitor, anywhere. No "cheapest", no uptime figures, no "EU-only", no numbers as promises (write what the user will see happen, for example "we email you a sign-in link when it is ready").
+- Plain words, short sentences, Swedish in du-form. No "CRDT", "local-first" or "MCP" in headlines.
+- Web app only: Windows, macOS desktop, iPhone and Android work is frozen (Johan, 11 Oct). Copy says "no app to install"; it never promises an app.
+- Nothing customer-facing ships without Johan's go. The CGO reviews the text first; the manager takes it to Johan.
+
+## Telemetry rule
+Telemetry carries no identifier of a person: no user id, session id, email or hash of one, and nothing from inside a board. Events are keyed to the workspace or instance id only; device class is a count. The schema test enforces this; a change that adds a person-level field is refused in review, because it changes the legal basis (see `business/legal/telemetry-draft.md`). Self-hosted instances send nothing unless `TABULA_TELEMETRY=on`, and then only to our collector.
+
+## Direction (Johan, 11 Oct 2026)
+Agents are becoming the main users of software, and features can be copied quickly. We therefore:
+- treat the MCP server and published skills as a product: typed, documented, with evaluations that build a board and check it against the rules;
+- prefer objects with meaning over positioned shapes: typed cards (owner, status), decision objects, data tables (TAB-186), and a stable link to every object;
+- document the board format publicly so agents can read it and customers can leave with it;
+- design our own interface; we do not copy another product's interface, assets, text or brand, and we do not automate against other products' apps.
+What we sell is running it, trust, help and taste, not the feature list; engineering choices that make those stronger come first.
+
 ## Who audits
 The manager audits worktrees once a day: anything not in the prototype register and not in the queue gets a question to its owner, and the count goes to Johan. Only Johan decides a force-removal, or what to do with uncommitted work nobody claims.

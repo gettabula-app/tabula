@@ -1,8 +1,8 @@
 # AI features
 
-AI that works on the board the person has open: write stickies from a prompt, summarise a board or a retro into notes and action items, group stickies into themes. Phase 1 runs on an API key the workspace or the person brings (**bring your own key**, BYOK). Phase 2 adds AI as part of the hosted service: each plan includes credits, and more can be bought.
+AI that works on the board the person has open: write stickies from a prompt, summarise a board or a retro into notes and action items, group stickies into themes. Phase 1 runs on an API key the workspace or the person brings (**bring your own key**, BYOK). Phase 2 adds AI as part of the hosted service: it will include credits for each workspace, and more can be bought (phase 2, not built).
 
-Status: **slices A, B and C of phase 1 are built (TAB-97):** the provider layer, encrypted keys, settings and key endpoints with their admin and account screens; `POST /api/ai/run` with the three features, limits and audit rows; and the AI bar, its entry points and live previews. The bar appears when AI is enabled for the person and a workspace key, an allowed personal key or the hosted `credits` capability are available. A hosted control plane can enable that capability with the `aiCredits` limit; it remains false in open mode and on self-hosted instances. In accounts mode, runs with no saved key can use the hosted credits proxy. Credit metering and limits are enforced by that proxy. "Slice A: what is built" and "Slice B: what is built" below list where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end.
+Status: **slices A, B and C of phase 1 are built (TAB-97):** the provider layer, encrypted keys, settings and key endpoints with their admin and account screens; `POST /api/ai/run` with the three features, limits and audit rows; and the AI bar, its entry points and live previews. The bar appears when AI is enabled for the person and a workspace key, an allowed personal key or the hosted `credits` capability are available. A hosted control plane can enable that capability with the `aiCredits` limit; it remains false in open mode and on self-hosted instances. In accounts mode, runs with no saved key can use the hosted credits proxy. Credit metering and limits are enforced by that proxy. "Slice A: what is built" and "Slice B: what is built" below list where the code differs from or adds to the text above. Recommended answers to the open questions in TAB-99 are at the end. **Hosted AI credits (phase 2) are designed here and not built; no hosted workspace has them.**
 
 ## Summary
 
@@ -12,7 +12,7 @@ Status: **slices A, B and C of phase 1 are built (TAB-97):** the provider layer,
 - **Keys are encrypted at rest** with a server secret, are never returned by any API, never written to a board document, never logged.
 - **Reuses the MCP layer from TAB-12** for reading boards: the same private-note withholding, the same fencing of untrusted board text, the same object validators. Writes do not go through MCP (see "Why proposals").
 - **v1 features:** generate stickies, summarise with action items, cluster stickies.
-- **Phase 2:** credits per workspace, pooled across seats; prepaid top-up packs; the control plane meters and bills through Stripe, as it already does for seats.
+- **Phase 2:** credits per workspace, pooled for the whole workspace; prepaid top-up packs; the control plane meters and bills through Stripe, as it already does for the workspace plan.
 
 The board shows AI controls only when AI is enabled for the person and the config reports a usable workspace key, an allowed personal key, or `credits: true`. On hosted instances, the control plane sets that capability through `aiCredits`; open mode and self-hosted instances always report `false`. The run route uses hosted credits only when there is no saved key and both proxy environment values are configured.
 
@@ -232,7 +232,7 @@ Next, not v1: text to diagram (needs the Mermaid parser and layout moved out of 
 ### Credits
 
 - **1 credit = €0.01 of provider cost at list price**, computed from each run's usage and a price table per model (input, output, cache read and cache write tokens). Providers price in US dollars; the table carries a fixed conversion rate, reviewed with the prices. Credits are the unit people see; the price table changes without changing plans.
-- **Pooled per workspace**, refreshed monthly: an allowance per paid seat, so a team shares one balance and a heavy user does not hit a personal wall.
+- **Pooled per workspace**, refreshed monthly: 500 credits a month for a paid workspace, 250 for an education workspace and 50 during a trial, so a team shares one balance and a heavy user does not hit a personal wall.
 - **Top-up packs**, prepaid, that do not expire for 12 months and are spent after the monthly allowance. No metered overage: bills stay predictable, and a runaway loop cannot create one.
 - At zero, the credits proxy refuses runs with `429 credits_exhausted` and a message naming the reset date; a personal or workspace key, if set, keeps working (BYOK runs never use credits).
 - Admins can set a monthly cap below the allowance and see usage by feature and by person in the AI tab.
@@ -249,7 +249,7 @@ The control plane proxy checks the balance, calls the provider with its key, met
 
 ### Stripe
 
-The control plane already owns Stripe for seats. It adds an AI allowance to each plan, top-up packs as one-off Checkout payments, and balance changes from Stripe webhooks. **Manage billing** opens the same customer portal, which shows the packs. Nothing about Stripe runs on the instance.
+The control plane already owns Stripe for the workspace plan. It adds an AI allowance to each plan, top-up packs as one-off Checkout payments, and balance changes from Stripe webhooks. **Manage billing** opens the same customer portal, which shows the packs. Nothing about Stripe runs on the instance.
 
 ## Tests
 
@@ -404,4 +404,3 @@ Text to diagram, smart template fill, a chat assistant with tools, OpenAI-compat
 2. **Anthropic only at first**, behind a provider interface that takes an OpenAI-compatible adapter next. Shipping one provider well (structured output, refusals, caching, error messages) beats two half-tested ones; the second mostly helps self-hosters with local models and can follow without schema or UI changes.
 3. **Both, workspace first.** The admin sets the workspace key, which controls spend and where data goes, and decides whether people may add personal keys (off by default). A personal key wins over the workspace key when allowed. Open mode uses the operator's environment key only.
 4. **Credits per workspace, top-up packs, no metered overage.** **Superseded by the CGO's decision of 2026-10-12: credits are per workspace, not per seat.** A paid workspace gets **500 credits a month**, an education workspace **250**, a trial workspace **50**. Top-up packs: **1,000 credits for €15** and **5,000 for €75**. This is phase 2 and is not built; these are the figures to use in any copy. The unit economics of a run (about 11 credits for a board summary and 2 to 3 for a sticky generation at the defaults on Claude Opus 5.5) should still be checked against real usage before phase 2 launches.
-   - *Earlier proposal, superseded and not for customer copy:* €8 per seat per month with 100 credits per paid seat per month (pooled), packs of 1,000 credits for €15 and 5,000 for €60, and the estimate of roughly 9 summaries or 40 generations per seat per month at about 12% of seat revenue. Do not use these numbers.
