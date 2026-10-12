@@ -119,6 +119,30 @@ describe.skipIf(!available)('the canvas for the keyboard', { timeout: 240_000 },
     await page.context().close();
   });
 
+  it('puts the ring away on a mouse press, and keeps it out of the SVG, the SVG export and print', async () => {
+    const page = await openBoard();
+    await seed(page);
+    await page.locator('.canvas-focus').focus();
+    await page.keyboard.press('ArrowRight');
+    const ring = page.locator('.canvas-ring');
+    expect(await ring.isVisible()).toBe(true);
+    expect(await page.evaluate(() => !!document.querySelector('.canvas-ring')!.closest('svg'))).toBe(false);
+    expect(await page.evaluate(() => document.querySelector('svg.canvas')!.outerHTML.includes('canvas-ring'))).toBe(false);
+    // a string, so the dynamic import is the browser's own and not the test runner's
+    const exported = await page.evaluate<string>(`(async () => { const m = await import('/src/exporters.ts'); return m.exportSvgFile(window.__board); })()`);
+    expect(exported).toContain('<svg');
+    expect(exported).not.toContain('canvas-ring');
+    expect(exported).not.toContain('canvas-outline');
+    await page.emulateMedia({ media: 'print' });
+    expect(await ring.isHidden()).toBe(true);
+    await page.emulateMedia({ media: 'screen' });
+    await page.mouse.move(900, 600);
+    await page.mouse.down();
+    await page.mouse.up();
+    expect(await ring.isHidden()).toBe(true);
+    await page.context().close();
+  });
+
   it('a selected current object keeps its arrow-key nudge', async () => {
     const page = await openBoard();
     await seed(page);

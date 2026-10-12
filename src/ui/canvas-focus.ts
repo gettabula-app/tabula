@@ -12,6 +12,8 @@ import { h } from './dom';
 export const OUTLINE_WINDOW = 300;
 /** How far inside the view the current object is kept when focus moves to it. */
 const VIEW_MARGIN = 24;
+/** The ring's outer edge is this far from the object: 2 px of paper gap, then 2 px of ink (docs/canvas-keyboard.md, The focus ring). */
+export const RING_OFFSET = 4;
 
 const ARROWS: Record<string, NavDirection> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 let serial = 0;
@@ -118,10 +120,13 @@ export function mountCanvasFocus(app: BoardApp, anchor: HTMLElement): CanvasFocu
     }
     const a = app.r.toScreen({ x: item.cx - item.w / 2, y: item.cy - item.h / 2 });
     const b = app.r.toScreen({ x: item.cx + item.w / 2, y: item.cy + item.h / 2 });
+    // 4 px outside the object (a connector's line gets a rounded box around its bounds), never smaller than a fingertip of ink
+    const out = RING_OFFSET;
     ring.hidden = false;
-    ring.style.transform = `translate(${a.x}px, ${a.y}px)`;
-    ring.style.width = `${Math.max(8, b.x - a.x)}px`;
-    ring.style.height = `${Math.max(8, b.y - a.y)}px`;
+    ring.classList.toggle('is-line', !!item.connector);
+    ring.style.transform = `translate(${a.x - out}px, ${a.y - out}px)`;
+    ring.style.width = `${Math.max(8, b.x - a.x) + out * 2}px`;
+    ring.style.height = `${Math.max(8, b.y - a.y) + out * 2}px`;
   }
 
   /** Pans the camera the least needed to bring the object inside the view. */

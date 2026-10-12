@@ -3307,29 +3307,52 @@ const STATES = {
     if (!result.hitButton) throw new Error('emoji-picker: the Add emoji button centre is covered');
     if (!result.searchFocused) throw new Error('emoji-picker: search is not focused');
   },
-  // The canvas for the keyboard (docs/canvas-keyboard.md, slice 1): Tab-stop, outline, the ring on the current object, its contrast
+  // The canvas for the keyboard (docs/canvas-keyboard.md, slice 1): the ring on the current object must be painted, non-empty and inside the
+  // window before the shot, and read at least 3:1 against the theme's canvas (and its inner gap against the ink). The state keeps focus on
+  // the canvas (noPark) so the screenshot shows the ring.
   async 'canvas-keyboard'(env) {
     const page = env.page;
     await openSeedBoard(env);
     await page.keyboard.press('Escape');
     await page.locator('.canvas-focus').focus();
     await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(450);
+    await page.waitForFunction(() => {
+      const ring = document.querySelector('.canvas-ring');
+      if (!ring || ring.hidden) return false;
+      const b = ring.getBoundingClientRect();
+      return b.width > 8 && b.height > 8 && b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight;
+    }, null, { timeout: 10_000 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     const r = await page.evaluate(() => {
       const ring = document.querySelector('.canvas-ring');
       const target = document.querySelector('.canvas-focus');
-      const parse = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+      const style = getComputedStyle(ring);
+      const root = getComputedStyle(document.documentElement);
+      const parse = (c) => {
+        const m = c.trim().match(/^#([0-9a-f]{6})$/i);
+        if (m) return [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+        const n = (c.match(/[\d.]+/g) ?? []).map(Number);
+        return n.slice(0, 3).map((v) => (c.startsWith('color(') ? Math.round(v * 255) : v));
+      };
       const lum = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
-      const ink = parse(getComputedStyle(ring).outlineColor);
-      const canvas = parse(getComputedStyle(document.querySelector('.board-surface, .board-root') ?? document.body).backgroundColor || 'rgb(238,241,244)');
-      const ratio = (Math.max(lum(ink), lum(canvas)) + 0.05) / (Math.min(lum(ink), lum(canvas)) + 0.05);
-      return { ringShown: !ring.hidden, current: target.getAttribute('aria-activedescendant'), options: document.querySelectorAll('.canvas-outline [role=option]').length, ratio: Number(ratio.toFixed(2)), svgHidden: document.querySelector('svg.canvas').getAttribute('aria-hidden') };
+      const contrast = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05);
+      const ink = parse(style.borderTopColor);
+      const canvas = parse(root.getPropertyValue('--canvas'));
+      const box = ring.getBoundingClientRect();
+      return {
+        current: target.getAttribute('aria-activedescendant'), options: document.querySelectorAll('.canvas-outline [role=option]').length,
+        box: [box.left, box.top, box.width, box.height].map(Math.round), width: parseFloat(style.borderTopWidth),
+        ratio: Number(contrast(ink, canvas).toFixed(2)), svgHidden: document.querySelector('svg.canvas').getAttribute('aria-hidden'),
+        inSvg: !!ring.closest('svg'), focused: document.activeElement === target,
+      };
     });
     console.log(`canvas-keyboard ${JSON.stringify(r)}`);
-    if (!r.ringShown || !r.current) throw new Error(`canvas-keyboard: no ring or no current object ${JSON.stringify(r)}`);
+    if (!r.current || !r.focused) throw new Error(`canvas-keyboard: no current object or focus left the canvas ${JSON.stringify(r)}`);
     if (r.svgHidden !== 'true') throw new Error('canvas-keyboard: the picture is not hidden from assistive technology');
     if (r.options < 1) throw new Error('canvas-keyboard: the outline is empty');
+    if (r.inSvg) throw new Error('canvas-keyboard: the ring is inside the SVG, so it would be exported');
     if (r.ratio < 3) throw new Error(`canvas-keyboard: the ring is ${r.ratio}:1 against the canvas, under 3:1`);
+    return { noPark: true };
   },
   async 'emoji-keyboard'(env) {
     await emojiKeyboard(env, null);
