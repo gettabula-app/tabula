@@ -26,7 +26,12 @@ export function mountChat(app: BoardApp, dock: ChatDock, tray: SideTray | null =
   // ---------------------------------------------------------------- button
   const badge = h('span', { class: 'chat-count', 'aria-hidden': 'true' });
   const button = h('button', {
-    class: 'icon-btn chat-toggle', 'aria-label': 'Chat', 'aria-pressed': 'false', 'aria-keyshortcuts': 'M', 'data-tip-key': 'm', onclick: () => { dock.dispatch('toggle'); },
+    class: 'icon-btn chat-toggle', 'aria-label': 'Chat', 'aria-pressed': 'false', 'aria-keyshortcuts': 'M', 'data-tip-key': 'm', onclick: (e: MouseEvent) => {
+      // a keyboard press (detail 0) opens the dock and moves into it; the dock is last in the page's order, 30 Tabs away otherwise
+      const opening = !shown();
+      dock.dispatch('toggle');
+      if (opening && e.detail === 0) dock.focusComposer();
+    },
   }, icon('chat', 18), badge);
 
   let badgeSeen: number | null = null;

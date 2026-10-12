@@ -75,6 +75,8 @@ export interface ChatDock {
   /** Called with the dock's inset in px whenever it changes (the board refits its camera insets). */
   onInset(fn: (inset: number) => void): () => void;
   inset(): number;
+  /** Hides the dock on a page that must stay chrome-free (consent, sign-in) or is the chat itself; the dock keeps its state. */
+  setSuppressed(on: boolean): void;
   /** Focuses the message box of what is shown, once the dock is. */
   focusComposer(): void;
   destroy(): void;
@@ -123,10 +125,19 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const head = h('header', { class: 'chat-dock-head' }, title, page, expand, compact, button('Minimise to a bubble', 'minus', 'minimise'), button('Close chat', 'close', 'close'));
   const panel = h('section', { class: 'chat-dock tray', 'aria-label': 'Chat', role: 'complementary' }, head, body);
   const bubbleCount = h('u', { class: 'chat-bubble-count', 'aria-hidden': 'true', hidden: true });
-  const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: () => dispatch('open') }, icon('chat', 22), bubbleCount);
+  const bubble = h('button', { class: 'chat-bubble tray', type: 'button', 'aria-label': 'Chat', 'data-tip': 'Open chat', onclick: (e: MouseEvent) => { dispatch('open'); if (e.detail === 0) dock.focusComposer(); } }, icon('chat', 22), bubbleCount);
   // Esc inside the dock closes it and gives focus back to the Chat button; a message box, a menu or an edit uses its own Esc first.
+  panel.setAttribute('tabindex', '-1');
   panel.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (e.key !== 'Escape') return;
+    if (e.defaultPrevented) {
+      // the message box (or an edit, or a menu) used this Esc and let go of focus: keep it in the dock, so the next Esc closes it from here
+      queueMicrotask(() => {
+        const active = document.activeElement;
+        if (isShown() && (!active || active === document.body)) panel.focus({ preventScroll: true });
+      });
+      return;
+    }
     e.preventDefault();
     dispatch('close');
     board?.ctx.returnFocus?.()?.focus();
@@ -134,6 +145,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   const el = h('div', { class: 'chat-dock-host' }, panel, bubble);
   overlay.append(el);
 
+  let suppressed = false;
   let board: { ctx: DockBoard; offPresence: (() => void) | null } | null = null;
   let entries: ChatChannelEntry[] = [];
   let loaded = false;
@@ -142,7 +154,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   let refetchTimer: ReturnType<typeof setTimeout> | null = null;
   let watchLife: AbortController | null = null;
   let mounted: { key: string; abort: AbortController; conv: Conversation } | null = null;
-  const isShown = () => prefs.mode === 'open' || prefs.mode === 'compact';
+  const isShown = () => !suppressed && (prefs.mode === 'open' || prefs.mode === 'compact');
 
   const channels = () => dockChannels(entries, board?.ctx.boardId ?? null);
   /**
@@ -278,7 +290,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
 
   /** Keeps the chat socket up while the dock is a panel or a bubble (the bubble counts), and the channel list loaded while it is a panel. */
   function syncWatch() {
-    const watching = prefs.mode !== 'closed';
+    const watching = prefs.mode !== 'closed' && !suppressed;
     if (watching && !watchLife) {
       watchLife = new AbortController();
       deps.watch(watchLife.signal);
@@ -303,7 +315,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   /** The room the dock takes from the board, published as --dock-inset on the page for the chrome to read. */
   const insetListeners = new Set<(inset: number) => void>();
   const publishInset = () => {
-    const inset = dockInset(prefs.mode, window.innerWidth);
+    const inset = suppressed ? 0 : dockInset(prefs.mode, window.innerWidth);
     document.documentElement.style.setProperty('--dock-inset', `${inset}px`);
     document.documentElement.dataset.dockInset = String(inset);
     insetListeners.forEach((fn) => fn(inset));
@@ -313,8 +325,9 @@ export function mountChatDock(overlay: HTMLElement, opts: {
   function paint() {
     publishInset();
     el.dataset.mode = prefs.mode;
+    el.hidden = suppressed;
     panel.hidden = !isShown();
-    bubble.hidden = prefs.mode !== 'bubble';
+    bubble.hidden = suppressed || prefs.mode !== 'bubble';
     expand.hidden = prefs.mode !== 'compact';
     compact.hidden = prefs.mode !== 'open';
     paintBubble();
@@ -360,7 +373,14 @@ export function mountChatDock(overlay: HTMLElement, opts: {
       insetListeners.add(fn);
       return () => insetListeners.delete(fn);
     },
-    inset: () => dockInset(prefs.mode, window.innerWidth),
+    inset: () => (suppressed ? 0 : dockInset(prefs.mode, window.innerWidth)),
+    setSuppressed(on) {
+      if (suppressed === on) return;
+      suppressed = on;
+      paint();
+      syncWatch();
+      render();
+    },
     attachBoard(ctx) {
       board?.offPresence?.();
       const mine = { ctx, offPresence: ctx.presence?.onChange(() => paintHere()) ?? null };

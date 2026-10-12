@@ -81,6 +81,10 @@ export function nextDock(prefs: DockPrefs, event: DockEvent): DockPrefs {
   }
 }
 
+/** Pages the dock never shows on: sign-in, the OAuth consent page, invitations and join codes stay chrome-free, and the Chat page is the chat. */
+const NO_DOCK_ROUTES: ReadonlySet<string> = new Set(['signin', 'verify', 'oauth-consent', 'invite', 'join', 'chat']);
+export const dockHiddenOn = (routeName: string): boolean => NO_DOCK_ROUTES.has(routeName);
+
 /** Under this width the dock overlays the board (the phone sheet takes over there); above it the board's chrome makes room. */
 export const DOCK_OVERLAY_BELOW = 900;
 const DOCK_GAP = 12;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { stubDeps } from './chat-dock-deps';
 import { installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
-import { DEFAULT_DOCK, dockInset, dockKey, loadDock, nextDock, parseDock, saveDock, type DockEvent, type DockPrefs } from '../src/ui/chat-dock-state';
+import { DEFAULT_DOCK, dockHiddenOn, dockInset, dockKey, loadDock, nextDock, parseDock, saveDock, type DockEvent, type DockPrefs } from '../src/ui/chat-dock-state';
 
 // docs/chat.md, Dock: the state machine and what is remembered (pure), then the host in the overlay layer.
 
@@ -48,6 +48,13 @@ describe('how far the dock reaches in', () => {
     expect(dockInset('closed', 1280)).toBe(0);
     expect(dockInset('open', 899)).toBe(0);
     expect(dockInset('open', 900)).toBe(372);
+  });
+});
+
+describe('where the dock stays away', () => {
+  it('is hidden on sign-in, consent, invitations, join codes and the Chat page, and shown on the rest', () => {
+    for (const name of ['signin', 'verify', 'oauth-consent', 'invite', 'join', 'chat']) expect(dockHiddenOn(name)).toBe(true);
+    for (const name of ['home', 'templates', 'board', 'tracker', 'admin', 'template-edit']) expect(dockHiddenOn(name)).toBe(false);
   });
 });
 
@@ -167,6 +174,23 @@ describe('the dock host', () => {
     const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: blocked, deps: stubDeps().deps });
     expect(() => dock.dispatch('open')).not.toThrow();
     expect(dock.mode()).toBe('open');
+  });
+
+  it('can be suppressed on a page: hidden, no room taken, no socket, and back as it was afterwards', async () => {
+    const { mod, overlay, host } = await setup();
+    const stub = stubDeps();
+    const dock = mod.mountChatDock(overlay, { userId: 'ana', storage: memory().storage, deps: stub.deps });
+    dock.dispatch('open');
+    expect(dock.inset()).toBe(372);
+    dock.setSuppressed(true);
+    expect((host.querySelector('.chat-dock-host') as FakeElement).hidden).toBe(true);
+    expect(dock.inset()).toBe(0);
+    expect(stub.watches[0].aborted).toBe(true);
+    expect(dock.mode()).toBe('open'); // its state is kept
+    dock.setSuppressed(false);
+    expect((host.querySelector('.chat-dock-host') as FakeElement).hidden).toBe(false);
+    expect(dock.inset()).toBe(372);
+    expect(stub.watches).toHaveLength(2);
   });
 
   it('syncChatDock mounts for a person with chat, once, and removes it for anyone else', async () => {
