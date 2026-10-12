@@ -1,0 +1,178 @@
+# Tabula telemetry back end. NOT deployed anywhere. See docs/telemetry-stack.md.
+#
+# Own compose project and network, so it cannot touch another project on the same host. The only published ports are the
+# two doors on the proxy, and both are bound to an explicit address (loopback by default); nothing is ever on 0.0.0.0.
+# Resource limits suit a shared host with 1 to 2 vCPU. Images are pinned by tag; pin digests at deploy time.
+name: tabula-telemetry
+
+x-service: &service
+  restart: unless-stopped
+  networks: [telemetry]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  victoriametrics:
+    <<: *service
+    image: victoriametrics/victoria-metrics:v1.102.1
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=13        # months: the hourly series live 13 months (the source is already hourly)
+      - -httpListenAddr=:8428
+      - -promscrape.config=/etc/vm/scrape.yml
+      - -memory.allowedPercent=60
+      - -search.maxQueryDuration=30s
+      - -loggerLevel=WARN
+    volumes:
+      - ${TELEMETRY_DATA:-/srv/telemetry}/vm:/storage
+      - ./vm/scrape.yml:/etc/vm/scrape.yml:ro
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 200
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8428/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  loki:
+    <<: *service
+    image: grafana/loki:3.1.1
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ${TELEMETRY_DATA:-/srv/telemetry}/loki:/loki
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 200
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3100/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  grafana:
+    <<: *service
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?set GRAFANA_ADMIN_USER in .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://127.0.0.1:8480/}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_ANALYTICS_FEEDBACK_LINKS_ENABLED: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PLUGIN_ADMIN_ENABLED: "false"
+      GF_PUBLIC_DASHBOARDS_ENABLED: "false"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_LOG_LEVEL: warn
+    volumes:
+      - ${TELEMETRY_DATA:-/srv/telemetry}/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      victoriametrics: { condition: service_healthy }
+      loki: { condition: service_healthy }
+    mem_limit: 384m
+    cpus: 0.5
+    pids_limit: 200
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  collector:
+    <<: *service
+    build:
+      context: ../..
+      dockerfile: telemetry-collector/Dockerfile
+    image: tabula-telemetry-collector:local
+    command: ["serve"]
+    environment:
+      COLLECTOR_HOST: 0.0.0.0          # inside the container network only; the proxy is the only way in
+      COLLECTOR_PORT: "8481"
+      COLLECTOR_TRUST_PROXY: "1"
+      VM_URL: http://victoriametrics:8428
+      LOKI_URL: http://loki:3100
+      TELEMETRY_DATA_DIR: /data
+    volumes:
+      - ${TELEMETRY_DATA:-/srv/telemetry}/state:/data/state
+      - ${TELEMETRY_DATA:-/srv/telemetry}/lake:/data/lake
+    read_only: true
+    tmpfs: ["/tmp:size=16m"]
+    depends_on:
+      victoriametrics: { condition: service_healthy }
+      loki: { condition: service_healthy }
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 100
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8481/healthz').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  lake:
+    <<: *service
+    image: tabula-telemetry-collector:local
+    command: ["lake-daemon"]
+    environment:
+      TELEMETRY_DATA_DIR: /data
+      DUCKDB_MEMORY_LIMIT: 768MB
+    volumes:
+      - ${TELEMETRY_DATA:-/srv/telemetry}/state:/data/state
+      - ${TELEMETRY_DATA:-/srv/telemetry}/lake:/data/lake
+    read_only: true
+    tmpfs: ["/tmp:size=256m", "/home/node/.duckdb:size=16m,uid=1000"]
+    depends_on:
+      - collector
+    mem_limit: 1g
+    cpus: 0.5
+    pids_limit: 100
+    healthcheck:
+      test: ["CMD", "node", "-e", "const s=require('fs').statSync('/data/state/lake-heartbeat');process.exit(Date.now()-s.mtimeMs<7200000?0:1)"]
+      interval: 5m
+      timeout: 5s
+      retries: 2
+      start_period: 5m
+
+  proxy:
+    <<: *service
+    image: caddy:2.8.4-alpine
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      # The explicit address is the rule: loopback, or the tunnel address. scripts/preflight.sh refuses 0.0.0.0.
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-8480}:8480"
+      - "${INGEST_BIND:-127.0.0.1}:${INGEST_PORT:-8481}:8481"
+    depends_on:
+      grafana: { condition: service_healthy }
+      collector: { condition: service_healthy }
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 100
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8481/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+networks:
+  telemetry:
+    driver: bridge
