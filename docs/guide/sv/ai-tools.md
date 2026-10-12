@@ -78,6 +78,14 @@ Kanbantavlor kräver försiktighet:
 - Ett verktyg kan koppla samman kort och andra objekt, men inte en kolumn eller själva kanbantavlan. En ny eller ändrad kopplingslinje som slutar vid en kolumn eller kanbantavla avvisas. Befintliga kopplingslinjer påverkas inte.
 - Text som ett verktyg skriver håller ihop emoji som består av flera delar, till exempel familjer och flaggor för England, Skottland och Wales. Dolda tecken tas fortfarande bort.
 
+## Daglig gräns och nya försök
+
+I en arbetsyta med inloggning kan varje token (och varje OAuth-anslutning) göra 2 000 ändringar på tavlor per dag. Räkningen gäller objekt, inte anrop: att skapa 10 klisterlappar i ett anrop räknas som 10. Den nollställs vid midnatt UTC, och ett verktyg som når gränsen får veta att den dagliga gränsen är nådd och när den nollställs. Läsning begränsas inte på det sättet, och det gör inte ärenden heller. Den som driver din server kan ändra talet eller stänga av gränsen.
+
+Ett AI-verktyg kan fråga vem det agerar som och se hur många ändringar det har använt i dag och när räkningen nollställs.
+
+Om ett svar går förlorat kan ett verktyg göra om ett skapa- eller kommentarsanrop med samma begäran-id. Det första resultatet skickas då igen i 24 timmar, och inget skapas eller räknas två gånger.
+
 ## Kanbankort från ett AI-verktyg
 
 Ett verktyg med en token kan arbeta med kort på en [kanbantavla](kanban.md) och med vanliga objekt. Verktygen är:
