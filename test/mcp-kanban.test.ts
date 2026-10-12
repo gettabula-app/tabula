@@ -176,7 +176,7 @@ describe('kanban MCP card tools', () => {
 
     const blocked = await h.tool(laneWriter.token, 'delete_kanban_lane', { boardId: board, kanbanId, laneId: sourceLane, moveCardsTo: targetLane });
     expect(blocked.error).toBe('wip_limit');
-    expect(blocked.data.message).toBe('This lane is at its WIP limit (1/1).');
+    expect(blocked.data.message).toBe('This lane is at its WIP limit (1/1). Move a card out of the lane first or pick another lane.');
     const overLimit = await h.tool(laneWriter.token, 'update_kanban_lane', { boardId: board, kanbanId, laneId: sourceLane, wip: 1 });
     expect(overLimit.error).toBeUndefined();
     expect(overLimit.data.warnings).toContain('The WIP limit is below this lane’s current card count.');
@@ -469,7 +469,7 @@ describe('kanban MCP card tools', () => {
 
       const blocked = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: todoId, title: 'Blocked by hidden cards' });
       expect(blocked.error).toBe('wip_limit');
-      expect(blocked.data.message).toBe(`This lane is at its WIP limit (${cards.length}/${visibleCount + 1}).`);
+      expect(blocked.data.message).toBe(`This lane is at its WIP limit (${cards.length}/${visibleCount + 1}). Move a card out of the lane first or pick another lane.`);
 
       lane.delete('wip');
       lane.delete('wipMode');
@@ -526,10 +526,10 @@ describe('kanban MCP card tools', () => {
 
       const moved = await h.tool(token.token, 'move_kanban_card', { boardId: board, kanbanId, cardId: sourceId, laneId: doingId });
       expect(moved.error).toBe('wip_limit');
-      expect(moved.data.message).toBe(`This lane is at its WIP limit (${before}/1).`);
+      expect(moved.data.message).toBe(`This lane is at its WIP limit (${before}/1). Move a card out of the lane first or pick another lane.`);
       const added = await h.tool(token.token, 'add_kanban_card', { boardId: board, kanbanId, laneId: doingId, title: 'Blocked add' });
       expect(added.error).toBe('wip_limit');
-      expect(added.data.message).toBe(`This lane is at its WIP limit (${before}/1).`);
+      expect(added.data.message).toBe(`This lane is at its WIP limit (${before}/1). Move a card out of the lane first or pick another lane.`);
     } finally {
       const cleanup = [fillerId, sourceId].filter((id): id is string => !!id);
       if (cleanup.length) await h.tool(token.token, 'delete_objects', { boardId: board, ids: cleanup });
@@ -780,7 +780,7 @@ describe('kanban MCP card tools', () => {
 
       const missing = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id: 'mcp-no-such-object', x: 12 }] });
       expect(missing.error).toBe('not_found');
-      expect(missing.data).toEqual({ error: 'not_found', message: 'No such object', path: 'updates[0].id' });
+      expect(missing.data).toEqual({ error: 'not_found', message: 'No such object. Call get_board or get_objects for current ids.', path: 'updates[0].id' });
       for (const id of [hiddenId, privateId, hiddenLaneId, cardInHiddenLaneId, hiddenKanbanId]) {
         const result = await h.tool(token.token, 'update_objects', { boardId: board, updates: [{ id, x: 12 }] });
         expect(result.error).toBe('not_found');
@@ -1264,5 +1264,111 @@ describe('tracker-linked kanban MCP planner refusals', () => {
     expect(searched.error).toBeUndefined();
     expect(searched.data.tickets).toHaveLength(1);
     expect(searched.data.tickets[0]).toMatchObject({ title });
+  });
+});
+
+describe('MCP error hints', () => {
+  const storeBoard = (boardId: string, values: Record<string, unknown>[]) => {
+    const doc = new Y.Doc();
+    const objects = doc.getMap('objects');
+    for (const value of values) objects.set(String(value.id), new Y.Map(Object.entries(value)));
+    fs.writeFileSync(h.roomFile(boardId), Y.encodeStateAsUpdate(doc));
+    doc.destroy();
+  };
+
+  const kanbanObjects = (prefix: string, cardCounts: number[], wipLane = -1) => {
+    const kanbanId = `${prefix}-kanban`;
+    const values: Record<string, unknown>[] = [
+      { id: kanbanId, type: 'container', layout: 'kanban', name: 'Limits', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: 'a0' },
+    ];
+    const lanes = cardCounts.map((_, index) => `${prefix}-lane-${index}`);
+    let laneRank: string | null = null;
+    for (let index = 0; index < lanes.length; index++) {
+      laneRank = rankBetween(laneRank, null, kanbanId);
+      values.push({
+        id: lanes[index], type: 'lane', parent: kanbanId, rank: laneRank, name: `Lane ${index}`, stage: 'todo',
+        x: index * 300, y: 0, w: 280, h: 300, rotation: 0, z: 'a0',
+        ...(index === wipLane ? { wip: 1, wipMode: 'block' } : {}),
+      });
+      let cardRank: string | null = null;
+      for (let cardIndex = 0; cardIndex < cardCounts[index]; cardIndex++) {
+        cardRank = rankBetween(cardRank, null, lanes[index]);
+        values.push({
+          id: `${prefix}-card-${index}-${cardIndex}`, type: 'card', parent: lanes[index], rank: cardRank,
+          text: 'Card', x: 0, y: 0, w: 264, h: 72, rotation: 0, z: 'a0',
+        });
+      }
+    }
+    return { kanbanId, lanes, values };
+  };
+
+  it('gives next steps for board and card limits, WIP, locked and missing objects, and oversized batches', async () => {
+    const token = (await addToken('error hint coverage')).token;
+    const emptyBoard = await h.newBoard(owner.cookie);
+    storeBoard(emptyBoard, []);
+
+    const missingUpdate = await h.tool(token, 'update_objects', { boardId: emptyBoard, updates: [{ id: 'not-here', text: 'x' }] });
+    expect(missingUpdate.data).toMatchObject({
+      error: 'not_found', path: 'updates[0].id',
+      message: expect.stringContaining('Call get_board or get_objects for current ids.'),
+    });
+    const missingDelete = await h.tool(token, 'delete_objects', { boardId: emptyBoard, ids: ['not-here'] });
+    expect(missingDelete.data).toMatchObject({
+      error: 'not_found', path: 'ids[0]',
+      message: expect.stringContaining('Call get_board or get_objects for current ids.'),
+    });
+    const lockedBoard = await h.newBoard(owner.cookie);
+    storeBoard(lockedBoard, [{ id: 'locked-shape', type: 'shape', kind: 'rect', x: 0, y: 0, w: 100, h: 100, rotation: 0, z: 'a0', locked: true }]);
+    const lockedUpdate = await h.tool(token, 'update_objects', { boardId: lockedBoard, updates: [{ id: 'locked-shape', text: 'x' }] });
+    expect(lockedUpdate.data).toMatchObject({
+      error: 'conflict', path: 'updates[0].id', message: expect.stringContaining('Unlock it in the board first.'),
+    });
+    const lockedDelete = await h.tool(token, 'delete_objects', { boardId: lockedBoard, ids: ['locked-shape'] });
+    expect(lockedDelete.data).toMatchObject({
+      error: 'conflict', path: 'ids[0]', message: expect.stringContaining('Unlock it in the board first.'),
+    });
+    const oversizedBatch = await h.tool(token, 'create_objects', {
+      boardId: emptyBoard, objects: Array.from({ length: 101 }, () => ({ type: 'sticky', text: 'x', x: 0, y: 0 })),
+    });
+    expect(oversizedBatch.data).toMatchObject({
+      error: 'invalid_input', path: 'objects', message: expect.stringContaining('Split the call into smaller batches.'),
+    });
+
+    const laneBoard = await h.newBoard(owner.cookie);
+    const laneFixture = kanbanObjects('lane-limit', [500, 1], 1);
+    storeBoard(laneBoard, laneFixture.values);
+    const laneLimit = await h.tool(token, 'add_kanban_card', {
+      boardId: laneBoard, kanbanId: laneFixture.kanbanId, laneId: laneFixture.lanes[0], title: 'Over lane limit',
+    });
+    expect(laneLimit.data).toMatchObject({
+      error: 'limit_exceeded', path: 'laneId', message: expect.stringContaining('Move or delete cards first.'),
+    });
+    const wipLimit = await h.tool(token, 'add_kanban_card', {
+      boardId: laneBoard, kanbanId: laneFixture.kanbanId, laneId: laneFixture.lanes[1], title: 'Blocked by WIP',
+    });
+    expect(wipLimit.data).toMatchObject({
+      error: 'wip_limit', path: 'laneId', message: expect.stringContaining('Move a card out of the lane first or pick another lane.'),
+    });
+
+    const cardsBoard = await h.newBoard(owner.cookie);
+    const cardsFixture = kanbanObjects('board-card-limit', [500, 500, 500, 500, 0]);
+    storeBoard(cardsBoard, cardsFixture.values);
+    const boardCardLimit = await h.tool(token, 'add_kanban_card', {
+      boardId: cardsBoard, kanbanId: cardsFixture.kanbanId, laneId: cardsFixture.lanes[4], title: 'Over board limit',
+    });
+    expect(boardCardLimit.data).toMatchObject({
+      error: 'limit_exceeded', path: 'kanbanId', message: expect.stringContaining('Move or delete cards first.'),
+    });
+
+    const objectsBoard = await h.newBoard(owner.cookie);
+    storeBoard(objectsBoard, Array.from({ length: 5000 }, (_, index) => ({
+      id: `limit-object-${index}`, type: 'sticky', x: 0, y: 0, w: 192, h: 192, rotation: 0, z: 'a0', text: 'x',
+    })));
+    const objectLimit = await h.tool(token, 'create_objects', {
+      boardId: objectsBoard, objects: [{ type: 'sticky', text: 'one too many', x: 0, y: 0 }],
+    });
+    expect(objectLimit.data).toMatchObject({
+      error: 'limit_exceeded', path: 'objects', message: expect.stringContaining('Delete objects or use another board.'),
+    });
   });
 });

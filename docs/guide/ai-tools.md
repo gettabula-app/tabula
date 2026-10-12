@@ -78,6 +78,14 @@ Kanban boards need care:
 - A tool can connect things to cards and other objects, but not to a lane or to the kanban itself: a new or changed connector end on a lane or kanban is refused (connectors that already exist are left alone).
 - Text a tool writes keeps emoji made of several parts (families, flags such as England, Scotland and Wales) whole, while hidden characters are still removed.
 
+## Daily limit and retrying
+
+In a workspace with sign-in, each token (and each OAuth connection) can make 2,000 changes to boards per day. The count is in items, not calls: creating 10 sticky notes in one call counts as 10. It resets at midnight UTC, and a tool that hits it is told the daily limit has been reached and when it resets. Reading is not limited this way, and neither are tickets. Whoever runs your server can change the number or turn the limit off.
+
+An AI tool can ask who it is acting as and see how many changes it has used today and when the count resets.
+
+If an answer is lost, a tool can retry a create or comment call with the same request id. The first result is sent again for 24 hours and nothing is created twice or counted twice.
+
 ## Kanban cards from an AI tool
 
 A tool with a token can work with the cards of a [kanban board](kanban.md) as well as with ordinary objects. The tools are:

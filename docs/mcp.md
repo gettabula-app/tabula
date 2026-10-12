@@ -13,6 +13,7 @@ Off by default. **An instance without `TABULA_MCP=on` behaves exactly as describ
 | `TABULA_MCP` | `off` | `on` serves `/mcp`. Accounts mode (`TABULA_AUTH=on`): per-user access tokens, see "Authentication". Open mode: one shared token (`TABULA_MCP_TOKEN`) |
 | `TABULA_MCP_TOKEN` | none | Open mode only. Shared secret, at least 32 characters, no spaces. Required when `TABULA_MCP=on` in open mode; ignored (with a log line) in accounts mode, like the cloud variables without accounts |
 | `TABULA_MCP_SCOPE` | `read` | Open mode only. What the shared token may do: `read`, `comment` or `write` |
+| `TABULA_MCP_DAILY_WRITES` | `2000` | Maximum board writes per token or OAuth grant per UTC day. Counts items, not calls. Set to `0` for no cap; open mode has no daily cap |
 | `TABULA_TRACKER` | `off` | `on` exposes ticket tools in accounts mode when an access token has a tracker capability. Open mode never receives ticket tools. The directory migration runs regardless of this switch |
 
 `server/config.mjs` reads the `TABULA_` names directly; the old `MIRA_` spelling works through the rename's `withLegacyEnv`, which `loadConfig` applies to every variable. Other new user-visible strings are constants in one place each: the token prefix (`TOKEN_PREFIX`, `tbl_`) in `server/tokens.mjs` and the server name reported to clients (`MCP_SERVER_NAME`, `board`) in `server/mcp.mjs`. The CSRF header and the session cookie are not named anywhere in this feature: the token routes go through the API's own dispatch, and `/mcp` reads neither.
@@ -20,6 +21,7 @@ Off by default. **An instance without `TABULA_MCP=on` behaves exactly as describ
 Startup rules (the relay refuses to start and says why, like the cloud variables):
 
 - `TABULA_MCP` is anything but `on` or `off`.
+- `TABULA_MCP_DAILY_WRITES` is not an integer from `0` through `1,000,000`.
 - `TABULA_TRACKER` is anything but `on` or `off`.
 - Open mode with `TABULA_MCP=on` and a missing, short or space-containing `TABULA_MCP_TOKEN`, or a `TABULA_MCP_SCOPE` that is not `read|comment|write`.
 - `TABULA_MCP=on` while the base URL (`TABULA_BASE_URL`) is `http://` for any host but `localhost`, `127.0.0.1` or `[::1]`. A bearer token that can edit boards must not cross the network in clear text. (Cloud workspaces sit behind Caddy with an `https://` base URL and are unaffected.)
@@ -158,7 +160,7 @@ Attribution:
 - Objects get `createdBy` = the user's account id (`users.id`) and `updatedAt`. In the browser `createdBy` is the device-local presence id even in accounts mode, so it never equals an account id: MCP does not try to match it. In open mode `createdBy` is `mcp`.
 - **MCP never sets `privateStep`.** `Flow.isHidden` compares `createdBy` with the device id, so an AI-created private note would be hidden from everyone, its author included.
 - Comments use the account id as `authorId` (as the app does). `authorName` is `<user name> via <token name>` cut to 80 characters and `authorColor` is the fixed `var(--graphite, #5B6672)`, so an AI-written comment is visibly not a hand-typed one. Author fields are set by the server and no tool accepts them, so a token cannot impersonate another person. As everywhere in this app, authorship is a display convention, not a server-enforced boundary (`docs/comments.md`).
-- Audit: one row per **mutating** tool call. Board tools use `directory.audit(userId, 'mcp.<tool>', {tokenId, boardId, room, count, ids})`; ticket tools use `room: 'tracker'` and ticket/comment/label ids only. Both keep at most 20 ids and **no user-written text**. Reads are not audited (they update `last_used_at`). A prefix filter `mcp.` in the admin audit log shows all AI activity. The audit log is bounded by the write rate limit.
+- Audit: one row per successful **mutating** tool execution. Board tools use `directory.audit(userId, 'mcp.<tool>', {tokenId, boardId, room, count, ids})`; ticket tools use `room: 'tracker'` and ticket/comment/label ids only. Both keep at most 20 ids and **no user-written text**. Replayed `clientRequestId` calls do not execute or create another audit row. Reads are not audited (they update `last_used_at`). A prefix filter `mcp.` in the admin audit log shows all AI activity. The audit log is bounded by the write rate limit.
 
 ## Tools
 
@@ -197,11 +199,17 @@ Numbers must be finite. Coordinates are within ±1,000,000 and rounded to 2 deci
 
 ### `whoami`
 
-`{}` -> `{ mode: 'accounts'|'open', user: {id, name}|null, token: {name, scope, expiresAt|null, boardIds|null}, workspaceReadOnly: boolean }`. `scope` is the level the token acts at right now (see "Accounts mode" for the promotion rule). A write token can manage kanban labels and lanes as well as cards. No email address is ever returned by any tool.
+`{}` -> `{ mode: 'accounts'|'open', user: {id, name}|null, token: {name, scope, expiresAt|null, boardIds|null}, dailyWrites?: {used, cap, resetsAt}, workspaceReadOnly: boolean }`. In accounts mode, `dailyWrites.used` is this token's or OAuth grant's count for today in UTC; `cap` is the configured limit or `null` when unlimited; `resetsAt` is the next UTC midnight as an ISO timestamp. Open mode omits `dailyWrites`. `scope` is the level the token acts at right now (see "Accounts mode" for the promotion rule). A write token can manage kanban labels and lanes as well as cards. No email address is ever returned by any tool.
+
+### Retrying safely
+
+In accounts mode, the listed create and comment tools accept an optional `clientRequestId` of 8 to 64 letters, digits, underscores or dashes. Reuse it with the same tool and arguments to retry after a lost answer. A successful result is replayed for 24 hours with `replayed: true`; it does not run the tool again or count more daily writes. Reusing the id with different arguments returns `request_id_reused`. Failed calls are not saved. Results over 64 KiB are returned normally but are not saved for replay.
+
+This applies to `create_objects`, `add_kanban_card`, `add_kanban_cards`, `create_kanban`, `use_template`, `add_comment` and `reply_to_comment`. Ticket tools keep their own idempotency fields and limits.
 
 ### `list_boards` (accounts mode only)
 
-`{ query?: string (at most 100 characters, matched against the title, case-insensitive), limit?: 1..100 (default 50) }` -> `{ boards: [{id, title, role, access: 'read'|'comment'|'write', teamName|null, updatedAt}], truncated: boolean }`. Uses `directory.listBoardsFor(user)` (deleted boards excluded), filtered by the token's `boardIds`. `access` is the effective access from the table above, for this token. Newest `updatedAt` first.
+`{ query?: string (at most 100 characters, matched against the title, case-insensitive), limit?: 1..100 (default 50), cursor?: string }` -> `{ boards: [{id, title, role, access: 'read'|'comment'|'write', teamName|null, updatedAt}], nextCursor: string|null, truncated: boolean }`. Uses `directory.listBoardsFor(user)` (deleted boards excluded), filtered by the token's `boardIds`. `access` is the effective access from the table above, for this token. Sorted by title then id.
 
 ### `get_board`
 
@@ -260,7 +268,7 @@ icon, image, path, UML objects   x y w h rotation(deg), parent(frame or group id
 
 ### `delete_objects`
 
-`{ boardId, ids: string[1..50] }` -> `{ deleted: string[], alsoDeleted: string[], removed: Summary[] }`. Explicit ids only: there is no "delete all", no filter. Any locked or unknown id fails the whole call. Lanes cannot be deleted here; use `delete_kanban_lane`. Kanbans are deleted through the board UI. A card must be visible, in a kanban lane and unlocked; an unrevealed private or hidden card answers `not_found`, and a card assigned to another agent answers `conflict` for a different token. A person's card can be deleted by an editor token. Deleting a group also deletes its members, including nested groups, frames and kanban members; any locked member blocks the whole cascade with `conflict` until it is unlocked. Unrevealed private notes are left on the board and moved to the nearest parent outside the deleted group. Children of a directly deleted frame stay on the board with `parent` cleared. **Connectors attached to a deleted object are deleted too** (`alsoDeleted`): the app turns them into free lines, which needs connector geometry that lives in TypeScript under `src/` and is not available to the server. Deleting is permanent for the human, because MCP edits are outside the undo stack and rooms use `gc: true`; the result therefore echoes a `Summary` of everything removed (`removed`) so a model can recreate it.
+`{ boardId, ids: string[1..50] }` -> `{ deleted: string[], alsoDeleted: string[], removed: Summary[] }`. Explicit ids only: there is no "delete all", no filter. Any locked or unknown id fails the whole call. Lanes cannot be deleted here; use `delete_kanban_lane`. Kanbans are deleted through the board UI. A card must be visible, in a kanban lane and unlocked; an unrevealed private or hidden card answers `not_found`, and a card assigned to another agent answers `conflict` for a different token. A person's card can be deleted by an editor token. Deleting a group also deletes its members, including nested groups, frames and kanban members; any locked member blocks the whole cascade with `conflict` until it is unlocked. Unrevealed private notes are left on the board and moved to the nearest parent outside the deleted group. Children of a directly deleted frame stay on the board with `parent` cleared. **Connectors attached to a deleted object are deleted too** (`alsoDeleted`): the app turns them into free lines, which needs connector geometry that lives in TypeScript under `src/` and is not available to the server. The result echoes a `Summary` of everything removed (`removed`) so a model can recreate it.
 
 ### `list_kanban_cards`
 
@@ -316,7 +324,7 @@ icon, image, path, UML objects   x y w h rotation(deg), parent(frame or group id
 
 ### `list_templates` (accounts mode only)
 
-`{ query?: string (≤ 100, matches name, category and description), category?: one of the template categories, limit?: 1..100 (default 50) }` -> `{ templates: [{ id, name, category, description, scope: 'personal'|'team'|'workspace', teamName|null, objects, steps, updatedAt }], truncated }`. Newest first. It lists exactly what the person behind the token can see in the app: their own templates, those of their teams, and the workspace's (guests: only their teams'); see `docs/custom-templates.md` for the rules. Names and descriptions are written by people, so the result is fenced and cleaned like board text. The content of a template is never returned.
+`{ query?: string (≤ 100, matches name, category and description), category?: one of the template categories, limit?: 1..100 (default 50), cursor?: string }` -> `{ templates: [{ id, name, category, description, scope: 'personal'|'team'|'workspace', teamName|null, objects, steps, updatedAt }], nextCursor: string|null, truncated }`. Sorted by name then id. It lists exactly what the person behind the token can see in the app: their own templates, those of their teams, and the workspace's (guests: only their teams'); see `docs/custom-templates.md` for the rules. Names and descriptions are written by people, so the result is fenced and cleaned like board text. The content of a template is never returned.
 
 ### `use_template` (accounts mode only)
 
@@ -345,9 +353,11 @@ The template's session steps and fonts are **not** applied (`stepsSkipped` says 
 | Cards per `add_kanban_cards` / `move_kanban_cards` | 25 |
 | Ids per `delete_objects` / `get_objects` | 50 |
 | `get_board` page | 500 objects (default 200) |
+| Board and template lists | `list_boards` and `list_templates` accept `limit` (1..100, default 50) and an opaque `cursor`; follow `nextCursor` until it is `null`. Boards are sorted by title, templates by name, then each by id. A bad cursor returns `invalid_input`. Board pages apply the token's board restriction before paging. |
 | Objects per board | 5,000 |
 | Response size | 200 KB of text; larger results are cut with `truncated: true` |
 | Calls per token | 120 per minute, of which at most 30 mutating, sliding window in memory (`429`, `Retry-After`, JSON-RPC error body) |
+| Board writes per token or OAuth grant | 2,000 items per UTC day by default; set `TABULA_MCP_DAILY_WRITES=0` for no cap. Applies to board tools, not ticket tools. Refusals use `daily_limit`; the count resets at 00:00 UTC |
 | Wrong tokens | 20 per minute per IP (a good token is never held back) |
 | Active tokens per user | 20 |
 
@@ -561,7 +571,9 @@ export const SCOPES, MAX_ACTIVE_TOKENS, MAX_TOKEN_BOARDS, TOKEN_BOARD_ID_RE
 Pure and in process (Vitest, `Y.Doc`s, no sockets):
 
 - `test/board-ops.test.ts`: every object type created by `planCreate`/`applyPlan` loads in the real `Store` (`src/store.ts`) with the expected cache entry, `z` above existing objects, ids unique, defaults and fonts from `meta`; validation (unknown type, kind or field, non-finite and out-of-range numbers, colours that are not `#RRGGBB`, `url(...)` and `var(...)` refused, text over 4,000, `__proto__` keys, more than 100 items, board over 5,000 objects, a `parent` that is not a frame, a cycle); **atomicity** (one bad item leaves the document byte-identical and emits no update); `update` sets single keys and a concurrent human edit to another field on a second synced doc survives; `null` clears; `type`/`id` immutable; locked targets and unknown ids fail the whole call; `delete` removes attached connectors, clears children's `parent`, refuses locked; hidden notes (`privateStep` with `reveal` false) are absent from `get_board`, counts and bounds, present when `reveal` is true, and comments anchored on them are withheld; threads and replies written by `addThread`/`addReply` are read back correctly by the real `Comments` class (`src/comments.ts`); `authorName` at most 80 characters; `SHAPE_KINDS` equals the `ShapeKind` union read from `src/types.ts`, and the sticky colour table equals `STICKY_COLORS`; `cleanForModel` removes tag, zero-width and bidi characters and truncates by code point; `fence` uses a fresh nonce per call and a board string containing the closing marker cannot end the block; every read function leaves the document's state vector unchanged; `server/mcp.mjs`, `server/board-ops.mjs` and `server/tokens.mjs` never import `node:fs` or name a `.yjs` file.
-- `test/tokens.test.ts`: migration 4 applies to a version 3 directory that has users, boards and sessions and keeps them; create then find; the plaintext token is not anywhere in the database file; wrong, revoked, expired and disabled-user lookups are `null`; removing a user deletes their tokens; listings never contain the digest; the 30-day sweep; a corrupt `board_ids` fails closed; `TABULA_MCP*` configuration validation (every startup rule above, the https rule, accounts mode ignoring the shared token); the board id pattern is the directory's; the shared-token comparison is two digests and `timingSafeEqual` (a source check in `test/board-ops.test.ts`, behaviour in `test/mcp-open.test.ts`).
+- `test/tokens.test.ts`: migration 4 applies to a version 3 directory that has users, boards and sessions and keeps them; create then find; the plaintext token is not anywhere in the database file; wrong, revoked, expired and disabled-user lookups are `null`; removing a user deletes their tokens; listings never contain the digest; the 30-day sweep; a corrupt `board_ids` fails closed; `TABULA_MCP*` configuration validation (including the daily-write cap); the https rule; accounts mode ignoring the shared token; the board id pattern is the directory's; the shared-token comparison is two digests and `timingSafeEqual` (a source check in `test/board-ops.test.ts`, behaviour in `test/mcp-open.test.ts`).
+- `test/mcp-usage.test.ts`: persistent daily counts are isolated by actor kind, actor id and date; request records are isolated by actor and cleaned after 24 hours; daily rows are cleaned after eight days, with sweeps no more than once per hour.
+- `test/mcp-daily-write-cap.test.ts`: `createMcp` with a test clock checks item counts, refusal before a room change, failed-call accounting, token isolation, UTC reset, OAuth-grant accounting, retry replay, conflicts, failures, oversized results and request expiry.
 
 Black box (spawned relay, like `test/accounts-server.test.ts` and `test/cloud-relay.test.ts`):
 
@@ -574,7 +586,7 @@ Black box (spawned relay, like `test/accounts-server.test.ts` and `test/cloud-re
   - **Live editing**: with a real `WebsocketProvider` connected as an editor, `create_objects`, `update_objects` and `delete_objects` appear on that client without reconnecting; a commenter's `add_comment` appears on a client of the comments room; the objects survive a relay restart (the room file is written by the relay's own save); a connected viewer's socket receives the edit; private notes and the comments pinned on them are withheld until the session reveals.
   - **Changes mid-use**: demoting an editor, unsharing a board, soft-deleting it and disabling the user each change the very next call's answer, without a reconnect; promoting the owner of an unrestricted write token to admin makes it read-only.
   - **Hosted read-only** (a cloud-mode relay driven through `PUT /api/internal/limits`; the control plane itself is never called): writes fail with `read_only` and reads work; flipping the limit applies to the next call in both directions; creating a token is `402` while revoking one works; the seat limit does not matter; the cloud token is not an access token and the reverse.
-  - **Limits**: 429 with `Retry-After` for calls, mutating calls and wrong tokens (and a good token is never held back); the 100-item cap; a large board read in pages that fit the response budget. The 5,000-object cap is in the unit tests.
+  - **Limits**: 429 with `Retry-After` for calls, mutating calls and wrong tokens (and a good token is never held back); the daily write cap and its item count are in `test/mcp-daily-write-cap.test.ts`; the 100-item cap; a large board read in pages that fit the response budget. The 5,000-object cap is in the unit tests.
   - **Untrusted content**: a sticky whose text contains instructions, a fake closing marker and tag characters comes back inside the fence, escaped and cleaned; two responses have different nonces; no error message contains board text.
   - **Room lifecycle** (with `ROOM_UNLOAD_MS` short): a read loads no room and creates no room file; a write to a board nobody has open loads one, and `/api/health` `rooms` is back where it was after the unload delay with the edit on disk.
 - `test/mcp-templates.test.ts` (shares the harness): `list_templates` shows what the person can see and nothing else (guests, people outside a team, other people's personal templates), filters, validates and fences; `use_template` places the objects (new ids, references kept, shifted by the origin or by `nextFree`, `z` above the board), is refused for a read or comment token, a viewer, a token that excludes the board, a deleted or invisible template, leaves the board untouched when refused, writes one `mcp.use_template` audit row, counts for the mutating-call rate limit and answers `read_only` on a read-only hosted workspace; no tool creates, changes or deletes a template.
@@ -630,7 +642,7 @@ Settled when the spec was approved:
 2. **https only.** `TABULA_MCP=on` refuses to start for an `http://` base URL on a non-loopback host. This rules out clear-text LAN setups.
 3. **Workspace owners and admins must list boards for `comment` and `write` tokens.** Their role is `owner` of everything.
 4. **No visible marker on AI-created objects** (only audit rows and the `createdBy` account id). A `createdVia` field would be one optional field in `src/types.ts`.
-5. **Delete removes attached connectors** instead of freeing their ends, and cannot be undone.
+5. **Delete removes attached connectors** instead of freeing their ends.
 6. **Access tokens only** (no OAuth), so Claude Desktop needs a bridge until an OAuth slice.
 7. **Open mode shared token ships in this slice**, off by default, `read` scope by default.
 8. **Token expiry** default 30 days, maximum 365, no non-expiring tokens; "Sign out everywhere" leaves tokens alone.

@@ -7,6 +7,7 @@ import { describeSchema, migrate, readSchemaState } from './schema.mjs';
 import { TEMPLATES_MIGRATION, createTemplateStore } from './templates.mjs';
 import { TOKENS_MIGRATION, createTokenStore } from './tokens.mjs';
 import { OAUTH_MIGRATION, createOauthStore } from './oauth.mjs';
+import { MCP_USAGE_MIGRATION, createMcpUsageStore } from './mcp-usage.mjs';
 import { AI_KEYS_MIGRATION, AI_KEYS_MODEL_MIGRATION, createAiKeyStore } from './ai/keys.mjs';
 import { ASSETS_MIGRATION, createAssetIndex } from './assets.mjs';
 
@@ -499,6 +500,8 @@ export const MIGRATIONS = [
   `, minReader: 11 },
   // OAuth slice 1 adds tables only. Keep v5.0.1 (schema generation 11) as the rollback floor.
   { sql: OAUTH_MIGRATION, minReader: 11 },
+  // MCP daily usage and request retries add tables only; keep the schema-11 rollback floor.
+  { sql: MCP_USAGE_MIGRATION, minReader: 11 },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -1376,6 +1379,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
 
   const tokenStore = createTokenStore({ get, all, run, transaction });
   const oauthStore = createOauthStore({ get, all, run, transaction, secret: oauthSecret, exposeInternals: oauthInternals });
+  const mcpUsageStore = createMcpUsageStore({ get, run, transaction });
 
   return {
     close() {
@@ -1456,6 +1460,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     setSetting,
     ...tokenStore,
     ...oauthStore,
+    ...mcpUsageStore,
     invalidateOauthAfterRestore(reason = 'restore', now = Date.now(), purgeClients = false) {
       return oauthStore.invalidateAfterRestore(now, reason, purgeClients);
     },
