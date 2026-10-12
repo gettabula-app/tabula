@@ -153,6 +153,7 @@ const ENTRIES: Record<string, Entry> = {
   invalid_backup: UNUSABLE,
   integrity_check_failed: text('its database failed a check', 'The database in this backup failed a check, so nothing was changed.'),
   backup_incomplete: text('a file of it is missing from the storage', 'A file of this backup is missing from the storage, so it cannot be restored.'),
+  tracker_data_invalid: text('the tickets in it are not consistent', 'The tickets in this backup are not consistent (links that point at nothing), so nothing was changed. Pick another backup.'),
   schema_too_new: text('it was made by a newer Tabula', 'This backup was made by a newer version of Tabula. Update Tabula first, then restore it.'),
   no_active_owner: text('every owner in it is disabled', 'Every owner in this backup is disabled, so nobody could manage the workspace after a restore.'),
   space_unknown: text('the free disk space is not known', 'The free disk space could not be determined, so nothing was changed.'),
