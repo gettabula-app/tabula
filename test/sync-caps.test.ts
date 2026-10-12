@@ -438,8 +438,9 @@ describe('relay sync caps (classroom and big editor updates)', () => {
     expect(offline.length).toBeGreaterThan(1_500_000); // over the old 1 MiB cap
     const commentsSeen: number[] = [];
     const commentsWatcher = connect(owner.cookie, 'bigboard~comments');
+    const joined = new Promise((r) => commentsWatcher.once('message', r)); // the relay's first frame: the watcher is in the room
     commentsWatcher.on('message', (m: ArrayBuffer) => commentsSeen.push(m.byteLength));
-    await sleep(300);
+    await joined;
     comments.send(offline);
     for (let i = 0; i < 100 && !commentsSeen.some((n) => n > 500_000); i++) await sleep(50);
     expect(comments.readyState).toBe(WebSocket.OPEN);
