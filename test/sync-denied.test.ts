@@ -16,7 +16,7 @@ describe('deniedReason', () => {
     expect(deniedReason(code)).toBe(reason);
   });
 
-  it.each([1000, 1006, 4000, 4411, 4502, 4504, 0])('returns null for close code %i', (code) => {
+  it.each([4511, 1000, 1006, 4000, 4411, 4502, 4504, 0])('returns null for close code %i', (code) => {
     expect(deniedReason(code)).toBeNull();
   });
 });

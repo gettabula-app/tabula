@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
+import net from 'node:net';
 import path from 'node:path';
 import * as Y from 'yjs';
 import * as encoding from 'lib0/encoding';
@@ -113,11 +114,18 @@ describe('loadSyncCaps and frameLimitFor', () => {
   it('defaults, overrides and validates', () => {
     const d = loadSyncCaps({});
     expect(d.maxFrameOwner).toBe(MAX_FRAME_BYTES_OWNER);
-    expect(loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '10M' }).maxDocBytes).toBe(10 * 1024 * 1024);
+    expect(loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '10M', TABULA_SYNC_MAX_FRAME_OWNER: '8M', TABULA_SYNC_MAX_FRAME_OTHER: '8M' }).maxDocBytes).toBe(10 * 1024 * 1024);
     expect(loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '0' }).maxDocBytes).toBe(0);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_SOCKETS_PER_USER: 'abc' })).toThrow(/TABULA_SYNC_MAX_SOCKETS_PER_USER/);
     expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_OTHER: '0' })).toThrow(/at least 1/);
     expect(() => loadSyncCaps({ TABULA_SYNC_UPGRADES_PER_MINUTE: '0' })).toThrow();
+    // the limits must nest: small <= comments <= editor <= owner <= document cap
+    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_SMALL: '10M' })).toThrow(/TABULA_SYNC_MAX_FRAME_SMALL.*TABULA_SYNC_MAX_FRAME_COMMENTS/);
+    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_COMMENTS: '100M' })).toThrow(/TABULA_SYNC_MAX_FRAME_COMMENTS.*TABULA_SYNC_MAX_FRAME_OTHER/);
+    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_OTHER: '200M' })).toThrow(/TABULA_SYNC_MAX_FRAME_OTHER.*TABULA_SYNC_MAX_FRAME_OWNER/);
+    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '100M' })).toThrow(/TABULA_SYNC_MAX_FRAME_OWNER.*TABULA_SYNC_MAX_DOC_BYTES/);
+    expect(() => loadSyncCaps({ TABULA_SYNC_MAX_FRAME_SMALL: '512' })).toThrow(/at least 1024/);
+    expect(loadSyncCaps({ TABULA_SYNC_MAX_DOC_BYTES: '0', TABULA_SYNC_MAX_FRAME_OWNER: '512M' }).maxFrameOwner).toBe(512 * 1024 * 1024);
     expect(frameLimitFor(d, { role: 'editor', canWrite: true }, true)).toBe(MAX_FRAME_BYTES_OTHER);
     expect(frameLimitFor(d, { role: 'owner', canWrite: true }, true)).toBe(MAX_FRAME_BYTES_OWNER);
     expect(frameLimitFor(d, { role: 'viewer', canWrite: false }, true)).toBe(d.maxFrameSmall);
@@ -156,7 +164,7 @@ describe('relay sync caps (open mode)', () => {
     const started = await startRelayProcess({
       envFor: (port) => ({
         ...(process.env as Record<string, string>), PORT: String(port), DATA_DIR: dataDir, HOST: '127.0.0.1',
-        TABULA_SYNC_MAX_FRAME_OWNER: '256K', TABULA_SYNC_MAX_DOC_BYTES: '200K', TABULA_SYNC_MAX_SOCKETS_PER_ADDRESS: '6',
+        TABULA_SYNC_MAX_FRAME_OWNER: '192K', TABULA_SYNC_MAX_FRAME_OTHER: '128K', TABULA_SYNC_MAX_FRAME_COMMENTS: '96K', TABULA_SYNC_MAX_FRAME_SMALL: '64K', TABULA_SYNC_MAX_DOC_BYTES: '200K', TABULA_SYNC_MAX_SOCKETS_PER_ADDRESS: '6',
       }),
     });
     PORT = started.port;
@@ -250,7 +258,7 @@ describe('relay sync caps (accounts mode)', () => {
       envFor: (p) => ({
         ...(process.env as Record<string, string>), PORT: String(p), DATA_DIR: dir, HOST: '127.0.0.1', TABULA_AUTH: 'on',
         TABULA_OWNER_EMAIL: OWNER, TABULA_MAIL: 'file', TABULA_BASE_URL: `http://127.0.0.1:${p}`, TABULA_TRUST_PROXY: '1',
-        TABULA_SYNC_MAX_SOCKETS_PER_USER: '3', TABULA_SYNC_UPGRADES_PER_MINUTE: '12',
+        TABULA_SYNC_MAX_SOCKETS_PER_USER: '3', TABULA_SYNC_UPGRADES_PER_MINUTE: '40',
       }),
     });
     port = started.port;
@@ -275,7 +283,7 @@ describe('relay sync caps (accounts mode)', () => {
       ws.on('error', () => {});
       return ws;
     };
-    const opened = (ws: WebSocket) => new Promise<void>((r) => ws.once('message', () => r()));
+    const opened = (ws: WebSocket) => new Promise<void>((r, j) => { ws.once('message', () => r()); ws.once('close', (c) => j(new Error(`closed ${c} before the first message`))); });
     const socks = [connect('10.2.0.1'), connect('10.2.0.2'), connect('10.2.0.3')];
     await Promise.all(socks.map(opened));
     const extra = connect('10.2.0.4');
@@ -285,9 +293,38 @@ describe('relay sync caps (accounts mode)', () => {
     await sleep(300);
     const again = connect('10.2.0.5');
     await opened(again);
-    // 12 upgrades a minute per account (this test's env): later ones complete the handshake and are closed with 4429.
+    for (const s of [...socks, again]) s.terminate();
+    await sleep(500);
+
+    // a refusal for the cap is created with the tiny 1 KiB receiver: a bigger frame sent at once ends the socket (4430 or 1009)
+    const full = [connect('10.2.0.6'), connect('10.2.0.7'), connect('10.2.0.8')];
+    await Promise.all(full.map(opened));
+    const over = connect('10.2.0.9');
+    over.on('open', () => over.send(new Uint8Array(4096)));
+    expect([4430, 1009]).toContain((await closeOf(over)).code);
+    for (const s of full) s.terminate();
+    await sleep(500);
+
+    // slots come back after an upgrade that never completes: ten aborted handshakes, then the whole cap is free again
+    for (let i = 0; i < 10; i++) {
+      await new Promise<void>((r) => {
+        const raw = net.connect(port, '127.0.0.1', () => {
+          raw.write(`GET /sync/capsboard HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nOrigin: http://127.0.0.1:${port}\r\nCookie: ${cookie}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`);
+          raw.destroy();
+          r();
+        });
+        raw.on('error', () => r());
+      });
+    }
+    await sleep(500);
+    const fresh = [connect('10.2.0.10'), connect('10.2.0.11'), connect('10.2.0.12')];
+    await Promise.all(fresh.map(opened));
+    expect(fresh.every((s) => s.readyState === WebSocket.OPEN)).toBe(true);
+    // the cap is full again, so the flood below ends in closes (4430, or 4429 once the account limit is used)
+    socks.splice(0, socks.length, ...fresh);
+    // 40 upgrades a minute per account (this test's env): later ones complete the handshake and are closed with 4429.
     const attempts: Promise<number>[] = [];
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 30; i++) {
       attempts.push(new Promise((r) => {
         const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/capsboard`, { headers: { Origin: `http://127.0.0.1:${port}`, Cookie: cookie, 'x-forwarded-for': '10.9.9.9' } });
         ws.on('close', (code) => r(code));
@@ -530,5 +567,43 @@ describe('relay receive limits by role (accounts mode)', () => {
     await sleep(500);
     expect(o.readyState).toBe(WebSocket.OPEN);
     for (const w of [watcher, o]) w.terminate();
+  }, 60_000);
+
+  it('applies the comments limits to a commenter, and keeps a viewer at the small limit in the comments room', async () => {
+    const owner = await signIn(OWNER);
+    expect((await api(owner.cookie, 'POST', '/api/boards', { id: 'commentsboard' })).status).toBe(201);
+    const team = (await api(owner.cookie, 'POST', '/api/teams', { name: 'Comments' })).body;
+    const share = async (email: string, role: string) => {
+      const invite = (await api(owner.cookie, 'POST', `/api/teams/${team.id}/invites`, { role: 'member' })).body.token;
+      const person = await signIn(email, invite);
+      expect((await api(owner.cookie, 'POST', '/api/boards/commentsboard/shares', { principalType: 'user', principalId: person.user.id, role })).status).toBeLessThan(300);
+      return person;
+    };
+    const commenter = await share('commenter@example.com', 'commenter');
+    const viewer = await share('viewer2@example.com', 'viewer');
+    const c = connect('commentsboard~comments', commenter.cookie);
+    await new Promise((r) => c.once('message', r));
+    c.send(text(200 * 1024)); // within the 256K comments limit
+    await sleep(400);
+    expect(c.readyState).toBe(WebSocket.OPEN);
+    const cClosed = closeOf(c);
+    c.send(text(300 * 1024));
+    expect((await cClosed).code).toBe(1009);
+
+    const v = connect('commentsboard~comments', viewer.cookie);
+    await new Promise((r) => v.once('message', r));
+    v.send(text(40 * 1024)); // under the 64K small limit
+    await sleep(400);
+    expect(v.readyState).toBe(WebSocket.OPEN);
+    const vClosed = closeOf(v);
+    v.send(text(100 * 1024)); // a viewer cannot write comments, and has no part of the 256K allowance
+    expect((await vClosed).code).toBe(1009);
+
+    // a commenter on the board room itself cannot write there: the small limit
+    const cb = connect('commentsboard', commenter.cookie);
+    await new Promise((r) => cb.once('message', r));
+    const cbClosed = closeOf(cb);
+    cb.send(text(100 * 1024));
+    expect((await cbClosed).code).toBe(1009);
   }, 60_000);
 });

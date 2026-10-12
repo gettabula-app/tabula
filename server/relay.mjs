@@ -60,7 +60,7 @@ import { createTrackerRestoreRecovery } from './tracker/restore-recovery.mjs';
 import { OpsError } from './board-ops.mjs';
 import { analyticsChoice } from './telemetry/report.mjs';
 import {
-  CLOSE_DOC_TOO_LARGE, CLOSE_FRAME_TOO_BIG, DENIED_FRAME_BYTES, CLOSE_RATE_LIMITED, CLOSE_TOO_MANY_SOCKETS, createConnectionCounter,
+  CLOSE_DOC_TOO_LARGE, CLOSE_FRAME_TOO_BIG, CLOSE_ROLE_CHANGED, DENIED_FRAME_BYTES, CLOSE_RATE_LIMITED, CLOSE_TOO_MANY_SOCKETS, createConnectionCounter,
   createDocSizeGuard, createSyncFrameLimiter, createUpgradeLimiter, frameLimitFor, loadSyncCaps,
 } from './sync-caps.mjs';
 
@@ -1636,6 +1636,18 @@ function deny(ws, code, reason) {
   ws.close(code, reason);
 }
 
+// The receive limit a socket was created with (ws.recvLimit) came from its role at the handshake. When the role or the
+// deletion state changes so that another limit applies, the socket is closed and the app reconnects at once with a receiver
+// of the right size (a demoted editor must not be able to buffer 96 MiB, a promoted viewer must not be cut at 1 MiB).
+function resizeReceiver(ws) {
+  if (ws.denied || ws.recvLimit === undefined) return;
+  if (frameLimitFor(syncCaps, ws, true, ws.roomKind) === ws.recvLimit) return;
+  ws.denied = true; // no further frame of this socket is processed while the close completes
+  if (ws.guestExpiryTimer) clearTimeout(ws.guestExpiryTimer);
+  ws.guestExpiryTimer = null;
+  ws.close(CLOSE_ROLE_CHANGED, 'role_changed');
+}
+
 function armGuestExpiry(ws) {
   if (!ws.guest || ws.denied) return;
   const remaining = ws.sessionExpiresAt - Date.now();
@@ -1665,7 +1677,7 @@ function refresh(ws, force) {
       ws.userColor = guestPresenceColor(guest.user.id);
       ws.deleted = false;
       ws.canWrite = canWriteRoom(guest.boardRole, ws.roomKind, false);
-      return;
+      return resizeReceiver(ws);
     }
     const role = directory.boardRole(ws.boardId, ws.userId);
     if (role === null) return deny(ws, CLOSE_ACCESS_REMOVED, 'access_removed');
@@ -1679,6 +1691,7 @@ function refresh(ws, force) {
     ws.role = role;
     ws.deleted = directory.getBoard(ws.boardId)?.deletedAt != null;
     ws.canWrite = canWriteRoom(role, ws.roomKind, ws.deleted);
+    resizeReceiver(ws);
   } catch (err) {
     log(`room ${ws.roomName}: could not resolve a role`, err?.message);
     deny(ws, 1011, 'internal_error');
@@ -1814,11 +1827,38 @@ server.on('upgrade', (req, socket, head) => {
     }
   }
   const verdictCanWrite = verdict?.session ? canWriteRoom(verdict.role, parsed.kind, verdict.deleted) : false;
-  const receiveLimit = maintenance || !upgradeAllowed ? DENIED_FRAME_BYTES
+  // A client that has already gone away (an aborted handshake) holds nothing: no slot, no socket.
+  if (socket.destroyed || !socket.readable || !socket.writable) {
+    socket.destroy();
+    return;
+  }
+  // The socket slot is reserved now, before the socket exists, so a connection over the cap is created with the tiny limit
+  // too. It is released when the socket closes, when the handshake never completes, and on every early return below.
+  let release = null;
+  let socketCapped = false;
+  const mayHold = !maintenance && upgradeAllowed && (!config.authEnabled || verdict?.session);
+  if (mayHold) {
+    const guestLike = !config.authEnabled || verdict.session.guest === true;
+    release = (guestLike ? syncAddressSockets : syncUserSockets).acquire(guestLike ? upgradeAddress : verdict.session.user.id);
+    socketCapped = release === null;
+  }
+  const receiveLimit = maintenance || !upgradeAllowed || socketCapped ? DENIED_FRAME_BYTES
     : !config.authEnabled ? frameLimitFor(syncCaps, { canWrite: true }, false, parsed.kind)
       : verdict?.session ? frameLimitFor(syncCaps, { canWrite: verdictCanWrite, role: verdict.role }, true, parsed.kind)
         : DENIED_FRAME_BYTES;
-  syncServerFor(receiveLimit).handleUpgrade(req, socket, head, (ws) => {
+  const freeSlot = () => { release?.(); };
+  socket.once('close', freeSlot); // also when the upgrade never produces a WebSocket
+  try {
+    syncServerFor(receiveLimit).handleUpgrade(req, socket, head, (ws) => {
+      ws.recvLimit = receiveLimit;
+      onSyncSocket(ws);
+    });
+  } catch (err) {
+    log('sync: upgrade failed', err?.message);
+    freeSlot();
+    socket.destroy();
+  }
+  function onSyncSocket(ws) {
     ws.binaryType = 'arraybuffer';
     ws.isAlive = true;
     ws.on('pong', () => (ws.isAlive = true));
@@ -1833,22 +1873,21 @@ server.on('upgrade', (req, socket, head) => {
       ws.close(CLOSE_RATE_LIMITED, 'rate_limited');
       return;
     }
+    if (socketCapped) {
+      ws.close(CLOSE_TOO_MANY_SOCKETS, 'too_many_connections');
+      return;
+    }
 
     if (!config.authEnabled) {
       ws.canWrite = true;
-      const release = syncAddressSockets.acquire(upgradeAddress);
-      if (!release) {
-        ws.close(CLOSE_TOO_MANY_SOCKETS, 'too_many_connections');
-        return;
-      }
       const room = openRoom(ws, name);
       if (!room) {
-        release();
+        freeSlot();
         return;
       }
       ws.on('message', (data) => room.onMessage(ws, data));
       ws.on('close', () => {
-        release();
+        freeSlot();
         room.leave(ws);
       });
       room.join(ws);
@@ -1857,6 +1896,7 @@ server.on('upgrade', (req, socket, head) => {
 
     if (!verdict?.session) {
       verdict ??= { code: 1011, reason: 'internal_error' };
+      freeSlot();
       ws.close(verdict.code, verdict.reason);
       return;
     }
@@ -1886,15 +1926,10 @@ server.on('upgrade', (req, socket, head) => {
     ws.checkedAt = Date.now();
     ws.sessionRevoked = false;
     ws.denied = false;
-    // Accounts count per person; guests (whose ids are throwaway) count per client address like open mode.
-    const release = (ws.guest ? syncAddressSockets : syncUserSockets).acquire(ws.guest ? upgradeAddress : ws.userId);
-    if (!release) {
-      ws.close(CLOSE_TOO_MANY_SOCKETS, 'too_many_connections');
-      return;
-    }
+    // The slot was reserved before the handshake: per person, and per client address for guests (throwaway ids) and open mode.
     const room = openRoom(ws, name);
     if (!room) {
-      release();
+      freeSlot();
       return;
     }
     track(ws);
@@ -1904,14 +1939,14 @@ server.on('upgrade', (req, socket, head) => {
       if (!ws.denied) room.onMessage(ws, data);
     });
     ws.on('close', () => {
-      release();
+      freeSlot();
       if (ws.guestExpiryTimer) clearTimeout(ws.guestExpiryTimer);
       ws.guestExpiryTimer = null;
       untrack(ws);
       room.leave(ws);
     });
     room.join(ws);
-  });
+  }
 });
 
 const pinger = setInterval(() => {

@@ -50,6 +50,10 @@ export const MAX_SOCKETS_PER_USER = 40;
 // Guests and open mode count per client address; schools share one address, so this is wider.
 export const MAX_SOCKETS_PER_ADDRESS = 400;
 export const CLOSE_TOO_MANY_SOCKETS = 4430; // reason 'too_many_connections'
+// The role (or deletion state) changed so that a different receive limit applies to the socket. It is closed so the app
+// reconnects at once and gets a receiver of the right size; the client treats it as a plain lost connection.
+// 4500-4599 is the "try again" range: y-websocket reconnects at once (4400-4499 would stop it). Reason 'role_changed'.
+export const CLOSE_ROLE_CHANGED = 4511;
 // Per signed-in account (or guest), after authentication: two rooms times several tabs, plus reconnects.
 export const UPGRADES_PER_ACCOUNT_PER_MINUTE = 120;
 // Per client address, only for sockets with no session (and open mode, which has none): wide, because a whole class
@@ -75,7 +79,7 @@ export function loadSyncCaps(env = process.env) {
     if (!Number.isSafeInteger(v) || v < 1) throw new Error(`${name} must be a whole number of at least 1 (got "${String(raw).slice(0, 20)}")`);
     return v;
   };
-  return {
+  const caps = {
     maxFrameOwner: bytes('TABULA_SYNC_MAX_FRAME_OWNER', MAX_FRAME_BYTES_OWNER),
     maxFrameOther: bytes('TABULA_SYNC_MAX_FRAME_OTHER', MAX_FRAME_BYTES_OTHER),
     maxFrameComments: bytes('TABULA_SYNC_MAX_FRAME_COMMENTS', MAX_FRAME_BYTES_COMMENTS),
@@ -86,6 +90,15 @@ export function loadSyncCaps(env = process.env) {
     upgradesPerMinute: count('TABULA_SYNC_UPGRADES_PER_MINUTE', UPGRADES_PER_ACCOUNT_PER_MINUTE),
     upgradesPerAddressPerMinute: count('TABULA_SYNC_UPGRADES_PER_ADDRESS_PER_MINUTE', UPGRADES_PER_ADDRESS_PER_MINUTE),
   };
+  // The limits must nest, or a role would get a smaller allowance than a lesser one (or a frame that can never be stored).
+  if (caps.maxFrameSmall < DENIED_FRAME_BYTES) throw new Error(`TABULA_SYNC_MAX_FRAME_SMALL must be at least ${DENIED_FRAME_BYTES} bytes`);
+  const order = [['TABULA_SYNC_MAX_FRAME_SMALL', caps.maxFrameSmall], ['TABULA_SYNC_MAX_FRAME_COMMENTS', caps.maxFrameComments],
+    ['TABULA_SYNC_MAX_FRAME_OTHER', caps.maxFrameOther], ['TABULA_SYNC_MAX_FRAME_OWNER', caps.maxFrameOwner]];
+  for (let k = 1; k < order.length; k++) {
+    if (order[k - 1][1] > order[k][1]) throw new Error(`${order[k - 1][0]} (${order[k - 1][1]}) must not be larger than ${order[k][0]} (${order[k][1]})`);
+  }
+  if (caps.maxDocBytes > 0 && caps.maxFrameOwner > caps.maxDocBytes) throw new Error(`TABULA_SYNC_MAX_FRAME_OWNER (${caps.maxFrameOwner}) must not be larger than TABULA_SYNC_MAX_DOC_BYTES (${caps.maxDocBytes}); use 0 to turn the document cap off`);
+  return caps;
 }
 
 /**
