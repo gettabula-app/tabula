@@ -43,6 +43,45 @@ export function clientIpOf(req, config) {
   return net.isIP(ip) ? ip : socket;
 }
 
+/** The eight 16-bit groups of an IPv6 address (`::` expanded, an embedded IPv4 tail turned into two groups), or null. */
+function ipv6Groups(address) {
+  let v = address.split('%')[0].toLowerCase();
+  if (!net.isIPv6(v)) return null;
+  const tail = /(\d+\.\d+\.\d+\.\d+)$/.exec(v);
+  if (tail) {
+    const [a, b, c, d] = tail[1].split('.').map(Number);
+    v = v.slice(0, tail.index) + ((a << 8) | b).toString(16) + ':' + ((c << 8) | d).toString(16);
+  }
+  const [head, rest, extra] = v.split('::');
+  if (extra !== undefined) return null;
+  const left = head ? head.split(':') : [];
+  const right = rest ? rest.split(':') : [];
+  const fill = rest === undefined ? [] : Array(8 - left.length - right.length).fill('0');
+  const groups = [...left, ...fill, ...right];
+  return groups.length === 8 ? groups.map((g) => parseInt(g, 16)) : null;
+}
+
+/**
+ * The key a rate limit counts by (rate-limit keys only; never displayed, logged or compared by the source policy). IPv4 and
+ * IPv4-mapped addresses stay as they are; any other IPv6 address becomes its /64 prefix (`2001:db8:0:1::/64`, canonical,
+ * lower-case, zone id dropped), because one client owns at least a /64 and could otherwise rotate through 2^64 addresses.
+ * Anything that is not an IP address is returned unchanged.
+ */
+export function rateKeyOf(ip) {
+  const v = normalise(String(ip ?? ''));
+  const groups = ipv6Groups(v);
+  if (!groups) return v;
+  if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) {
+    return `${groups[6] >> 8}.${groups[6] & 255}.${groups[7] >> 8}.${groups[7] & 255}`;
+  }
+  return `${groups.slice(0, 4).map((g) => g.toString(16)).join(':')}::/64`;
+}
+
+/** The client address as a rate-limit key (`clientIpOf`, collapsed to the /64 for IPv6). */
+export function clientRateKeyOf(req, config) {
+  return rateKeyOf(clientIpOf(req, config));
+}
+
 const PLATFORM_ADDRESSES = new net.BlockList();
 for (const [address, prefix, family] of [
   ['10.0.0.0', 8, 'ipv4'], ['172.16.0.0', 12, 'ipv4'], ['192.168.0.0', 16, 'ipv4'], ['100.64.0.0', 10, 'ipv4'],

@@ -9,7 +9,7 @@ import { gunzipSync } from 'node:zlib';
 import * as Y from 'yjs';
 import { TEMPLATE_CATEGORIES } from './templates.mjs';
 import { TOKEN_BOARD_ID_RE } from './tokens.mjs';
-import { clientIpOf } from './client-ip.mjs';
+import { clientRateKeyOf } from './client-ip.mjs';
 import { createWindowLimiter, TICKET_CREATES_PER_WINDOW } from './limiter.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { requireTrackerGateOpen } from './tracker/shared.mjs';
@@ -222,7 +222,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   const utcDay = (timestamp) => new Date(timestamp).toISOString().slice(0, 10);
   const resetsAt = (timestamp) => new Date((Math.floor(timestamp / MCP_DAY_MS) + 1) * MCP_DAY_MS).toISOString();
 
-  const clientIp = (req) => clientIpOf(req, config);
+  const clientIp = (req) => clientRateKeyOf(req, config);
 
   // ------------------------------------------------------------ who is calling
 
