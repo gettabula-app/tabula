@@ -338,13 +338,13 @@ describe('the stream', () => {
   it('ignores anything after the first answer, and does not read anything else of the provider object', async () => {
     const { w, owner, boardId } = await ready();
     w.state.script = async function* (req) {
-      yield { type: 'result', value: { objects: [{ text: 'one' }] }, usage: { model: req.model, inputTokens: 5, outputTokens: 6, cacheReadTokens: 0, cacheWriteTokens: 0, text: 'LEAK' } };
+      yield { type: 'result', value: { objects: [{ text: 'one' }] }, usage: { model: req.model, inputTokens: 5, outputTokens: 6, cacheReadTokens: 0, cacheWriteTokens: 0, text: 'LEAK canary text' } };
       yield { type: 'result', value: { objects: [{ text: 'two' }] }, usage: {} };
     };
     const res = await w.run(owner, generate(boardId));
     expect(resultOf(res)).toHaveLength(1);
     expect(resultOf(res)[0].data.proposal.objects).toEqual([{ text: 'one' }]);
-    expect(res.text).not.toContain('LEAK');
+    expect(res.text).not.toContain('LEAK canary');
   });
 });
 
@@ -593,7 +593,7 @@ describe('the proposal', () => {
 
   const group = (...groups: [string, string[]][]) => ({ groups: groups.map(([title, ids]) => ({ title, ids })) });
   const invalid: [string, unknown][] = [
-    ['an id that does not exist', group(['A', ['a', 'b', 'zzz']], ['B', ['c', 'd']])],
+    ['an id that does not exist', group(['A', ['a', 'b', 'zzz unknown id']], ['B', ['c', 'd']])],
     ['an id that is a frame', group(['A', ['a', 'b', 'frame']], ['B', ['c', 'd']])],
     ['an id that is a shape', group(['A', ['a', 'b']], ['B', ['c', 'd', 'shape']])],
     ['a sticky that was not selected', group(['A', ['a', 'b', 'out']], ['B', ['c', 'd']])],
@@ -626,7 +626,8 @@ describe('the proposal', () => {
     expect(errorOf(res)).toEqual([{ event: 'error', data: { error: 'ai_invalid_proposal', message: 'The AI answer could not be used. Nothing was changed.' } }]);
     expect(res.events.at(-1)!.event).toBe('error');
     expect(w.audits().map((a) => a.detail.outcome)).toEqual(['ai_invalid_proposal']);
-    expect(res.text).not.toContain('zzz');
+    // a canary with a space: the answer carries a random base64url run id, which can contain a short plain run like 'zzz'
+    expect(res.text).not.toContain('zzz unknown id');
   });
 
   it('refuses more than 12 groups', async () => {
