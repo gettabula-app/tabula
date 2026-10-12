@@ -25,21 +25,23 @@ describe('compose file', () => {
   const blocks = services();
 
   it('defines the expected services, each with a restart policy, limits and a health check', () => {
-    expect(Object.keys(blocks).sort()).toEqual(['collector', 'grafana', 'lake', 'loki', 'proxy', 'victoriametrics']);
+    expect(Object.keys(blocks).sort()).toEqual(['collector', 'door', 'grafana', 'lake', 'loki', 'proxy', 'victoriametrics']);
     for (const [name, block] of Object.entries(blocks)) {
       expect(`${name}\n${block}`).toMatch(/<<: \*service[\s\S]*mem_limit: \d+[mg][\s\S]*cpus: [\d.]+[\s\S]*healthcheck:/u);
     }
     expect(read('compose.yaml')).toMatch(/restart: unless-stopped/u);
   });
 
-  it('publishes only the two proxy doors, each on an explicit non-wildcard address', () => {
+  it('publishes only the two proxy doors and the optional TLS door, each on an explicit non-wildcard address that defaults to loopback', () => {
     const text = read('compose.yaml');
     const published = [...text.matchAll(/^\s+- "([^"]*:\d*[^"]*:\d+)"\s*$/gmu)].map((m) => m[1]);
-    expect(published.length).toBe(2);
-    for (const spec of published) expect(spec).toMatch(/^\$\{(?:GRAFANA|INGEST)_BIND:-127\.0\.0\.1\}:/u);
+    expect(published.length).toBe(4);
+    for (const spec of published) expect(spec).toMatch(/^\$\{(?:GRAFANA|INGEST|DOOR)_BIND:-127\.0\.0\.1\}:/u);
     expect(blocks.proxy).toContain('ports:');
     const withPorts = Object.entries(blocks).filter(([, block]) => /^\s+ports:/mu.test(block)).map(([name]) => name);
-    expect(withPorts).toEqual(['proxy']);
+    expect(withPorts).toEqual(['proxy', 'door']);
+    // the TLS door is off unless its profile is switched on
+    expect(blocks.door).toMatch(/profiles: \["door"\]/u);
     expect(text).not.toMatch(/network_mode:\s*host/u);
     expect(text).not.toMatch(/0\.0\.0\.0:\d/u);
     expect(text).not.toMatch(/privileged:/u);
@@ -71,6 +73,19 @@ describe('compose file', () => {
     expect(caddy).toMatch(/auto_https off/u);
   });
 
+  it('has a TLS door Caddyfile that lets only the allow-list reach two routes and answers 403 to everything else, on both ports', () => {
+    const caddy = read('Caddyfile.door').replace(/^\s*#.*$/gmu, '');
+    expect(caddy).toContain('http://{$DOOR_HOST}');
+    expect(caddy).toMatch(/http:\/\/\{\$DOOR_HOST\} \{\s+respond "forbidden" 403/u);
+    expect(caddy.match(/remote_ip \{\$DOOR_ALLOW\}/gu)?.length).toBe(2);
+    expect(caddy).toMatch(/@report \{\s+remote_ip \{\$DOOR_ALLOW\}\s+method POST\s+path \/v1\/telemetry\s+\}/u);
+    expect(caddy).toMatch(/@health \{\s+remote_ip \{\$DOOR_ALLOW\}\s+method GET\s+path \/healthz\s+\}/u);
+    expect(caddy).toMatch(/:8082 \{\s+bind 127\.0\.0\.1/u);
+    expect(caddy).toMatch(/handle \{\s+respond "forbidden" 403/u);
+    expect(caddy).not.toContain('/metrics');
+    expect(caddy).not.toMatch(/trusted_proxies|auto_https off|tls internal|X-Forwarded/iu);
+  });
+
   it.skipIf(!dockerComposeAvailable())('passes `docker compose config` with dummy credentials and publishes on loopback', () => {
     const out = execFileSync('docker', ['compose', 'config', '--format', 'json'], {
       cwd: stack, encoding: 'utf8', env: { ...process.env, GRAFANA_ADMIN_USER: 'x', GRAFANA_ADMIN_PASSWORD: 'y' },
@@ -99,6 +114,50 @@ describe('preflight bind rules', () => {
   it('accepts loopback, a NetBird address and the one approved private address, and refuses everything else', () => {
     expect([run('127.0.0.1'), run('100.101.2.3'), run('10.8.0.2', '10.8.0.2')]).toEqual(['ok', 'ok', 'ok']);
     expect([run('0.0.0.0'), run(''), run('8.8.8.8'), run('10.8.0.2'), run('100.128.0.1'), run('192.168.1.5', '8.8.8.8')]).toEqual(Array(6).fill('refused'));
+  });
+});
+
+describe('preflight rules for the TLS door', () => {
+  const run = (door: Record<string, string>, profiles = 'door') => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-preflight-door-'));
+    const env = path.join(dir, 'env');
+    const lines = [`TELEMETRY_DATA=${dir}`, 'GRAFANA_BIND=127.0.0.1', 'GRAFANA_PORT=18480', 'INGEST_BIND=127.0.0.1', 'INGEST_PORT=18481', 'GRAFANA_ADMIN_USER=u', 'GRAFANA_ADMIN_PASSWORD=p',
+      ...(profiles ? [`COMPOSE_PROFILES=${profiles}`] : []), ...Object.entries(door).map(([k, v]) => `${k}=${v}`)];
+    fs.writeFileSync(env, `${lines.join('\n')}\n`);
+    try {
+      execFileSync('bash', [path.join(stack, 'scripts', 'preflight.sh'), env], { env: { ...process.env, PREFLIGHT_SKIP_LISTEN: '1' }, stdio: 'pipe' });
+      return 'ok';
+    } catch { return 'refused'; } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  };
+  const good = { DOOR_HOST: 'telemetry.example.org', DOOR_BIND: '203.0.113.10', DOOR_ALLOW: '198.51.100.7' };
+
+  it('accepts a public name, this server\'s public IPv4 address and one or more single public egress addresses', () => {
+    expect(run(good)).toBe('ok');
+    expect(run({ ...good, DOOR_ALLOW: '198.51.100.7 198.51.100.8' })).toBe('ok');
+  });
+
+  it('ignores the door settings while its profile is off, and needs them when it is on', () => {
+    expect(run({}, '')).toBe('ok');
+    expect(run({ DOOR_BIND: '0.0.0.0' }, 'other')).toBe('ok');
+    expect(run({}, 'door')).toBe('refused');
+  });
+
+  it.each([
+    ['no host', { ...good, DOOR_HOST: '' }],
+    ['a host that cannot be public', { ...good, DOOR_HOST: 'door.invalid' }],
+    ['a bare label', { ...good, DOOR_HOST: 'telemetry' }],
+    ['a wildcard bind', { ...good, DOOR_BIND: '0.0.0.0' }],
+    ['a loopback bind', { ...good, DOOR_BIND: '127.0.0.1' }],
+    ['a private bind', { ...good, DOOR_BIND: '10.0.0.5' }],
+    ['an IPv6 bind', { ...good, DOOR_BIND: '2001:db8::10' }],
+    ['no bind', { ...good, DOOR_BIND: '' }],
+    ['an empty allow-list', { ...good, DOOR_ALLOW: '' }],
+    ['a range in the allow-list', { ...good, DOOR_ALLOW: '198.51.100.0/24' }],
+    ['everyone', { ...good, DOOR_ALLOW: '0.0.0.0' }],
+    ['a private address in the allow-list', { ...good, DOOR_ALLOW: '198.51.100.7 192.168.1.4' }],
+    ['an IPv6 address in the allow-list', { ...good, DOOR_ALLOW: '2001:db8::7' }],
+  ])('refuses %s', (_name, door) => {
+    expect(run(door)).toBe('refused');
   });
 });
 
