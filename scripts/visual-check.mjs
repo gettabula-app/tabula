@@ -32,7 +32,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
 
   --id <id>          Review folder name, e.g. TAB-123 (required)
   --mode <mode>      open (default) or accounts
-  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-menu-open, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, canvas-keyboard, emoji-corner, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, chat-dock-compact, chat-dock-bubble, chat-dock-home, chat-dock-sheet, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, rail-short-720, rail-short-700, rail-short-560, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
+  --states <list>    Comma separated, default all for the mode: home, board, tracker-foundation, tracker-frame-overview, tracker-frame-work, tracker-frame-fullscreen, tracker-fullscreen, tracker-menu-open, tracker-all-issues, tracker-my-issues, tracker-board, tracker-filter-open, tracker-picker-open, tracker-new-issue, tracker-phone, tracker-phone-bulk, tracker-phone-new-issue, tracker-keyboard, tracker-inbox, tracker-inbox-empty, tracker-inbox-loading, tracker-inbox-error, tracker-inbox-long-list, tracker-inbox-narrow, tracker-notification-prefs, uml-arrows-themes, connector-heads, esc-trays, board-selected, group-selected, group-selected-zoom, group-entered-zoom, group-multi, group-selected-tray, group-entered-tray, group-menu-tray, group-multi-menu-tray, group-menu, rail-end, rail-overlap, touch-targets, group-hover, group-entered, group-locked, emoji-text, emoji-picker, canvas-keyboard, emoji-corner, emoji-keyboard, emoji-keyboard-high, emoji-tap, emoji-insert, emoji-esc, press-board, press-poll, press-timer, press-comments, press-admin, top-bars-320, phone-top-chrome, quickbar-multi, quickbar-multi-end, flow-write, flow-poll, chat-dock-chrome, chat-dock-compact, chat-dock-keyboard, chat-dock-bubble, chat-dock-home, chat-dock-sheet, flow-steps, templates-esc, steps-toast, flow-steps-overlap, rail-scroll-cue, rail-short-720, rail-short-700, rail-short-560, flow-steps-overlap-edit, flow-steps-overlap-many, vote-setup, vote-running, vote-running-touch, vote-running-touch-steps, comments, templates, settings, in open
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
@@ -3027,6 +3027,37 @@ const STATES = {
     if (!r.scrimOk) throw new Error(`chat-dock-sheet: the scrim does not cover the screen (${r.scrimColour})`);
     if (r.small) throw new Error(`chat-dock-sheet: ${r.small} header buttons or chips under 44 px`);
   },
+  // The keyboard path with real key presses (desktop and the phone sheet): Enter on Chat moves into the message box, the first Esc
+  // (the box lets go) leaves focus in the dock, the second Esc closes it and lands on the Chat button; the sheet closes like the panel.
+  async 'chat-dock-keyboard'(env) {
+    const { page } = env;
+    await resetChatMarker(env);
+    await openSeedBoard(env);
+    await page.keyboard.press('Escape');
+    // start closed: a dock left open by an earlier state is closed first
+    if (await page.locator('.chat-dock:not([hidden])').count()) await page.getByRole('button', { name: 'Close chat', exact: true }).click();
+    if (await page.locator('.chat-bubble:not([hidden])').count()) { await page.locator('.chat-bubble').click(); await page.getByRole('button', { name: 'Close chat', exact: true }).click(); }
+    const where = () => page.evaluate(() => {
+      const a = document.activeElement;
+      return { inDock: !!a?.closest?.('.chat-dock'), tag: a?.tagName, cls: a?.className?.toString().slice(0, 40), toggle: !!a?.closest?.('.chat-toggle'), shown: !!document.querySelector('.chat-dock:not([hidden])') };
+    });
+    await page.locator('.chat-toggle').focus();
+    await page.keyboard.press('Enter');
+    await page.locator('.chat-dock:not([hidden])').waitFor();
+    await page.waitForTimeout(500);
+    const opened = await where();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    const first = await where();
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(250);
+    const second = await where();
+    console.log(`chat-dock-keyboard ${JSON.stringify({ opened, first, second })}`);
+    if (!opened.inDock) throw new Error(`chat-dock-keyboard: Enter on Chat leaves focus outside the dock (${opened.tag} ${opened.cls})`);
+    if (!first.shown || !first.inDock) throw new Error(`chat-dock-keyboard: the first Esc leaves focus outside the dock (${first.tag} ${first.cls}, shown ${first.shown})`);
+    if (second.shown) throw new Error('chat-dock-keyboard: the second Esc does not close the dock');
+    if (!second.toggle) throw new Error(`chat-dock-keyboard: after closing, focus is on ${second.tag} ${second.cls}, not the Chat button`);
+  },
   async 'chat-dock-compact'(env) {
     await resetChatMarker(env);
     await openSeedBoard(env);
@@ -4677,7 +4708,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
-const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
+const CHAT_STATES = new Set(['chat', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

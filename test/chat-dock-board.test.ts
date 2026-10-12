@@ -146,7 +146,7 @@ describe('board chat in the dock', () => {
     const used = Object.assign(new FakeEvent('keydown'), { key: 'Escape' });
     used.preventDefault(); // the message box blurred itself
     panel.dispatchEvent(used);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve)); // focus is settled once the event is done, in the next task
     expect(panel.getAttribute('tabindex')).toBe('-1');
     expect(browser!.document.activeElement).toBe(panel);
     panel.dispatchEvent(Object.assign(new FakeEvent('keydown'), { key: 'Escape' }));
