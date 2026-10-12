@@ -25,7 +25,7 @@ Kanallistan och den öppna konversationen är mörka paneler, som chattpanelen p
 - På en telefon visas listan på en skärm och samtalet på en annan. **All channels** (Alla kanaler) (eller webbläsarens bakåtknapp) tar dig tillbaka till listan.
 - I en team- eller arbetsytekanal kanske du inte kan skriva. Då visar rutan varför, till exempel om teamet är arkiverat eller arbetsytan är skrivskyddad.
 
-![Chattsidan: kanallistan till vänster med Workspace och tavlan Design review, och samtalet Design review till höger med samma meddelanden och Open board överst](images/chat-page.png)
+![Chattsidan: kanallistan till vänster med Workspace och tavlan Design review, och samtalet Design review till höger med samma meddelanden och Open board överst. Objektbrickorna lyder ”An object on the board. Open the board” här, eftersom ingen tavla är öppen på den här sidan](images/chat-page.png)
 
 Länken **Chat** i det övre fältet visar hur många olästa meddelanden du har i alla dina kanaler. Om någon har nämnt dig står ett @ före antalet. På sidan **Boards** visas antalet olästa chattmeddelanden bredvid tavlans namn.
 
