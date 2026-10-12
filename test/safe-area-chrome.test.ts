@@ -94,3 +94,62 @@ describe.skipIf(!available)('the fixed chrome stays inside the safe area', { tim
     });
   }
 });
+
+// The full-screen tracker is its own shell (mounted in .trk-route-root), so its strip, tabs and rows get their own check: the strip
+// below the notch, the side padding in landscape phone widths above 600 px, and the phone tab bar above the home indicator.
+describe.skipIf(!available)('the full-screen tracker stays inside the safe area', { timeout: 240_000 }, () => {
+  for (const c of CASES) {
+    it(`on a ${c.name}`, async () => {
+      const context = await browser!.newContext({ viewport: c.viewport, hasTouch: true, isMobile: true });
+      const page = await context.newPage();
+      await page.route('**/__blank', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><div id="app" class="trk-route-root"></div>' }));
+      await page.goto(`${base}__blank`);
+      await page.addStyleTag({ content: `* { box-sizing: border-box; } :root { --safe-top: ${c.safe.top}px; --safe-right: ${c.safe.right}px; --safe-bottom: ${c.safe.bottom}px; --safe-left: ${c.safe.left}px; }` });
+      await page.addScriptTag({
+        type: 'module',
+        content: `
+          import { mountTrackerShell } from '/src/tracker/ui/shell.ts';
+          import { createTrackerStore } from '/src/tracker-data.ts';
+          import { createMockTrackerApi } from '/src/tracker-mock.ts';
+          import { createTrackerVisualSeed } from '/src/tracker/ui/visual-seed.ts';
+          const api = createMockTrackerApi(createTrackerVisualSeed());
+          const store = createTrackerStore(api, { isVisible: () => false });
+          const me = { user: { id: 'u1', name: 'Johan Saldes', email: 'johan@example.test', role: 'member' }, teams: [], mcp: false, mcpOauth: false, tracker: true };
+          mountTrackerShell(document.querySelector('#app'), {
+            store, api, viewerId: 'safe', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true,
+            routeMode: true, boardName: 'Tracker', account: me, layoutWidth: window.innerWidth, onBoards: () => {},
+          });
+          await store.loadMeta();
+        `,
+      });
+      await page.locator('.trk-fullscreen-strip').waitFor({ timeout: 120_000 });
+      await page.locator('.trk-list-row').first().waitFor({ timeout: 60_000 });
+      const boxes = await page.evaluate(() => {
+        const out: Record<string, { left: number; top: number; right: number; bottom: number }> = {};
+        const take = (name: string, el: Element | null) => {
+          if (!el || getComputedStyle(el).display === 'none') return;
+          const b = el.getBoundingClientRect();
+          if (b.width) out[name] = { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+        };
+        take('Boards button', document.querySelector('.trk-back-boards'));
+        take('Menu button', document.querySelector('.trk-menu-button'));
+        take('first tab', document.querySelector('.trk-tab'));
+        document.querySelectorAll('.trk-tab').forEach((el, i) => take(`tab ${i}`, el));
+        take('first row', document.querySelector('.trk-list-row'));
+        return out;
+      });
+      const w = c.viewport.width;
+      const h = c.viewport.height;
+      const failures: string[] = [];
+      if (!boxes['Boards button'] || !boxes['Menu button'] || !boxes['tab 0']) failures.push(`missing: ${Object.keys(boxes).join(', ')}`);
+      for (const [name, b] of Object.entries(boxes)) {
+        if (b.left < c.safe.left - 0.5) failures.push(`${name} starts ${b.left} px from the left, inside the ${c.safe.left} px inset`);
+        if (b.right > w - c.safe.right + 0.5) failures.push(`${name} ends at ${b.right}, inside the ${c.safe.right} px right inset`);
+        if (b.top < c.safe.top - 0.5) failures.push(`${name} starts ${b.top} px from the top, inside the ${c.safe.top} px inset`);
+        if (b.bottom > h - c.safe.bottom + 0.5) failures.push(`${name} ends at ${b.bottom}, inside the ${c.safe.bottom} px bottom inset`);
+      }
+      expect(failures).toEqual([]);
+      await context.close();
+    });
+  }
+});
