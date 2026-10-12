@@ -51,7 +51,7 @@ describe('guide and README images', () => {
     for (const name of names) {
       const file = path.join(root, 'docs', 'images', `${name}.png`);
       expect(fs.existsSync(file), name).toBe(true);
-      expect([...fs.readFileSync(file).subarray(1, 4)].map((c) => String.fromCharCode(c)).join(''), name).toBe('PNG');
+      expect(`${name}:${[...fs.readFileSync(file).subarray(1, 4)].map((c) => String.fromCharCode(c)).join('')}`).toBe(`${name}:PNG`);
     }
   });
 
