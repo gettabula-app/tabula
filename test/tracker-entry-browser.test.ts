@@ -19,7 +19,45 @@ beforeAll(async () => {
   if (!address || typeof address === 'string') throw new Error('Vite did not open a TCP port');
   base = `http://127.0.0.1:${address.port}/`;
   browser = await chromium.launch({ headless: true });
-});
+  await warmUp();
+}, 300_000);
+
+/**
+ * Makes vite compile and pre-bundle everything these tests import before any test starts. On a cold cache vite optimises
+ * dependencies on the first request and reloads the page, which used to eat a test's whole time budget on a loaded machine; here
+ * the cost is paid once, in the hook, and a reload only means asking again.
+ */
+/** A page with nothing in it: these tests mount one screen themselves, so they need not load the whole app (slow on a loaded machine). */
+async function blankPage(options: Parameters<Browser['newPage']>[0] = {}): Promise<Page> {
+  const page = await browser!.newPage(options);
+  await page.route('**/__blank', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><div id="app"></div>' }));
+  await page.goto(`${base}__blank`);
+  return page;
+}
+
+async function warmUp() {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const page = await blankPage();
+    try {
+      await page.addScriptTag({
+        type: 'module',
+        content: `
+          await Promise.all([
+            import('/src/tracker/ui/shell.ts'), import('/src/tracker-data.ts'), import('/src/tracker-mock.ts'),
+            import('/src/tracker/ui/visual-seed.ts'), import('/src/ui/topbar.ts'), import('/src/ui/home.css'),
+          ]);
+          window.__warm = true;
+        `,
+      });
+      await page.waitForFunction(() => (window as unknown as { __warm?: boolean }).__warm === true, undefined, { timeout: 120_000 });
+      await page.close();
+      return;
+    } catch {
+      await page.close().catch(() => undefined);
+    }
+  }
+  throw new Error('vite could not compile the tracker modules');
+}
 
 afterAll(async () => {
   await browser?.close();
@@ -29,10 +67,10 @@ afterAll(async () => {
 type Mode = { routeMode?: boolean; role?: 'owner' | 'admin' | 'member'; mcp?: boolean; account?: boolean; width?: number };
 
 async function openShell(mode: Mode = {}): Promise<Page> {
-  // A cold vite cache can optimise dependencies and reload the page under the injected script: the script is added again.
+  // A page that reloads under the injected script (vite optimising a dependency late) is asked for again.
   for (let attempt = 0; ; attempt++) {
     try {
-      return await tryOpenShell(mode, attempt === 2 ? 90_000 : 25_000);
+      return await tryOpenShell(mode, 60_000);
     } catch (error) {
       if (attempt >= 2) throw error;
     }
@@ -40,8 +78,7 @@ async function openShell(mode: Mode = {}): Promise<Page> {
 }
 
 async function tryOpenShell({ routeMode = true, role = 'member', mcp = false, account = true, width = 1280 }: Mode, timeout: number): Promise<Page> {
-  const page = await browser!.newPage({ viewport: { width, height: 800 } });
-  await page.goto(base);
+  const page = await blankPage({ viewport: { width, height: 800 } });
   await page.evaluate(() => localStorage.clear());
   await page.addScriptTag({
     type: 'module',
@@ -170,11 +207,11 @@ describe.skipIf(!available)('the tracker strip and menu in a browser', { timeout
 describe.skipIf(!available)('the account menu of the Boards top bar in a browser', { timeout: 200_000 }, () => {
   async function openBar(mcp: boolean): Promise<Page> {
     for (let attempt = 0; ; attempt++) {
-      const page = await browser!.newPage({ viewport: { width: 1280, height: 800 } });
-      await page.goto(base);
+      const page = await blankPage({ viewport: { width: 1280, height: 800 } });
       await page.addScriptTag({
         type: 'module',
         content: `
+          import '/src/ui/home.css'; // the top bar's own styles come with the home page, which this blank page does not load
           import { createTopbar } from '/src/ui/topbar.ts';
           const me = { user: { id: 'u1', name: 'Johan Saldes', email: 'johan@example.test', role: 'member' }, teams: [], mcp: ${mcp}, mcpOauth: false };
           const host = document.createElement('div'); host.id = 'entry-bar'; document.body.append(host); host.append(createTopbar('boards', me));
