@@ -9,6 +9,7 @@ import { loadConfig } from '../telemetry-collector/src/config.mjs';
 import { deleteWorkspace } from '../telemetry-collector/src/delete.mjs';
 import { applyRetention } from '../telemetry-collector/src/lake.mjs';
 import { allSeriesNames, reportToLoki, reportToRows, reportToVm } from '../telemetry-collector/src/map.mjs';
+import { allowWorkspace, claimHour, isDeleting, listMarkers, readMarker } from '../telemetry-collector/src/state.mjs';
 import { createLimiter } from '../telemetry-collector/src/ratelimit.mjs';
 import { createRegistry, issueToken, listTokens, revokeTokens } from '../telemetry-collector/src/registry.mjs';
 import { createCollector } from '../telemetry-collector/src/server.mjs';
@@ -23,7 +24,7 @@ beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-stack-'))
 afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
 function config(extra: Record<string, string> = {}) {
-  return loadConfig({ TELEMETRY_DATA_DIR: dir, VM_URL: 'http://vm.test', LOKI_URL: 'http://loki.test', ...extra });
+  return loadConfig({ TELEMETRY_DATA_DIR: dir, VM_URL: 'http://vm.test', LOKI_URL: 'http://loki.test', COLLECTOR_DELETE_WAIT_MS: '0', ...extra });
 }
 
 describe('validation', () => {
@@ -363,5 +364,125 @@ describe('deletion and retention', () => {
     ].sort());
     expect(fs.existsSync(path.join(cfg.lakeDir, 'stream=errors', `dt=${day(29)}`))).toBe(true);
     expect(fs.existsSync(path.join(cfg.lakeDir, 'stream=reports_hourly', `dt=${day(395)}`))).toBe(true);
+  });
+});
+
+const smallReport = (extra: Record<string, unknown> = {}) => validReport({ metrics: [], errors: [], events: [], ...extra });
+
+describe('erasure cannot be undone by live ingestion', () => {
+  it('refuses new reports for a workspace under deletion, even from a control-plane token, and keeps the marker after the purge', async () => {
+    const sinks = await fakeSinks();
+    const c = await startCollector(sinks.url);
+    const cp = issueToken(c.cfg.registryFile, { workspace: null });
+    allowWorkspace(c.cfg, WORKSPACE);
+    try {
+      expect((await post(c.base, cp.token, smallReport())).status).toBe(200);
+      const result = await deleteWorkspace(c.cfg, WORKSPACE, { fetchImpl: fetch, now: NOW });
+      expect(result.ok).toBe(true);
+      expect(isDeleting(c.cfg, WORKSPACE)).toBe(true);
+      expect(readMarker(c.cfg, WORKSPACE)).toMatchObject({ backups: 'pending', storesPurgedAt: NOW });
+      const again = await post(c.base, cp.token, smallReport({ hour: HOUR - 3600_000 }));
+      expect(again.status).toBe(410);
+      expect(listSpool(c.cfg.lakeDir).length).toBe(1);
+      expect(fs.readFileSync(spoolPath(c.cfg.lakeDir, NOW), 'utf8')).not.toContain(WORKSPACE);
+      expect(listMarkers(c.cfg).map((m: any) => m.workspace)).toEqual([WORKSPACE]);
+    } finally {
+      await c.close();
+      await sinks.close();
+    }
+  });
+
+  it('drops queued sink items of a workspace once its deletion marker exists', async () => {
+    const sinks = await fakeSinks();
+    sinks.failFor(300);
+    const c = await startCollector(sinks.url);
+    const { token } = issueToken(c.cfg.registryFile, { workspace: WORKSPACE });
+    try {
+      expect((await (await post(c.base, token, validReport())).json()).sinks).toEqual({ vm: 'queued', loki: 'queued' });
+      const { markDeleting } = await import('../telemetry-collector/src/state.mjs');
+      markDeleting(c.cfg, WORKSPACE, NOW);
+      const deadline = Date.now() + 5000;
+      while (c.sinks.queueLength > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 40));
+      expect(c.sinks.queueLength).toBe(0);
+      expect(c.sinks.stats.delivered).toEqual({ vm: 0, loki: 0 });
+    } finally {
+      await c.close();
+      await sinks.close();
+    }
+  });
+
+  it('waits for in-flight requests before purging when it created the marker', async () => {
+    const cfg = config({ COLLECTOR_DELETE_WAIT_MS: '300', VM_URL: 'http://127.0.0.1:1', LOKI_URL: 'http://127.0.0.1:1' });
+    const started = Date.now();
+    await deleteWorkspace(cfg, WORKSPACE, { now: NOW });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(280);
+    const second = Date.now();
+    const retry = await deleteWorkspace(cfg, WORKSPACE, { now: NOW });
+    expect(Date.now() - second).toBeLessThan(250);
+    expect(retry.ok).toBe(false); // the stores are unreachable, so the caller must retry; the marker still blocks writes
+    expect(isDeleting(cfg, WORKSPACE)).toBe(true);
+  });
+});
+
+describe('control-plane tokens and rate limits', () => {
+  it('lets a control-plane token write only allowlisted workspaces and fails closed without a list', async () => {
+    const sinks = await fakeSinks();
+    const c = await startCollector(sinks.url);
+    const cp = issueToken(c.cfg.registryFile, { workspace: null });
+    try {
+      expect((await post(c.base, cp.token, smallReport())).status).toBe(403);
+      allowWorkspace(c.cfg, 'ws_someoneelse1');
+      expect((await post(c.base, cp.token, smallReport())).status).toBe(403);
+      allowWorkspace(c.cfg, WORKSPACE);
+      expect((await post(c.base, cp.token, smallReport())).status).toBe(200);
+    } finally {
+      await c.close();
+      await sinks.close();
+    }
+  });
+
+  it('limits per workspace after validation, and fleet-wide', async () => {
+    const sinks = await fakeSinks();
+    const c = await startCollector(sinks.url, { COLLECTOR_RATE_PER_HOUR: '2', COLLECTOR_FLEET_RATE_PER_HOUR: '3' });
+    const cp = issueToken(c.cfg.registryFile, { workspace: null });
+    const other = 'ws_other0123456';
+    allowWorkspace(c.cfg, WORKSPACE);
+    allowWorkspace(c.cfg, other);
+    try {
+      const at = (h: number, ws = WORKSPACE) => post(c.base, cp.token, smallReport({ hour: HOUR - h * 3600_000, workspace: ws }));
+      expect((await at(0)).status).toBe(200);
+      expect((await at(1)).status).toBe(200);
+      expect(await (await at(2)).json()).toMatchObject({ error: 'rate_limited' });
+      expect((await at(0, other)).status).toBe(200);
+      expect(await (await at(1, other)).json()).toMatchObject({ error: 'fleet_rate_limited' });
+    } finally {
+      await c.close();
+      await sinks.close();
+    }
+  });
+
+  it('caps the limiter memory even when every key is active', () => {
+    const limiter = createLimiter({ limit: 5, windowMs: 1e9, maxKeys: 3 });
+    for (let i = 0; i < 50; i++) limiter.hit(`k${i}`, i);
+    expect(limiter.size).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('replay protection survives a restart', () => {
+  it('refuses the same workspace and hour after the collector is restarted, and frees it when the spool write fails', async () => {
+    const sinks = await fakeSinks();
+    const first = await startCollector(sinks.url);
+    const { token } = issueToken(first.cfg.registryFile, { workspace: WORKSPACE });
+    expect((await post(first.base, token, smallReport())).status).toBe(200);
+    await first.close();
+    const second = await startCollector(sinks.url);
+    try {
+      expect((await post(second.base, token, smallReport())).status).toBe(409);
+      expect(claimHour(second.cfg, WORKSPACE, HOUR - 3600_000)).toBe(true);
+      expect(claimHour(second.cfg, WORKSPACE, HOUR - 3600_000)).toBe(false);
+    } finally {
+      await second.close();
+      await sinks.close();
+    }
   });
 });

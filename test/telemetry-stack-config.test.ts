@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { allSeriesNames } from '../telemetry-collector/src/map.mjs';
 
@@ -84,6 +85,22 @@ describe('compose file', () => {
 function dockerComposeAvailable(): boolean {
   try { execFileSync('docker', ['compose', 'version'], { stdio: 'ignore' }); return true; } catch { return false; }
 }
+
+describe('preflight bind rules', () => {
+  const run = (bind: string, approved = '') => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-preflight-'));
+    const env = path.join(dir, 'env');
+    fs.writeFileSync(env, `TELEMETRY_DATA=${dir}\nGRAFANA_BIND=${bind}\nGRAFANA_PORT=18480\nINGEST_BIND=127.0.0.1\nINGEST_PORT=18481\nGRAFANA_ADMIN_USER=u\nGRAFANA_ADMIN_PASSWORD=p\nAPPROVED_TUNNEL_ADDRESS=${approved}\n`);
+    try {
+      execFileSync('bash', [path.join(stack, 'scripts', 'preflight.sh'), env], { env: { ...process.env, PREFLIGHT_SKIP_LISTEN: '1' }, stdio: 'pipe' });
+      return 'ok';
+    } catch { return 'refused'; } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  };
+  it('accepts loopback, a NetBird address and the one approved private address, and refuses everything else', () => {
+    expect([run('127.0.0.1'), run('100.101.2.3'), run('10.8.0.2', '10.8.0.2')]).toEqual(['ok', 'ok', 'ok']);
+    expect([run('0.0.0.0'), run(''), run('8.8.8.8'), run('10.8.0.2'), run('100.128.0.1'), run('192.168.1.5', '8.8.8.8')]).toEqual(Array(6).fill('refused'));
+  });
+});
 
 describe('dashboards as code', () => {
   const dir = path.join(stack, 'grafana', 'dashboards');

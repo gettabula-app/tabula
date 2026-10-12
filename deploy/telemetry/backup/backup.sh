@@ -24,4 +24,6 @@ nice -n 15 ionice -c3 restic "${RESTIC_SFTP[@]}" backup \
   "$TELEMETRY_DATA/state" "$TELEMETRY_DATA/lake" "$TELEMETRY_DATA/grafana" "$TELEMETRY_DATA/loki" "$TELEMETRY_DATA/vm/snapshots"
 
 restic "${RESTIC_SFTP[@]}" forget --prune --tag nightly --keep-daily 7 --keep-weekly 4 --keep-monthly 6
+pending="$(compose exec -T collector node telemetry-collector/src/cli.mjs deletion list | grep -c '"backups": "pending"' || true)"
+[[ "$pending" == 0 ]] || echo "warning: $pending deleted workspace(s) still in older snapshots (see erase-snapshots.sh)" >&2
 echo "backup ok"

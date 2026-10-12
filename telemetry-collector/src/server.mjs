@@ -4,6 +4,7 @@ import { createLimiter } from './ratelimit.mjs';
 import { createRegistry } from './registry.mjs';
 import { createSinks } from './sinks.mjs';
 import { appendRows } from './spool.mjs';
+import { claimHour, isAllowed, isDeleting, releaseHour } from './state.mjs';
 import { validateReport } from './validate.mjs';
 
 const BEARER = /^Bearer ([^\s]+)$/u;
@@ -20,10 +21,15 @@ export function createCollector(config, { log, fetchImpl = fetch, now = Date.now
   const sinks = createSinks({
     vmUrl: config.vmUrl, lokiUrl: config.lokiUrl, fetchImpl, log, now, retryMs: config.sinkRetryMs,
     maxAgeMs: config.sinkMaxAgeMs, maxQueue: config.sinkMaxQueue, timeoutMs: config.sinkTimeoutMs,
+    isBlocked: (workspace) => isDeleting(config, workspace),
   });
-  const postLimiter = createLimiter({ limit: config.ratePerHour, windowMs: 3_600_000 });
+  // before the body is read: per token (a workspace token is held to its own budget, a control-plane token to the fleet ceiling)
+  const tokenLimiter = createLimiter({ limit: config.ratePerHour, windowMs: 3_600_000 });
+  const controlLimiter = createLimiter({ limit: config.fleetRatePerHour * 4, windowMs: 3_600_000 });
+  // after validation: per workspace id, and one fleet-wide ceiling
+  const workspaceLimiter = createLimiter({ limit: config.ratePerHour, windowMs: 3_600_000 });
+  const fleetLimiter = createLimiter({ limit: config.fleetRatePerHour, windowMs: 3_600_000, maxKeys: 1 });
   const failLimiter = createLimiter({ limit: config.authFailuresPerMinute, windowMs: 60_000 });
-  const seen = new Map(); // `${workspace}:${hour}` -> accepted at; in memory only
   const counters = { accepted: 0, rejected: Object.create(null), spoolFailures: 0 };
 
   const reject = (res, status, error, extra = {}, headers = {}) => {
@@ -72,7 +78,7 @@ export function createCollector(config, { log, fetchImpl = fetch, now = Date.now
     if (contentType !== 'application/json') return reject(res, 415, 'unsupported_media_type');
     const declared = Number(req.headers['content-length']);
     if (Number.isFinite(declared) && declared > config.maxBodyBytes) return reject(res, 413, 'payload_too_large');
-    const rate = postLimiter.hit(auth.id, now());
+    const rate = (auth.workspace === null ? controlLimiter : tokenLimiter).hit(auth.id, now());
     if (!rate.ok) return reject(res, 429, 'rate_limited', {}, { 'retry-after': String(Math.ceil(rate.retryAfterMs / 1000)) });
 
     let text;
@@ -89,21 +95,30 @@ export function createCollector(config, { log, fetchImpl = fetch, now = Date.now
       return reject(res, checked.status, checked.error, checked.dropped ? { dropped: checked.dropped } : {});
     }
     const { clean } = checked;
-    const key = `${clean.workspace}:${clean.hour}`;
-    if (seen.has(key)) return reject(res, 409, 'duplicate_hour');
+    if (isDeleting(config, clean.workspace)) return reject(res, 410, 'workspace_deleted');
+    if (auth.workspace === null && !isAllowed(config, clean.workspace)) return reject(res, 403, 'workspace_not_allowed');
+    const perWorkspace = workspaceLimiter.hit(clean.workspace, now());
+    const fleet = perWorkspace.ok ? fleetLimiter.hit('fleet', now()) : { ok: true, retryAfterMs: 0 };
+    if (!perWorkspace.ok || !fleet.ok) {
+      const wait = Math.max(perWorkspace.retryAfterMs, fleet.retryAfterMs);
+      return reject(res, 429, perWorkspace.ok ? 'fleet_rate_limited' : 'rate_limited', {}, { 'retry-after': String(Math.ceil(wait / 1000)) });
+    }
+    // replay protection: an exclusive file per workspace and hour, so it survives a restart
+    if (!claimHour(config, clean.workspace, clean.hour)) return reject(res, 409, 'duplicate_hour');
 
     const receivedAt = now();
     try {
+      if (isDeleting(config, clean.workspace)) throw Object.assign(new Error('deleting'), { code: 'EDELETING' });
       await appendRows(config.lakeDir, reportToRows(clean, receivedAt), receivedAt);
     } catch (error) {
+      releaseHour(config, clean.workspace, clean.hour);
+      if (error?.code === 'EDELETING') return reject(res, 410, 'workspace_deleted');
       counters.spoolFailures += 1;
       log?.error('spool_failed', { reason: String(error?.code ?? 'error') });
       return reject(res, 503, 'storage_unavailable', {}, { 'retry-after': '60' });
     }
-    seen.set(key, receivedAt);
-    if (seen.size > 20_000) for (const [k, at] of seen) { if (receivedAt - at > 48 * 3_600_000) seen.delete(k); }
 
-    const delivered = await sinks.push({ vm: reportToVm(clean, receivedAt), loki: reportToLoki(clean) });
+    const delivered = await sinks.push({ vm: reportToVm(clean, receivedAt), loki: reportToLoki(clean), workspace: clean.workspace });
     counters.accepted += 1;
     log?.info('report_accepted', {
       token: auth.id, workspace: clean.workspace, hour: clean.hour, metrics: clean.metrics.length,

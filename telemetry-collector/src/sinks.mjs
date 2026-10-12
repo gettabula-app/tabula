@@ -3,7 +3,7 @@
  * behind a bounded in-memory retry queue: a failing sink never fails a post, a queue entry older than an hour is dropped
  * and counted. A 4xx answer (other than 408 and 429) means the sink rejected the data itself, so it is dropped, not retried.
  */
-export function createSinks({ vmUrl, lokiUrl, fetchImpl = fetch, log, now = Date.now, retryMs = 30_000, maxAgeMs = 3_600_000, maxQueue = 2000, timeoutMs = 5000 }) {
+export function createSinks({ vmUrl, lokiUrl, fetchImpl = fetch, log, now = Date.now, retryMs = 30_000, maxAgeMs = 3_600_000, maxQueue = 2000, timeoutMs = 5000, isBlocked = () => false }) {
   const stats = { delivered: { vm: 0, loki: 0 }, queued: { vm: 0, loki: 0 }, dropped: { vm: 0, loki: 0 }, failures: { vm: 0, loki: 0 } };
   /** @type {{ sink: 'vm' | 'loki', body: string, at: number }[]} */
   let queue = [];
@@ -34,8 +34,9 @@ export function createSinks({ vmUrl, lokiUrl, fetchImpl = fetch, log, now = Date
     }
   }
 
-  async function deliver(sink, body) {
-    const item = { sink, body, at: now() };
+  async function deliver(sink, body, workspace) {
+    const item = { sink, body, workspace, at: now() };
+    if (workspace && isBlocked(workspace)) { stats.dropped[sink] += 1; return 'dropped'; }
     const result = await attempt(item);
     if (result === 'ok') { stats.delivered[sink] += 1; return 'ok'; }
     if (result === 'drop') { stats.dropped[sink] += 1; return 'dropped'; }
@@ -53,7 +54,9 @@ export function createSinks({ vmUrl, lokiUrl, fetchImpl = fetch, log, now = Date
     try {
       for (const item of queue.slice()) {
         let result = 'retry';
-        if (now() - item.at > maxAgeMs) {
+        if (item.workspace && isBlocked(item.workspace)) {
+          result = 'old'; // workspace is being erased: a queued item must not be written after the purge
+        } else if (now() - item.at > maxAgeMs) {
           result = 'old';
           log?.warn('sink_dropped_old', { sink: item.sink });
         } else {
@@ -73,10 +76,10 @@ export function createSinks({ vmUrl, lokiUrl, fetchImpl = fetch, log, now = Date
 
   return {
     /** @returns {Promise<{ vm: string, loki: string }>} */
-    async push({ vm, loki }) {
+    async push({ vm, loki, workspace }) {
       const [vmResult, lokiResult] = await Promise.all([
-        vm.length ? deliver('vm', vm.map((line) => JSON.stringify(line)).join('\n')) : 'skipped',
-        loki.streams.length ? deliver('loki', JSON.stringify(loki)) : 'skipped',
+        vm.length ? deliver('vm', vm.map((line) => JSON.stringify(line)).join('\n'), workspace) : 'skipped',
+        loki.streams.length ? deliver('loki', JSON.stringify(loki), workspace) : 'skipped',
       ]);
       return { vm: vmResult, loki: lokiResult };
     },

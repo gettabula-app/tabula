@@ -7,6 +7,7 @@ import { applyRetention, compact, runDuckdb, validDay, viewsSql } from './lake.m
 import { createLogger } from './log.mjs';
 import { issueToken, listTokens, revokeTokens } from './registry.mjs';
 import { createCollector } from './server.mjs';
+import { allowWorkspace, clearMarker, listAllowed, listMarkers, pruneHours, readMarker, removeAllowed, updateMarker } from './state.mjs';
 
 const USAGE = `usage: cli.mjs <command> [options]
   serve                                     run the collector HTTP service
@@ -14,7 +15,13 @@ const USAGE = `usage: cli.mjs <command> [options]
                                             names the workspace in each report)
   token revoke --id <token id> | --workspace <id>
   token list
-  delete-workspace --workspace <id> [--keep-tokens]   remove the workspace from VictoriaMetrics, Loki, the lake and the spool
+  delete-workspace --workspace <id> [--keep-tokens]   block the workspace, then remove it from VictoriaMetrics, Loki, the lake
+                                            and the spool; backups stay 'pending' until 'deletion complete'
+  deletion list                             deletion markers and whether backups still hold the data
+  deletion ready --workspace <id>           exit 0 once the stores were purged at least 4 hours ago (Loki applies deletes late)
+  deletion complete --workspace <id>        record that restic snapshots were erased (backup/erase-snapshots.sh)
+  workspace allow|remove --workspace <id>   the allowlist control-plane tokens must stay inside (empty means nothing allowed)
+  workspace list | unblock --workspace <id> remove a deletion marker so the id can report again
   compact [--day YYYY-MM-DD]                compact closed spool days into Parquet
   retention                                 drop lake partitions past their retention
   lake-daemon                               compact and apply retention on a schedule (the lake container)
@@ -47,7 +54,7 @@ async function lakeDaemon(config, log) {
       const today = new Date().toISOString().slice(0, 10);
       if (today !== lastRetentionDay) {
         const removed = await applyRetention(config);
-        log.info('lake_retention', { removed: removed.length });
+        log.info('lake_retention', { removed: removed.length, replayKeys: pruneHours(config) });
         lastRetentionDay = today;
       }
       fs.mkdirSync(path.dirname(config.heartbeatFile), { recursive: true });
@@ -93,6 +100,33 @@ async function main(argv) {
       const result = await deleteWorkspace(config, flags.workspace, { keepTokens: flags['keep-tokens'] === true, log });
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       if (!result.ok) process.exitCode = 1;
+      return undefined;
+    }
+    case 'deletion': {
+      const [sub] = positional;
+      if (sub === 'list') {
+        process.stdout.write(`${JSON.stringify(listMarkers(config), null, 2)}\n`);
+      } else if (sub === 'ready' && typeof flags.workspace === 'string') {
+        // Loki applies deletes after its cancel period and delete delay (3 hours); backups taken sooner could still hold the lines
+        const marker = readMarker(config, flags.workspace);
+        const age = marker?.storesPurgedAt ? Date.now() - marker.storesPurgedAt : -1;
+        process.stdout.write(age >= 4 * 3_600_000 ? 'ready\n' : 'not ready: stores not purged yet or purged less than 4 hours ago\n');
+        if (age < 4 * 3_600_000) process.exitCode = 1;
+      } else if (sub === 'complete' && typeof flags.workspace === 'string') {
+        if (!readMarker(config, flags.workspace)?.storesPurgedAt) throw new Error('stores are not purged yet; run delete-workspace first');
+        updateMarker(config, flags.workspace, { backups: 'erased', backupsErasedAt: Date.now() });
+        process.stdout.write('recorded\n');
+      } else throw new Error(USAGE);
+      return undefined;
+    }
+    case 'workspace': {
+      const [sub] = positional;
+      const ws = typeof flags.workspace === 'string' ? flags.workspace : null;
+      if (sub === 'allow' && ws) allowWorkspace(config, ws);
+      else if (sub === 'remove' && ws) removeAllowed(config, ws);
+      else if (sub === 'unblock' && ws) clearMarker(config, ws);
+      else if (sub !== 'list') throw new Error(USAGE);
+      process.stdout.write(`${JSON.stringify(listAllowed(config))}\n`);
       return undefined;
     }
     case 'compact': {

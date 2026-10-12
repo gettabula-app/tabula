@@ -2,6 +2,7 @@
 export function createLimiter({ limit, windowMs, maxKeys = 10_000 }) {
   const hits = new Map();
   return {
+    get size() { return hits.size; },
     /** @returns {{ ok: boolean, retryAfterMs: number }} */
     hit(key, now = Date.now()) {
       let list = hits.get(key);
@@ -11,6 +12,8 @@ export function createLimiter({ limit, windowMs, maxKeys = 10_000 }) {
             if (!v.length || now - v[v.length - 1] >= windowMs) hits.delete(k);
             if (hits.size < maxKeys) break;
           }
+          // hard cap: still full of active keys, so evict the oldest inserted ones
+          while (hits.size >= maxKeys) hits.delete(hits.keys().next().value);
         }
         list = [];
         hits.set(key, list);

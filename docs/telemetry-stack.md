@@ -28,7 +28,7 @@ Six containers in one compose project (`tabula-telemetry`) on its own bridge net
 | Ingest door | `${INGEST_BIND}:8481` on the host, default `127.0.0.1` | routes `/v1/telemetry` and `/healthz` only; `/metrics` is a 404 |
 | VictoriaMetrics 8428, Loki 3100 and 9096, Grafana 3000, collector 8481 | inside the compose network only | never published |
 
-No port is published on `0.0.0.0`. `scripts/preflight.sh` refuses an empty or wildcard bind address and the ports 3000, 9090, 9093, 9100, 5432, 18100 and 19100, and a test reads the compose file to check the same. Set `GRAFANA_BIND` or `INGEST_BIND` to the tunnel address (NetBird or WireGuard) only after the tunnel exists.
+No port is published on `0.0.0.0`. `scripts/preflight.sh` refuses an empty or wildcard bind address and the ports 3000, 9090, 9093, 9100, 5432, 18100 and 19100, and a test reads the compose file to check the same. `scripts/preflight.sh` accepts only loopback, a NetBird address (100.64.0.0/10), or the single private address Johan names in `APPROVED_TUNNEL_ADDRESS` (a WireGuard address in 10/8, 172.16/12, 192.168/16 or fd00::/8); everything else, including public addresses, is refused. The proxy speaks plain HTTP (`auto_https off`), so the tunnel is the encryption; set the bind address only after the tunnel exists.
 
 ### Resource limits
 
@@ -46,9 +46,9 @@ The instance sends one report per hour. Counters in it are per-hour increments, 
 
 Workspace ids are the only identifier. The schema has no field that can hold a name, email, message or board text, and the scrubber's rules (unknown keys, strings that look like emails, URLs, IPv4 addresses or tokens) are the same file the instance uses: `server/telemetry/scrub.mjs` is imported, not copied.
 
-**Strict mode.** The scrubber drops what it does not know. The collector goes further and answers 422 with only the drop counts and reason codes when anything was dropped, so a deviating report is stored nowhere. This differs from the design's "drop and reply with a count"; the instance should log a 422 and not retry the same body. Other answers: 401 bad or revoked token, 403 workspace differs from the token, 409 same workspace and hour already accepted (treat as success), 413, 415, 429 with `Retry-After`, 503 if the spool cannot be written (retry).
+**Strict mode.** The scrubber drops what it does not know. The collector goes further and answers 422 with only the drop counts and reason codes when anything was dropped, so a deviating report is stored nowhere. This differs from the design's "drop and reply with a count"; the instance should log a 422 and not retry the same body. Other answers: 401 bad or revoked token, 403 workspace differs from the token or is not on the allowlist, 409 same workspace and hour already accepted (treat as success), 410 the workspace is being or has been deleted (stop sending), 413, 415, 429 with `Retry-After`, 503 if the spool cannot be written (retry).
 
-**Hours.** Reports older than 72 hours or more than one hour in the future are refused. The duplicate check for one workspace and hour is in memory, so a collector restart forgets it.
+**Hours.** Reports older than 72 hours or more than one hour in the future are refused. Replay protection is a file per accepted workspace and hour under `state/seen/<workspace>/<hour>`, created exclusively before the spool write (released if the write fails), so it survives restarts and works across collector processes. The lake job prunes claims older than the accepted report age.
 
 **Lake layout** (under `${TELEMETRY_DATA}/lake`):
 
@@ -87,14 +87,19 @@ The decision says "30 days at full resolution, then hourly rollups for 13 months
 docker compose run --rm collector delete-workspace --workspace ws_xxxxxxxx
 ```
 
-It validates the id against the schema pattern, revokes that workspace's tokens (so the instance cannot recreate the data; `--keep-tokens` to skip), then deletes from every store and prints one outcome per store:
+Order, so that live ingestion cannot undo an erasure:
 
-- VictoriaMetrics: `POST /api/v1/admin/tsdb/delete_series?match[]={workspace="<id>"}`.
-- Loki: `POST /loki/api/v1/delete` for `{workspace="<id>"}` over the last 800 days. Loki applies it through its compactor after `delete_request_cancel_period` (1 hour) plus `retention_delete_delay` (2 hours), so the lines can still be visible for a few hours.
-- Lake: removes every `workspace=<id>` partition directory in all streams and rewrites the spool files without that workspace's rows (under the spool lock).
-- A line with ids, time and outcomes (no content) is appended to `state/deletions.log`.
+1. **Barrier.** A deletion marker `state/deletions/<id>.json` is written first. Every collector checks it (the files are shared by all processes and containers): new reports for that id get 410, the spool write is re-checked just before it happens, and the sink retry queue drops that id's queued items before each attempt.
+2. **Wait.** If it created the marker it waits `COLLECTOR_DELETE_WAIT_MS` (default 15 s, longer than the 5 s sink timeout) for requests already in flight to finish.
+3. **Purge.** It revokes the workspace's tokens (`--keep-tokens` to skip), removes the id from the allowlist and the replay claims, then deletes from every store and prints one outcome per store:
+   - VictoriaMetrics: `POST /api/v1/admin/tsdb/delete_series?match[]={workspace="<id>"}`.
+   - Loki: `POST /loki/api/v1/delete` for `{workspace="<id>"}` over the last 800 days; applied by the compactor after `delete_request_cancel_period` (1 hour) plus `retention_delete_delay` (2 hours).
+   - Lake: removes every `workspace=<id>` partition directory in all streams and rewrites the spool files without that workspace's rows (under the spool lock).
+4. A ledger line (ids, time, outcomes, no content) goes to `state/deletions.log`.
 
-The exit code is 1 and `ok` is false if any store failed; run it again. **Backups are not rewritten.** Restic snapshots made before the deletion still contain the data until they age out of the keep rules (at most about 6 months). Whether that is acceptable for a deletion request is a question for the CGO; the alternative is to forget and prune the affected snapshots and take a fresh backup.
+The marker **stays** after the purge, so a later report from a confused instance or a control-plane token cannot bring the data back. `workspace unblock --workspace <id>` removes it. The exit code is 1 and `ok` is false if any store failed; run it again (the marker already exists, so it does not wait again).
+
+**Backups.** Restic snapshots are immutable, so the marker records `backups: "pending"` and `deletion list` shows every deletion whose snapshots may still hold the data; the nightly backup prints a warning while any are pending. To finish the erasure run `backup/erase-snapshots.sh ws_xxxxxxxx` as root, at least 4 hours after the purge (Loki applies deletes late; `deletion ready` checks this). It takes a clean replacement backup, forgets and prunes **every older snapshot** (`restic forget --prune --keep-last 1`), and marks the deletion complete. That is deliberately blunt: the older history is gone, because it is the history that holds the data. If Johan does not want that, the data ages out of the backups within the keep rules (7 daily, 4 weekly, 6 monthly, so up to about 6 months). **For the CGO:** the privacy text should say which of the two applies to a deletion request, and that deleted data can remain in encrypted backups until the erase step is run or the snapshots age out.
 
 ## Tokens
 
@@ -107,7 +112,7 @@ docker compose run --rm collector token revoke --id <id>       # or --workspace 
 docker compose run --rm collector token list                   # no hashes
 ```
 
-A workspace token fixes the workspace: a report naming another workspace gets 403. Limits: 6 posts per hour per token, 20 failed authentications per minute per client address, 256 KB body. Logs are JSON lines with ids, counts and reason codes only; never a body, token, header or address. The collector's own counters are at `/metrics` inside the network and VictoriaMetrics scrapes them (the dashboard "Fleet overview" has a panel).
+A workspace token fixes the workspace: a report naming another workspace gets 403. A **control-plane token** (`--control-plane`) may only write workspaces on the allowlist `state/workspaces.json`; an absent or empty allowlist allows nothing. Manage it with `workspace allow|remove|list --workspace <id>` (the control plane's provisioning step should call it when a workspace is created). Limits: before the body is read, 6 posts per hour for a workspace token and a flood guard of four times the fleet ceiling for a control-plane token; after validation, 6 posts per hour per workspace id and a fleet-wide ceiling of 5000 reports per hour (`COLLECTOR_FLEET_RATE_PER_HOUR`); 20 failed authentications per minute per client address; 256 KB body. The limiter tables are capped in memory. Logs are JSON lines with ids, counts and reason codes only; never a body, token, header or address. The collector's own counters are at `/metrics` inside the network and VictoriaMetrics scrapes them (the dashboard "Fleet overview" has a panel).
 
 ## Dashboards
 
@@ -141,6 +146,7 @@ The data volume, disk alert and the headroom rules of the runbook (root disk ale
 
 ## Upgrade and rollback
 
+0. Pin digests: `scripts/pin-digests.sh` prints `image: name:tag@sha256:...` for every image (needs network and Docker); copy them into `compose.yaml`. Until then preflight warns that images are pinned by tag only, and tags are not immutable.
 1. `git pull` the checkout, then `scripts/preflight.sh` (use `PREFLIGHT_SKIP_LISTEN=1` while the stack runs).
 2. Take a backup first (`systemctl start tabula-telemetry-backup.service`) and wait for "backup ok".
 3. Change image tags in `compose.yaml` one service at a time (pin the digest of the pulled image beside the tag), then `docker compose pull && docker compose up -d --build`. Collector and lake job are rebuilt from the repository.
