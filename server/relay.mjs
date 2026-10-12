@@ -23,6 +23,7 @@ import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
+import { createAwarenessBucket, filterAwarenessUpdate, transferAwarenessOwnership, accountAwarenessState } from './awareness-guard.mjs';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
@@ -109,6 +110,13 @@ const AWARENESS_COLOUR_RE = /^#[0-9a-f]{6}$/i;
 const GUEST_PRESENCE_COLORS = ['#326DD3', '#D3332D', '#1B8151', '#A06A00', '#7B58DB', '#CE2C7D', '#1C7C85', '#B9501C'];
 const GUEST_AWARENESS_STRING_LIMIT = 256;
 
+// TABULA_AWARENESS_BURST and TABULA_AWARENESS_PER_SECOND are test knobs for the per-socket awareness bucket (defaults 40 and 30).
+const knob = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n >= 1 && n <= 10_000 ? n : fallback;
+};
+const AWARENESS_BUCKET = { burst: knob('TABULA_AWARENESS_BURST', 40), perSecond: knob('TABULA_AWARENESS_PER_SECOND', 30) };
+
 function cleanAwarenessString(value, limit = GUEST_AWARENESS_STRING_LIMIT) {
   return [...value.slice(0, limit * 4).normalize('NFC').replace(/[\p{Cc}\p{Cf}]/gu, '')].slice(0, limit).join('');
 }
@@ -144,6 +152,14 @@ function cleanGuestAwarenessState(state, ws) {
   const name = cleanAwarenessString(typeof ws.userName === 'string' ? ws.userName : 'Guest', 40).trim() || 'Guest';
   safe.user = { id: ws.userId, name, color: ws.userColor ?? guestPresenceColor(ws.userId), guest: true };
   return safe;
+}
+function cleanAccountAwarenessState(state, ws) {
+  return accountAwarenessState(state, ws, {
+    // read-only members get the bounded copy guests get; writers keep their fields as sent (the frame is size-capped)
+    cleanValue: ws.canWrite === true ? (value) => value : cleanGuestAwarenessValue,
+    cleanName: (name) => cleanAwarenessString(name, 40).trim(),
+    fallbackColor: guestPresenceColor,
+  });
 }
 const CLOSE_ACCESS_REMOVED = 4410;
 // The workspace is being restored from a backup (docs/backups.md, Restoring): sent to every open socket, and to every
@@ -974,9 +990,34 @@ class Room {
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
         const update = decoding.readVarUint8Array(dec);
-        const safeUpdate = ws.guest
-          ? awarenessProtocol.modifyAwarenessUpdate(update, (state) => cleanGuestAwarenessState(state, ws))
-          : update;
+        ws.awarenessBucket ??= createAwarenessBucket(AWARENESS_BUCKET);
+        if (!ws.awarenessBucket.take()) {
+          const now = Date.now();
+          if (process.env.DEBUG_AWARENESS === '1' && now - (ws.awarenessDropLogAt ?? 0) >= 10_000) {
+            ws.awarenessDropLogAt = now;
+            log(`room ${this.name}: awareness rate limit, frames dropped`);
+          }
+          return;
+        }
+        // Every socket may only write the clientIDs it controls; guests and read-only viewers also get sanitised state.
+        const others = [];
+        for (const [other, ids] of this.conns) if (other !== ws) others.push({ ids, userId: other.userId, guest: other.guest === true });
+        const clean = ws.guest
+          ? (state) => cleanGuestAwarenessState(state, ws)
+          : typeof ws.userId === 'string' && ws.userId !== '' ? (state) => cleanAccountAwarenessState(state, ws) : undefined;
+        const verdict = filterAwarenessUpdate(update, { own: this.conns.get(ws) ?? new Set(), others, self: { userId: ws.userId, guest: ws.guest === true }, clean });
+        if (verdict.oversized || verdict.dropped) {
+          const now = Date.now();
+          if (!(now - (ws.awarenessDropLogAt ?? 0) < 10_000)) {
+            ws.awarenessDropLogAt = now;
+            if (process.env.DEBUG_AWARENESS === '1') log(`room ${this.name}: awareness ${verdict.oversized ? 'oversized update' : 'foreign client ids'} dropped`);
+          }
+        }
+        if (!verdict.update) return;
+        const safeUpdate = verdict.update;
+        // Ownership moves first: a takeover is an 'updated' id for y-protocols, and the 'update' listener (and the
+        // presence colour it refreshes) looks the id up on the sending socket, so the old socket closing cannot drop it.
+        transferAwarenessOwnership(this.conns, ws, verdict.ids);
         awarenessProtocol.applyAwarenessUpdate(this.awareness, safeUpdate, ws);
       }
     } catch (err) {

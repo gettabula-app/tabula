@@ -191,12 +191,12 @@ function connect(board: string, cookie: string) {
 const synced = (c: ReturnType<typeof connect>) => until(() => c.provider.wsconnected && c.provider.synced);
 
 const peers = (c: ReturnType<typeof connect>, name: string) =>
-  [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name);
+  [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name || s.marker === name);
 
 /** Awareness sent after a document edit reaches the other side after that edit would have, if it were allowed. */
 async function flush(from: ReturnType<typeof connect>, to: ReturnType<typeof connect>) {
   const name = unique('marker');
-  from.provider.awareness.setLocalStateField('user', { name });
+  from.provider.awareness.setLocalStateField('marker', name);
   await until(() => peers(to, name));
 }
 
@@ -1113,7 +1113,7 @@ describe('accounts mode server', () => {
       await until(() => cv.doc.getMap('objects').get('fromEditor') === 'hello');
 
       cv.doc.getMap('objects').set('fromViewer', 'sneaky');
-      cv.provider.awareness.setLocalStateField('user', { name: 'Vera the viewer' });
+      cv.provider.awareness.setLocalStateField('marker', 'Vera the viewer');
       await until(() => peers(ce, 'Vera the viewer'));
       expect(ce.doc.getMap('objects').has('fromViewer')).toBe(false);
 
@@ -1148,7 +1148,7 @@ describe('accounts mode server', () => {
 
       expect((await grant('viewer')).status).toBe(201);
       cg.doc.getMap('objects').set('second', 2);
-      cg.provider.awareness.setLocalStateField('user', { name: 'Still here' });
+      cg.provider.awareness.setLocalStateField('marker', 'Still here');
       await until(() => peers(co, 'Still here'));
       expect(co.doc.getMap('objects').has('second')).toBe(false);
       expect(cg.provider.wsconnected).toBe(true);

@@ -74,7 +74,7 @@ const updateFrame = () => {
 
 const awarenessFrame = (name: string) => {
   const awareness = new awarenessProtocol.Awareness(new Y.Doc());
-  awareness.setLocalState({ user: { name } });
+  awareness.setLocalState({ user: { name }, marker: name });
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, 1);
   encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(awareness, [awareness.clientID]));
@@ -342,12 +342,12 @@ describe('comments rooms in accounts mode', { timeout: 30_000 }, () => {
   type Conn = ReturnType<typeof connect>;
 
   const synced = (c: Conn) => until(() => c.provider.wsconnected && c.provider.synced);
-  const peers = (c: Conn, name: string) => [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name);
+  const peers = (c: Conn, name: string) => [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name || s.marker === name);
 
   /** Awareness sent after a document edit travels behind it on the same socket: once it has arrived, the edit has too, if it was let through. */
   async function flush(from: Conn, to: Conn) {
     const name = unique('marker');
-    from.provider.awareness.setLocalStateField('user', { name });
+    from.provider.awareness.setLocalStateField('marker', name);
     await until(() => peers(to, name));
   }
 

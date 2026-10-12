@@ -211,7 +211,7 @@ function client(srv: Server) {
   /** The relay sends a socket's messages in order, so once an awareness marker from a joined client has arrived, every hint sent before it has too. */
   async function afterHints(through: ReturnType<typeof connect>, listeners: Listener[]) {
     const name = unique('barrier');
-    through.provider.awareness.setLocalStateField('user', { name });
+    through.provider.awareness.setLocalStateField('marker', name);
     await until(() => listeners.every((l) => l.awareness.some((text) => text.includes(name))));
   }
 
@@ -228,8 +228,8 @@ function client(srv: Server) {
   /** Awareness sent after a document edit reaches the other side after that edit would have, if it were allowed. */
   async function flush(from: ReturnType<typeof connect>, to: ReturnType<typeof connect>) {
     const name = unique('marker');
-    from.provider.awareness.setLocalStateField('user', { name });
-    await until(() => [...to.provider.awareness.getStates().values()].some((s) => s.user?.name === name));
+    from.provider.awareness.setLocalStateField('marker', name);
+    await until(() => [...to.provider.awareness.getStates().values()].some((s) => s.user?.name === name || s.marker === name));
   }
 
   return { api, internal, mails, requestLink, signIn, newTeam, invite, joinTeam, newBoard, connect, listen, afterHints, frame, synced, flush };

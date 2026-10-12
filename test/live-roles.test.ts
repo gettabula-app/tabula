@@ -80,13 +80,18 @@ const updateFrame = (map: string, key: string) => {
   return encoding.toUint8Array(enc);
 };
 
-const awarenessFrame = (name: string) => {
-  const awareness = new awarenessProtocol.Awareness(new Y.Doc());
-  awareness.setLocalState({ user: { name } });
+// One awareness identity per socket, like a real client (one clientID per Doc); the relay limits how many ids a socket may claim.
+const frameAwareness = new WeakMap<object, awarenessProtocol.Awareness>();
+const awarenessFrame = (name: string, socket: object) => {
+  let awareness = frameAwareness.get(socket);
+  if (!awareness) {
+    awareness = new awarenessProtocol.Awareness(new Y.Doc());
+    frameAwareness.set(socket, awareness);
+  }
+  awareness.setLocalState({ user: { name }, marker: name });
   const enc = encoding.createEncoder();
   encoding.writeVarUint(enc, 1);
   encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(awareness, [awareness.clientID]));
-  awareness.destroy();
   return encoding.toUint8Array(enc);
 };
 
@@ -211,14 +216,14 @@ function harness(getPort: () => number, getDir: () => string) {
   const pair = (board: string, cookie: string): Pair => ({ board: connect(board, cookie), comments: connect(`${board}${COMMENTS}`, cookie) });
   const synced = (c: Conn) => until(() => c.provider.wsconnected && c.provider.synced);
   const pairSynced = (p: Pair) => Promise.all([synced(p.board), synced(p.comments)]);
-  const peers = (c: Conn, name: string) => [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name);
+  const peers = (c: Conn, name: string) => [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name || s.marker === name);
 
   /** `from` sends a real document update and then awareness over its own socket; resolves to whether `to` received the update. */
   async function writes(from: Conn, to: Conn, map: string, key: string) {
     const name = unique('marker');
     const ws = from.provider.ws!;
     ws.send(updateFrame(map, key));
-    ws.send(awarenessFrame(name));
+    ws.send(awarenessFrame(name, ws));
     await until(() => peers(to, name));
     return to.doc.getMap(map).has(key);
   }
@@ -565,5 +570,122 @@ describe('open sockets follow their session', { timeout: 90_000 }, () => {
       expect(at).toBeGreaterThanOrEqual(slidAt[0] + SESSION_MS);
     }
     expect((await api(sliding.cookie, 'GET', '/api/me')).status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------- awareness guard through the authenticated relay
+
+describe('awareness on authenticated sockets', { timeout: 60_000 }, () => {
+  let dir = '';
+  let port = 0;
+  const h = harness(() => port, () => dir);
+  const { signIn, newTeam, joinTeam, newBoard, share, rawSocket, pair, pairSynced } = h;
+  let relay: ChildProcess;
+  let owner: Account;
+
+  beforeAll(async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-awareness-auth-'));
+    const started = await startRelay(dir, { TABULA_AWARENESS_BURST: '10', TABULA_AWARENESS_PER_SECOND: '1' });
+    port = started.port;
+    relay = started.proc;
+    owner = await signIn(OWNER);
+  });
+  afterEach(() => h.dispose());
+  afterAll(async () => {
+    h.dispose();
+    if (relay && relay.exitCode === null && relay.signalCode === null) await stopRelay(relay);
+    if (dir) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  async function setup() {
+    const team = await newTeam(owner.cookie);
+    const creator = await joinTeam(owner.cookie, team.id);
+    const board = await newBoard(creator.cookie);
+    const person = async (role: Role) => {
+      const who = await joinTeam(owner.cookie, team.id);
+      expect((await share(creator.cookie, board, 'user', who.user.id, role)).status).toBe(201);
+      return who;
+    };
+    return { creator, board, person };
+  }
+
+  const frameOf = (aw: awarenessProtocol.Awareness, state: unknown) => {
+    aw.setLocalState(state as Record<string, unknown>);
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, 1);
+    encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(aw, [aw.clientID]));
+    return encoding.toUint8Array(enc);
+  };
+  const newAwareness = () => new awarenessProtocol.Awareness(new Y.Doc());
+  const stateOf = (c: Conn, id: number) => c.provider.awareness.getStates().get(id) as Body | undefined;
+
+  it('drops awareness frames over the per-socket rate limit and keeps the socket', async () => {
+    const { creator, board, person } = await setup();
+    const editor = await person('editor');
+    const watcher = pair(board, creator.cookie);
+    await pairSynced(watcher);
+    const raw = rawSocket(board, editor.cookie);
+    await within(raw.joined);
+    const aw = newAwareness();
+    for (let i = 0; i < 200; i++) raw.ws.send(frameOf(aw, { n: i }));
+    await until(() => (stateOf(watcher.board, aw.clientID)?.n ?? -1) >= 0);
+    await sleep(500);
+    // this relay runs with a burst of 10 and a refill of 1 per second: frame n is frame n, so at most burst + 3 got through
+    const seen = stateOf(watcher.board, aw.clientID)?.n as number;
+    expect(seen).toBeLessThanOrEqual(10 + 3 - 1);
+    expect(raw.ws.readyState).toBe(WebSocket.OPEN);
+    await sleep(1500); // bucket refills
+    raw.ws.send(frameOf(aw, { n: 1000 }));
+    await until(() => stateOf(watcher.board, aw.clientID)?.n === 1000);
+  });
+
+  it('shows an editor under its own identity even when the frame claims someone else', async () => {
+    const { creator, board, person } = await setup();
+    const editor = await person('editor');
+    const watcher = pair(board, creator.cookie);
+    await pairSynced(watcher);
+    const raw = rawSocket(board, editor.cookie);
+    await within(raw.joined);
+    const aw = newAwareness();
+    raw.ws.send(frameOf(aw, { cursor: { x: 1, y: 2 }, user: { id: creator.user.id, name: 'Boss', color: '#123456' } }));
+    await until(() => !!stateOf(watcher.board, aw.clientID));
+    const state = stateOf(watcher.board, aw.clientID)!;
+    expect(state.user.id).toBe(editor.user.id);
+    expect(state.user.name).not.toBe('Boss');
+    expect(state.user.color).toBe('#123456');
+    expect(state.cursor).toEqual({ x: 1, y: 2 });
+  });
+
+  it('lets the same account take an id over from a lingering socket without losing it when that socket closes; nobody else can', async () => {
+    const { creator, board, person } = await setup();
+    const editor = await person('editor');
+    const other = await person('editor');
+    const watcher = pair(board, creator.cookie);
+    await pairSynced(watcher);
+    const aw = newAwareness();
+    const first = rawSocket(board, editor.cookie);
+    await within(first.joined);
+    first.ws.send(frameOf(aw, { tag: 'first', user: { color: '#111111' } }));
+    await until(() => stateOf(watcher.board, aw.clientID)?.tag === 'first');
+
+    // another account forging that clientID is ignored
+    const evil = rawSocket(board, other.cookie);
+    await within(evil.joined);
+    evil.ws.send(frameOf(aw, { tag: 'evil' }));
+    const probe = newAwareness();
+    evil.ws.send(frameOf(probe, { tag: 'probe' }));
+    await until(() => stateOf(watcher.board, probe.clientID)?.tag === 'probe');
+    expect(stateOf(watcher.board, aw.clientID)?.tag).toBe('first');
+
+    // the same account reconnects with the same clientID while the old socket still lingers
+    const second = rawSocket(board, editor.cookie);
+    await within(second.joined);
+    second.ws.send(frameOf(aw, { tag: 'second', user: { color: '#222222' } }));
+    await until(() => stateOf(watcher.board, aw.clientID)?.tag === 'second');
+
+    first.ws.close();
+    await within(first.closed);
+    await sleep(500);
+    expect(stateOf(watcher.board, aw.clientID)?.tag).toBe('second');
   });
 });
