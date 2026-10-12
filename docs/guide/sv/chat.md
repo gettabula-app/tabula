@@ -29,13 +29,17 @@ Länken **Chat** i det övre fältet visar hur många olästa meddelanden du har
 
 Chatten öppnas i en flytande panel vid skärmens högra kant. Det är samma panel på en tavla, på sidan **Boards** (Tavlor) och i spåraren, så samtalet följer med dig när du rör dig i appen.
 
-- Välj **Chat** i det övre fältet, bredvid **Comments** (Kommentarer), eller tryck på `M`. Tryck på `M` igen om du vill stänga den.
+- Välj **Chat** i det övre fältet, eller tryck på `M`, så öppnas panelen där du är; du lämnar inte sidan. Tryck på `M` igen om du vill stänga den. På sidan **Boards** (Tavlor) och i spåraren öppnar länken **Chat** i det övre fältet panelen på samma sätt. När du öppnar den med tangentbordet flyttas fokus till meddelandefältet.
+- Panelen öppnas på kanalen där någon har nämnt dig eller som har flest olästa meddelanden, och annars på den du använde senast.
+- Knappen **Open the full Chat page** (Öppna hela chattsidan) i panelens rubrikrad tar dig till [chattsidan](#chattsidan).
 - En bricka på knappen visar antalet olästa meddelanden. Den får en röd kontur när någon har nämnt dig.
 - Överst i panelen finns kanalflikar: **This board** (Den här tavlan), arbetsytan och dina team, var och en med sitt antal olästa. En knapp **+N** listar de övriga kanalerna. En rad under flikarna säger vem som är på tavlan just nu.
 - Panelen har tre storlekar. Använd knapparna i rubrikraden för att göra den **Compact** (Kompakt), **Minimise** (Minimera) den till en rund chattknapp ovanför zoomkontrollerna eller **Close** (Stäng) den. Den runda knappen visar antalet olästa i alla kanaler och har en röd kontur när någon har nämnt dig. Välj den om du vill öppna panelen igen.
 - Panelen kommer ihåg storleken du lämnade den i och kanalen du senast använde. Det gäller bara dig, på den här enheten.
 - I ett brett fönster flyttas zoomkontrollerna, snabbverktygsfältet, sessionsfältet, omröstningskortet, AI-verktygsfältet och meddelanden till vänster om den öppna panelen, och **Fit board** lämnar plats åt den. När du öppnar **Comments** läggs chattpanelen undan, och när du öppnar chattpanelen läggs **Comments** undan.
-- `Esc` stänger panelen och för dig tillbaka till knappen **Chat**. Ett meddelandefält, en meny eller en redigering använder sin första `Esc` själv.
+- `Esc` behåller fokus i panelen (ett meddelandefält, en meny eller en redigering använder sin första `Esc` själv), och en andra `Esc` stänger panelen och för dig tillbaka till knappen **Chat**. Fokus faller aldrig tillbaka till sidan när panelen stängs eller minimeras.
+- På en telefon (en skärm smalare än 600 px) öppnas panelen som ett bottenark över tavlan. Dra handtaget nedåt, eller tryck på det, så blir arket till chattknappen. Knapparna är stora och meddelandefältet ligger ovanför tangentbordet.
+- Panelen visas inte på sidorna för inloggning, inbjudan, anslutning och godkännande av appar, och inte heller på chattsidan, som redan är hela chatten.
 
 ![Tavlachatten med svar, en reaktion, en omnämning och objektbrickor, i det engelska gränssnittet (äldre sidopanelslayout)](images/chat-tray.png)
 
