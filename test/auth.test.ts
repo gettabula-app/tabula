@@ -33,7 +33,7 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((s) => new Promise((resolve) => s.close(resolve))));
 });
 
-function setup(env: Record<string, string> = {}) {
+function setup(env: Record<string, string> = {}, notifications: unknown = null) {
   const config = loadConfig({ TABULA_AUTH: 'on', TABULA_OWNER_EMAIL: OWNER, PORT: '8787', ...env });
   const d = openDirectory(':memory:');
   opened.push(d);
@@ -44,7 +44,7 @@ function setup(env: Record<string, string> = {}) {
     },
   };
   const clock = { t: T0 };
-  const auth = createAuth({ directory: d, config, mailer, now: () => clock.t });
+  const auth = createAuth({ directory: d, config, mailer, now: () => clock.t, notifications: notifications as never });
   return { d, auth, sent, config, clock };
 }
 
@@ -304,6 +304,21 @@ describe('invites', () => {
     expect(c.d.getTeamRole(crew.id, result.user.id)).toBe('admin');
     expect(c.d.findInvite(invite.token, T0)).toMatchObject({ uses: 1 });
     expect(c.auth.authenticate(cookie(c, result.sessionToken))).not.toBeNull();
+  });
+
+  it('tell the inviter when a new person joins through the link, once, and not for a person already in the team', async () => {
+    const record = vi.fn();
+    const ping = vi.fn();
+    const c = setup({}, { record, ping });
+    c.d.createUser({ email: OWNER, role: 'owner' });
+    const { team: crew, owner } = team(c);
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, now: T0 });
+    const result = await signIn(c, 'pupil@example.com', invite.token);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith({ userId: owner.id, kind: 'team_joined', actorId: result.user.id, teamId: crew.id, ref: invite.id }, { notify: false });
+    expect(ping).toHaveBeenCalledWith(owner.id);
+    await signIn(c, 'pupil@example.com', invite.token);
+    expect(record).toHaveBeenCalledTimes(1);
   });
 
   it('send no mail for a new address without a usable invite', async () => {

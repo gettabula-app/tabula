@@ -308,7 +308,7 @@ if (config.authEnabled) {
     });
     directory.setKeyFloorListener(() => events.emit(KEY_FLOOR_CHANGED_EVENT));
   }
-  auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable });
+  auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable, notifications: notificationStore });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
     const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier, mailAfterMsFromEnv }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
@@ -1017,7 +1017,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, notifications: notificationStore, log, snapshotBarrier });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, notifications: notificationStore, log, snapshotBarrier, history });
 }
 
 let oauthRoutes = null;
