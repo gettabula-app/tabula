@@ -64,6 +64,7 @@
 .admin-billing-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 
 .admin-state { margin: 0; padding: 16px 0; color: var(--graphite); }
+.admin-mail-banner { margin: 0 0 16px; padding: 12px 16px; border-left: 4px solid var(--signal); background: var(--paper); color: var(--ink); }
 .admin-error {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;
   padding: 16px 16px 16px 20px; border-left: 4px solid var(--danger); background: var(--paper); color: var(--ink);

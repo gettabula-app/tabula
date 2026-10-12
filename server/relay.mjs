@@ -251,6 +251,7 @@ const events = new EventEmitter();
 let directory = null;
 let auth = null;
 let api = null;
+let mailer = null;
 let cloud = null;
 let keyFloorReporter = null;
 let buildApi = null;
@@ -338,7 +339,8 @@ if (config.authEnabled) {
     });
     directory.setKeyFloorListener(() => events.emit(KEY_FLOOR_CHANGED_EVENT));
   }
-  auth = createAuth({ directory, config, mailer: createMailer(config), seatsAvailable: cloud?.seatsAvailable, notifications: notificationStore });
+  mailer = createMailer(config);
+  auth = createAuth({ directory, config, mailer, seatsAvailable: cloud?.seatsAvailable, notifications: notificationStore, log });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
     const [{ openChat, readChatSettings }, { boundAccess }, { createChatHub }, { unreadSummary }, { createChatRetention }, { createChatNotifier, mailAfterMsFromEnv }, { createChatLimits, chatLimitsFromTestEnv }] = await Promise.all([
@@ -372,7 +374,7 @@ if (config.authEnabled) {
     });
     // Not documented, and only under NODE_ENV=test (chat-notify.mjs)
     const mailAfterMs = mailAfterMsFromEnv(env);
-    chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer: createMailer(config), access, baseUrl: config.baseUrl, notifications: notificationStore, log, mailAfterMs });
+    chatNotifier = createChatNotifier({ directory, store, hub: chatHub, mailer, access, baseUrl: config.baseUrl, notifications: notificationStore, log, mailAfterMs });
     chat = { store, access, hub: chatHub, notifier: chatNotifier, limits: createChatLimits({ limits: chatLimitsFromTestEnv(env) }) };
     // A removed member's messages stay without an account behind them (docs/chat.md, Removing and erasing people)
     events.on('user-removed', ({ userId } = {}) => {
@@ -394,7 +396,7 @@ if (config.authEnabled) {
     const { boardAccessForDirectory } = await import('./tracker/access.mjs');
     trackerNotifier = createTrackerNotifier({
       directory,
-      mailer: createMailer(config),
+      mailer,
       baseUrl: config.baseUrl,
       log,
       boardAccess: boardAccessForDirectory(directory),
@@ -493,7 +495,7 @@ const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpe
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),

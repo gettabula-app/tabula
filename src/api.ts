@@ -373,6 +373,8 @@ export interface AdminOverview {
   signIns7d: number;
   live: { rooms: number; connections: number };
   instance: { authEnabled: true; baseUrl: string; mail: 'log' | 'file' | 'webhook' | 'smtp'; version: string };
+  /** Recent service refusals from the per-process mail health state. */
+  mail?: { refusedRecently: number; reason: string | null };
   /** Present only when a control plane runs this instance. */
   trialEndsAt?: string | null;
   /** Present only when a control plane runs this instance. */

@@ -4,6 +4,7 @@ import { ApiError, api } from '../api';
 import { cloudErrorMessage } from '../cloud-logic';
 import { dialog, field, segmented, toast } from './common';
 import { h, icon } from './dom';
+import { INVITE_DIALOG_NOTE, inviteSummary } from './teams-logic';
 
 const ROLE_NAMES: Record<UserRole, string> = { owner: 'Owner', admin: 'Admin', member: 'Member', guest: 'Guest' };
 const TEAM_ROLE_NAMES: Record<TeamRole, string> = { admin: 'Admin', member: 'Member' };
@@ -145,7 +146,8 @@ export function openTeamManager(team: Team, me: Me, onChange: () => void): void 
   const inviteRow = (i: Invite) => h('div', { class: 'member-row' },
     h('div', { class: 'who' },
       h('div', null, `Join as ${i.role}`),
-      h('div', { class: 'muted' }, `expires ${fmtDate(i.expiresAt)} · ${i.uses} ${i.uses === 1 ? 'use' : 'uses'}`),
+      h('div', { class: 'muted' }, inviteSummary(i.expiresAt, i.uses, Date.now())),
+      h('div', { class: 'muted' }, `Expires ${fmtDate(i.expiresAt)}`),
     ),
     h('button', { class: 'btn', onclick: async () => {
       try {
@@ -228,7 +230,10 @@ export function openTeamManager(team: Team, me: Me, onChange: () => void): void 
     ));
   }
 
-  const dlg = dialog(team.name, h('div', null, ...sections));
+  const invitationNote = canAdmin
+    ? [h('p', { class: 'muted' }, INVITE_DIALOG_NOTE)]
+    : [];
+  const dlg = dialog(team.name, h('div', null, ...invitationNote, ...sections));
   void loadMembers();
   if (canAdmin) void loadInvites();
 }

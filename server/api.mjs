@@ -6,9 +6,10 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
-import { SeatLimitError } from './auth.mjs';
+import { InviteExhaustedError, SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
+import { authMailUnavailable } from './mail-health.mjs';
 import { createTelemetryCollector } from './telemetry/collector.mjs';
 import { createDataBytes } from './telemetry/data-bytes.mjs';
 import { createLastReport } from './telemetry/last-report.mjs';
@@ -50,6 +51,7 @@ const MAX_BODY = 64 * 1024;
 // A body over its limit is read (and thrown away) up to this size so the 413 reaches the client; it must stay above
 // every route's `maxBody`, and compile() refuses a route that breaks that.
 const DRAIN_LIMIT = 2 * TEMPLATE_BODY_LIMIT;
+const INVITE_EXHAUSTED = 'This invitation has been used up. Ask the person who invited you for a new link.';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
@@ -77,6 +79,13 @@ class HttpError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+/** The words for a sign-in request refused by the limiter, with the real wait (a school shares one network address). */
+function rateLimitedMessage({ scope, retryAfterSec }) {
+  const minutes = Math.ceil(retryAfterSec / 60);
+  const wait = retryAfterSec < 60 ? 'Try again in a moment.' : `Try again in ${minutes} ${minutes === 1 ? 'minute' : 'minutes'}.`;
+  return `${scope === 'ip' ? 'Too many sign-in requests from your network.' : 'Too many sign-in requests for this email address.'} ${wait}`;
 }
 
 const badRequest = (message) => new HttpError(400, 'bad_request', message);
@@ -1052,10 +1061,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const { email, invite, oauthRequest } = body;
       if (typeof email !== 'string' || email.length > 320) throw badRequest('email must be a string');
       if (invite != null && (typeof invite !== 'string' || invite.length > 256)) throw badRequest('invite must be a string');
+      const mailUnavailable = authMailUnavailable(mailer.mailHealth?.status());
+      if (mailUnavailable) throw new HttpError(mailUnavailable.status, mailUnavailable.code, mailUnavailable.message);
       const result = await auth.requestLogin({ email, invite: invite ?? undefined, oauthRequest, ip: clientIp(req) });
       if (result.limited) {
-        res.setHeader('retry-after', '3600');
-        throw new HttpError(429, 'rate_limited', 'Too many sign-in requests. Try again later.');
+        res.setHeader('retry-after', String(result.retryAfterSec));
+        throw new HttpError(429, 'rate_limited', rateLimitedMessage(result));
       }
       return [200, { ok: true }];
     }),
@@ -1064,10 +1075,14 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       try {
         result = typeof body.token === 'string' ? auth.verifyLogin(body.token, { userAgent: req.headers['user-agent'] }) : null;
       } catch (err) {
+        if (err instanceof InviteExhaustedError) throw new HttpError(409, 'invite_exhausted', INVITE_EXHAUSTED);
         if (!(err instanceof SeatLimitError)) throw err;
         throw conflict('seat_limit', 'This workspace has reached its member limit. Ask an admin to remove or disable a member, or the workspace owner to write to us for a larger workspace, then open this link again.');
       }
-      if (!result) throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
+      if (!result) {
+        log('auth verify invalid_token');
+        throw new HttpError(400, 'invalid_token', 'This link has expired. Request a new one.');
+      }
       res.setHeader('set-cookie', auth.sessionCookie(result.sessionToken, result.maxAgeMs));
       directory.audit(result.user.id, 'auth.login', {});
       if (cloud) emit('usage-changed');
@@ -1163,15 +1178,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       const role = body.role === undefined ? 'member' : oneOf(body.role, TEAM_ROLES, 'role');
       const days = body.days === undefined ? 7 : body.days;
       if (!Number.isInteger(days) || days < 1 || days > 30) throw badRequest('days must be a whole number from 1 to 30');
+      // No limit unless the creator sets one: one link has to be enough for a whole class.
+      const maxUses = body.maxUses === undefined || body.maxUses === null ? null : body.maxUses;
+      if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000)) throw badRequest('maxUses must be null or a whole number from 1 to 1000');
       if (cloud && !cloud.seatsAvailable()) throw seatLimited();
       const invite = directory.transaction(() => {
-        const created = directory.createInvite({ teamId: team.id, role, createdBy: user.id, ttlMs: days * DAY_MS });
-        audit(user, 'invite.create', { teamId: team.id, inviteId: created.id, role, days });
+        const created = directory.createInvite({ teamId: team.id, role, createdBy: user.id, ttlMs: days * DAY_MS, maxUses });
+        audit(user, 'invite.create', { teamId: team.id, inviteId: created.id, role, days, maxUses });
         return created;
       });
       return [
         201,
-        { id: invite.id, url: `${config.baseUrl}/?invite=1#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt },
+        { id: invite.id, url: `${config.baseUrl}/?invite=1#/invite/${invite.token}`, token: invite.token, expiresAt: invite.expiresAt, maxUses, uses: 0 },
       ];
     }),
     compile('GET', 'teams/:id/invites', {}, ({ user, params }) => {
@@ -1194,12 +1212,14 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     compile('GET', 'invites/:token', { public: true }, ({ params }) => {
       const invite = directory.findInvite(params.token);
       const team = invite ? directory.getTeam(invite.teamId) : null;
+      if (!invite && params.token && directory.inviteExhausted(params.token)) throw new HttpError(404, 'invite_exhausted', INVITE_EXHAUSTED);
       if (!invite || !team) throw notFound('This invite is not valid');
       return [200, { team: { id: team.id, name: team.name }, role: invite.role }];
     }),
     compile('POST', 'invites/:token/accept', {}, ({ user, params }) => {
       const invite = directory.findInvite(params.token);
       const team = invite ? directory.getTeam(invite.teamId) : null;
+      if (!invite && directory.inviteExhausted(params.token)) throw new HttpError(404, 'invite_exhausted', INVITE_EXHAUSTED);
       if (!invite || !team) throw notFound('This invite is not valid');
       let role = directory.getTeamRole(team.id, user.id);
       if (role === null || (role === 'member' && invite.role === 'admin')) {
@@ -1207,7 +1227,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         role = invite.role;
         directory.transaction(() => {
           directory.addTeamMember(team.id, user.id, role);
-          directory.recordInviteUse(invite.id);
+          // The use is taken in one statement; if someone else took the last one meanwhile, the membership rolls back.
+          if (!directory.recordInviteUse(invite.id)) throw new HttpError(409, 'invite_exhausted', INVITE_EXHAUSTED);
           if (joined && invite.createdBy) {
             notificationStore?.record({
               userId: invite.createdBy,
@@ -1517,6 +1538,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         {
           ...directory.adminStats(),
           live: { rooms: live.rooms, connections: live.connections },
+          mail: mailer.mailHealth?.status() ?? { refusedRecently: 0, reason: null },
           instance: { authEnabled: true, baseUrl: config.baseUrl, mail: config.mail.mode, version: config.version ?? VERSION },
           ...(cloud ? { trialEndsAt: cloud.limits().trialEndsAt, state: cloud.limits().state } : {}),
         },

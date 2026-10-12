@@ -487,6 +487,21 @@ describe('invites', () => {
     return { d, admin, team };
   };
 
+  it('take a use only while under max_uses, atomically', () => {
+    const { d, admin, team } = setup();
+    const invite = d.createInvite({ teamId: team.id, role: 'member', createdBy: admin.id, ttlMs: DAY, maxUses: 2, now: T0 });
+    expect(d.recordInviteUse(invite.id)).toBe(true);
+    expect(d.recordInviteUse(invite.id)).toBe(true);
+    expect(d.recordInviteUse(invite.id)).toBe(false);
+    expect(d.findInvite(invite.token, T0)).toBeNull();
+    expect(d.findInviteById(invite.id, T0)).toBeNull();
+    const row = d.listInvites(team.id, T0);
+    expect(row).toEqual([]);
+    const other = d.createInvite({ teamId: team.id, role: 'member', createdBy: admin.id, ttlMs: DAY, maxUses: 1, now: T0 });
+    d.revokeInvite(other.id);
+    expect(d.recordInviteUse(other.id)).toBe(false);
+  });
+
   it('are found by token, never by anything else', () => {
     const { d, admin, team } = setup();
     const invite = d.createInvite({ teamId: team.id, role: 'member', createdBy: admin.id, ttlMs: DAY, now: T0 });
