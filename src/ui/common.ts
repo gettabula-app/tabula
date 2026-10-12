@@ -141,7 +141,7 @@ export function dialog(
 ) {
   const back = h('div', { class: `modal-back${opts.className ? ` ${opts.className}` : ''}` });
   const trackerSurface = opts.className?.split(/\s+/u).includes('trk-modal') === true;
-  const closeBtn = h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => close() }, icon('close', 18));
+  const closeBtn = h('button', { class: 'icon-btn', 'aria-label': `Close ${title}`, 'data-tip': 'Close', onclick: () => close() }, icon('close', 18));
   const titleId = `dialog-title-${++dialogSeq}`;
   const box = h('div', { class: `modal${trackerSurface ? '' : ' tray'}`, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId, tabindex: '-1' },
     h('div', { class: 'modal-head' }, h('h2', { id: titleId }, title), closeBtn),

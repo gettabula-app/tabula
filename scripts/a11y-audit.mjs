@@ -259,7 +259,7 @@ const SCREENS = [
   { id: 'board-selected', hash: '#/b/a11y', board: true, after: async (p) => { await p.evaluate(() => window.__board.setSelection(['a11y-note'])); await p.locator('.quickbar.show').waitFor(); } },
   { id: 'board-menu', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: 'Menu', exact: true }).click(); await p.locator('.menu').waitFor(); } },
   { id: 'shapes-drawer', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: 'Shapes', exact: true }).click(); await p.locator('.drawer.show').waitFor(); } },
-  { id: 'comments-panel', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: 'Comments', exact: true }).click(); await p.waitForTimeout(300); } },
+  { id: 'comments-panel', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: /^Comments/ }).click(); await p.waitForTimeout(300); } },
   { id: 'share-dialog', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: 'Share', exact: true }).click(); await p.getByRole('dialog').waitFor(); } },
   { id: 'settings-dialog', hash: '#/b/a11y', board: true, after: async (p) => { await menuItem(p, 'Board settings'); await p.getByRole('dialog').waitFor(); } },
 ];
@@ -318,9 +318,18 @@ async function probeDialog(page, d) {
 
 // what a keyboard can do on the canvas
 async function probeCanvasKeyboard(page) {
+  // The canvas is one tab stop (`.canvas-focus`, role application) holding a hidden listbox of the objects; the picture is hidden from assistive technology.
   return page.evaluate(() => {
     const svg = document.querySelector('svg.canvas');
-    return { svgTabIndex: svg?.getAttribute('tabindex'), svgRole: svg?.getAttribute('role'), svgLabel: svg?.getAttribute('aria-label'), objectsFocusable: [...document.querySelectorAll('svg.canvas g[tabindex], svg.canvas [role=button]')].length, objectCount: window.__board?.store.cache.size ?? 0, activeAfterLoad: document.activeElement?.tagName.toLowerCase() };
+    const target = document.querySelector('.canvas-focus');
+    const options = [...document.querySelectorAll('.canvas-focus [role=option]')];
+    return {
+      pictureHidden: svg?.getAttribute('aria-hidden') === 'true',
+      targetTabIndex: target?.getAttribute('tabindex'), targetRole: target?.getAttribute('role'), targetLabel: target?.getAttribute('aria-label'),
+      options: options.length, objectCount: window.__board?.store.cache.size ?? 0,
+      optionsWithoutName: options.filter((o) => !(o.getAttribute('aria-label') || '').trim()).length,
+      activeAfterLoad: document.activeElement?.tagName.toLowerCase(),
+    };
   });
 }
 
