@@ -1,11 +1,14 @@
 import { migrationSql } from '../server/schema.mjs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { MIGRATIONS } from '../server/directory.mjs';
 import { RestoreError } from '../server/restore.mjs';
 import { DAY, HOUR, MIN, T0, docBytes, harness, type Harness } from './backup-harness';
 import { audits, backedUp, backupNow, becomeB, CONFIRM, databaseOf, filesOf, filled, forge, ownerOf, raw, reopen, rig, seedA, setting, sqliteBytes } from './restore-harness';
+
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
 
 // docs/backups.md, Restoring. The whole-workspace restore against the fake S3 with the real backup engine.
 

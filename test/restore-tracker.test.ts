@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -8,6 +8,9 @@ import { checkTrackerData } from '../server/tracker/backup-check.mjs';
 import { commentTicket, createTicket } from '../server/tracker/tickets.mjs';
 import { HOUR, T0, harness, type Harness } from './backup-harness';
 import { audits, backupNow, ownerOf, reopen, rig, seedA } from './restore-harness';
+
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
 
 let h: Harness;
 const fts5Available = (() => {

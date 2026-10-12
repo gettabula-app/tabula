@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DatabaseSync } from 'node:sqlite';
 import { openDirectory } from '../server/directory.mjs';
 import { createTicket } from '../server/tracker/tickets.mjs';
 import { createTrackerRestoreRecovery } from '../server/tracker/restore-recovery.mjs';
 import { readRestoreGate, setRestoreGate } from '../server/tracker/gate.mjs';
 import { searchTickets } from '../server/tracker/search.mjs';
+
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
 
 const opened: ReturnType<typeof openDirectory>[] = [];
 const fts5Available = (() => {

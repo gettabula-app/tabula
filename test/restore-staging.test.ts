@@ -1,5 +1,5 @@
 import { migrationSql } from '../server/schema.mjs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -8,6 +8,9 @@ import { objectIdOf, deriveKeys, seal } from '../server/backup.mjs';
 import { RestoreError } from '../server/restore.mjs';
 import { HOUR, KEY, MIN, T0, VERSION_A, docBytes, harness, type Harness } from './backup-harness';
 import { audits, backedUp, backupNow, becomeB, CONFIRM, databaseOf, filesOf, filled, forge, ownerOf, rig, seedA, setting, sqliteBytes } from './restore-harness';
+
+// Real restores and backups run here; on the Windows runners they take 20 to 50 times longer than on a developer machine and timed out at the 60 s default.
+vi.setConfig({ testTimeout: 180_000, hookTimeout: 120_000 });
 
 // docs/backups.md, Restoring, "Checking the backup before anything is touched". Every way a backup can be wrong must
 // end in a refusal that leaves the live data exactly as it was.
