@@ -13,6 +13,8 @@ import { accountMe, createTopbar } from './topbar';
 const PHONE = '(max-width: 860px)';
 /** The list is fetched again at most this often when counts say a channel is missing from it. */
 const REFETCH_MS = 4000;
+/** A list that failed to load is tried again after each of these waits (a relay still starting, a busy moment), then left with its message. */
+const RETRY_MS = [1500, 4000];
 
 type Selected = { kind: ChannelKind; ref: string };
 
@@ -185,19 +187,33 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
   // ---------------------------------------------------------------- loading
   let lastFetch = 0;
   let refetchTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retries = 0;
+  /** The first answer failed and no channel was chosen: the first one that arrives later chooses. */
+  let pickLater = false;
 
   async function load(first: boolean) {
     lastFetch = Date.now();
     try {
       entries = await fetchChannels();
       failed = false;
+      retries = 0;
     } catch {
       failed = true;
     }
     if (life.signal.aborted) return;
     loaded = true;
+    // a failed list is tried again a couple of times before the message stays
+    if (failed && retries < RETRY_MS.length) {
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (!life.signal.aborted) void load(false);
+      }, RETRY_MS[retries++]);
+    }
     drawList();
-    if (!first) return;
+    const choose = first || (pickLater && !failed && current === null);
+    if (!choose) return;
+    pickLater = first && failed && current === null;
     if (current) select(current, { push: false, focus: false });
     else if (!phone?.matches) {
       const sections = groupChannels(entries);
@@ -231,5 +247,6 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
     life.abort();
     stopConversation();
     if (refetchTimer) clearTimeout(refetchTimer);
+    if (retryTimer) clearTimeout(retryTimer);
   };
 }

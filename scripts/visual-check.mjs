@@ -2923,6 +2923,8 @@ const STATES = {
     await page.route('**/api/chat/workspace/main/messages*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ messages: [], next: null }) }));
     await page.goto(`${base}/#/chat/workspace/main`);
     await page.locator('.chat-conv.open .chat-welcome').waitFor();
+    const listState = await page.evaluate(() => ({ status: document.querySelector('.chat-list-status')?.textContent ?? '', rows: document.querySelectorAll('.chat-row').length }));
+    if (listState.status || !listState.rows) throw new Error(`chat-workspace-empty: the channel list did not load (${listState.status || 'no rows'})`);
     const lines = await page.locator('.chat-welcome').evaluate((el) => [...el.children].filter((c) => !c.classList.contains('chat-empty-people')).map((c) => c.textContent));
     if (JSON.stringify(lines) !== JSON.stringify(['Workspace chat', 'Everyone in this workspace can read this channel.', 'Say hello.'])) throw new Error(`chat-workspace-empty: the welcome block says ${JSON.stringify(lines)}`);
     const focused = await page.evaluate(() => document.activeElement?.classList.contains('chat-input') === true);

@@ -14,12 +14,14 @@ const conversations: { id: string; open: boolean; focused: number }[] = [];
 let listed = new Set<string>();
 let unlisted = false;
 let fetches = 0;
+let failFetches = 0;
 let available = true;
 
 vi.mock('../src/chat', () => ({
   channelUnread: (kind: string, ref: string) => unread.get(`${kind}/${ref}`) ?? { unread: 0, mentions: 0 },
   fetchChannels: async () => {
     fetches++;
+    if (fetches <= failFetches) throw new Error('offline');
     return entries;
   },
   hasUnlisted: (set: ReadonlySet<string>) => {
@@ -81,6 +83,7 @@ beforeEach(() => {
   pushed.length = 0;
   unlisted = false;
   fetches = 0;
+  failFetches = 0;
   available = true;
   phone = false;
   vi.stubGlobal('window', {
@@ -230,6 +233,41 @@ describe('the Chat page', () => {
       expect(listed.has('team/t1')).toBe(true);
       await vi.advanceTimersByTimeAsync(5000);
       expect(fetches).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tries a list that failed to load again, and chooses the channel once it arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      entries.length = 0;
+      entries.push(entry('workspace', 'main', 'Workspace'), entry('team', 't1', 'Design'));
+      failFetches = 1;
+      const root = await mount();
+      expect(textOf(root.querySelector('.chat-list-status'))).toContain('Could not load the channels');
+      expect(rowsOf(root)).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1600);
+      expect(fetches).toBe(2);
+      expect(textOf(root.querySelector('.chat-list-status'))).toBe('');
+      expect(rowsOf(root)).toHaveLength(2);
+      // the first channel is chosen once, not again by a later list
+      expect(opened.map((o) => `${o.kind}/${o.ref}`)).toEqual(['workspace/main']);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fetches).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up after two more tries and leaves the message', async () => {
+    vi.useFakeTimers();
+    try {
+      failFetches = 99;
+      const root = await mount();
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(fetches).toBe(3);
+      expect(textOf(root.querySelector('.chat-list-status'))).toContain('Could not load the channels');
     } finally {
       vi.useRealTimers();
     }
