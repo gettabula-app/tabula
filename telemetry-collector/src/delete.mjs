@@ -42,7 +42,7 @@ export async function deleteWorkspace(config, workspace, { fetchImpl = fetch, no
 
   try {
     const start = Math.floor((now - 800 * config.dayMs) / 1000);
-    const end = Math.floor((now + 24 * 3_600_000) / 1000);
+    const end = Math.floor(now / 1000); // Loki refuses a delete whose end lies in the future
     await call(fetchImpl, `${config.lokiUrl}/loki/api/v1/delete?query=${encodeURIComponent(selector)}&start=${start}&end=${end}`, { method: 'POST' }, 30_000);
     result.loki = 'ok';
   } catch (error) {

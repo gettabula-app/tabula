@@ -154,6 +154,9 @@ services:
   proxy:
     <<: *service
     image: caddy:2.8.4-alpine
+    # The caddy binary carries the file capability cap_net_bind_service; with cap_drop ALL and no-new-privileges the exec is refused
+    # ("operation not permitted"). Granting just that capability lets it start; the ports used (8480, 8481) are unprivileged.
+    cap_add: [NET_BIND_SERVICE]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     ports:
