@@ -118,6 +118,8 @@ Effective access is the lower of the token scope and the role:
 | `whoami` | any | none needed | none |
 | `list_boards` | `read` | any role | none (directory) |
 | `get_board`, `get_objects` | `read` | any role | board, read |
+| `export`, `search` | `read` | any role | board, read |
+| `get_changes` | `read` | `owner`, `editor` | board, read and version history |
 | `list_kanban_cards` | `read` | any role | board, read |
 | `list_comments` | `read` | any role | comments, read |
 | `add_comment`, `reply_to_comment` | `comment` | `owner`, `editor`, `commenter` | comments, write |
@@ -127,6 +129,8 @@ Effective access is the lower of the token scope and the role:
 | `use_template` | `write` | `owner`, `editor` | board, write |
 
 A commenter's token, whatever its scope, can never reach a board-room write: the board-write tools check `canWriteRoom(role, 'board')`, which is false for them. `tools/list` shows only the tools the token's scope allows, so a read token never even sees the write tools; the per-call checks above do not depend on that.
+
+A read token can search a board and export it as Markdown or a JSON summary. It can also list and compare versions if its board role is `editor` or `owner`; version history can contain objects people deleted, so viewers and commenters cannot read it. Search does not include comments.
 
 There is no way to act on a team, a share, a member or a board's existence through MCP, so seat limits, role rules and the last-owner rules are untouched.
 
@@ -231,6 +235,18 @@ This applies to `create_objects`, `add_kanban_card`, `add_kanban_cards`, `create
 ### `get_objects`
 
 `{ boardId, ids: string[1..50] }` -> `{ objects: Summary[] + full details, missing: string[] }`. Full details add the complete `text` (up to 4,000 characters), `font`, `fontSize`, `fontWeight`, `textColor`, `stroke`, `strokeWidth`, `dash`, `opacity`, `createdBy`, `updatedAt` and, for UML and icon objects, the `text` and `stereotype` only (members, `ref`, `body` and `points` are not returned).
+
+### `get_changes`
+
+`{ boardId, versionId?, since?, limit?: 1..100 (default 50), cursor? }` -> without `versionId`, `{ versions: [{ id, createdAt, label, by, byName, objects }], nextCursor, truncated }`, newest first. With `versionId`, returns `{ fromVersionId, toVersionId, toCurrent, added: [{ id, type }], removed: [{ id, type }], changed: [{ id, type, fields: string[] }], truncated }`; `since` is the base version and `versionId` is compared with it. Without `since`, the selected version is compared with the live board. Diffs never include object text or values and are capped at 200,000 characters. Version history is available only to board editors and owners, even with a read token.
+
+### `export`
+
+`{ boardId, format: 'markdown'|'json' }` -> Markdown `{ format, content, truncated, hint? }`, or JSON `{ format, board, counts, bounds, nextFree, objects, nextCursor, hiddenCount, truncated, hint? }`. Markdown uses frame headings, object list items and connector lines; JSON is one page of up to 500 objects. A large export is truncated with a hint to use `get_board` with `frameId` or `cursor`.
+
+### `search`
+
+`{ boardId, query: string[1..100], limit?: 1..100 (default 50), cursor? }` -> `{ results: [{ id, type, parentFrameId, parentFrameName, snippet }], nextCursor, truncated }`. Matching is a case-insensitive substring search over the board title, object text and frame names. Comments are not searched. Each cleaned snippet is at most 160 characters.
 
 ### `create_objects`
 
@@ -536,9 +552,13 @@ New module `src/ui/tokens.ts` (+ `tokens.css`, theme variables only, no new colo
 ```js
 // server/mcp.mjs
 export const MCP_SERVER_NAME = 'board'
-export function createMcp({ config, directory /* null in open mode */, cloud, canWriteRoom, roomAccess, log }): {
+export function createMcp({ config, directory /* null in open mode */, cloud, canWriteRoom, roomAccess, log, history }): {
   handle(req, res): Promise<void>      // POST /mcp: Origin, size, bearer auth, rate limits, JSON-RPC handling, tool dispatch
 }
+
+// server/board-diff.mjs and server/board-export.mjs -- pure read helpers over Yjs board state
+export function diffBoardUpdates(beforeUpdate, afterUpdate): { added, removed, changed } // ids, types and field names only
+export function exportBoardMarkdown(doc, title?): string
 
 // server/board-ops.mjs  -- pure functions over Y.Doc, no I/O, no sockets, no node:fs
 export const LIMITS, SHAPE_KINDS, OBJ_TYPES, STICKY_COLORS, check   // check: the strict validators the tools use for their arguments
@@ -570,6 +590,7 @@ export const SCOPES, MAX_ACTIVE_TOKENS, MAX_TOKEN_BOARDS, TOKEN_BOARD_ID_RE
 
 Pure and in process (Vitest, `Y.Doc`s, no sockets):
 
+- `test/board-diff.test.ts` and `test/board-export.test.ts`: text-free version diffs, private-note withholding, nested Markdown frames, object text, connectors and kanban cards.
 - `test/board-ops.test.ts`: every object type created by `planCreate`/`applyPlan` loads in the real `Store` (`src/store.ts`) with the expected cache entry, `z` above existing objects, ids unique, defaults and fonts from `meta`; validation (unknown type, kind or field, non-finite and out-of-range numbers, colours that are not `#RRGGBB`, `url(...)` and `var(...)` refused, text over 4,000, `__proto__` keys, more than 100 items, board over 5,000 objects, a `parent` that is not a frame, a cycle); **atomicity** (one bad item leaves the document byte-identical and emits no update); `update` sets single keys and a concurrent human edit to another field on a second synced doc survives; `null` clears; `type`/`id` immutable; locked targets and unknown ids fail the whole call; `delete` removes attached connectors, clears children's `parent`, refuses locked; hidden notes (`privateStep` with `reveal` false) are absent from `get_board`, counts and bounds, present when `reveal` is true, and comments anchored on them are withheld; threads and replies written by `addThread`/`addReply` are read back correctly by the real `Comments` class (`src/comments.ts`); `authorName` at most 80 characters; `SHAPE_KINDS` equals the `ShapeKind` union read from `src/types.ts`, and the sticky colour table equals `STICKY_COLORS`; `cleanForModel` removes tag, zero-width and bidi characters and truncates by code point; `fence` uses a fresh nonce per call and a board string containing the closing marker cannot end the block; every read function leaves the document's state vector unchanged; `server/mcp.mjs`, `server/board-ops.mjs` and `server/tokens.mjs` never import `node:fs` or name a `.yjs` file.
 - `test/tokens.test.ts`: migration 4 applies to a version 3 directory that has users, boards and sessions and keeps them; create then find; the plaintext token is not anywhere in the database file; wrong, revoked, expired and disabled-user lookups are `null`; removing a user deletes their tokens; listings never contain the digest; the 30-day sweep; a corrupt `board_ids` fails closed; `TABULA_MCP*` configuration validation (including the daily-write cap); the https rule; accounts mode ignoring the shared token; the board id pattern is the directory's; the shared-token comparison is two digests and `timingSafeEqual` (a source check in `test/board-ops.test.ts`, behaviour in `test/mcp-open.test.ts`).
 - `test/mcp-usage.test.ts`: persistent daily counts are isolated by actor kind, actor id and date; request records are isolated by actor and cleaned after 24 hours; daily rows are cleaned after eight days, with sweeps no more than once per hour.
@@ -592,6 +613,7 @@ Black box (spawned relay, like `test/accounts-server.test.ts` and `test/cloud-re
 - `test/mcp-templates.test.ts` (shares the harness): `list_templates` shows what the person can see and nothing else (guests, people outside a team, other people's personal templates), filters, validates and fences; `use_template` places the objects (new ids, references kept, shifted by the origin or by `nextFree`, `z` above the board), is refused for a read or comment token, a viewer, a token that excludes the board, a deleted or invisible template, leaves the board untouched when refused, writes one `mcp.use_template` audit row, counts for the mutating-call rate limit and answers `read_only` on a read-only hosted workspace; no tool creates, changes or deletes a template.
 - `test/mcp-kanban.test.ts`: kanban creation defaults, custom lanes, placement, parent and lock rules, atomicity and scope checks; card list lane counts and label id/name mappings and person-id omission; label create/update/delete and card scrubbing; lane add/update/reorder/delete, WIP blocking and warnings, hidden lanes, agent-owned card moves, read-token and viewer refusals; card add/update/move, exact ordering, same-position no-write, cumulative bulk WIP checks and atomic errors with input paths; stage resolution and same-stage no-write, title/owner normalization and code-point limits, unknown ids, credential-free HTTP(S) links and the 2,000-character limit, date range and owner-kind enum, person-id refusal, agent-token ownership/clear/reassignment rules, shared default card height and link-triggered re-layout, hidden/private WIP counting and all-card rank ordering, invalid stored-link omission, viewer and locked-card write refusals, and hidden/private card withholding.
 - `test/mcp-open.test.ts`: `TABULA_MCP` off by default (404); on without a valid `TABULA_MCP_TOKEN` refuses to start; wrong token `401`; `read` scope denies writes; `list_boards` is absent; a nonexistent board is `not_found` and no `.yjs` file appears; a write to an existing board reaches a connected client; existing open-mode tests unchanged.
+- `test/mcp-read-tools.test.ts`: read-token visibility and board restrictions for `get_changes`, `export` and `search`; viewer history refusal and editor diffs; input limits; hostile text is cleaned and fenced.
 - `test/tokens-logic.test.ts`: client helpers (scope labels, expiry choices, the "admins must pick boards" rule, snippet text, the server name matching `MCP_SERVER_NAME`) as pure functions.
 
 The official client SDK is a devDependency used only by the smoke test in `test/mcp-accounts.test.ts`; the rest of that file speaks raw JSON-RPC to pin the hand-written handler. `test/directory.test.ts` follows the schema version (4).
