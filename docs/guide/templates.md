@@ -35,6 +35,8 @@ Tabula creates a new board named after the template, with its frames, fonts and 
 
 The **Start from a template** row on the Boards page shows up to four tiles: your templates first, then built-in ones. Click a tile to open a new board from it, or choose **All templates**.
 
+A new board started from a template opens with the template already in place, and Undo does not take it away: it is where the board begins. On a phone the first view fits the template between the tool bar and the right edge.
+
 If your workspace uses sign-in and you are offline, starting a board from a template needs the server. The buttons are disabled and a note says why.
 
 ## Add a template to the board you are on
