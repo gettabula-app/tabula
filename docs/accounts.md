@@ -233,4 +233,4 @@ export function createApi({directory, auth, config, roomExists, events, liveStat
 
 ## Not in this slice
 
-Passkeys and two-factor, SSO (Dex), the admin dashboard UI beyond team and member management, email-bound invites, SMTP delivery (use the webhook mailer), encrypted device storage, the AI gateway, and everything Cloud-only.
+Passkeys and two-factor, SSO (Dex), the admin dashboard UI beyond team and member management, email-bound invites, encrypted device storage, the AI gateway, and everything Cloud-only.

@@ -49,6 +49,8 @@ Docker build arguments:
 | `ICON_SETS` | `all` | Choose `all`, `curated` or `demo`; `curated` builds the smaller set (see [Fonts and icons](#fonts-and-icons)) |
 | `TABULA_VERSION` | empty | Embed a release label, reported by the server to the control plane |
 
+Upgrading and rolling back: [docs/upgrading.md](docs/upgrading.md).
+
 If you ran the old `mira` image, keep mounting your existing volume (`-v mira-data:/data`) so your boards stay.
 
 ### Relay settings
