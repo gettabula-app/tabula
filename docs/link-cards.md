@@ -73,7 +73,7 @@ Everything else is the usual box: `x y w h rotation z locked hidden parent name 
 
 - **Compact**, height under 72 units: icon, title (or the address), domain, on one line.
 - **Card**, the default (320 by 112): icon and site name, title (two lines), description (two lines), domain; the image as a square thumbnail on the right when there is one.
-- **Large image**, height at least 1.2 times the width of the text column, or when the person picks it from the quick bar: the image across the top at its aspect ratio, then the text.
+- **Large image**, height at least 0.8 times the card's width (decided 2026-10-12: 1.2 times the text column would never include the default 320 x 280), or when the person picks it from the quick bar: the image across the top at its aspect ratio, then the text.
 
 The quick bar offers the three as **Compact**, **Card** and **Large**, which resize the card to the layout's default size.
 
