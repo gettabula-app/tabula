@@ -12,7 +12,7 @@ Vad verktyget kan göra beror på vilken åtkomstnivå du ger tokenen.
 - **Read and comment** (Läsa och kommentera): kan även lägga till kommentarer och svara på dem. Kommentarer märks med ditt namn följt av tokenens namn, så att andra kan skilja dem från kommentarer du själv har skrivit.
 - **Read and edit** (Läsa och redigera): kan även skapa, ändra och ta bort objekt på tavlan. Alla på tavlan ser ändringarna direkt.
 
-Ett AI-verktyg kan inte dela tavlor, ändra roller, ta bort tavlor, hantera team eller se medlemslistan.
+AI-appar som läser MCP-resurser ser också dina tavlor som resurser (`board://` följt av tavlans id), med exakt den åtkomst som tavelverktygen ger. Ett AI-verktyg kan inte dela tavlor, ändra roller, ta bort tavlor, hantera team eller se medlemslistan.
 
 Två skydd gäller för varje token:
 
