@@ -146,6 +146,30 @@ describe('read markers and unread counts', () => {
   });
 });
 
+describe('the unread summary for a burst of people', () => {
+  it('gives the same answers to 30 people at once, and sees a message sent between two summaries', () => {
+    const s = open();
+    const refs = Array.from({ length: 40 }, (_, i) => `b${i}`);
+    for (const ref of refs) s.insertMessage({ kind: 'board', ref, authorId: 'teacher', authorName: 'T', body: `hi ${ref}`, clientId: `seed-${ref}-xyz` });
+    const people = Array.from({ length: 30 }, (_, i) => `pupil${i}`);
+    // everybody opens the page: a marker is made at the top of every channel, so nothing is unread
+    for (const id of people) expect(s.unreadSummary(id, 'board', refs)).toEqual([]);
+    s.insertMessage({ kind: 'board', ref: 'b7', authorId: 'teacher', authorName: 'T', body: 'new', clientId: 'later-xyz' });
+    for (const id of people) expect(s.unreadSummary(id, 'board', refs)).toEqual([expect.objectContaining({ ref: 'b7', unread: 1, mentions: 0 })]);
+    // the sender has nothing unread of their own message
+    expect(s.unreadSummary('teacher', 'board', refs)).toEqual([]);
+  });
+
+  it('starts a new person just before their first mention in a channel, and at the top elsewhere', () => {
+    const s = open();
+    s.insertMessage({ kind: 'board', ref: 'a', authorId: 'ana', authorName: 'A', body: 'old', clientId: 'a1-xyz' });
+    const m = s.insertMessage({ kind: 'board', ref: 'a', authorId: 'ana', authorName: 'A', body: 'for ben', clientId: 'a2-xyz', mentions: ['ben'] }).message;
+    s.insertMessage({ kind: 'board', ref: 'b', authorId: 'ana', authorName: 'A', body: 'elsewhere', clientId: 'b1-xyz' });
+    const summary = s.unreadSummary('ben', 'board', ['a', 'b']);
+    expect(summary).toEqual([expect.objectContaining({ ref: 'a', lastId: m.id - 1, unread: 1, mentions: 1 })]);
+  });
+});
+
 describe('chat settings', () => {
   const dir = (values: Record<string, string>) => ({ getSetting: (key: string) => values[key] ?? null });
 
