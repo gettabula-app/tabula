@@ -13,14 +13,18 @@ export const MAX_AWARENESS_IDS_PER_SOCKET = 8;
  * @param {Uint8Array} update raw awareness update from one socket
  * @param {object} opts
  * @param {Set<number>} opts.own clientIDs this socket already controls (Room.conns.get(ws))
- * @param {Iterable<Set<number>>} opts.others the id sets of every other socket in the room
+ * @param {{ userId?: string, guest?: boolean }} [opts.self] identity of the sending socket
+ * @param {Iterable<{ ids: Set<number>, userId?: string, guest?: boolean }>} opts.others every other socket in the room;
+ *   ids they hold are foreign unless that socket is the same non-guest account (a reconnect keeps its clientID)
  * @param {(state: unknown) => unknown} [opts.clean] applied to each accepted non-null state
  * @returns {{ update: Uint8Array | null, dropped: number, oversized: boolean }} update is null when nothing is left
  */
-export function filterAwarenessUpdate(update, { own, others, clean }) {
+export function filterAwarenessUpdate(update, { own, others, self = {}, clean }) {
   if (update.length > MAX_AWARENESS_UPDATE_BYTES) return { update: null, dropped: 0, oversized: true };
   const foreign = new Set();
-  for (const ids of others) for (const id of ids) foreign.add(id);
+  const sameAccount = (o) => typeof self.userId === 'string' && self.userId !== '' && o.userId === self.userId
+    && self.guest !== true && o.guest !== true;
+  for (const o of others) if (!sameAccount(o)) for (const id of o.ids) foreign.add(id);
   const dec = decoding.createDecoder(update);
   const len = decoding.readVarUint(dec);
   if (len > MAX_AWARENESS_ENTRIES) return { update: null, dropped: len, oversized: true };

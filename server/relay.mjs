@@ -977,11 +977,11 @@ class Room {
         const update = decoding.readVarUint8Array(dec);
         // Every socket may only write the clientIDs it controls; guests and read-only viewers also get sanitised state.
         const others = [];
-        for (const [other, ids] of this.conns) if (other !== ws) others.push(ids);
+        for (const [other, ids] of this.conns) if (other !== ws) others.push({ ids, userId: other.userId, guest: other.guest === true });
         const clean = ws.guest
           ? (state) => cleanGuestAwarenessState(state, ws)
           : ws.canWrite !== true ? (state) => cleanGuestAwarenessValue(state) : undefined;
-        const verdict = filterAwarenessUpdate(update, { own: this.conns.get(ws) ?? new Set(), others, clean });
+        const verdict = filterAwarenessUpdate(update, { own: this.conns.get(ws) ?? new Set(), others, self: { userId: ws.userId, guest: ws.guest === true }, clean });
         if (verdict.oversized || verdict.dropped) {
           const now = Date.now();
           if (!(now - (ws.awarenessDropLogAt ?? 0) < 10_000)) {
@@ -992,6 +992,10 @@ class Room {
         if (!verdict.update) return;
         const safeUpdate = verdict.update;
         awarenessProtocol.applyAwarenessUpdate(this.awareness, safeUpdate, ws);
+        // Ids taken over from the same account's lingering socket now belong to this one, so the old socket closing
+        // does not remove them.
+        const mine = this.conns.get(ws);
+        if (mine) for (const o of others) for (const id of mine) o.ids.delete(id);
       }
     } catch (err) {
       log(`room ${this.name}: bad message`, err?.message);

@@ -38,14 +38,25 @@ describe('filterAwarenessUpdate', () => {
   it('drops entries for client ids another socket controls and keeps own and new ones', async () => {
     const out = filterAwarenessUpdate(
       update(entry(1, 1, { user: { name: 'forged' } }), entry(2, 1, { user: { name: 'me' } }), entry(3, 1, { user: { name: 'new' } })),
-      { own: new Set([2]), others: [new Set([1])] },
+      { own: new Set([2]), others: [{ ids: new Set([1]) }] },
     );
     expect(out.dropped).toBe(1);
     expect(await decode(out.update as Uint8Array)).toEqual({ 2: { user: { name: 'me' } }, 3: { user: { name: 'new' } } });
   });
 
+  it('lets the same account take over an id from its lingering socket, but nobody else', () => {
+    const u = update(entry(1, 5, { user: { name: 'me' } }));
+    const held = (userId: string, guest = false) => [{ ids: new Set([1]), userId, guest }];
+    expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u1'), self: { userId: 'u1', guest: false } }).update).not.toBeNull();
+    expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u2'), self: { userId: 'u1', guest: false } }).update).toBeNull();
+    expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u1', true), self: { userId: 'u1', guest: false } }).update).toBeNull();
+    expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u1'), self: { userId: 'u1', guest: true } }).update).toBeNull();
+    expect(filterAwarenessUpdate(u, { own: new Set(), others: held('u1', true), self: { userId: 'u1', guest: true } }).update).toBeNull();
+    expect(filterAwarenessUpdate(u, { own: new Set(), others: held(''), self: { userId: '', guest: false } }).update).toBeNull();
+  });
+
   it('drops a forged removal (null state) of a foreign client id', () => {
-    const out = filterAwarenessUpdate(update(entry(1, 9, null)), { own: new Set(), others: [new Set([1])] });
+    const out = filterAwarenessUpdate(update(entry(1, 9, null)), { own: new Set(), others: [{ ids: new Set([1]) }] });
     expect(out.update).toBeNull();
     expect(out.dropped).toBe(1);
   });
