@@ -246,7 +246,7 @@
 .chat-dock-host[data-mode='compact'] .chat-name, .chat-dock-host[data-mode='compact'] .chat-msg.own .chat-name { display: inline; color: color-mix(in srgb, var(--c, var(--tray-text)) 55%, var(--tray-text)); font-size: 13px; }
 .chat-dock-host[data-mode='compact'] .chat-time { color: var(--tray-muted); font-size: 11px; font-weight: 400; }
 .chat-dock-host[data-mode='compact'] .chat-text, .chat-dock-host[data-mode='compact'] .chat-msg.own .chat-text {
-  flex: 1 1 0; min-width: 8ch; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 13px;
+  flex: 1 1 0; min-width: 8ch; padding: 0; border: 0; border-radius: var(--radius-xs); background: transparent; font-size: 13px;
 }
 .chat-dock-host[data-mode='compact'] .chat-main > :is(.chat-quote, .chat-reactions, .chat-object, .chat-state, .chat-tomb, .chat-edit, .chat-edit-actions) { flex: 0 0 100%; }
 .chat-dock-host[data-mode='compact'] .chat-hover { top: -12px; }

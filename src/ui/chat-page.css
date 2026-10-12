@@ -76,7 +76,7 @@
 /* ---- a phone: the list is one screen, the conversation the next */
 @media (max-width: 860px) {
   .chat-page { grid-template-columns: minmax(0, 1fr); gap: 0; padding: 0; }
-  .chat-list, .chat-conv { border-radius: 0; }
+  .chat-list, .chat-conv { border-radius: var(--radius-xs); }
   .chat-list.away { display: none; }
   .chat-conv { display: none; }
   .chat-conv.open { display: flex; }
