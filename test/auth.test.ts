@@ -308,7 +308,7 @@ describe('invites', () => {
 
   it('tell the inviter when a new person joins through the link, once, and not for a person already in the team', async () => {
     const record = vi.fn();
-    const ping = vi.fn();
+    const ping = vi.fn<(...args: unknown[]) => void>();
     const c = setup({}, { record, ping });
     c.d.createUser({ email: OWNER, role: 'owner' });
     const { team: crew, owner } = team(c);
