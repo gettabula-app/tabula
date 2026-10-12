@@ -1956,6 +1956,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     };
 
     let session = route.public || route.internal ? null : signedIn();
+    if (typeof res.once === 'function' && config.slowRequestMs > 0) res.once('finish', () => {
+      // For the operator reading logs after a slow moment: route pattern, status and time only, never a path with ids or a user.
+      const ms = Math.max(0, now() - requestStartedAt);
+      if (ms >= config.slowRequestMs) log(`slow request ${route.method} ${route.template ?? 'other'} ${res.statusCode} ${ms}ms`);
+    });
     if (typeof res.once === 'function') res.once('finish', () => {
       try {
         const responseAt = now();
