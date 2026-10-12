@@ -175,7 +175,7 @@ export async function renderVerify(root: HTMLElement, token: string, done: (me: 
           renderSignIn(root, { failedVerify: true, oauthRequest });
         }
       } else {
-        renderSignIn(root, { notice: cloudErrorMessage(err) ?? FAILED, oauthRequest });
+        renderSignIn(root, { notice: (inviteToken ? invalidInviteMessage(err) : null) ?? cloudErrorMessage(err) ?? FAILED, oauthRequest });
       }
       return;
     }

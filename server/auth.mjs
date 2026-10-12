@@ -16,6 +16,9 @@ const COOKIE_TOKEN_RE = /^[A-Za-z0-9_-]+$/;
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 /** A new person would need a seat the workspace does not have (hosted workspaces, docs/cloud.md). */
+/** The invite's last use was taken (by someone else) before this sign-in could take it. */
+export class InviteExhaustedError extends Error {}
+
 export class SeatLimitError extends Error {
   constructor() {
     super('no free seat');
@@ -165,6 +168,10 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
 
   /** @param {string} token @param {{ userAgent?: string | null }} [opts] */
   function verifyLogin(token, { userAgent = null } = {}) {
+    return verifyLoginInTransaction(token, userAgent);
+  }
+
+  function verifyLoginInTransaction(token, userAgent) {
     return directory.transaction(() => {
       const t = now();
       const consumed = directory.consumeLoginToken(token, t);
@@ -189,7 +196,8 @@ export function createAuth({ directory, config, mailer, now = Date.now, seatsAva
         if (current === null || (current === 'member' && invite.role === 'admin')) {
           directory.addTeamMember(invite.teamId, user.id, invite.role);
         }
-        directory.recordInviteUse(invite.id);
+        // Check-and-increment in one statement: if the last use was taken meanwhile, undo the whole sign-in.
+        if (!directory.recordInviteUse(invite.id)) throw new InviteExhaustedError();
       }
 
       const session = directory.createSession(user.id, { ttlMs: config.sessionMs, now: t, userAgent });

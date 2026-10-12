@@ -1134,8 +1134,18 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     return invite && inviteActive(invite, now) ? invite : null;
   }
 
+  /** True when the token names a live invite whose uses are all taken (so the screen can say "used up", not "expired"). */
+  function inviteExhausted(token, now = Date.now()) {
+    if (!validToken(token)) return false;
+    const row = get('SELECT * FROM invites WHERE token_hash = ?', hashToken(token));
+    if (!row) return false;
+    const invite = toInvite(row);
+    return !invite.revoked && invite.expiresAt > now && invite.maxUses != null && invite.uses >= invite.maxUses;
+  }
+
+  /** Atomic check-and-increment: true when a use was taken, false when the invite is exhausted, revoked or missing. */
   function recordInviteUse(id) {
-    run('UPDATE invites SET uses = uses + 1 WHERE id = ? AND (max_uses IS NULL OR uses < max_uses)', id);
+    return run('UPDATE invites SET uses = uses + 1 WHERE id = ? AND revoked = 0 AND (max_uses IS NULL OR uses < max_uses)', id) === 1;
   }
 
   function listInvites(teamId, now = Date.now()) {
@@ -1440,6 +1450,7 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     createInvite,
     findInvite,
     findInviteById,
+    inviteExhausted,
     recordInviteUse,
     listInvites,
     revokeInvite,

@@ -96,9 +96,12 @@ export function isInvalidSignInLink(error: unknown): boolean {
   return value.code === 'invalid_token' || value.status === 400;
 }
 
+export const EXHAUSTED_INVITE_MESSAGE = 'This invitation has been used up. Ask the person who invited you for a new link.';
+
 export function invalidInviteMessage(error: unknown): string | null {
   if (typeof error !== 'object' || error === null) return null;
-  const value = error as { status?: unknown };
+  const value = error as { status?: unknown; code?: unknown };
+  if (value.code === 'invite_exhausted') return EXHAUSTED_INVITE_MESSAGE;
   return value.status === 400 || value.status === 404
     ? INVALID_INVITE_MESSAGE
     : null;

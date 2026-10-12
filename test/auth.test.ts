@@ -371,6 +371,26 @@ describe('invites', () => {
     expect(c.d.getTeamRole(crew.id, member.id)).toBe('admin');
   });
 
+  it('refuse a new sign-in request and a verify once the last use is taken', async () => {
+    const { c, team: crew, owner } = await invited();
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, maxUses: 1, now: T0 });
+    // Two links requested while one use is still free.
+    await c.auth.requestLogin({ email: 'first@example.com', invite: invite.token, ip: '1.1.1.1' });
+    const firstToken = lastToken(c);
+    await c.auth.requestLogin({ email: 'second@example.com', invite: invite.token, ip: '1.1.1.2' });
+    const secondToken = lastToken(c);
+
+    expect(c.auth.verifyLogin(firstToken)).not.toBeNull();
+    expect(c.d.findInvite(invite.token, T0)).toBeNull();
+    // Verify time: the second link cannot create an account any more.
+    expect(c.auth.verifyLogin(secondToken)).toBeNull();
+    expect(c.d.getUserByEmail('second@example.com')).toBeNull();
+    // Request time: no mail for a third address.
+    const before = c.sent.length;
+    await c.auth.requestLogin({ email: 'third@example.com', invite: invite.token, ip: '1.1.1.3' });
+    expect(c.sent.length).toBe(before);
+  });
+
   it('stop working at verify time when revoked after the request', async () => {
     const { c, team: crew, owner } = await invited();
     const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, now: T0 });
@@ -433,6 +453,25 @@ describe('invites', () => {
     expect(c.d.findInvite(invite.token, T0)).toBeNull();
     await c.auth.requestLogin({ email: 'c@example.com', invite: invite.token, ip: '1.1.1.1' });
     expect(c.d.getUserByEmail('c@example.com')).toBeNull();
+  });
+});
+
+describe('the last use of an invite', () => {
+  it('rolls the whole sign-in back when another sign-in took it between the check and the use', async () => {
+    const { InviteExhaustedError } = await import('../server/auth.mjs');
+    const c = setup();
+    c.d.createUser({ email: OWNER, role: 'owner' });
+    const { team: crew, owner } = team(c);
+    const invite = c.d.createInvite({ teamId: crew.id, role: 'member', createdBy: owner.id, ttlMs: DAY, maxUses: 1, now: T0 });
+    await c.auth.requestLogin({ email: 'late@example.com', invite: invite.token, ip: '1.1.1.1' });
+    const token = lastToken(c);
+    // the check passes now; the last use goes to someone else before this sign-in takes it
+    const real = c.d.recordInviteUse;
+    c.d.recordInviteUse = (id: string) => { real(id); return false; };
+    expect(() => c.auth.verifyLogin(token)).toThrow(InviteExhaustedError);
+    c.d.recordInviteUse = real;
+    expect(c.d.getUserByEmail('late@example.com')).toBeNull();
+    expect(c.d.listTeamMembers(crew.id).map((m) => m.email)).toEqual([OWNER]);
   });
 });
 
