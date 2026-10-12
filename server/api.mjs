@@ -1628,7 +1628,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           // TAB-71: the public-edge check for a signed-in workspace admin; API responses are no-store.
           compile('GET', 'admin/client-ip', {}, ({ req, user }) => {
             requireAdmin(user);
-            return [200, clientIpReport(req, config)];
+            return [200, clientIpReport(req, config, { admin: true })];
           }),
           // Backups (docs/backups.md): { enabled: false } when they are off, else the engine's status (never a secret).
           compile('GET', 'internal/backup-status', { internal: true }, () => [200, backupStatus()]),

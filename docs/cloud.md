@@ -126,7 +126,7 @@ Every rate limit (sign-in links, MCP tokens, the AI routes, uploads) counts by t
 | Variable | Value | Meaning |
 | --- | --- | --- |
 | `TABULA_TRUST_PROXY` | `1` | Believe the header below at all. Without it the connection's address counts and both headers are ignored, so every visitor behind the edge shares one limit |
-| `TABULA_CLIENT_IP_HEADER` | `fly-client-ip` | **Set this on Fly.** The address Fly's edge saw. Fly's documentation defines it as "the IP address of the client from the perspective of Fly Proxy"; it does not say in so many words that a visitor's own value is overwritten or that it stays the visitor's address through `fly-replay`, so the check below is what confirms both on a real deploy (the fake edge in `test/proxy.test.ts` only shows what the instance does with the header) |
+| `TABULA_CLIENT_IP_HEADER` | `fly-client-ip` | **Set this on Fly.** The address Fly's edge saw. Fly's documentation (https://docs.fly.io/networking/request-headers) describes it as the IP address of the client from the perspective of Fly Proxy; it does not say in so many words that a visitor's own value is overwritten or that it stays the visitor's address through `fly-replay`, so the check below is what confirms both on a real deploy (the fake edge in `test/proxy.test.ts` only shows what the instance does with the header) |
 | | `x-forwarded-for` (the default) | The rightmost `X-Forwarded-For` entry, for a single reverse proxy (Caddy, nginx) that appends the client address. Behind Fly with `fly-replay`, the rightmost entry can be the replaying machine, and then every visitor would share its limit |
 
 Any other value refuses startup; `TABULA_CLIENT_IP_HEADER` without `TABULA_TRUST_PROXY=1` is ignored with a warning. A header value that is not an IP address falls back to the connection's address. **Recommended for hosted workspaces: `TABULA_TRUST_PROXY=1` and `TABULA_CLIENT_IP_HEADER=fly-client-ip`.**
@@ -135,12 +135,12 @@ Any other value refuses startup; `TABULA_CLIENT_IP_HEADER` without `TABULA_TRUST
 
 ```json
 { "address": "203.0.113.7", "trustProxy": true, "header": "fly-client-ip",
-  "seen": { "connection": "fdaa:0:…", "xForwardedFor": "203.0.113.7, 172.19.4.2", "flyClientIp": "203.0.113.7" } }
+  "seen": { "xForwardedFor": "203.0.113.7", "flyClientIp": "203.0.113.7", "internalHops": 1 } }
 ```
 
 1. Sign in to the workspace as its owner, then open `https://<workspace host>/api/admin/client-ip` in that same browser so it sends the admin session cookie.
 2. Compare `address` with your public address at [ifconfig.me](https://ifconfig.me). They should match.
-3. Look at `seen`: `flyClientIp` should be your address. If `xForwardedFor`'s last entry is a machine address instead, `x-forwarded-for` would be wrong for this setup; that is the failure mode TAB-71 covers.
+3. Look at `seen`: `flyClientIp` should be your address. `internalHops` counts the platform addresses (Fly's proxy range, the private network) that were in `X-Forwarded-For` and are left out of the list and out of this report: when it is above 0 the rightmost entry the instance would have used with the default `x-forwarded-for` setting is such a hop, which is the failure mode TAB-71 covers (`address` then shows that hop when `TABULA_CLIENT_IP_HEADER` is not `fly-client-ip`). This route does not show the connection's own address; the internal route below does.
 4. Sign in on a phone using mobile data, open the same route, and check that `address` is the phone's public address.
 
 The internal `GET /api/internal/client-ip` remains the control-plane/operator check. It uses the bearer token like the other internal calls and can be reached through a Machines API `exec` or Flycast only; the hosted edge blocks `/api/internal/*` on the public address.

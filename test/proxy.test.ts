@@ -531,15 +531,15 @@ describe('public client IP report (TAB-71)', { timeout: 60_000 }, () => {
     expect(adminReport.headers['cache-control']).toBe('no-store');
     expect(adminReport.body).toEqual(ownerReport.body);
     expect(Object.keys(adminReport.body).sort()).toEqual(['address', 'header', 'seen', 'trustProxy']);
-    expect(Object.keys(adminReport.body.seen).sort()).toEqual(['connection', 'flyClientIp', 'xForwardedFor']);
+    expect(Object.keys(adminReport.body.seen).sort()).toEqual(['flyClientIp', 'internalHops', 'xForwardedFor']);
     expect(adminReport.body).toEqual({
       address: visitor,
       trustProxy: true,
       header: 'fly-client-ip',
       seen: {
-        connection: expect.stringMatching(/127\.0\.0\.1$/),
-        xForwardedFor: `${visitor}, ${REPLAY_HOP}`,
+        xForwardedFor: visitor,
         flyClientIp: visitor,
+        internalHops: 1,
       },
     });
     expect((await publicGet()).status).toBe(401);
@@ -569,9 +569,9 @@ describe('public client IP report (TAB-71)', { timeout: 60_000 }, () => {
       trustProxy: true,
       header: 'x-forwarded-for',
       seen: {
-        connection: expect.stringMatching(/127\.0\.0\.1$/),
-        xForwardedFor: `${visitor}, ${REPLAY_HOP}`,
+        xForwardedFor: visitor,
         flyClientIp: visitor,
+        internalHops: 1,
       },
     });
   });

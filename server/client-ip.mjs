@@ -43,21 +43,51 @@ export function clientIpOf(req, config) {
   return net.isIP(ip) ? ip : socket;
 }
 
+const PLATFORM_ADDRESSES = new net.BlockList();
+for (const [address, prefix, family] of [
+  ['10.0.0.0', 8, 'ipv4'], ['172.16.0.0', 12, 'ipv4'], ['192.168.0.0', 16, 'ipv4'], ['100.64.0.0', 10, 'ipv4'],
+  ['127.0.0.0', 8, 'ipv4'], ['169.254.0.0', 16, 'ipv4'], ['fc00::', 7, 'ipv6'], ['fe80::', 10, 'ipv6'], ['::1', 128, 'ipv6'],
+]) PLATFORM_ADDRESSES.addSubnet(address, prefix, family);
+
+/** Private, loopback and link-local addresses: the platform's own hops (Fly's proxy range, 6PN), not a visitor's. */
+function isPlatformAddress(value) {
+  const ip = normalise(value);
+  const family = net.isIP(ip);
+  return family !== 0 && PLATFORM_ADDRESSES.check(ip, family === 4 ? 'ipv4' : 'ipv6');
+}
+
 /**
- * What the relay saw for one request, for GET /api/internal/client-ip (docs/cloud.md, "Client addresses"): the address
- * the limits use and where it came from, so whoever deploys can compare it with their own public address. Raw header
- * values are cut short; nothing else of the request is returned.
+ * @param {import('node:http').IncomingMessage} req
+ * @param {{ trustProxy?: boolean, clientIpHeader?: string }} config
+ * @param {{ admin?: boolean }} [options] `admin`: the variant a workspace admin may read through the public edge. It leaves out the
+ *   connection's address and every X-Forwarded-For hop that is a platform address (it only counts them in `internalHops`), so
+ *   Fly's internals do not go to a tenant. The internal variant (control plane and operators) keeps everything.
  */
-export function clientIpReport(req, config) {
+export function clientIpReport(req, config, { admin = false } = {}) {
   const cut = (v, n) => (v === undefined ? null : one(v).slice(0, n));
-  return {
+  const base = {
     address: clientIpOf(req, config),
     trustProxy: Boolean(config.trustProxy),
     header: config.trustProxy ? (config.clientIpHeader ?? 'x-forwarded-for') : null,
+  };
+  if (!admin) {
+    return {
+      ...base,
+      seen: {
+        connection: req.socket?.remoteAddress ?? null,
+        xForwardedFor: cut(req.headers['x-forwarded-for'], 300),
+        flyClientIp: cut(req.headers['fly-client-ip'], 64),
+      },
+    };
+  }
+  const hops = one(req.headers['x-forwarded-for']).split(',').map((h) => h.trim()).filter(Boolean);
+  const visible = hops.filter((hop) => !isPlatformAddress(hop));
+  return {
+    ...base,
     seen: {
-      connection: req.socket?.remoteAddress ?? null,
-      xForwardedFor: cut(req.headers['x-forwarded-for'], 300),
+      xForwardedFor: hops.length ? visible.join(', ').slice(0, 300) : null,
       flyClientIp: cut(req.headers['fly-client-ip'], 64),
+      internalHops: hops.length - visible.length,
     },
   };
 }
