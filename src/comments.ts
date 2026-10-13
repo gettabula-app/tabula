@@ -3,6 +3,7 @@ import type { BaseObj, Obj, Point } from './types';
 import { isBox } from './types';
 import { center, rotate } from './geometry';
 import { newId } from './store';
+import { checkYUpdate, type UpdateLimits } from './yupdate-check';
 
 export interface Author { id: string; name: string; color: string }
 export interface Anchor { x: number; y: number; obj?: string; fx?: number; fy?: number }
@@ -34,6 +35,9 @@ const cleanText = (text: unknown): string | null => {
 };
 
 const cleanName = (name: unknown): string => (typeof name === 'string' ? name.trim().slice(0, MAX_NAME) : '');
+
+/** A comment colour is `#rrggbb`; anything else from a file becomes a neutral grey. */
+const cleanColor6 = (c: unknown): string => (typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) ? c : '#5B6672');
 
 const finite = (n: unknown): boolean => typeof n === 'number' && Number.isFinite(n);
 
@@ -247,10 +251,15 @@ export class Comments {
         const replies: Reply[] = [];
         for (const r of t.replies ?? []) {
           const rt = cleanText(r.text);
-          if (typeof r.id === 'string' && r.id && rt) replies.push({ ...r, authorName: cleanName(r.authorName), text: rt, imported: true, importedBy });
+          if (typeof r.id === 'string' && r.id && rt) {
+            replies.push({
+              id: r.id, authorId: r.authorId, authorName: cleanName(r.authorName), authorColor: cleanColor6(r.authorColor), text: rt,
+              createdAt: r.createdAt, ...(r.editedAt !== undefined ? { editedAt: r.editedAt } : {}), imported: true, importedBy,
+            });
+          }
         }
         this.threads.set(t.id, threadMap({
-          id: t.id, createdAt: t.createdAt, authorId: t.authorId, authorName: cleanName(t.authorName), authorColor: t.authorColor,
+          id: t.id, createdAt: t.createdAt, authorId: t.authorId, authorName: cleanName(t.authorName), authorColor: cleanColor6(t.authorColor),
           text, editedAt: t.editedAt, anchor: cleanAnchor(t.anchor), resolved: t.resolved === true,
           resolvedBy: t.resolvedBy, resolvedAt: t.resolvedAt, imported: true, importedBy,
         }, replies));
@@ -261,23 +270,31 @@ export class Comments {
   }
 
   /**
-   * Applies the comments document of a .drift file in one change, marking the threads it adds (and their replies)
-   * imported, so they reach the relay already marked. Threads that already exist here are left alone.
+   * The threads of a .drift file's comments document, as plain values: the update is checked first (src/yupdate-check.ts), then
+   * read in a scratch document, so nothing of it touches this board's document.
+   */
+  static threadsFromUpdate(update: Uint8Array, limits: UpdateLimits = { clients: 10_000, structs: 1_500_000 }): Thread[] {
+    checkYUpdate(update, limits, 'The comments in this file are larger than Tabula opens.');
+    const scratch = new Y.Doc();
+    try {
+      Y.applyUpdate(scratch, update);
+      const out: Thread[] = [];
+      scratch.getMap('threads').forEach((m) => {
+        if (m instanceof Y.Map) out.push(readThread(m as Y.Map<unknown>));
+      });
+      return out;
+    } finally {
+      scratch.destroy();
+    }
+  }
+
+  /**
+   * Adds the threads of a .drift file's comments document, marking them (and their replies) imported, so they reach the relay
+   * already marked. Threads that already exist here are left alone. Written through `importThreads`, in the pieces the caller
+   * chooses; this form writes them all in one change.
    */
   importUpdate(update: Uint8Array, importedBy: string): void {
-    if (this._readOnly) return;
-    this.transact(() => {
-      const known = new Set(this.threads.keys());
-      Y.applyUpdate(this.doc, update);
-      this.threads.forEach((m, id) => {
-        if (known.has(id) || !(m instanceof Y.Map)) return;
-        m.set('imported', true);
-        m.set('importedBy', importedBy);
-        const replies = m.get('replies');
-        if (!(replies instanceof Y.Map)) return;
-        replies.forEach((r, rid) => replies.set(rid, { ...(r as Reply), imported: true, importedBy }));
-      });
-    });
+    this.importThreads(Comments.threadsFromUpdate(update), importedBy);
   }
 
   private repliesOf(threadId: string): Y.Map<Reply> | undefined {
