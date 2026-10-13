@@ -121,9 +121,9 @@ const createItemSchema = {
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source: headings, lists, [ ] tasks, tables, code, links; no HTML), x, y, w?, h?, fontSize?. frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
   properties: {
-    type: { enum: ['sticky', 'shape', 'text', 'frame', 'connector', 'link'] },
+    type: { enum: ['sticky', 'shape', 'text', 'markdown', 'frame', 'connector', 'link'] },
     ref: refSchema,
     url: { type: 'string', maxLength: 2048, description: 'A link card: an http or https web address, without a user name or password.' },
     text: { type: 'string', maxLength: LIMITS.text },

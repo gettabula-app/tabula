@@ -141,6 +141,8 @@ export function clientObjects(): ClientObjects {
   const frame = put('frame', make(store, 'frame', { x: 0, y: 0, w: 960, h: 600 }, { name: 'Frame', fill: '#FFFFFF', font: 'cabinet-grotesk' })) as BaseObj;
   put('text', make(store, 'text', { x: 20, y: 20, w: 240, h: 28 }, { text: 'Heading', fontSize: 28, fontWeight: 700, textColor: '#112233', align: 'center', valign: 'middle', parent: frame.id }));
   put('sticky', make(store, 'sticky', rect, { text: 'Idea', fill: '#FFE16B', parent: frame.id }));
+  // a Markdown block (src/markdown.ts): its source is the text field
+  put('markdown', make(store, 'markdown', { x: 20, y: 60, w: 360, h: 200 }, { text: '# Plan\n\n- [ ] one\n- [x] two\n\n| a | b |\n| - | - |\n| 1 | 2 |', fontSize: 16, textColor: '#112233', parent: frame.id }));
   put('sticky:private', make(store, 'sticky', rect, { text: 'Hidden', fill: '#BCE88C', privateStep: 'step1' }));
   put('sticky:locked', make(store, 'sticky', rect, { text: 'Locked', fill: '#E2E6EB', locked: true, hidden: true, flipX: true, flipY: true }));
   for (const { kind } of SHAPE_KINDS) put(`shape:${kind}`, make(store, 'shape', { x: 0, y: 0, w: 160, h: 100 }, { kind, text: kind, fill: '#FFFFFF', stroke: '#112233', strokeWidth: 2, dash: 'dashed', opacity: 0.8 }));

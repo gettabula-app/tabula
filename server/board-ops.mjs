@@ -50,7 +50,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -1190,6 +1190,13 @@ function parseEnd(v, path, { allowRef, get, refs, allowKanbanTarget = false }) {
   return { kind: 'free', x: coordinate(required(v, 'x', path), at(path, 'x')), y: coordinate(required(v, 'y', path), at(path, 'y')) };
 }
 
+/** A rough height for a Markdown block's source: wrapped lines plus the room headings, code and blank lines take. The app measures properly and corrects it. */
+function markdownHeightEstimate(content, w, fontSize) {
+  let lines = 0;
+  for (const line of content.split('\n')) lines += line.trim() === '' ? 0.5 : Math.max(1, Math.ceil((line.length * fontSize * 0.52) / Math.max(40, w - 20))) + (/^\s*#{1,2}\s/u.test(line) ? 0.6 : 0);
+  return r2(Math.max(LIMITS.sizeMin, 20 + lines * fontSize * 1.45));
+}
+
 function textHeight(content, w, fontSize) {
   const newlines = content.match(/\n/g)?.length ?? 0;
   const lines = Math.max(1, Math.ceil((content.length * fontSize * 0.52) / w) + newlines);
@@ -1200,6 +1207,7 @@ const CREATE_KEYS = {
   sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'parent', 'flipX', 'flipY'],
   shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent', 'flipX', 'flipY'],
   text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent', 'flipX', 'flipY'],
+  markdown: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'fontSize', 'parent', 'flipX', 'flipY'],
   frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
   link: ['type', 'ref', 'url', 'x', 'y', 'w', 'h', 'parent', 'flipX', 'flipY'],
@@ -1307,6 +1315,12 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
           fill: item.fill === undefined ? undefined : colour(item.fill, at(path, 'fill'), { none: true }),
           stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke'), { none: true }),
         });
+      } else if (type === 'markdown') {
+        // a Markdown block (docs/markdown-blocks.md): the source is the text; the height is a first estimate that the app corrects when the board opens
+        const content = text(required(item, 'text', path), at(path, 'text'), 1, LIMITS.text);
+        const w = item.w === undefined ? 360 : size(item.w, at(path, 'w'));
+        const fontSize = item.fontSize === undefined ? undefined : num(item.fontSize, at(path, 'fontSize'), LIMITS.fontMin, LIMITS.fontMax);
+        Object.assign(fields, { w, h: item.h === undefined ? markdownHeightEstimate(content, w, fontSize ?? 16) : size(item.h, at(path, 'h')), text: content, fontSize });
       } else if (type === 'text') {
         const content = text(required(item, 'text', path), at(path, 'text'), 1, LIMITS.text);
         const w = item.w === undefined ? 240 : size(item.w, at(path, 'w'));
@@ -1366,6 +1380,7 @@ const UPDATABLE = {
   sticky: [...BOX_FIELDS, 'text', 'color'],
   shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth'],
   text: [...BOX_FIELDS, 'text', 'fontSize', 'textColor'],
+  markdown: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'fill'],
   frame: [...BOX_FIELDS, 'name', 'fill'],
   connector: ['from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
   group: ['name'],
@@ -1454,7 +1469,7 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
           if (typeof v !== 'boolean') throw invalid(fieldPath, 'Must be a boolean');
           sets.set(key, v);
           break;
-        case 'text': sets.set(key, text(v, fieldPath, current.type === 'text' ? 1 : 0, LIMITS.text)); break;
+        case 'text': sets.set(key, text(v, fieldPath, current.type === 'text' || current.type === 'markdown' ? 1 : 0, LIMITS.text)); break;
         case 'name': sets.set(key, text(v, fieldPath, 1, current.type === 'group' ? GROUP_NAME_MAX : LIMITS.name)); break;
         case 'label': sets.set(key, text(v, fieldPath, 0, LIMITS.label)); break;
         case 'color': sets.set('fill', colour(v, fieldPath, { names: true })); break;
@@ -1501,6 +1516,12 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
       const w = sets.get('w') ?? current.w;
       const fontSize = unsets.has('fontSize') ? 20 : (sets.get('fontSize') ?? current.fontSize ?? 20);
       sets.set('h', textHeight(content, w, fontSize));
+    }
+
+    // a Markdown block's height follows its source until a person sets one, like a text object's
+    if (current.type === 'markdown' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize'))) {
+      const fontSize = unsets.has('fontSize') ? 16 : (sets.get('fontSize') ?? current.fontSize ?? 16);
+      sets.set('h', markdownHeightEstimate(sets.get('text') ?? current.text ?? '', sets.get('w') ?? current.w, fontSize));
     }
 
     let changed = false;

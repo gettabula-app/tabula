@@ -77,6 +77,26 @@ describe('create', () => {
     expect(err.message).toContain('Tracker frames can only be created by the app');
   });
 
+  it('creates, reads and updates a Markdown block through the same tools as a text object (TAB-140)', () => {
+    const d = new Y.Doc();
+    const src = '# Plan\n\n- [ ] one\n- [x] two\n\n| a | b |\n| - | - |\n| 1 | 2 |';
+    const res = create(d, [{ type: 'frame', ref: 'f', name: 'Notes', x: 0, y: 0 }, { type: 'markdown', ref: 'm', text: src, x: 10, y: 10, w: 300, parent: { ref: 'f' } }]);
+    const fresh = new Store(d);
+    const md = fresh.get(res.refs.m) as any;
+    expect(md).toMatchObject({ type: 'markdown', text: src, w: 300, parent: res.refs.f, font: 'satoshi', createdBy: 'user-1' });
+    expect(md.h).toBeGreaterThan(100); // a first estimate: the app measures it properly
+    const read = getObjectsDetail(d, [res.refs.m]) as any;
+    expect(JSON.stringify(read)).toContain('# Plan');
+    const before = md.h;
+    update(d, [{ id: res.refs.m, text: `${src}\n\n${'more text '.repeat(60)}` }]);
+    expect((new Store(d).get(res.refs.m) as any).h).toBeGreaterThan(before); // the height follows the source until a person sets one
+    update(d, [{ id: res.refs.m, text: 'short', h: 500 }]);
+    expect((new Store(d).get(res.refs.m) as any)).toMatchObject({ text: 'short', h: 500 });
+    expect(failure(() => planCreate(d, [{ type: 'markdown', text: '', x: 0, y: 0 }], who)).message).toMatch(/1 to/);
+    expect(failure(() => planCreate(d, [{ type: 'markdown', text: 'x'.repeat(LIMITS.text + 1), x: 0, y: 0 }], who)).message).toMatch(/1 to/);
+    expect(failure(() => planCreate(d, [{ type: 'markdown', text: 'x', x: 0, y: 0, fill: '#fff' }], who))).toBeInstanceOf(OpsError); // not a field a creator may set
+  });
+
   it('writes every object type in a form the real Store loads', () => {
     const d = new Y.Doc();
     const store = new Store(d);
