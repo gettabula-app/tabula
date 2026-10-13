@@ -23,6 +23,7 @@ let TIMED_PORT = 0;
 const OWNER = 'owner@example.com';
 const COMMENTS = '~comments';
 const ROLE_RECHECK_MS = 5000; // server/relay.mjs
+const CLOSE_ROLE_CHANGED = 4511;
 
 type Body = any;
 type Res = { status: number; body: Body; headers: Headers };
@@ -53,10 +54,10 @@ const stopRelay = (p: ChildProcess) =>
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const until = async (fn: () => boolean, ms = 5000) => {
+const until = async (fn: () => boolean, ms = 5000, scale = true) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
+    if (Date.now() - t0 > (scale ? budget(ms) : ms)) throw new Error('timed out');
     await sleep(20);
   }
 };
@@ -214,26 +215,35 @@ function harness(getPort: () => number, getDir: () => string) {
   }
 
   const pair = (board: string, cookie: string): Pair => ({ board: connect(board, cookie), comments: connect(`${board}${COMMENTS}`, cookie) });
-  const synced = (c: Conn) => until(() => c.provider.wsconnected && c.provider.synced);
-  const pairSynced = (p: Pair) => Promise.all([synced(p.board), synced(p.comments)]);
+  // `rawMs`: a wait that is NOT scaled for a slow machine (see `lands`)
+  const synced = (c: Conn, rawMs?: number) => until(() => c.provider.wsconnected && c.provider.synced, rawMs ?? 5000, rawMs === undefined);
+  const pairSynced = (p: Pair, rawMs?: number) => Promise.all([synced(p.board, rawMs), synced(p.comments, rawMs)]);
   const peers = (c: Conn, name: string) => [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name || s.marker === name);
 
   /** `from` sends a real document update and then awareness over its own socket; resolves to whether `to` received the update. */
-  async function writes(from: Conn, to: Conn, map: string, key: string) {
+  async function writes(from: Conn, to: Conn, map: string, key: string, rawMs?: number) {
     const name = unique('marker');
     const ws = from.provider.ws!;
     ws.send(updateFrame(map, key));
     ws.send(awarenessFrame(name, ws));
-    await until(() => peers(to, name));
+    await until(() => peers(to, name), rawMs ?? 5000, rawMs === undefined);
     return to.doc.getMap(map).has(key);
   }
 
   /** Whether `key` made it from one side's board room and comments room to the other's. */
-  async function lands(from: Pair, to: Pair, key: string) {
-    return [await writes(from.board, to.board, 'objects', key), await writes(from.comments, to.comments, 'threads', key)];
+  // `rawMs`: for a caller that polls until a role change shows. A frame sent while the relay closes the socket for the new receive
+  // limit (4511) is lost, so its marker never arrives; a wait scaled for a slow machine (ten times longer on Windows) would then
+  // outlast the whole test, where a short unscaled one lets the caller send again.
+  async function lands(from: Pair, to: Pair, key: string, rawMs?: number) {
+    // A role change that alters the receive limit closes the socket (4411) and the provider reconnects with the right-sized
+    // receiver; give the close time to arrive, then wait for both sides to be connected and synced again.
+    await sleep(300);
+    await Promise.all([pairSynced(from, rawMs), pairSynced(to, rawMs)]);
+    return [await writes(from.board, to.board, 'objects', key, rawMs), await writes(from.comments, to.comments, 'threads', key, rawMs)];
   }
 
-  const stillOpen = (p: Pair) => [p.board, p.comments].map((c) => c.provider.wsconnected && c.closes.length === 0);
+  // connected, and never closed for any reason but a change of role (4511: reconnect with a receiver of the right size)
+  const stillOpen = (p: Pair) => [p.board, p.comments].map((c) => c.provider.wsconnected && c.closes.every((code) => code === CLOSE_ROLE_CHANGED));
 
   const roomFile = (room: string) => path.join(getDir(), `${room}.yjs`);
   const fileHas = (room: string, map: string, key: string) => {
@@ -313,15 +323,51 @@ describe('open sockets follow role changes', { timeout: 30_000 }, () => {
     expect((await share(creator.cookie, board, 'user', guest.user.id, to)).status).toBe(201);
     expect(await lands(mine, watcher, 'after')).toEqual(MAY_WRITE[to]);
 
-    // still connected to the same sockets, and still receiving in both rooms
+    // connected again (a different receive limit means a new socket, closed with 4511; the same limit keeps the socket), and
+    // still receiving in both rooms
     expect(await lands(watcher, mine, 'fromWatcher')).toEqual([true, true]);
-    expect(mine.board.provider.ws).toBe(sockets[0]);
-    expect(mine.comments.provider.ws).toBe(sockets[1]);
+    const limitOf = (role: Role, room: 'board' | 'comments') => (room === 'comments' ? (role === 'viewer' ? 'small' : 'comments') : role === 'editor' ? 'editor' : 'small');
+    (['board', 'comments'] as const).forEach((room, i) => {
+      const changed = limitOf(from, room) !== limitOf(to, room);
+      expect(mine[room].closes.includes(CLOSE_ROLE_CHANGED)).toBe(changed);
+      // the same limit keeps the very same socket; a changed limit means a new one
+      expect(changed || mine[room].provider.ws === sockets[i]).toBe(true);
+    });
     expect(stillOpen(mine)).toEqual([true, true]);
 
     await until(() => stored(board, 'fromWatcher').every(Boolean));
     expect(stored(board, 'before')).toEqual(MAY_WRITE[from]);
     expect(stored(board, 'after')).toEqual(MAY_WRITE[to]);
+  });
+
+  it('closes a demoted editor so that it comes back with the small receiver, and a promoted viewer with the big one', async () => {
+    const { creator, board, person } = await setup();
+    const guest = await person('editor');
+    const mine = pair(board, guest.cookie);
+    await pairSynced(mine);
+    const big = () => {
+      const enc = encoding.createEncoder();
+      encoding.writeVarUint(enc, 0);
+      syncProtocol.writeUpdate(enc, Y.encodeStateAsUpdate((() => { const d = new Y.Doc(); d.getText('t').insert(0, 'x'.repeat(1_200_000)); return d; })()));
+      return encoding.toUint8Array(enc);
+    };
+    expect((await share(creator.cookie, board, 'user', guest.user.id, 'viewer')).status).toBe(201);
+    await until(() => mine.board.closes.includes(CLOSE_ROLE_CHANGED));
+    await until(() => mine.board.provider.wsconnected && mine.board.provider.synced);
+    const before = mine.board.closes.length;
+    mine.board.provider.ws!.send(big()); // above the viewer's 1 MiB receiver: refused as it arrives
+    await until(() => mine.board.closes.slice(before).includes(1009)).catch((e) => { console.log('DBG', mine.board.closes, mine.board.provider.wsconnected); throw e; });
+
+    expect((await share(creator.cookie, board, 'user', guest.user.id, 'editor')).status).toBe(201);
+    // either the open small-receiver socket is closed with 4511, or the provider is still reconnecting after the 1009 and its
+    // next socket is created with the editor receiver; both end with a connected editor socket
+    await sleep(500);
+    await until(() => mine.board.provider.wsconnected && mine.board.provider.synced);
+    const after = mine.board.closes.length;
+    mine.board.provider.ws!.send(big()); // fine for an editor
+    await sleep(600);
+    expect(mine.board.closes.length).toBe(after);
+    expect(mine.board.provider.wsconnected).toBe(true);
   });
 
   it('turns a team editor into a viewer when they are removed from the team, and back when they rejoin', async () => {
@@ -376,8 +422,8 @@ describe('open sockets follow role changes', { timeout: 30_000 }, () => {
     expect(stillOpen(mine)).toEqual([true, true]);
 
     expect((await api(owner.cookie, 'DELETE', `/api/boards/${board}/shares/team/${crew.id}`)).status).toBe(204);
-    await until(() => mine.board.closes.length > 0 && mine.comments.closes.length > 0);
-    expect([mine.board.closes[0], mine.comments.closes[0]]).toEqual([4410, 4410]);
+    await until(() => mine.board.closes.at(-1) === 4410 && mine.comments.closes.at(-1) === 4410);
+    expect([mine.board.closes.at(-1), mine.comments.closes.at(-1)]).toEqual([4410, 4410]);
     expect(stillOpen(watcher)).toEqual([true, true]);
   });
 
@@ -454,13 +500,14 @@ describe('open sockets follow role changes', { timeout: 30_000 }, () => {
 
     let landed = [false, false];
     const t0 = Date.now();
-    for (let n = 0; Date.now() - t0 < ROLE_RECHECK_MS + 4000 && !landed.every(Boolean); n++) {
-      landed = await lands(mine, watcher, `poll${n}`);
+    for (let n = 0; Date.now() - t0 < ROLE_RECHECK_MS + 12000 && !landed.every(Boolean); n++) {
+      // the first write after the recheck may find its socket closed for the new receive limit (4511): poll again
+      landed = await lands(mine, watcher, `poll${n}`, 3000).catch(() => [false, false]);
       if (!landed.every(Boolean)) await sleep(250);
     }
     expect(landed).toEqual([true, true]);
     expect(stillOpen(mine)).toEqual([true, true]);
-  });
+  }, 40_000);
 
   it('keeps a disabled or removed member out: the sockets close with 4410 and the old cookie only gets 4401', async () => {
     const { board, person } = await setup();

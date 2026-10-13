@@ -1128,7 +1128,7 @@ describe('accounts mode server', () => {
       expect(cv.doc.getMap('objects').has('fromViewer')).toBe(true);
     });
 
-    it('turns an editor read-only without reconnecting when they are demoted', async () => {
+    it('turns an editor read-only when they are demoted; the socket is replaced because its receive limit shrinks', async () => {
       const team = await newTeam(owner.cookie);
       const owning = await joinTeam(owner.cookie, team.id);
       const guest = await joinTeam(owner.cookie, team.id);
@@ -1147,12 +1147,14 @@ describe('accounts mode server', () => {
       await until(() => co.doc.getMap('objects').get('first') === 1);
 
       expect((await grant('viewer')).status).toBe(201);
+      // an editor and a viewer have different receive limits, so the relay closes the socket (4511) and the provider
+      // reconnects with a viewer-sized receiver; what the viewer writes after that is still dropped
+      await until(() => cg.provider.ws !== socketBefore && cg.provider.wsconnected && cg.provider.synced);
       cg.doc.getMap('objects').set('second', 2);
       cg.provider.awareness.setLocalStateField('marker', 'Still here');
       await until(() => peers(co, 'Still here'));
       expect(co.doc.getMap('objects').has('second')).toBe(false);
       expect(cg.provider.wsconnected).toBe(true);
-      expect(cg.provider.ws).toBe(socketBefore);
 
       co.doc.getMap('objects').set('third', 3);
       await until(() => cg.doc.getMap('objects').get('third') === 3);
@@ -1215,7 +1217,7 @@ describe('accounts mode server', () => {
       expect(await within(sb.closed)).toBe(4410);
     });
 
-    it('keeps a connection whose role merely changed, and closes one that lost every role', async () => {
+    it('replaces a connection whose role changed its receive limit (4511), and closes one that lost every role (4410)', async () => {
       const team = await newTeam(owner.cookie);
       const admin = await joinTeam(owner.cookie, team.id, 'admin');
       const member = await joinTeam(owner.cookie, team.id);
@@ -1223,14 +1225,16 @@ describe('accounts mode server', () => {
       const socket = rawSocket(board, member.cookie);
       await within(socket.joined);
 
-      // becoming a team admin changes the role from editor to owner but keeps access
+      // becoming a team admin changes the role from editor to owner but keeps access; the owner receive limit is larger, so the
+      // relay closes this socket with 4511 (the app reconnects) rather than 4410
       expect((await api(admin.cookie, 'PATCH', `/api/teams/${team.id}/members/${member.user.id}`, { role: 'admin' })).status).toBe(200);
-      await sleep(150);
-      expect(socket.ws.readyState).toBe(WebSocket.OPEN);
+      expect(await within(socket.closed)).toBe(4511);
       expect(await roleOn(member.cookie, board)).toBe('owner');
 
+      const again = rawSocket(board, member.cookie);
+      await within(again.joined);
       expect((await api(admin.cookie, 'DELETE', `/api/teams/${team.id}/members/${member.user.id}`)).status).toBe(204);
-      expect(await within(socket.closed)).toBe(4410);
+      expect(await within(again.closed)).toBe(4410);
     });
   });
 });

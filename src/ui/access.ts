@@ -18,6 +18,9 @@ const TEXT: Record<Exclude<DeniedReason, 'restoring'>, string> = {
   no_access: "You don't have access to this board, or it no longer exists.",
   not_found: "This board doesn't exist on the server.",
   access_removed: 'Your access to this board was removed. Your copy on this device is still here.',
+  too_large: 'This board is too large to sync, or a change was too big to send. Your copy on this device is safe; reload to try again.',
+  rate_limited: 'You are sending changes too fast. Syncing will retry shortly; your changes stay on this device.',
+  too_many_connections: 'Too many connections from this account. Close other tabs or devices; syncing will retry shortly.',
 };
 
 /**
@@ -39,8 +42,12 @@ export function mountAccessBanner(conn: BoardConn, root: HTMLElement, handlers: 
     banner = renderBanner(reason, handlers, dismiss, isRemovedGuestLink(authState().mode, reason));
     root.appendChild(banner);
   });
+  // a limit that passed (retry connected again) takes its message away
+  // (a minimal connection without status events, as in some tests, simply has no retry to follow)
+  const unsubscribeStatus = conn.onStatus?.((s) => { if (s === 'live') dismiss(); }) ?? (() => undefined);
   return () => {
     unsubscribe();
+    unsubscribeStatus();
     dismiss();
   };
 }
@@ -57,6 +64,9 @@ function renderBanner(reason: Exclude<DeniedReason, 'restoring'>, handlers: Acce
       break;
     case 'access_removed':
       actions.push(removeButton(handlers.onRemoveLocal));
+      break;
+    case 'too_large':
+      actions.push(h('button', { class: 'btn primary', onclick: () => location.reload() }, 'Reload'));
       break;
   }
   return h('div', { class: 'access-banner', role: 'alert' },

@@ -1,6 +1,7 @@
 // Tabula service worker: makes the app and everything a board needs
 // available offline after the first visit.
 //  - App shell (same origin): network first for pages, cache first for hashed assets.
+//  - Newsreader's hashed build URL is added to the shell precache by vite.config.ts.
 //  - Fontshare CSS and font files, Iconify data and previews: stale-while-revalidate.
 //    Font files are cached on this device only; they are never re-served elsewhere.
 //  - Our own icon sets (/icons/): the manifest and the licence list network first, every hashed file cache first
@@ -11,10 +12,13 @@ const VERSION = `tabula-${BUILD.startsWith('__') ? 'dev' : BUILD}`;
 const SHELL = `${VERSION}-shell`;
 const RUNTIME = `${VERSION}-runtime`;
 const ICONS = 'tabula-icons-v1';
+const NEWSREADER_FONT = '__TABULA_NEWSREADER_FONT__';
 const THIRD_PARTY = /^(https:\/\/(api|cdn)\.fontshare\.com|https:\/\/api\.(iconify\.design|simplesvg\.com|unisvg\.com))\//;
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(['/', '/favicon.svg', '/manifest.webmanifest'])).then(() => self.skipWaiting()));
+  const shellAssets = ['/', '/favicon.svg', '/manifest.webmanifest'];
+  if (NEWSREADER_FONT.startsWith('/')) shellAssets.push(NEWSREADER_FONT);
+  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(shellAssets)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {

@@ -132,7 +132,41 @@ export async function writeLocalBoard(id: string, fill: (target: { doc: Y.Doc; s
 export type SyncStatus = 'local' | 'connecting' | 'live' | 'denied';
 
 /** Why the relay refused or dropped the connection (accounts mode close codes). `restoring`: a restore has taken the workspace over (docs/backups.md). */
-export type DeniedReason = 'unauthenticated' | 'no_access' | 'not_found' | 'access_removed' | 'restoring';
+export type DeniedReason = 'unauthenticated' | 'no_access' | 'not_found' | 'access_removed' | 'restoring'
+  | 'too_large' | 'rate_limited' | 'too_many_connections';
+
+/**
+ * The relay's sync limits (docs/capacity.md, "Sync limits"). These stop the connection like a denial so the provider does not
+ * reconnect at once and resend the same frame into the same limit; local data stays. `too_large` waits for the person
+ * (reload); the other two try again by themselves after RETRY_BASE_MS, doubling each time up to RETRY_MAX_MS.
+ */
+export const RETRY_BASE_MS = 30_000;
+export const RETRY_MAX_MS = 300_000;
+export const retryableReason = (reason: DeniedReason): boolean => reason === 'rate_limited' || reason === 'too_many_connections';
+/**
+ * A connection that fails or drops without a close code (1006: a refused handshake, a restarting relay, a proxy) is retried by
+ * y-websocket at 8 s at most, in step, for everyone. This is slower and spread out: 2 s doubling to a 60 s ceiling, plus up to 50%
+ * random (also at the ceiling, so the longest wait is 90 s), so a class reloading after a relay restart does not come back in one wave. Two stable minutes reset it.
+ */
+export const HANDSHAKE_BACKOFF_BASE_MS = 2_000;
+export const HANDSHAKE_BACKOFF_MAX_MS = 60_000;
+export const HANDSHAKE_STABLE_MS = 120_000;
+export function handshakeBackoffMs(failures: number, rand: () => number = Math.random): number {
+  const base = Math.min(HANDSHAKE_BACKOFF_MAX_MS, HANDSHAKE_BACKOFF_BASE_MS * 2 ** Math.max(0, Math.min(failures, 20)));
+  // jitter stays at the ceiling: [cap, 1.5 cap) for everyone who got there, so a class does not return in one wave
+  return Math.round(base * (1 + 0.5 * rand()));
+}
+
+/**
+ * Close code 4511 (docs/capacity.md): the relay closed this socket because the person's role changed. y-websocket would
+ * reconnect after about 200 ms, so a role change for a whole class returns in one wave; wait a random 0 to 3 s instead.
+ */
+export const CLOSE_ROLE_CHANGED = 4511;
+export const ROLE_CHANGED_JITTER_MS = 3_000;
+export const roleChangedDelayMs = (rand: () => number = Math.random): number => Math.round(ROLE_CHANGED_JITTER_MS * rand());
+
+/** Wait before the nth (0-based) automatic retry. */
+export const retryDelayMs = (attempt: number): number => Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.max(0, attempt));
 
 export function deniedReason(code: number): DeniedReason | null {
   switch (code) {
@@ -141,6 +175,9 @@ export function deniedReason(code: number): DeniedReason | null {
     case 4404: return 'not_found';
     case 4410: return 'access_removed';
     case 4503: return 'restoring';
+    case 1009: case 4413: return 'too_large';
+    case 4429: return 'rate_limited';
+    case 4430: return 'too_many_connections';
     default: return null;
   }
 }
@@ -398,6 +435,9 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     },
     resync: () => resyncRooms(conn, [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null)),
     destroy: () => {
+      clearTimeout(retryTimer);
+      clearTimeout(stableTimer);
+      for (const st of handshake.values()) { clearTimeout(st.timer); clearTimeout(st.stable); }
       provider?.destroy();
       awareness.destroy();
       idb.destroy();
@@ -413,15 +453,52 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     statusListeners.forEach((l) => l(s));
   };
   // Either room can be refused; the first refusal stops both.
+  let retryTimer = 0;
+  let stableTimer = 0;
+  let retries = 0;
   const onClose = (event: CloseEvent | null) => {
     const rooms = [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null);
     denyOnce(conn, rooms, event?.code, (reason) => {
       setStatus('denied');
       deniedListeners.forEach((l) => l(reason));
+      if (!retryableReason(reason)) return;
+      // a limit that passes: try again later, slower each time, and keep every local edit meanwhile
+      retryTimer = window.setTimeout(() => {
+        conn.denied = null;
+        retries++;
+        setStatus('connecting');
+        for (const room of rooms) {
+          room.shouldConnect = true;
+          room.connect();
+        }
+      }, retryDelayMs(retries));
     });
   };
 
   const hinted = () => hintListeners.forEach((l) => l());
+
+  // Close code 1006 (no code from the relay) on either room: reconnect with jittered exponential back-off instead of
+  // y-websocket's own short, unjittered one. Local data is untouched.
+  const handshake = new Map<WebsocketProvider, { failures: number; timer: number; stable: number }>();
+  const guardHandshake = (p: WebsocketProvider) => {
+    const st = { failures: 0, timer: 0, stable: 0 };
+    handshake.set(p, st);
+    p.on('connection-close', (event: CloseEvent | null) => {
+      clearTimeout(st.stable);
+      if (conn.denied || !event || !p.shouldConnect) return;
+      let wait: number;
+      if (event.code === CLOSE_ROLE_CHANGED) wait = roleChangedDelayMs();
+      else if (event.code === 1006) wait = handshakeBackoffMs(st.failures++);
+      else return;
+      p.disconnect();
+      clearTimeout(st.timer);
+      st.timer = window.setTimeout(() => { if (!conn.denied) p.connect(); }, wait);
+    });
+    p.on('status', ({ status }: { status: string }) => {
+      clearTimeout(st.stable);
+      if (status === 'connected' && st.failures > 0) st.stable = window.setTimeout(() => { st.failures = 0; }, HANDSHAKE_STABLE_MS);
+    });
+  };
 
   if (url) {
     provider = new WebsocketProvider(url, id, doc, { maxBackoffTime: 8000 });
@@ -430,8 +507,12 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     provider.on('status', ({ status }: { status: string }) => {
       if (conn.denied) return;
       setStatus(status === 'connected' ? 'live' : 'connecting');
+      // two quiet minutes connected end the backoff
+      clearTimeout(stableTimer);
+      if (status === 'connected' && retries > 0) stableTimer = window.setTimeout(() => { retries = 0; }, 120_000);
     });
     provider.on('connection-close', onClose);
+    guardHandshake(provider);
     onWorkspaceHint(provider, hinted);
     // registered even with no listener yet, so an app that does not draw runs does not log every message as unknown
     onAiRuns(provider, (message) => aiRunListeners.forEach((l) => l(message)));
@@ -443,6 +524,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
     commentsProvider = new WebsocketProvider(url, commentsRoom(id), cdoc, { maxBackoffTime: 8000 });
     commentsProvider.awareness.setLocalState(null);
     commentsProvider.on('connection-close', onClose);
+    guardHandshake(commentsProvider);
     onWorkspaceHint(commentsProvider, hinted);
     onCommentNotice(commentsProvider, (undone) => noticeListeners.forEach((l) => l(undone)));
   } else {

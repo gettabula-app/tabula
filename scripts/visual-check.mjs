@@ -3067,7 +3067,9 @@ const STATES = {
   async 'chat-react'(env) {
     await openSeedChat(env);
     await env.page.locator('.chat-reaction').first().waitFor();
-    await env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) }).locator('.chat-more').click();
+    const targetMessage = env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) });
+    await targetMessage.locator('.chat-text').hover();
+    await targetMessage.locator('.chat-more').click();
     await env.page.getByRole('menuitem', { name: 'React' }).click();
     await env.page.locator('.chat-picker').waitFor();
   },
@@ -4098,8 +4100,9 @@ const STATES = {
   },
   async 'chat-notifications'(env) {
     await env.page.goto(`${env.base}/#/chat`);
-    await env.page.getByRole('button', { name: 'Notifications' }).click();
-    await env.page.getByRole('checkbox', { name: 'Email me when I am mentioned in chat' }).waitFor();
+    await env.page.getByRole('navigation', { name: 'Chat channels' })
+      .getByRole('button', { name: 'Notification settings', exact: true }).click();
+    await env.page.getByRole('switch', { name: 'Email me when I am mentioned in chat' }).waitFor();
     await env.page.waitForFunction(() => !document.querySelector('.modal input')?.disabled);
   },
   async 'chat-home'(env) {

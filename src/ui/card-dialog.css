@@ -1,5 +1,5 @@
 /* The card dialog and the Labels dialog (docs/kanban.md, Cards and Labels). Chrome, so tray tokens as every dialog; theme
-   variables only, large dialog radius with small controls and xs chips/swatches, hairlines, 11px uppercase labels. A label's swatch colour is set inline (--c) from the label's
+   variables only, large dialog radius with small controls and xs chips/swatches, hairlines and sentence-case labels. A label's swatch colour is set inline (--c) from the label's
    palette key, so it is never a stored string. At phone width the card dialog is a bottom sheet: the head stays, the
    body scrolls, at most 85% of the view high. */
 
@@ -15,7 +15,6 @@
 .k-link-wrap { display: grid; gap: 6px; min-width: 0; }
 .k-link-error { display: block; color: var(--danger); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
 .k-link-error[hidden], .k-open-link[hidden], .k-link-readonly[hidden] { display: none; }
-.k-card-form .input[aria-invalid='true'] { border-color: var(--danger); }
 .k-open-link {
   justify-self: start; display: inline-flex; align-items: center; min-height: 28px; max-width: 100%;
   color: var(--tray-text); font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px;
@@ -30,7 +29,7 @@
 .k-owner-kind-btn {
   display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 8px;
   border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  font-size: 12px; font-weight: 600;
 }
 .k-owner-kind-btn.on { border-color: transparent; background: color-mix(in srgb, var(--tray-text) 8%, transparent); }
 .k-owner-kind-btn:not(:disabled):hover { background: color-mix(in srgb, var(--tray-text) 10%, transparent); }
@@ -39,8 +38,6 @@
 .k-owner-kind-mark.agent { clip-path: polygon(25% 0, 75% 0, 100% 25%, 100% 75%, 75% 100%, 25% 100%, 0 75%, 0 25%); }
 .k-due .btn[hidden], .k-owner-name[hidden] { display: none; }
 .k-link-field .btn[hidden] { display: none; }
-.modal .k-card-form .input[readonly] { border-style: dashed; }
-.modal .k-card-form .input:disabled { opacity: 1; border-style: dashed; color: var(--tray-text); }
 .k-note { padding: 8px 0 8px 12px; border-left: 2px solid var(--tray-text); color: var(--tray-text); }
 
 .k-card-form .k-label-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
@@ -50,7 +47,7 @@
 .k-chip {
   display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 8px;
   border: 1px solid var(--tray-line); border-radius: var(--radius-xs); background: transparent; color: var(--tray-text);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 12px; font-weight: 600;
 }
 .k-chip:not(:disabled):hover { background: color-mix(in srgb, var(--tray-text) 10%, transparent); }
 .k-chip.on { border-color: transparent; background: color-mix(in srgb, var(--tray-text) 8%, transparent); color: var(--tray-text); }
@@ -67,24 +64,27 @@
 .k-colour-btn {
   display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; min-width: 104px;
   border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 12px; font-weight: 600;
 }
 .k-colour-btn:hover { background: var(--tray-hover); }
 /* the colour list opens over the dialog */
-.popover.k-colour-pop { z-index: 65; padding: 4px; }
+.popover.k-colour-pop { z-index: 65; padding: 6px; }
 .k-colour-list { display: grid; min-width: 160px; }
 .k-colour-opt {
-  display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border: 0; border-radius: var(--radius-xs);
+  display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm);
   background: transparent; color: var(--tray-text); text-align: left; font-weight: 500;
 }
 .k-colour-opt:hover, .k-colour-opt[aria-checked='true'] { background: var(--tray-hover); }
+.k-colour-opt:focus-visible { outline: 1px solid var(--field-edge-strong); outline-offset: -1px; }
 .k-colour-opt .k-chip-check { margin-left: auto; }
 .k-chip-check { display: inline-flex; }
+@media (pointer: coarse) { .k-colour-opt { min-height: 44px; } }
 .k-label-list { margin: 0; padding: 0; list-style: none; border-bottom: 1px solid var(--tray-line); }
 .k-label-row {
   display: grid; grid-template-columns: auto minmax(160px, 1fr) auto; grid-template-areas: 'colour name tools';
   gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--tray-line);
 }
+.k-label-row[data-colour-open='true'] { padding-bottom: calc(12px + var(--colour-popover-space, 0px)); }
 .k-label-row > .k-colour-btn { grid-area: colour; }
 .k-label-row > .k-label-name { grid-area: name; min-width: 0; }
 .k-label-row > .k-label-tools { grid-area: tools; }
@@ -99,11 +99,11 @@
 .k-label-tools { display: flex; gap: 4px; }
 .k-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
 .k-swatch {
-  width: 28px; height: 28px; padding: 0; border: 1px solid var(--tray-line); border-radius: var(--radius-xs); background: var(--c);
+  width: 28px; height: 28px; padding: 0; border: 1px solid var(--field-edge-strong); border-radius: var(--radius-xs); background: var(--c);
 }
 .k-swatch[aria-checked='true'] { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .k-label-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 16px; }
-.k-label-count { margin-top: 8px; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.k-label-count { margin-top: 8px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
 
 @media (max-width: 860px) {
   .modal-back.k-card-dialog { align-items: end; padding: 0; }
