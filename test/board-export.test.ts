@@ -50,4 +50,17 @@ describe('exportBoardMarkdown', () => {
     expect(markdown).not.toContain('\u200b');
     expect(markdown).toContain('- keep this');
   });
+
+  it('quotes a Markdown block\'s source so its own headings and lists do not become the summary\'s, cleaned like any board text', () => {
+    const doc = new Y.Doc();
+    doc.getMap('meta').set('name', 'Notes');
+    add(doc, 'frame-1', { type: 'frame', name: 'Meeting', x: 0, y: 0, w: 500, h: 400, z: 'a0' });
+    add(doc, 'md-1', { type: 'markdown', text: '# Agenda\n\n- [ ] first\n- [x] second\n\u202egnissim\n\n```\ncode\n```', parent: 'frame-1', x: 20, y: 20, w: 300, h: 200, z: 'a1' });
+    add(doc, 'md-empty', { type: 'markdown', text: '  \n ', parent: 'frame-1', x: 20, y: 240, w: 300, h: 100, z: 'a2' });
+    const markdown = exportBoardMarkdown(doc);
+    expect(markdown).toContain('> # Agenda\n>\n> - [ ] first\n> - [x] second\n> gnissim\n>\n> ```\n> code\n> ```');
+    expect(markdown).not.toContain('\u202e');
+    expect(markdown.split('\n').filter((l) => l.startsWith('# ') || l.startsWith('## ')).sort()).toEqual(['# Notes', '## Meeting']);
+    expect(markdown).not.toContain('md-empty');
+  });
 });

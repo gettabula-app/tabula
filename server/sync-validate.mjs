@@ -110,7 +110,7 @@ export const FORBIDDEN_KEYS = Object.freeze(['__proto__', 'constructor', 'protot
 // ---------------------------------------------------------------- enumerations (kept equal to board-ops.mjs by a test)
 
 export const OBJ_TYPES = Object.freeze([
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ]);
 /** Object types the validator knows beyond board-ops.mjs's list: none now that link cards (docs/link-cards.md) are in both. */
@@ -329,6 +329,7 @@ export const FIELDS = Object.freeze({
   shape: { ...BOX, kind: oneOf(SHAPE_KINDS) },
   sticky: { ...BOX },
   text: { ...BOX },
+  markdown: { ...BOX },
   frame: { ...BOX, name: str(LIMITS.name) },
   tracker: {
     ...BOX, trackerId: str(64, { pattern: TRACKER_FIELD_RE }), view: oneOf(TRACKER_VIEWS),

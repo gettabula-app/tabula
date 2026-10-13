@@ -275,6 +275,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     b.dataset.tool = tool.kind;
     return b;
   };
+  // no single-key shortcut: M is the chat's and the rest are taken
+  const markdownBtn = h('button', { class: 'rail-btn', 'aria-label': 'Markdown block', 'data-tip': 'Markdown block', onclick: () => app.setTool({ kind: 'markdown' }) }, icon('markdown', 22));
+  markdownBtn.dataset.tool = 'markdown';
   const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates' | 'layers') => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
@@ -351,6 +354,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       h('hr'),
       stickyBtn,
       toolBtn('Text', 'text', { kind: 'text' }, 'T'),
+      markdownBtn,
       shapesBtn,
       toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),

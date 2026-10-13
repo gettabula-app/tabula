@@ -209,11 +209,22 @@ Fliken **Privacy** (Integritet) visar vad Tabula samlar in om hur arbetsytan anv
 
 Ändringar av inställningen registreras i [granskningsloggen](#granskningslogg) under **Privacy**.
 
+### Länkförhandsvisningar
+
+Under analysinställningen har fliken **Privacy** ett reglage för **Link previews** (Länkförhandsvisningar). När det är på visar ett länkkort på en tavla sidans titel, beskrivning och bild. Tabulas server läser den länkade sidan en gång när någon lägger till eller uppdaterar kortet, och ingen webbläsare kontaktar webbplatsen (se [Länkkort](link-cards.md#integritet)). Ägare och administratörer kan båda ändra reglaget. Det skiljer sig från analysinställningen ovan, som bara ägaren kan ändra.
+
+- På en hostad arbetsyta är den påslagen som standard.
+- På en server du kör själv är den avstängd tills du slår på den, eftersom din server då begär webbsidor å användarnas vägnar. Läs [Länkförhandsvisningar](link-previews.md) först om din server körs bredvid interna tjänster.
+- Om den som driver din server har satt `TABULA_LINK_PREVIEWS=off` är reglaget inaktiverat, och det säger ”Turned off in the server's settings.” (Avstängd i serverns inställningar).
+- Med förhandsvisningar avstängda fungerar länkkort fortfarande: de visar bara adressen.
+
+Ändringar av reglaget registreras i [granskningsloggen](#granskningslogg) under **Link previews**.
+
 ## Granskningslogg
 
 En lista över ändringar, med de nyaste först. Varje post är formulerad som en mening, till exempel vem som ändrade någons roll. Åtgärder som systemet utför självt, som meddelandet till arbetsytans ägare om att provperioden snart tar slut, visas med **System** (Systemet) som avsändare. Säkerhetskopior och återställningar beskrivs också i meningar, med säkerhetskopians datum. Håll pekaren över en post för att se det underliggande åtgärdsnamnet.
 
-- Filtrera efter **All** (Alla), **Members** (Medlemmar), **Teams**, **Boards**, **Templates** (Mallar), **Invites** (Inbjudningar), **Sign-ins** (Inloggningar), **Sessions**, **AI**, **AI tool access** (Åtkomst till AI-verktyg), **Images** (Bilder), **Chat**, **Privacy**, **Backups** eller **Restores** (Återställningar). Filtret **AI** visar ändringar av AI-inställningarna och när nycklar läggs till, testas eller tas bort. **AI tool access** visar när åtkomsttoken skapas och återkallas (med deras namn, aldrig deras hemligheter). **Backups** visar automatiska säkerhetskopieringar (och misslyckanden, samt hur många skadade eller saknade filer som återställdes vid en körning) och när en ägare tittade på dem. **Restores** visar helåterställningar, kopior av tavlor och när de gamla data från en återställning togs bort, med datumet för säkerhetskopian de kom från.
+- Filtrera efter **All** (Alla), **Members** (Medlemmar), **Teams**, **Boards**, **Templates** (Mallar), **Invites** (Inbjudningar), **Sign-ins** (Inloggningar), **Sessions**, **AI**, **AI tool access** (Åtkomst till AI-verktyg), **Images** (Bilder), **Chat**, **Privacy**, **Link previews**, **Backups** eller **Restores** (Återställningar). Filtret **AI** visar ändringar av AI-inställningarna och när nycklar läggs till, testas eller tas bort. **AI tool access** visar när åtkomsttoken skapas och återkallas (med deras namn, aldrig deras hemligheter). **Backups** visar automatiska säkerhetskopieringar (och misslyckanden, samt hur många skadade eller saknade filer som återställdes vid en körning) och när en ägare tittade på dem. **Restores** visar helåterställningar, kopior av tavlor och när de gamla data från en återställning togs bort, med datumet för säkerhetskopian de kom från.
 - Välj **Load more** (Läs in fler) för att gå längre tillbaka.
 
 Poster utan en person visas som utförda av systemet, till exempel när en hostad arbetsyta låses eller låses upp.
@@ -224,3 +235,5 @@ Poster utan en person visas som utförda av systemet, till exempel när en hosta
 - [Dela, roller och team](sharing.md)
 - [Åtkomsttoken och AI-verktyg](ai-tools.md)
 - [Din AI-nyckel](ai-keys.md)
+- [Länkkort](link-cards.md)
+- [Länkförhandsvisningar](link-previews.md)

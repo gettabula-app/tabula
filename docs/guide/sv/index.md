@@ -15,6 +15,7 @@ Tabula är en whiteboard som du delar med ditt team: rita, skriv och organisera 
 - [Smarta hjälplinjer](smart-guides.md)
 - [Lager](layers.md)
 - [Bilder](images.md)
+- [Länkkort](link-cards.md)
 - [Klistermärken](stickers.md)
 - [Mallar](templates.md)
 - [Teman](themes.md)
@@ -36,6 +37,7 @@ Tabula är en whiteboard som du delar med ditt team: rita, skriv och organisera 
 ## För arbetsytans administratörer
 
 - [Adminpanel](admin.md)
+- [Länkförhandsvisningar](link-previews.md)
 - [Åtkomsttoken och AI-verktyg](ai-tools.md)
 
 ## AI

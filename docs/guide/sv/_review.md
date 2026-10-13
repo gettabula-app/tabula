@@ -100,6 +100,18 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | `copy-as-mermaid` heading link | linked to `export-import.md` without an anchor | The Swedish heading belongs to another page; add its translated anchor once that page's heading is available. |
 | connectors.md#uml-relationships | connectors.md (utan ankare) | Den svenska målrubriken finns inte i den här översättningsomgången, så ankaret togs bort. |
 | flip (horizontal/vertical) | vänd (vågrätt/lodrätt) | Ny/osäker term; ”spegla” är ett alternativ. Turn over på tvåsidiga kort heter ”Vänd kortet”. |
+| link card | länkkort | Ordlistan säger ”länk” för link (card), men du bad om länkkort för att skilja kortet från den vanliga länken. Om ”länkkort” godkänns bör ordlistan uppdateras. |
+| link preview | länkförhandsvisning | Ny term; sammansättningen är lång men entydig. Alternativ: ”förhandsvisning av länk”. |
+| site owner | webbplatsägare | Ny term i sidtiteln och texten för dem som kör en webbplats; kontrollera att det är rätt ord. |
+| Link previews (switch, filter) | Länkförhandsvisningar | Reglaget i adminpanelen och filtret i granskningsloggen; kontrollera att det är samma namn i båda. |
+| Refresh preview | Uppdatera förhandsvisningen | Knappnamnet står kvar på engelska; glosan är ny och bör stämmas av mot appens formulering. |
+| Turn into text / Turn into link card | Gör om till text / Gör om till länkkort | Knappnamnen följer ”Gör om till lapp” och ”Gör om till kort” i kanbansidan; kontrollera att formen är samma i appen. |
+| Markdown summary | Markdown-sammanfattning | Ny UI-glosa för exportalternativet; kontrollera om appen använder ett annat svenskt namn. |
+| Compact / Card / Large | Kompakt / Kort / Stor | Layoutnamnen i snabbåtgärdsfältet. ”Kort” är också ordet för kanbankort, så kontrollera att det inte blir förvirrande. |
+| Privacy (tab heading in link-cards) | Integritet | Admin-sidan lämnar ”## Privacy” på engelska, men länkkortssidan översätter rubriken; välj ett sätt för båda sidorna. |
+| Admin > Privacy | Administratör > Integritet | Menyvägen glosas med det svenska ordet för Admin och Privacy; kontrollera att menyn heter så i appen. |
+| Loading preview… / No preview / Address only / Add this link? | Läser in förhandsvisning… / Ingen förhandsvisning / Endast adress / Lägg till den här länken? | Meddelanden i kortet och dialogen; glosorna är översättningar och bör jämföras med appens texter när de finns på svenska. |
+| Drop (drag a link onto the board) | Släpp | Används som rubrik i punktlistan; ”Släpp” är kort men kan vara otydligt jämfört med ”Dra och släpp”. |
 
 ## Övriga anmärkningar från översättarna
 

@@ -17,6 +17,8 @@ import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
 import { renderTrackerFrame } from './tracker-frame';
 import { linkMarkup } from './link-markup';
+import { layoutMarkdown, type MdStyle } from './markdown-layout';
+import { mdItemsMarkup } from './markdown-svg';
 import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
 import type { TrackerPriority, TrackerStateCategory } from './tracker-types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
@@ -74,6 +76,7 @@ export const DEFAULTS = {
   sticky: { fill: '#FFE16B', stroke: 'none', strokeWidth: 0, textColor: '#1D1A12', fontSize: 20, fontWeight: 500, align: 'center' as const, valign: 'middle' as const },
   text: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 20, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   frame: { fill: '#FFFFFF', stroke: 'var(--canvas-rule, #C9D1DA)', strokeWidth: 1, textColor: 'var(--graphite, #5B6672)', fontSize: 14, fontWeight: 600, align: 'left' as const, valign: 'top' as const },
+  markdown: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   uml: { fill: '#FFFFFF', stroke: INK, strokeWidth: 1.5, textColor: INK, fontSize: 14, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
   path: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 3, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
   icon: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 0, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
@@ -82,6 +85,7 @@ export const DEFAULTS = {
 export function defaultsFor(o: Obj) {
   if (o.type === 'sticky') return DEFAULTS.sticky;
   if (o.type === 'text') return DEFAULTS.text;
+  if (o.type === 'markdown') return DEFAULTS.markdown;
   if (o.type === 'frame') return DEFAULTS.frame;
   if (o.type === 'tracker') return DEFAULTS.frame;
   if (o.type === 'path') return DEFAULTS.path;
@@ -247,6 +251,34 @@ function textMarkup(o: BaseObj, ctx: MarkupCtx) {
   const s = styleOf(o);
   if (ctx.editingId === o.id) return wrapG(o, '', 1);
   return wrapG(o, textBlock(o.text || '', { x: 0, y: 0, w: o.w, h: o.h }, s, { valign: 'top' }), s.opacity);
+}
+
+/** What the Markdown block lays its source out with: the object's own font, size and weight. */
+export function markdownStyle(o: BaseObj): MdStyle {
+  const s = styleOf(o);
+  return { font: s.font, size: s.fontSize, weight: s.fontWeight };
+}
+
+/** The height a Markdown block needs for its source at its current width (the app, the editor and the height heal fit the object to it). */
+export function markdownBoxHeight(o: BaseObj, width = o.w): number {
+  return layoutMarkdown(o.text || '', width, markdownStyle(o)).height;
+}
+
+/**
+ * A Markdown block (docs/markdown-blocks.md): the source rendered as SVG inside the object's box, clipped to it. While it is being edited the source is
+ * in a textarea laid over it, so only the background is drawn. The painted layout is `layoutMarkdown`'s; nothing of the source reaches an attribute
+ * except as an escaped number or text (links only as the checked addresses of the parser).
+ */
+function markdownMarkup(o: BaseObj, ctx: MarkupCtx) {
+  const s = styleOf(o);
+  const fill = s.fill === 'none' ? 'none' : escapeXml(s.fill);
+  const background = s.fill !== 'none' || s.stroke !== 'none'
+    ? `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" rx="6" fill="${fill}" ${strokeAttrs(s.stroke, s.strokeWidth, s.dash)}/>`
+    : '';
+  if (ctx.editingId === o.id) return wrapG(o, background, s.opacity);
+  const { items } = layoutMarkdown(o.text || '', o.w, markdownStyle(o));
+  const body = mdItemsMarkup(items, { color: s.textColor, family: fontFamily(s.font), owner: o.id });
+  return wrapG(o, `${background}<svg x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" overflow="hidden">${body}</svg>`, s.opacity);
 }
 
 function frameMarkup(o: BaseObj) {
@@ -956,6 +988,7 @@ export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
     case 'shape': return shapeMarkup(o, ctx);
     case 'sticky': return stickyMarkup(o, ctx);
     case 'text': return textMarkup(o, ctx);
+    case 'markdown': return markdownMarkup(o, ctx);
     case 'frame': return frameMarkup(o);
     case 'tracker': return wrapG(o, renderTrackerFrame(o), styleOf(o).opacity);
     case 'icon': return iconMarkup(o);

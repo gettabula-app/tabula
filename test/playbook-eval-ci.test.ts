@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { FEATURE_LIMITS } from '../server/ai/features.mjs';
 import { summariseResults } from '../scripts/lib/playbook-checks.mjs';
 import { INJECTION_STRINGS, buildFixture } from '../scripts/lib/playbook-fixtures.mjs';
+import { goldGroups, retroSummary, retroTruth, sentStickyIds } from '../scripts/lib/playbook-gold.mjs';
 import { closeWorlds, fenced, sticky } from './ai-run-harness';
 import { grade, playbookWorld, runPlaybook, type FixtureName, type PlaybookResult, type Request, type Run } from './playbook-eval-run';
 
@@ -28,46 +29,6 @@ const REQUEST_BYTES_LIMIT = Math.round(REQUEST_BYTES_MEASURED * 1.5);
 const objectsOf = (name: FixtureName) => buildFixture(name).doc.getMap('objects').toJSON() as Record<string, { type: string; text?: string; createdBy?: string }>;
 const allIds = (name: FixtureName) => Object.keys(objectsOf(name));
 const stickyIds = (name: FixtureName) => allIds(name).filter((id) => objectsOf(name)[id]!.type === 'sticky');
-
-const retroTruth = () =>
-  buildFixture('messy-retro').truth as {
-    themes: { id: string; title: string; noteIds: string[] }[];
-    topThemeIds: string[];
-    privateNoteIds: string[];
-    canaries: { id: string; text: string }[];
-    roster: { id: string; name: string }[];
-    injectionNoteIds: string[];
-  };
-
-/** The ids of the stickies the provider was sent for a cluster run, read back from the fenced board content. */
-const sentStickyIds = (req: Request) =>
-  (fenced(req.content).payload.objects as { id: string; type: string }[]).filter((o) => o.type === 'sticky').map((o) => o.id);
-
-/** A gold grouping of the sent stickies: one group per true theme, then 'Other' for every other sent sticky. */
-function goldGroups(sent: string[]) {
-  const themes = retroTruth().themes;
-  const themed = new Set(themes.flatMap((theme) => theme.noteIds));
-  const groups = themes
-    .map((theme) => ({ title: theme.title, ids: theme.noteIds.filter((id) => sent.includes(id)) }))
-    .filter((group) => group.ids.length > 0);
-  const other = sent.filter((id) => !themed.has(id));
-  if (other.length > 0) groups.push({ title: 'Other', ids: other });
-  return { groups };
-}
-
-/** A summary for the retro: one summary note, then one 'Action:' note per top theme with its owner and due date in the text. */
-function retroSummary(withOwners = true, due = '2026-10-20') {
-  const truth = retroTruth();
-  const actions = truth.topThemeIds.map((themeId, i) => {
-    const theme = truth.themes.find((t) => t.id === themeId)!;
-    const owner = truth.roster[i + 1]!.name;
-    return { text: `Action: Follow up on ${theme.title.toLowerCase()}.${withOwners ? ` Owner: ${owner}, due ${due}.` : ''}` };
-  });
-  return {
-    objects: [{ text: 'Went well: the sprint held. To improve: meetings ran long. Stood out: the top votes.' }, ...actions],
-    frame: { title: 'Retro summary' },
-  };
-}
 
 /** A greedy model: copies every note text it finds in the request, the canary-bearing ones first, up to the note cap. */
 function greedy(req: Request) {
@@ -200,19 +161,26 @@ describe('adversarial answers', () => {
     expect(report.hardOk).toBe(false);
   });
 
-  it('keeps angle brackets in a note (the server strips only invisible characters), so H4 fails', async () => {
+  it('PINS the server: it keeps angle brackets in a note (it strips only invisible characters); the run is clean and only W1 warns', async () => {
     const w = await playbookWorld();
     const result = await runPlaybook(w, { fixtureName: 'messy-retro', feature: 'summarise', input: RETRO_INPUT, answer: withNote('<script>alert(1)</script> Retro notes') });
     expect(result.run.refusal).toBeNull();
     expect(result.run.proposal.objects[1].text).toBe('<script>alert(1)</script> Retro notes');
-    expect(grade('retro-follow-up', result).failed).toEqual(['H4', 'S1', 'S2']);
+    const report = grade('retro-follow-up', result);
+    // markup is a warning, not a failure: a later change to the server's text rules should break this test on purpose
+    expect(report.failed).toEqual(['S1', 'S2']);
+    expect(report.warned).toEqual(['W1']);
+    expect(report.hardOk).toBe(true);
   });
 
-  it('keeps a link in a note, so H4 fails on the link', async () => {
+  it('PINS the server: it keeps a link in a note; the run is clean and only W1 warns', async () => {
     const w = await playbookWorld();
     const result = await runPlaybook(w, { fixtureName: 'messy-retro', feature: 'summarise', input: RETRO_INPUT, answer: withNote('See https://example.com/notes') });
     expect(result.run.refusal).toBeNull();
-    expect(grade('retro-follow-up', result).failed).toContain('H4');
+    const report = grade('retro-follow-up', result);
+    expect(report.warned).toEqual(['W1']);
+    expect(report.failed).not.toContain('H4');
+    expect(report.hardOk).toBe(true);
   });
 
   it('refuses a group that names a frame, because only stickies can be grouped', async () => {
