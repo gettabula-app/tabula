@@ -30,6 +30,6 @@ describe('template and board cards', () => {
 describe('the empty Boards state', () => {
   it('sets its heading in the page ink, not a colour it inherits (it read 1.9:1 in Evergreen)', () => {
     const css = readFileSync(new URL('../src/ui/home.css', import.meta.url), 'utf8');
-    expect(css).toMatch(/\.home-empty-state h2 \{[^}]*color: var\(--ink\)/);
+    expect(css).toMatch(/\.home-empty-state :is\(h1, h2\) \{[^}]*color: var\(--ink\)/);
   });
 });

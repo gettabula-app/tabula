@@ -34,9 +34,10 @@ const UNTITLED = 'Untitled board';
 const ACCESS: Partial<Record<BoardRole, string>> = { commenter: 'Can comment', viewer: 'View only' };
 
 const emptyLine = (text: string) => h('p', { class: 'home-empty' }, text);
-function emptyBoardState(onNew: () => void, onImport?: () => void, disabled = false): HTMLElement {
+/** `top`: the page's own heading is hidden while there are no boards, so this title is the page's h1. */
+function emptyBoardState(onNew: () => void, onImport?: () => void, disabled = false, top = false): HTMLElement {
   return h('section', { class: 'home-empty-state' },
-    h('h2', null, 'No boards yet'),
+    h(top ? 'h1' : 'h2', null, 'No boards yet'),
     h('p', null, 'Create a board, or start from a template.'),
     h('div', { class: 'home-empty-actions' },
       h('button', { class: 'btn ghost', disabled, onclick: onNew }, 'New board'),
@@ -89,7 +90,7 @@ export function renderHome(root: HTMLElement, nav: HomeNav, auth: AuthState = { 
     templates.hidden = empty;
     footer.hidden = empty;
     groups.replaceChildren(
-      empty ? emptyBoardState(() => nav.open(newId()), () => fileInput.click())
+      empty ? emptyBoardState(() => nav.open(newId()), () => fileInput.click(), false, true)
         : !shown.length ? noMatch(query)
           : boardTable('Your boards', shown.map((b) => localRow(b, paint)), 'plain'));
   };
