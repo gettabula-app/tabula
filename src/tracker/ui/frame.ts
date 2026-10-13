@@ -8,7 +8,7 @@ import { clearTrackerSnapshots, renderTrackerSnapshot } from './frame-snapshot';
 import { mountTrackerShell, type TrackerShellController } from './shell';
 import type { TrackerView } from '../../tracker-types';
 import { navigateTrackerPath, onTrackerRoute } from '../../route';
-import type { TrackerPathRoute } from '../../tracker-route';
+import { buildTrackerPath, type TrackerPathRoute } from '../../tracker-route';
 import { focusCanvas } from '../../ui/canvas-focus';
 import { onAuth } from '../../auth';
 
@@ -81,7 +81,6 @@ interface FrameMount {
   wrapper: HTMLElement;
   workHost: HTMLElement;
   open: HTMLButtonElement;
-  expand: HTMLButtonElement;
   /** Whether the last refresh put this frame in the live set. Only a live frame shows its shell. */
   live: boolean;
   /** When the frame left the live set while its shell was up; null while live or without a shell. */
@@ -144,6 +143,12 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     mount.shell = mountTrackerShell(mount.workHost, {
       store, api: options.api, viewerId: options.viewerId, trackerId: String(obj.trackerId),
       windowId: obj.id,
+      element: true,
+      onOpenFullScreen: () => openFullscreenRoute(mount),
+      elementLink: () => {
+        const path = mount.shell ? buildTrackerPath(routeForShell(mount.shell)) : null;
+        return path ? `${location.origin}${path}` : null;
+      },
       initialTab: typeof obj.view === 'string' ? obj.view as TrackerView : 'all',
       initialViewId: typeof obj.viewId === 'string' ? obj.viewId : undefined,
       initialTicketKey: mount.obj.trackerId === options.initialTrackerId ? options.initialTicketKey ?? obj.focusKey : obj.focusKey,
@@ -192,7 +197,6 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     const hovered = mount.wrapper.dataset.hovered === 'true';
     // the Open chip is the phone's gateway to the full-screen route; on the desktop the element is live where it is
     mount.open.hidden = !(isPhone() && (selected(obj.id) || hovered));
-    mount.expand.hidden = !(selected(obj.id) || hovered || live);
     if (mount.shell) {
       const shell = mount.shell.el;
       shell.hidden = !live;
@@ -255,14 +259,11 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     const workHost = h('div', { class: 'trk-frame-work-host' });
     // phone only: the chip opens the full-screen route (on the desktop the element is live in place)
     const open = h('button', { class: 'trk-frame-open', type: 'button', 'aria-label': 'Open tracker', onclick: () => openFullscreenRoute(mount) }, 'Open');
-    const expand = h('button', { class: 'trk-frame-expand', type: 'button', 'aria-label': 'Open full screen', onclick: () => {
-      openFullscreenRoute(mount);
-    } }, 'Open full screen');
     const mount: FrameMount = {
-      obj, wrapper, workHost, open, expand, live: false, leftAt: null, layoutWidth: obj.w, shell: null,
+      obj, wrapper, workHost, open, live: false, leftAt: null, layoutWidth: obj.w, shell: null,
       drag: null, pinchPoints: new Map(), pinch: null,
     };
-    wrapper.append(workHost, open, expand);
+    wrapper.append(workHost, open);
     overlay.appendChild(wrapper);
     wrapper.addEventListener('pointerenter', () => { wrapper.dataset.hovered = 'true'; refresh(); });
     wrapper.addEventListener('pointerleave', () => { wrapper.dataset.hovered = 'false'; refresh(); });
@@ -283,7 +284,7 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     wrapper.addEventListener('pointerdown', (event) => {
       if (!mount.live || !mount.shell) return;
       const target = event.target as HTMLElement;
-      if (target.closest('.trk-frame-open, .trk-frame-expand')) return;
+      if (target.closest('.trk-frame-open')) return;
       if (event.pointerType !== 'touch') {
         // a click inside the live element is a click on the element: it is selected and its tracker has the keys
         app.setSelection([mount.obj.id]);

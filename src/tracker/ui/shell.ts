@@ -1,7 +1,7 @@
 import type { Me } from '../../api';
 import { openTrackerMenu } from './account-menu';
 import './tracker.css';
-import { closePopover, dialog, popover, toast } from '../../ui/common';
+import { closePopover, dialog, popover, segmented, toast } from '../../ui/common';
 import { h, icon } from '../../ui/dom';
 import { kbdHint } from '../../ui/kbd';
 import { TrackerError, type TrackerFacets, type TrackerListQuery, type TrackerMeta, type TrackerPriority, type TrackerSortField, type TrackerState, type TrackerTicket, type TrackerView } from '../../tracker-types';
@@ -91,6 +91,15 @@ export function visibleColumns(width: number, chosen: ReadonlySet<Column>): Colu
   return columns;
 }
 
+export type ElementColumn = 'state' | 'key' | 'title' | 'assignee' | 'priority';
+
+/** The columns of an element's list at its width: the key and priority drop under 560px, the avatar under 420px. */
+export function elementColumns(width: number): ElementColumn[] {
+  if (width >= 560) return ['state', 'key', 'title', 'assignee', 'priority'];
+  if (width >= 420) return ['state', 'title', 'assignee'];
+  return ['state', 'title'];
+}
+
 export function facetsForGroup(group: ListGroupBy, facets?: TrackerFacets): ListFacets | undefined {
   if (!facets) return undefined;
   if (group === 'state' && facets.states) return { state: facets.states.map((item) => ({ key: item.id, label: item.name, count: item.count })) };
@@ -122,6 +131,12 @@ export interface TrackerShellOptions {
   onTicketChange?: (key: string | null) => void;
   onTabChange?: (tab: TrackerView, viewId?: string) => void;
   onWorkExit?: () => void;
+  /** The element (a frame on a board), not the full-screen route: a compact header with All and My, and no tabs or filters. */
+  element?: boolean;
+  /** Element only: the expand button opens the full-screen route. */
+  onOpenFullScreen?: () => void;
+  /** Element only: the link that the menu's Copy link copies (the full-screen route of this element), or null. */
+  elementLink?: () => string | null;
   onCreated?: (key: string) => void;
   onSnapshot?: () => void;
   active?: () => boolean;
@@ -213,7 +228,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const state = trackerViewerState(options.store, options.viewerId, options.windowId ?? options.trackerId, options.initialTab);
   state.viewId = options.initialViewId ?? state.viewId;
   state.ticketKey = options.initialTicketKey ?? state.ticketKey;
+  const elementMode = options.element === true;
+  // an element shows All or My only in this slice; a view stored from before (inbox, board, projects) reads as All
+  if (elementMode && state.tab !== 'all' && state.tab !== 'my') state.tab = 'all';
   let fullScreen = options.fullScreen === true;
+  let elementEmpty = false;
+  let elementDenied = false;
   let meta = options.store.snapshot().meta;
   let readOnly = options.readOnly === true || options.store.snapshot().readOnly || meta?.me.canWrite === false;
   let currentCache = options.store.list(stableQuery(state));
@@ -244,6 +264,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   let ticketError = '';
 
   const root = h('section', { class: 'trk trk-shell', tabindex: '0', 'aria-label': 'Tracker', 'data-fullscreen': String(fullScreen) });
+  if (elementMode) root.classList.add('trk-element');
   const routeMode = options.routeMode === true;
   const menuButton = h('button', {
     class: 'trk-menu-button', type: 'button', 'aria-label': 'Menu', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
@@ -262,8 +283,19 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   );
   const tabs = h('nav', { class: 'trk-tabs', role: 'tablist', 'aria-label': 'Tracker sections' });
   const commandButton = h('button', { class: 'trk-command-trigger', type: 'button', 'aria-label': 'Open command box, Command or Control K' }, kbdHint('Ctrl/Cmd+K'));
-  const newButton = h('button', { class: 'trk-primary-button trk-new-trigger', type: 'button', 'aria-label': 'New issue' }, '+ New issue');
-  const fullscreenButton = h('button', { class: 'trk-icon-button', type: 'button', 'aria-label': fullScreen ? 'Back to board' : 'Open full screen' }, fullScreen ? '↙' : '↗');
+  const newButton = h('button', { class: 'trk-primary-button trk-new-trigger', type: 'button', 'aria-label': elementMode ? 'New ticket' : 'New issue' }, elementMode ? '+ New ticket' : '+ New issue');
+  const fullscreenButton = elementMode
+    ? h('button', { class: 'trk-icon-button trk-element-expand', type: 'button', 'aria-label': 'Open full screen', 'data-tip': 'Open full screen' }, icon('expand', 16))
+    : h('button', { class: 'trk-icon-button', type: 'button', 'aria-label': fullScreen ? 'Back to board' : 'Open full screen' }, fullScreen ? '↙' : '↗');
+  // the element's own header parts (only mounted in element mode)
+  const elementName = h('h2', { class: 'trk-element-name' }, 'Tracker');
+  const elementSub = h('span', { class: 'trk-element-sub' }, 'Workspace tickets');
+  const elementSwitchHost = h('div', { class: 'trk-element-switch' });
+  let elementSwitcher: HTMLElement | null = null;
+  const elementBack = h('button', { class: 'trk-small-button trk-element-back', type: 'button', onclick: () => setTicket(null) }, 'Back');
+  const elementMenuButton = h('button', {
+    class: 'trk-icon-button trk-element-menu-button', type: 'button', 'aria-label': 'Tracker menu', 'aria-haspopup': 'menu', 'data-tip': 'Tracker menu',
+  }, icon('dots', 16));
   const offlineLine = h('div', { class: 'trk-offline-line', role: 'status', hidden: typeof navigator === 'undefined' || navigator.onLine !== false },
     h('span', null, 'Offline. Changes are saved here and will sync.'),
     h('span', { class: 'trk-offline-create-reason' }, 'Needs a connection to get a ticket number.'),
@@ -271,8 +303,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const errorBanner = h('div', { class: 'trk-error-banner', role: 'alert', hidden: true });
   const content = h('div', { class: 'trk-content' });
   const live = h('div', { class: 'trk-live-region', 'aria-live': 'polite', 'aria-atomic': 'true' });
-  root.append(fullscreenStrip, h('header', { class: 'trk-header' }, tabs,
-    h('div', { class: 'trk-header-actions' }, commandButton, newButton, fullscreenButton)),
+  root.append(fullscreenStrip, elementMode
+    ? h('header', { class: 'trk-header trk-element-header' },
+      h('div', { class: 'trk-element-title' }, elementName, elementSub),
+      h('div', { class: 'trk-element-actions' }, elementSwitchHost, elementBack, newButton, fullscreenButton, elementMenuButton))
+    : h('header', { class: 'trk-header' }, tabs,
+      h('div', { class: 'trk-header-actions' }, commandButton, newButton, fullscreenButton)),
   offlineLine, errorBanner, content, live);
   parent.appendChild(root);
   root.dataset.width = String(layoutWidth);
@@ -304,7 +340,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const active = () => !destroyed && (options.active?.() ?? (root === document.activeElement || root.contains(document.activeElement) || fullScreen));
   const updateActions = () => {
     readOnly = options.readOnly === true || options.store.snapshot().readOnly || meta?.me.canWrite === false;
-    newButton.hidden = readOnly;
+    newButton.hidden = readOnly || (elementMode && elementDenied);
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
     offlineLine.hidden = !offline;
     newButton.disabled = offline;
@@ -333,7 +369,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
 
   const showError = (message: string) => {
-    errorBanner.replaceChildren(h('span', null, message), h('button', { class: 'trk-small-button', type: 'button', onclick: () => {
+    const shown = elementMode ? 'Could not load tickets' : message;
+    errorBanner.replaceChildren(h('span', null, shown), h('button', { class: 'trk-small-button', type: 'button', onclick: () => {
       errorBanner.hidden = true;
       void options.store.loadMeta(true).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load tracker data.'));
       if (state.tab === 'all' || state.tab === 'my') watchQuery();
@@ -345,7 +382,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const showListError = (message: string) => {
     if (!errorHost || !root.contains(errorHost)) { showError(message); return; }
     const target = errorHost;
-    const displayMessage = message.startsWith('Could not load') ? message : `Could not load issues. ${message}`;
+    const displayMessage = elementMode ? 'Could not load tickets' : message.startsWith('Could not load') ? message : `Could not load issues. ${message}`;
     target.replaceChildren(h('span', null, displayMessage), h('button', {
       class: 'trk-small-button', type: 'button', onclick: () => {
         target.hidden = true;
@@ -366,7 +403,56 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     listLoadMore.textContent = cache.loadingMore ? 'Loading…' : 'Load more';
   };
 
+  /** The element header: All and My (the shared segmented control), Back while a ticket is open, New ticket, expand, and the menu. */
+  const renderElementHeader = () => {
+    const width = layoutWidth;
+    const ticketOpen = Boolean(state.ticketKey);
+    elementName.textContent = ticketOpen ? state.ticketKey ?? 'Tracker' : 'Tracker';
+    elementSub.hidden = ticketOpen || width < 560;
+    // the switch hides while the unfiltered All view is empty, and when the person has no access; at under 360px it moves into the menu
+    const showSwitch = !ticketOpen && !elementDenied && !elementEmpty && width >= 360;
+    if (showSwitch && !elementSwitcher) {
+      elementSwitcher = segmented<'all' | 'my'>([{ value: 'all', label: 'All' }, { value: 'my', label: 'My' }], state.tab === 'my' ? 'my' : 'all',
+        (value) => switchTab(value), 'Tickets');
+      elementSwitchHost.replaceChildren(elementSwitcher);
+    }
+    if (elementSwitcher) for (const button of elementSwitcher.querySelectorAll<HTMLButtonElement>('button')) {
+      const on = button.getAttribute('aria-label') === (state.tab === 'my' ? 'My' : 'All');
+      button.classList.toggle('on', on);
+      button.setAttribute('aria-checked', String(on));
+    }
+    elementSwitchHost.hidden = !showSwitch;
+    elementBack.hidden = !ticketOpen;
+    newButton.textContent = width >= 420 ? '+ New ticket' : '+';
+    newButton.setAttribute('aria-label', 'New ticket');
+    newButton.hidden = readOnly || elementDenied;
+  };
+
+  const copyElementLink = () => {
+    const path = options.elementLink?.();
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+    if (!path) return;
+    if (!clipboard) toast('Clipboard access is not available.');
+    else void clipboard.writeText(path).then(() => toast('Link copied')).catch(() => toast('Could not copy the link.'));
+  };
+
+  const openElementMenu = (anchor: HTMLElement) => {
+    const item = (label: string, action: () => void) => h('button', {
+      class: 'trk-display-option', type: 'button', role: 'menuitem', onclick: () => { closePopover(); action(); },
+    }, label);
+    const items: HTMLElement[] = [item('Copy link', copyElementLink)];
+    if (layoutWidth < 360) {
+      items.push(item('View: All', () => switchTab('all')), item('View: My', () => switchTab('my')));
+    }
+    popover(anchor, h('div', { class: 'trk-element-menu-panel', role: 'menu' }, ...items), { className: 'trk trk-pop trk-element-menu', label: 'Tracker menu' });
+  };
+
   const renderTabs = () => {
+    if (elementMode) {
+      renderElementHeader();
+      root.dataset.width = String(layoutWidth);
+      return;
+    }
     const restoreTabFocus = tabs.contains(document.activeElement);
     tabs.replaceChildren(...TABS.map((tab) => h('button', {
       class: `trk-tab${state.tab === tab.id ? ' active' : ''}`, type: 'button', role: 'tab',
@@ -591,6 +677,20 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const renderRows = (cache: typeof currentCache) => {
     if (!listRenderHost || !resultsHost || !skeletonHost || !errorHost) return;
+    elementEmpty = false;
+    elementDenied = elementMode && (cache.error?.code === 'forbidden' || options.store.snapshot().metaError?.code === 'forbidden');
+    if (elementDenied) {
+      // no access: no list, no switch and no New ticket; the copy says who can give access
+      if (listLoadMore) listLoadMore.hidden = true;
+      errorHost.hidden = true;
+      skeletonHost.hidden = true;
+      listRenderHost.replaceChildren(h('div', { class: 'trk-element-empty trk-element-denied' },
+        h('h2', null, 'You do not have access to the tracker'),
+        h('p', { class: 'trk-element-quiet' }, 'Ask a workspace admin'),
+      ));
+      resultsHost.textContent = '';
+      return;
+    }
     if (!meta) {
       updateListLoadMore(cache, false);
       skeletonHost.hidden = false;
@@ -633,7 +733,18 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     state.anchorKey = listModel.anchorKey;
     skeletonHost.hidden = !(cache.loading && cache.tickets.length === 0);
     const filterActive = state.filter.length > 0 || Boolean(state.queryText.trim());
-    const columns = visibleColumns(layoutWidth, state.columns);
+    elementEmpty = elementMode && !cache.loading && tickets.length === 0 && state.tab === 'all' && !filterActive;
+    const columns: Column[] = elementMode ? elementColumns(layoutWidth) : visibleColumns(layoutWidth, state.columns);
+    if (elementMode && !cache.loading && tickets.length === 0) {
+      listRenderHost.replaceChildren(h('div', { class: 'trk-element-empty' },
+        h('h2', null, state.tab === 'my' ? (state.mySubtab === 'active' ? 'Nothing assigned to you.' : 'Nothing created by you yet.') : 'No tickets yet'),
+        h('p', null, state.tab === 'my' ? 'Issues assigned to you or created by you appear here.' : 'Create the first ticket to track work here.'),
+        readOnly ? null : h('button', { class: 'trk-primary-button trk-element-create', type: 'button', onclick: () => openCreate() }, '+ New ticket'),
+      ));
+      updateListLoadMore(cache);
+      resultsHost.textContent = '0 issues';
+      return;
+    }
     if (!cache.loading && tickets.length === 0) {
       const myEmpty = state.tab === 'my' && !filterActive && !cache.nextCursor;
       const emptyMessage = state.tab === 'my' && !filterActive && cache.nextCursor
@@ -664,7 +775,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const header = h('div', { class: 'trk-grid-header', role: 'row', style: { gridTemplateColumns: columns.map((column) => `var(--trk-${column}-width)`).join(' ') } },
       ...columns.map((column) => h('div', { role: 'columnheader', class: `trk-col-${column}` }, column === 'updated' ? 'Updated' : column[0].toUpperCase() + column.slice(1))),
     );
-    const rows: Node[] = [header];
+    const rows: Node[] = elementMode ? [] : [header];
     const now = Date.now();
     for (const group of model.groups) {
       if (state.group !== 'none') {
@@ -678,9 +789,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
             state.cursorKey = model.cursorKey;
             drawRows(cache);
           },
-        }, h('span', { class: 'trk-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 12)),
+        }, ...(elementMode ? [h('span', null, `${group.label} · ${group.count}`)] : [h('span', { class: 'trk-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 12)),
         groupTicket && state.group === 'state' ? stateGlyph(groupTicket.state.category, groupTicket.state.key) : null,
-        h('span', null, group.label), h('span', { class: 'trk-muted' }, String(group.count)));
+        h('span', null, group.label), h('span', { class: 'trk-muted' }, String(group.count))]));
         rows.push(h('div', { class: 'trk-group-row', role: 'row' },
           h('div', { class: 'trk-cell trk-group-cell', role: 'gridcell', 'aria-colspan': String(columns.length) }, headerButton),
         ));
@@ -690,7 +801,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         const ticket = ticketFromListRow(raw, meta, options.trackerId);
         const selectedHere = state.selectedKeys.includes(ticket.key);
         const cursor = state.cursorKey === ticket.key;
-        const selectionButton = !readOnly ? h('button', {
+        const selectionButton = !readOnly && !elementMode ? h('button', {
           class: 'trk-row-select', type: 'button', 'aria-label': `${selectedHere ? 'Deselect' : 'Select'} ${ticket.key}`,
           'aria-pressed': String(selectedHere),
           onclick: (event: Event) => {
@@ -715,8 +826,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           else if (column === 'title') cells.push(h('div', { class: 'trk-cell trk-col-title', role: 'gridcell' },
             h('button', { class: 'trk-title-link', type: 'button', onclick: (event: Event) => { event.stopPropagation(); openTicket(ticket.key); } }, ticket.title),
             state.queryText.trim() && ticket.snippet ? h('span', { class: 'trk-search-snippet' }, renderSnippet(ticket.snippet)) : null,
-            ...ticket.labels.slice(0, 2).map((label) => labelChip(label.name, label.color)),
-            ticket.subIssueCount ? h('span', { class: 'trk-sub-count', 'aria-label': `${ticket.subIssueDone ?? 0} of ${ticket.subIssueCount} sub-issues complete` }, `${ticket.subIssueDone ?? 0}/${ticket.subIssueCount}`) : null,
+            ...(elementMode ? [] : ticket.labels.slice(0, 2).map((label) => labelChip(label.name, label.color))),
+            !elementMode && ticket.subIssueCount ? h('span', { class: 'trk-sub-count', 'aria-label': `${ticket.subIssueDone ?? 0} of ${ticket.subIssueCount} sub-issues complete` }, `${ticket.subIssueDone ?? 0}/${ticket.subIssueCount}`) : null,
           ));
           else if (column === 'project') cells.push(h('div', { class: 'trk-cell trk-col-project', role: 'gridcell' }, ticket.project?.name ?? '—'));
           else if (column === 'assignee') cells.push(h('div', { class: 'trk-cell trk-col-assignee', role: 'gridcell' }, ticket.assignee
@@ -750,14 +861,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const drawRows = (cache: typeof currentCache) => {
     try { renderRows(cache); }
     catch (error) { showListError(error instanceof Error ? error.message : 'Could not render issues.'); }
+    if (elementMode) renderElementHeader();
   };
 
   const publishCurrentSnapshot = () => {
-    const tickets = currentCache.tickets.slice(0, 12);
-    const facets = facetsForGroup(state.group, currentCache.facets)?.[state.group];
-    const count = facets?.reduce((sum, facet) => sum + facet.count, 0) ?? currentCache.tickets.length;
     // keyed by the element's object id (windowId), so two elements on one tracker do not share a snapshot
-    publishTrackerSnapshot(options.windowId ?? options.trackerId, state.tab, tickets, count);
+    publishTrackerSnapshot(options.windowId ?? options.trackerId, issuesForView(currentCache));
     options.onSnapshot?.();
   };
 
@@ -867,7 +976,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         'aria-selected': String(state.mySubtab === key), onclick: () => setMySubtab(key),
       }, label)),
     ) : null;
-    const tab = h('section', { class: `trk-all-issues${state.tab === 'my' ? ' trk-my-issues' : ''}` }, subtabBar, viewBarHost, filterController.el, host);
+    // an element lists only: its filters, view bar and My subtabs live in full screen
+    const tab = h('section', { class: `trk-all-issues${state.tab === 'my' ? ' trk-my-issues' : ''}` },
+      elementMode ? null : subtabBar, elementMode ? null : viewBarHost, elementMode ? null : filterController.el, host);
     return { tab, updateSelectionBar };
   };
 
@@ -1173,8 +1284,10 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     else if (options.layoutWidth !== undefined) layoutWidth = options.layoutWidth;
     root.dataset.fullscreen = String(value);
     fullscreenStrip.hidden = !value;
-    fullscreenButton.textContent = value ? '↙' : '↗';
-    fullscreenButton.setAttribute('aria-label', value ? 'Back to board' : 'Open full screen');
+    if (!elementMode) {
+      fullscreenButton.textContent = value ? '↙' : '↗';
+      fullscreenButton.setAttribute('aria-label', value ? 'Back to board' : 'Open full screen');
+    }
     renderPage();
     options.onFullscreenChange?.(value);
   }
@@ -1301,7 +1414,11 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   commandButton.addEventListener('click', openCommand);
   newButton.addEventListener('click', () => openCreate());
-  fullscreenButton.addEventListener('click', () => setFullscreen(!fullScreen));
+  fullscreenButton.addEventListener('click', () => {
+    if (elementMode && options.onOpenFullScreen) options.onOpenFullScreen();
+    else setFullscreen(!fullScreen);
+  });
+  elementMenuButton.addEventListener('click', () => openElementMenu(elementMenuButton));
   stopStore = options.store.subscribe((snapshot) => {
     meta = snapshot.meta ?? meta;
     if (snapshot.metaError) showError(snapshot.metaError.message);

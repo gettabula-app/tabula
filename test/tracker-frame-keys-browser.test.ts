@@ -105,32 +105,30 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     await page.close();
   });
 
-  it('a click inside a live element focuses its shell and selects it, and does not move the object', async () => {
+  it('a click on the empty element header selects the element and does not move it (the header has no hit target of its own)', async () => {
     const page = await open();
     const id = await enterWork(page);
     const before = await frameFor(page, id);
-    // the top-left corner of the list is its toolbar's padding: no control, so the click is on the element itself
+    // the empty middle of the element header: no control there, so the click reaches the canvas, which selects the element
     const point = await page.evaluate(() => {
-      const r = document.querySelector('.trk-frame-wrap.is-work .trk-content')!.getBoundingClientRect();
-      return { x: r.left + 3, y: r.top + 3 };
+      const r = document.querySelector('.trk-frame-wrap.is-work .trk-element-title')!.getBoundingClientRect();
+      return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
     });
     await page.evaluate(() => (window as any).__board.setSelection([]));
     await page.mouse.click(point.x, point.y);
-    expect(await page.evaluate(() => document.activeElement?.closest('.trk-frame-wrap.is-work') !== null)).toBe(true);
     expect(await page.evaluate((i) => (window as any).__board.selection.includes(i), id)).toBe(true);
     expect(await frameFor(page, id)).toEqual(before);
     await page.close();
   });
 
-  it('a drag on the empty tab-bar strip of a live element moves the object (the canvas gets it)', async () => {
+  it('a drag on the empty header strip of a live element moves the object (the canvas gets it)', async () => {
     const page = await open();
     const id = await enterWork(page);
     const before = await frameFor(page, id);
-    // the empty middle of the header, between the tabs and the header's actions: no control there
+    // the empty middle of the element header (the title box, no control there)
     const point = await page.evaluate(() => {
-      const tabs = document.querySelector('.trk-frame-wrap.is-work .trk-tabs')!.getBoundingClientRect();
-      const actions = document.querySelector('.trk-frame-wrap.is-work .trk-header-actions')!.getBoundingClientRect();
-      return { x: (tabs.right + actions.left) / 2, y: (tabs.top + tabs.bottom) / 2 };
+      const r = document.querySelector('.trk-frame-wrap.is-work .trk-element-title')!.getBoundingClientRect();
+      return { x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 };
     });
     await page.mouse.move(point.x, point.y);
     await page.mouse.down();

@@ -359,7 +359,7 @@
 
 .trk-frame-overlay { position: absolute; z-index: 6; inset: 0; overflow: hidden; pointer-events: none; }
 .trk-frame-wrap { position: absolute; overflow: visible; pointer-events: none; }
-.trk-frame-work-host { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.trk-frame-work-host { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .trk-frame-wrap.is-work .trk-frame-work-host { pointer-events: none; }
 .trk-frame-wrap.is-work .trk-shell { overflow: auto; border: 1px solid var(--trk-rule); pointer-events: none; }
 /* the live parts take the pointer; the empty parts of the shell (its header strip, its gaps) pass it to the canvas, which moves the object */
@@ -367,10 +367,8 @@
 /* the header's empty strip lets a drag fall through to the canvas, so the element moves; its buttons and tabs stay live */
 .trk-frame-wrap.is-work .trk-header { pointer-events: none; }
 .trk-frame-wrap.is-work .trk-header button, .trk-frame-wrap.is-work .trk-header [role="tab"] { pointer-events: auto; }
-.trk-frame-open, .trk-frame-expand { position: absolute; z-index: 3; top: 9px; min-height: 32px; padding: 0 10px; border: 1px solid var(--ink); border-radius: var(--radius-sm, 8px); background: var(--paper-hi, var(--paper)); color: var(--ink); font: 500 13px var(--ui); pointer-events: auto; }
-.trk-frame-open { right: 124px; }
-.trk-frame-expand { right: 10px; }
-.trk-frame-open[hidden], .trk-frame-expand[hidden] { display: none; }
+.trk-frame-open { position: absolute; z-index: 3; right: 10px; bottom: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: var(--radius-sm, 8px); background: var(--ink); color: var(--paper); font: 500 13px var(--ui); pointer-events: auto; }
+.trk-frame-open[hidden] { display: none; }
 .trk-fullscreen-portal { position: fixed; z-index: 20000; inset: 0; display: flex; padding: 0 var(--safe-right, env(safe-area-inset-right, 0px)) var(--safe-bottom, env(safe-area-inset-bottom, 0px)) var(--safe-left, env(safe-area-inset-left, 0px)); flex-direction: column; overflow: hidden; background: var(--paper-hi, var(--paper)); color: var(--ink); }
 .trk-fullscreen-portal > .trk-shell { width: 100%; height: 100%; border: 0; }
 .trk-fullscreen-portal .trk-fullscreen-strip { flex: none; }
@@ -518,7 +516,6 @@
   .trk-fullscreen-strip { padding-inline: 12px; }
   .trk-view-bar, .trk-filter-host { padding-inline: 12px; }
   .trk-empty-state { padding: 24px 12px; }
-  .trk-frame-open, .trk-frame-expand { min-height: 44px; }
 }
 @media (pointer: coarse) {
   .trk-modal .modal-head .icon-btn { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
@@ -590,3 +587,115 @@
 .trk .trk-avatar, .trk .trk-avatar-mark, .trk .trk-avatar-button, .trk-avatar-mark, .trk-avatar-button {
   line-height: 1; letter-spacing: 0; text-align: center; text-box: trim-both cap alphabetic;
 }
+
+/* element-look:start (the tracker element on a board: a card, a compact header, and an in-place list; tokens only) */
+.trk.trk-shell.trk-element {
+  --trk-state-width: 14px;
+  --trk-key-width: 64px;
+  --trk-title-width: minmax(0, 1fr);
+  --trk-assignee-width: 20px;
+  --trk-priority-width: 11px;
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, var(--paper)); border-radius: 12px;
+  background: var(--paper); color: var(--ink); box-shadow: var(--popover-shadow);
+}
+.trk.trk-element .trk-element-header {
+  display: flex; flex: none; align-items: center; justify-content: space-between; gap: 10px;
+  height: 44px; min-height: 44px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--tray-line);
+}
+.trk.trk-element .trk-element-title { display: flex; flex: 1 1 auto; min-width: 0; align-items: baseline; gap: 10px; overflow: hidden; }
+.trk.trk-element .trk-element-name {
+  min-width: 0; margin: 0; overflow: hidden; color: var(--ink); white-space: nowrap; text-overflow: ellipsis;
+  font: 400 16px/1.2 var(--font-serif);
+}
+.trk.trk-element .trk-element-sub { flex: none; overflow: hidden; color: var(--graphite); font-size: 12px; white-space: nowrap; }
+.trk.trk-element .trk-element-actions { display: flex; flex: none; align-items: center; gap: 10px; }
+.trk.trk-element .trk-element-actions > * { flex: none; }
+.trk.trk-element .trk-element-switch .segmented { margin: 0; }
+.trk.trk-element .trk-primary-button {
+  height: 30px; min-height: 30px; padding: 0 12px; border: 0; border-radius: 6px;
+  background: var(--ink); color: var(--paper); font: 500 13px/1 var(--ui); white-space: nowrap;
+}
+.trk.trk-element .trk-element-expand, .trk.trk-element .trk-element-menu-button {
+  width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 0; display: grid; place-items: center;
+  border: 0; border-radius: 6px; background: transparent; color: var(--graphite);
+}
+.trk.trk-element .trk-element-expand:hover, .trk.trk-element .trk-element-menu-button:hover { background: var(--tray-hover); color: var(--ink); }
+.trk.trk-element .trk-element-back {
+  height: 30px; min-height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: 500 13px/1 var(--ui);
+}
+.trk.trk-element .trk-element-back:hover { background: var(--tray-hover); }
+.trk.trk-element .trk-element-menu-panel { display: grid; min-width: 160px; gap: 2px; padding: 4px; }
+.trk.trk-element .trk-all-issues { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; }
+.trk.trk-element .trk-content { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+.trk.trk-element .trk-list-host { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.trk.trk-element .trk-grid-header { display: none; }
+.trk.trk-element .trk-list-row {
+  display: grid; align-items: center; column-gap: 10px; min-height: 36px; height: 36px; padding: 0 14px;
+  border: 0; border-bottom: 1px solid var(--tray-line); border-radius: 0; background: transparent; box-shadow: none;
+}
+.trk.trk-element .trk-list-row:hover, .trk.trk-element .trk-list-row[aria-selected='true'], .trk.trk-element .trk-list-row[data-cursor='true'],
+.trk.trk-element .trk-list-row.is-cursor { background: var(--tray-hover); box-shadow: none; }
+.trk.trk-element .trk-list-row:focus-visible { outline: 1px solid var(--trk-focus); outline-offset: -1px; }
+.trk.trk-element .trk-cell { gap: 6px; }
+.trk.trk-element .trk-col-state { justify-content: center; color: var(--graphite); }
+.trk.trk-element .trk-col-state .trk-state-value > span:last-child { display: none; }
+.trk.trk-element .trk-col-state .trk-glyph, .trk.trk-element .trk-col-state svg { width: 14px; height: 14px; }
+.trk.trk-element .trk-col-key { color: var(--graphite); font-size: 12px; white-space: nowrap; overflow: hidden; }
+.trk.trk-element .trk-key-chip, .trk.trk-element .trk-key-prefix, .trk.trk-element .trk-key-number { color: var(--graphite); font-size: 12px; font-weight: 400; }
+.trk.trk-element .trk-col-title { min-width: 0; }
+.trk.trk-element .trk-title-link {
+  display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--ink); font-size: 13px; text-align: left;
+  white-space: nowrap; text-overflow: ellipsis;
+}
+.trk.trk-element .trk-col-assignee { justify-content: center; }
+.trk.trk-element .trk-avatar-button {
+  width: 20px; min-width: 20px; height: 20px; min-height: 20px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--tray-hover); color: var(--ink);
+}
+.trk.trk-element .trk-avatar-mark { font-size: 9px; font-weight: 600; }
+.trk.trk-element .trk-col-priority { justify-content: center; }
+.trk.trk-element .trk-col-priority svg, .trk.trk-element .trk-col-priority .trk-glyph { width: 11px; height: 11px; }
+.trk.trk-element .trk-group-row { position: static; border: 0; background: transparent; }
+.trk.trk-element .trk-group-heading {
+  display: flex; width: 100%; min-height: 32px; height: 32px; align-items: center; padding: 0 14px; border: 0;
+  background: transparent; color: var(--graphite); font: 600 12px/1.2 var(--ui); text-align: left;
+}
+.trk.trk-element .trk-group-heading .trk-group-chevron { display: none; }
+.trk.trk-element .trk-element-empty {
+  display: flex; flex: 1 1 auto; min-height: 180px; flex-direction: column; align-items: center; justify-content: center;
+  gap: 6px; padding: 24px 16px; text-align: center;
+}
+.trk.trk-element .trk-element-empty h2 { margin: 0; color: var(--ink); font: 400 22px/1.2 var(--font-serif); }
+.trk.trk-element .trk-element-empty p { margin: 0 0 10px; color: var(--graphite); font-size: 13px; }
+.trk.trk-element .trk-element-empty .trk-element-quiet { margin: 0; }
+.trk.trk-element .trk-element-create { margin-top: 4px; }
+.trk.trk-element .trk-skeleton-list { padding: 0 14px; }
+.trk.trk-element .trk-skeleton-row {
+  display: grid; height: 36px; min-height: 36px; grid-template-columns: 14px 64px minmax(0, 1fr) 20px; align-items: center;
+  column-gap: 10px; border-bottom: 1px solid var(--tray-line);
+}
+.trk.trk-element .trk-skeleton-row i { display: block; height: 10px; border-radius: 3px; background: color-mix(in srgb, var(--ink) 10%, var(--paper)); }
+.trk.trk-element .trk-skeleton-row i:nth-child(1) { width: 14px; height: 14px; border-radius: 50%; }
+.trk.trk-element .trk-skeleton-row i:nth-child(2) { width: 48px; }
+.trk.trk-element .trk-skeleton-row i:nth-child(3) { width: 72%; }
+.trk.trk-element .trk-skeleton-row i:nth-child(4) { width: 20px; height: 20px; border-radius: 50%; }
+.trk.trk-element .trk-list-error { display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-size: 13px; }
+.trk.trk-element .trk-list-error[hidden] { display: none; }
+.trk.trk-element .trk-list-error > span { color: var(--danger); }
+.trk.trk-element .trk-list-error .trk-small-button { height: 30px; min-height: 30px; padding: 0 8px; border: 0; background: transparent; color: var(--graphite); }
+.trk.trk-element .trk-list-error .trk-small-button:hover { background: var(--tray-hover); }
+.trk.trk-element .trk-load-more { margin: 8px 14px; }
+@media (pointer: coarse) {
+  .trk.trk-element .trk-element-header { height: auto; min-height: 44px; padding-block: 4px; }
+  .trk.trk-element .trk-primary-button, .trk.trk-element .trk-element-back, .trk.trk-element .trk-element-expand,
+  .trk.trk-element .trk-element-menu-button { height: 44px; min-height: 44px; }
+  .trk.trk-element .trk-primary-button, .trk.trk-element .trk-element-back { min-width: 44px; }
+  .trk.trk-element .trk-element-expand, .trk.trk-element .trk-element-menu-button { width: 44px; min-width: 44px; }
+  .trk.trk-element .trk-list-row { min-height: 40px; height: 40px; }
+  .trk.trk-element .trk-title-link { min-height: 40px; }
+}
+@media (forced-colors: active) {
+  .trk.trk-element.trk-shell { border: 1px solid CanvasText; box-shadow: none; }
+}
+/* element-look:end */

@@ -44,6 +44,8 @@ describe('tracker frame defaults and size', () => {
 describe('live presentation rule', () => {
   it('is live at zoom 0.4 and above with an on-screen height of 240, not on a phone', () => {
     expect(trackerPresentation(0.39, 720, 480 * 0.39)).toBe('snapshot');
+    expect(trackerPresentation(0.39, 720, 480)).toBe('snapshot'); // below the zoom floor, even on a full 480 px frame
+    expect(trackerPresentation(0.55, 720, 480)).toBe('work'); // 264 px tall on screen
     expect(trackerPresentation(0.4, 720 * 0.4, 480 * 0.4)).toBe('snapshot'); // 192 px tall
     expect(trackerPresentation(0.4, 720 * 0.4, 600 * 0.4)).toBe('work'); // exactly 240 px tall
     expect(trackerPresentation(1, 720, 239)).toBe('snapshot');

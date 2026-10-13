@@ -1,74 +1,74 @@
 import { describe, expect, it } from 'vitest';
 import { clearTrackerSnapshots, renderTrackerSnapshot, publishTrackerSnapshot } from '../src/tracker/ui/frame-snapshot';
 import type { BaseObj } from '../src/types';
-import type { TrackerTicket } from '../src/tracker-types';
+import type { TrackerStateCategory, TrackerTicket } from '../src/tracker-types';
 
-// snapshots are keyed by the frame object's id (the test's `trackerId` argument is that id)
-function frame(objectId: string, h = 1000): BaseObj {
-  return { id: objectId, type: 'tracker', x: 0, y: 0, w: 800, h, rotation: 0, z: 'a0', trackerId: 'workspace-tracker' };
+// snapshots are keyed by the frame object's id (the test's `objectId` argument is that id)
+function frame(objectId: string, w = 360, h = 280): BaseObj {
+  return { id: objectId, type: 'tracker', x: 0, y: 0, w, h, rotation: 0, z: 'a0', trackerId: 'workspace-tracker' };
 }
 
-function ticket(key: string, title: string, state: string): TrackerTicket {
-  return { key, title, state: { name: state } } as TrackerTicket;
+function ticket(key: string, category: TrackerStateCategory): TrackerTicket {
+  return { key, title: `Ticket ${key}`, state: { name: category, category } } as TrackerTicket;
 }
 
 describe('tracker frame snapshots', () => {
-  it('escapes hostile ticket text for XML output', () => {
-    const trackerId = 'snapshot-xml-escape';
-    publishTrackerSnapshot(trackerId, 'all', [
-      ticket(`T<&>"'`, `Title <b>& "double" 'single'`, `State <open>& "quoted" 'again'`),
-    ], 1);
+  it('draws the card with its serif title and the counts of the loaded tickets, and no ticket text', () => {
+    publishTrackerSnapshot('frame-counts', [
+      ticket('TAB-1', 'started'), ticket('TAB-2', 'started'), ticket('TAB-3', 'unstarted'),
+      ticket('TAB-4', 'completed'), ticket('TAB-5', 'canceled'), ticket('TAB-6', 'backlog'),
+    ]);
 
-    const svg = renderTrackerSnapshot(frame(trackerId));
+    const svg = renderTrackerSnapshot(frame('frame-counts'));
 
-    expect(svg).toContain('>T&lt;&amp;&gt;&quot;&apos;</text>');
-    expect(svg).toContain('>Title &lt;b&gt;&amp; &quot;double&quot; &apos;single&apos;</text>');
-    expect(svg).toContain('>State &lt;open&gt;&amp; &quot;quoted&quot; &apos;again&apos;</text>');
-    expect(svg).not.toContain(`T<&>"'`);
-    expect(svg).not.toContain(`Title <b>& "double" 'single'`);
-    expect(svg).not.toContain(`State <open>& "quoted" 'again'`);
+    expect(svg).toContain('rx="12"');
+    expect(svg).toContain('>Tracker</text>');
+    expect(svg).toContain('font-size="28"');
+    expect(svg).toContain('var(--font-serif');
+    expect(svg).toContain('>4 open · 2 in progress</text>');
+    expect(svg).not.toContain('TAB-');
+    expect(svg).not.toContain('Ticket TAB');
+    expect(svg).not.toContain('<foreignObject');
   });
 
-  it('caps published rows at twelve and floors the displayed issue count', () => {
-    const trackerId = 'snapshot-row-count-bounds';
-    const tickets = Array.from({ length: 13 }, (_, index) =>
-      ticket(`TAB-${index + 1}`, `Ticket ${index + 1}`, 'To do'));
-    publishTrackerSnapshot(trackerId, 'all', tickets, 13.9);
+  it('draws four skeleton lines of 10px at 10% ink tint, with varying widths', () => {
+    publishTrackerSnapshot('frame-skeleton', [ticket('TAB-1', 'started')]);
 
-    const svg = renderTrackerSnapshot(frame(trackerId));
+    const bars = [...renderTrackerSnapshot(frame('frame-skeleton')).matchAll(/<rect x="20" y="\d+" width="(\d+)" height="10" rx="3" fill="var\(--ink[^"]*" fill-opacity="0\.1"\/>/g)];
 
-    for (let index = 1; index <= 12; index++) expect(svg).toContain(`>TAB-${index}</text>`);
-    expect(svg).not.toContain('>TAB-13</text>');
-    expect(svg).toContain('>13 issues</text>');
+    expect(bars).toHaveLength(4);
+    const widths = bars.map((match) => Number(match[1]));
+    expect(new Set(widths).size).toBeGreaterThan(1);
   });
 
-  it('clamps a negative issue count to zero', () => {
-    const trackerId = 'snapshot-negative-count';
-    publishTrackerSnapshot(trackerId, 'all', [ticket('TAB-1', 'One issue', 'To do')], -4);
+  it('drops the skeleton lines that do not fit a short card', () => {
+    publishTrackerSnapshot('frame-short', []);
 
-    expect(renderTrackerSnapshot(frame(trackerId))).toContain('>0 issues</text>');
+    expect(renderTrackerSnapshot(frame('frame-short', 360, 130)).match(/height="10"/g)).toHaveLength(1);
   });
 
-  it('keys snapshots by object, so two elements on one tracker with different views keep their own rows', () => {
-    publishTrackerSnapshot('frame-mine', 'my', [ticket('TAB-7', 'Mine', 'To do')], 1);
-    publishTrackerSnapshot('frame-all', 'all', [ticket('TAB-8', 'Everyone', 'Done')], 1);
+  it('shows zero counts for an empty list', () => {
+    publishTrackerSnapshot('frame-empty', []);
 
-    expect(renderTrackerSnapshot(frame('frame-mine'))).toContain('>My issues</text>');
-    expect(renderTrackerSnapshot(frame('frame-mine'))).toContain('>TAB-7</text>');
-    expect(renderTrackerSnapshot(frame('frame-all'))).toContain('>All issues</text>');
-    expect(renderTrackerSnapshot(frame('frame-all'))).not.toContain('>TAB-7</text>');
+    expect(renderTrackerSnapshot(frame('frame-empty'))).toContain('>0 open · 0 in progress</text>');
   });
 
-  it('says there are no issues in an empty view, and asks for a sign-in when no snapshot exists', () => {
-    publishTrackerSnapshot('frame-empty', 'all', [], 0);
-    expect(renderTrackerSnapshot(frame('frame-empty'))).toContain('>No issues in this view</text>');
+  it('keys snapshots by object, so two elements on one tracker keep their own counts', () => {
+    publishTrackerSnapshot('frame-mine', [ticket('TAB-7', 'started')]);
+    publishTrackerSnapshot('frame-all', [ticket('TAB-8', 'unstarted'), ticket('TAB-9', 'unstarted')]);
+
+    expect(renderTrackerSnapshot(frame('frame-mine'))).toContain('>1 open · 1 in progress</text>');
+    expect(renderTrackerSnapshot(frame('frame-all'))).toContain('>2 open · 0 in progress</text>');
+  });
+
+  it('asks for a sign-in when no snapshot exists', () => {
     expect(renderTrackerSnapshot(frame('frame-never-published'))).toContain('>Sign in to a workspace to see tickets.</text>');
   });
 
   it('clears every snapshot on sign-out or access loss', () => {
-    publishTrackerSnapshot('frame-cleared', 'all', [ticket('TAB-9', 'Gone soon', 'To do')], 1);
+    publishTrackerSnapshot('frame-cleared', [ticket('TAB-9', 'started')]);
     clearTrackerSnapshots();
-    expect(renderTrackerSnapshot(frame('frame-cleared'))).not.toContain('TAB-9');
+    expect(renderTrackerSnapshot(frame('frame-cleared'))).not.toContain('1 open');
     expect(renderTrackerSnapshot(frame('frame-cleared'))).toContain('Sign in to a workspace to see tickets.');
   });
 });

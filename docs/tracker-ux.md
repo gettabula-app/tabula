@@ -116,6 +116,12 @@ Object type `tracker`; a frame in every other respect (selection handles, move, 
 
 Duplicating a tracker frame makes a second window on the same tracker, with its own tab and filter. It does not copy tickets.
 
+### 3.1a Anatomy
+
+The element is a 12 px card on the canvas, with the paper fill, a 1 px edge and the picker's soft shadow. Its header is 44 px high and part of the card: the serif title **Tracker** (and, from 560 px wide, the quiet line **Workspace tickets**) on the left; on the right the **All / My** switch, the primary **+ New ticket** (just **+** below 420 px, and hidden for a person who cannot create), the expand icon and the **⋯** menu. Below 360 px the switch moves into the menu as **View: All** and **View: My**, and the buttons never overlap at any width. While a ticket is open the header shows its key and a **Back** button in place of the switch.
+
+The body is the list only, in place: a group band (for example "In progress · 2") above rows of 36 px (40 px with a touch pointer), each with the state glyph, the key from 560 px, the title on one line, the assignee from 420 px and the priority bars from 560 px. Filters, the view bar and the board view live in full screen, not in the element. An empty All view shows "No tickets yet" with the create button and no switch; a person without tracker access sees "You do not have access to the tracker" and no button.
+
 ### 3.2 Live or snapshot
 
 The element is **live where it sits**: its list shows as soon as it is on the board, and a person lists, opens and creates tickets in it without clicking an Open chip. Whether it is live is decided by the element's size on screen, the zoom, the other live elements and the phone, not by focus. The rule is `trackerPresentation` and `pickLive` in `src/tracker/ui/frame.ts`.
@@ -123,7 +129,7 @@ The element is **live where it sits**: its list shows as soon as it is on the bo
 | Presentation | When | What the pointer does inside the frame |
 |---|---|---|
 | **Live** | Zoom 40 % or more, the frame is at least 240 px tall on screen, it is not a phone, and it is one of the **3 live frames** on the board (the cap) | The interior is real DOM: clicks, typing and scroll work in it. A click inside selects the frame and gives its tracker the keys. Wheel scrolls the **list** while it can scroll; at the end of the list, and over non-scroll areas, wheel passes to canvas pan. `Ctrl/Cmd + wheel` and pinch **always** zoom the canvas. Dragging on the interior pans the canvas. Dragging the empty middle of the tab bar moves the frame. |
-| **Snapshot** | Zoom under 40 %, under 240 px tall on screen, off screen, over the cap, or on a phone | It behaves like any object: drag moves it, wheel and pinch zoom or pan the canvas, double-click makes it live where it fits. Contents are drawn as a **snapshot**: the tab name, the first rows of the element's own view, a count (or "No issues in this view"). No live hit targets inside. |
+| **Snapshot** | Zoom under 40 %, under 240 px tall on screen, off screen, over the cap, or on a phone | It behaves like any object: drag moves it, wheel and pinch zoom or pan the canvas, double-click makes it live where it fits. Contents are drawn as a **snapshot**: the card with its title, a count line (open and in progress, over the tickets the element has loaded) and four skeleton lines. No live hit targets inside. |
 
 Rules:
 
@@ -133,13 +139,13 @@ Rules:
 4. **Leaving live**: `Esc` closes an open popover, then an open ticket (back to the list), then hands keyboard focus back to the canvas (the frame stays selected). A click on the canvas outside the frame also leaves it.
 5. **Scaling**: the element is laid out at the object's size and scaled with the canvas, down to **40 %** on screen. Text under 9 px on screen is never drawn live, and below 40 % the snapshot takes over. Above 100 % the layout does not change; the element is scaled.
 6. **Frame resize** changes the available layout width (list columns collapse by the breakpoints in 5.1), not the scale.
-7. **Snapshot** is cheap and per element: drawn by the board renderer as SVG from the rows that element last showed (tab name, up to 12 row summaries, counts), keyed by the object id so two elements on one tracker never share one. It works for viewers whose tracker panel has not loaded yet, in exports, and in thumbnails. It is cleared on sign-out and when the store reports that access to the tracker was lost.
+7. **Snapshot** is cheap and per element: drawn by the board renderer as SVG from the counts that element last published, keyed by the object id so two elements on one tracker never share one. It works for viewers whose tracker panel has not loaded yet, in exports, and in thumbnails. It is cleared on sign-out and when the store reports that access to the tracker was lost.
 8. **Presence**: other people's cursors inside a tracker that is live appear as the normal named cursors, positioned in frame coordinates. A person's open ticket shows as a small initials badge on that row ("Mara is here").
 9. **Multiplayer**: tab, filter and open ticket are **per viewer** (not stored on the object) so that one person's filtering does not change everyone's screen. Only `trackerId`, size and position are shared. `view` and `focusKey` on the object are the **default** for a viewer who has not chosen yet, and what an export or snapshot shows.
 
 ### 3.3 Open full screen
 
-- **No Open chip on the desktop.** The element is live in place (3.2). Full screen is reached by the **expand** button in the element's corner (visible when the frame is selected, hovered or live), `F` with the frame selected, or the expand icon in the tracker's own header. On a phone the **Open** chip (and a tap on the snapshot) opens full screen.
+- **No Open chip on the desktop.** The element is live in place (3.2). Full screen is reached by the **expand** icon in the element's header (labelled "Open full screen") or `F` with the frame selected. On a phone the **Open** chip (and a tap on the snapshot) opens full screen.
 - `Enter` with the frame selected focuses the element (when it is live); double-click does the same.
 - Full screen is the board's chrome replaced by the tracker: it fills the viewport, below the board's top bar (which collapses to a thin strip with the board name and a **Back to board** button). It is a route state (`/t/...`) so the browser Back button leaves it, and a refresh returns to it.
 - It is the **same component and state** as the frame: tab, filter, scroll position, open ticket. Closing returns to the canvas **exactly where the camera was**, with the frame selected; nothing is re-fitted.
