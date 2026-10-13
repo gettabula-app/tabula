@@ -372,3 +372,17 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
   .tpl-actions .icon-btn { width: 44px; height: 44px; }
   .home-empty-actions .btn { min-height: 44px; }
 }
+
+/* Template cards stand off the page: a clear edge round the whole card, a soft shade, and the thumbnail as a framed inset on the card surface
+   (the board's own canvas colour only inside that frame), so the top half no longer melts into the page ground. */
+.home-page, .tpl-section { --card-edge: color-mix(in srgb, var(--ink) 22%, var(--paper)); }
+.tpl-tile,
+.tpl-card {
+  border-color: var(--card-edge);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 5%, transparent), 0 8px 24px color-mix(in srgb, var(--shade) 4%, transparent);
+}
+.tpl-tile:not(:disabled):hover,
+.tpl-card:hover,
+.tpl-card:focus-within { border-color: color-mix(in srgb, var(--ink) 30%, var(--paper)); }
+.tpl-tile .tpl-thumb,
+.tpl-card .tpl-thumb { width: 100%; margin: 0 0 8px; border: 1px solid var(--page-hairline); border-radius: var(--radius-sm); }
