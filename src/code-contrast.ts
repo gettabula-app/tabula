@@ -1,9 +1,12 @@
 // The contrast clamp for code colours (docs/code-blocks.md): a Shiki theme's token colours are checked against the block's surface (the app's `--paper`)
-// and any under 4.5:1 (WCAG AA for text) is lifted toward the app's `--ink` by linear mixing in small steps until it passes. Pure functions, no DOM,
+// and any under 4.5:1 (WCAG AA for text) is lifted by linear mixing in small steps until it passes: on a light surface toward the app's `--ink` (dark),
+// on a dark surface toward a neutral light (never the ink, which on Matrix is bright green and would flatten every hue into it). Pure functions, no DOM,
 // so the worker, the main thread and the tests all run the same code.
 
 export const MIN_CODE_CONTRAST = 4.5;
 const STEP = 0.04;
+/** The colour dim tokens are lifted toward on a dark surface: a neutral near-white, so each token keeps its hue. */
+export const NEUTRAL_LIGHT = '#F2F2F2';
 
 type Rgb = [number, number, number];
 
@@ -38,13 +41,14 @@ export function contrastRgb(a: Rgb, b: Rgb): number {
 }
 
 /**
- * The colour to draw `colour` with on `surface`: the same string when it already reaches `min`, else the colour mixed toward `ink` (4% steps, checked on
- * the rounded hex) until it does, or `ink` itself. Not a hex colour (named, rgb(), var()) gives null, the block's plain ink.
+ * The colour to draw `colour` with on `surface`: the same string when it already reaches `min`, else the colour mixed toward `ink` on a light surface, toward a neutral light on a dark one (4% steps, checked on
+ * the rounded hex) until it does, or that target itself. Not a hex colour (named, rgb(), var()) gives null, the block's plain ink.
  */
 export function clampCodeColour(colour: string | null | undefined, surface: string, ink: string, min = MIN_CODE_CONTRAST): string | null {
   if (!colour) return null;
   const bg = parseHexColour(surface);
-  const fg = parseHexColour(ink);
+  const dark = bg ? luminance(bg) < 0.18 : false;
+  const fg = parseHexColour(dark ? NEUTRAL_LIGHT : ink);
   if (!bg || !fg) return null;
   const rgb = parseHexColour(colour, bg);
   if (!rgb) return null;

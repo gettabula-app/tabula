@@ -164,6 +164,11 @@ export class TextEditor {
     this.rememberSelection();
   }
 
+  /** A code block is being typed in (it takes no emoji, so the floating edit bar stays away). */
+  get codeEditing(): boolean {
+    return this.isCode();
+  }
+
   get textMode(): boolean {
     return this.active && this.mode === 'text';
   }

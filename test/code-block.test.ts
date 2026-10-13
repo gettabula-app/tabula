@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_CODE_CHARS } from '../shared/code-langs.mjs';
 import { describeObject, CODE_DESCRIBE_MAX } from '../src/canvas-describe';
-import { CODE, codeBoxHeight, codeCharWidth, gutterWidth, layoutCode, newCodeFields } from '../src/code-layout';
+import { CODE, codeBoxHeight, codeCharWidth, codeDefaultWidth, gutterWidth, layoutCode, newCodeFields } from '../src/code-layout';
 import { codeMarkup, getCodeTokens, requestRepaint, setCodeRepaint, setCodeTokenSource, sliceTokens } from '../src/code-markup';
 import { codeAccessibleName, codeLayerLabel } from '../src/code-strings';
 import type { CodeLines } from '../src/code-tokens';
@@ -108,8 +108,8 @@ describe('codeMarkup', () => {
     const svg = objectMarkup(code('const x\n\ty'), ctx());
     expect(svg).toMatch(/^<g transform="translate\(10 20\)"/);
     expect(svg).toContain('rx="12"');
-    expect(svg).toContain('<tspan>const x</tspan>');
-    expect(svg).toContain('<tspan>  y</tspan>');
+    expect(svg).toMatch(/<tspan x="16">const x<\/tspan>/);
+    expect(svg).toMatch(/<tspan x="[\d.]+">y<\/tspan>/); // the two leading spaces are a gap in x, not characters
     expect(svg).toContain('xml:space="preserve"');
     expect(svg).toContain('overflow="hidden"');
     expect(svg).not.toMatch(/foreignObject|<script|<iframe/);
@@ -119,18 +119,43 @@ describe('codeMarkup', () => {
   it('colours tspans from the tokens, with bold and italic, and ignores stale tokens', () => {
     const o = code('const x\n\ty');
     const svg = codeMarkup(o, layoutCode(o, { charW: CW }), tokens);
-    expect(svg).toContain('<tspan fill="#d73a49">const</tspan>');
-    expect(svg).toContain('<tspan fill="#005cc5" font-weight="700" font-style="italic">  y</tspan>');
+    expect(svg).toContain('<tspan x="16" fill="#d73a49">const </tspan>');
+    expect(svg).toContain('<tspan x="32" fill="#005cc5" font-weight="700" font-style="italic">y</tspan>'); // 16 + 2 columns * 8
     const stale = codeMarkup(code('different\ntext'), layoutCode(code('different\ntext'), { charW: CW }), tokens);
     expect(stale).not.toContain('#d73a49');
-    expect(stale).toContain('<tspan>different</tspan>');
+    expect(stale).toContain('<tspan x="16">different</tspan>');
+  });
+
+  it('keeps indentation as explicit x per run, whatever the renderer does with spaces', () => {
+    const xs = (svg: string) => [...svg.matchAll(/<tspan x="([\d.]+)"[^>]*>([^<]*)<\/tspan>/g)].map((m) => [Number(m[1]), m[2]] as const);
+    const o = code('  a');
+    const plain = codeMarkup(o, layoutCode(o, { charW: CW }));
+    const L = layoutCode(o, { charW: CW });
+    expect(xs(plain)).toEqual([[L.textX + 2 * CW, 'a']]); // first glyph at textX + 2 * charW
+    expect(plain).toContain('style="white-space: pre" xml:space="preserve"');
+    // a run that starts after 3 spaces of the previous run, a gap of several spaces inside a run, a tab (2 columns)
+    const o2 = code('ab   cd  e\n\tf');
+    const L2 = layoutCode(o2, { charW: CW });
+    const t2: CodeLines = [[{ t: 'ab   ', c: '#111111' }, { t: 'cd  e', c: '#222222' }], [{ t: '  f', c: '#333333' }]];
+    const svg2 = codeMarkup(o2, L2, t2);
+    expect(xs(svg2)).toEqual([[L2.textX, 'ab   '], [L2.textX + 5 * CW, 'cd  '], [L2.textX + 9 * CW, 'e'], [L2.textX + 2 * CW, 'f']]);
+    // the spaces stay in the text as trailing spaces of the run before; a single space inside a run stays a space
+    const o3 = code('a b  ');
+    const L3 = layoutCode(o3, { charW: CW });
+    expect(xs(codeMarkup(o3, L3))).toEqual([[L3.textX, 'a b  ']]);
+    // a wrapped continuation row sits on its hanging indent, and its runs keep their columns
+    const o4 = code('x'.repeat(10) + '  yy', { w: 16 + 8 * 8 + 16, wrap: true });
+    const L4 = layoutCode(o4, { charW: CW });
+    const rows = xs(codeMarkup(o4, L4));
+    expect(rows[0][0]).toBe(L4.textX);
+    expect(rows.every(([x]) => x >= L4.textX)).toBe(true);
   });
 
   it('a hostile colour from the highlighter never reaches an attribute', () => {
     const o = code('a');
     const svg = codeMarkup(o, layoutCode(o, { charW: CW }), [[{ t: 'a', c: '"><script>x</script>' }]]);
     expect(svg).not.toContain('<script');
-    expect(svg).toContain('<tspan>a</tspan>');
+    expect(svg).toContain('<tspan x="16">a</tspan>');
   });
 
   it('escapes the code, the title and a hostile language', () => {
@@ -240,3 +265,15 @@ describe('names, Layers and the screen-reader description', () => {
 function make() {
   return { get: () => undefined, childCount: () => 0 };
 }
+
+describe('codeDefaultWidth', () => {
+  it('is 520 on a wide fine-pointer screen and min(520, viewport - 96), never under 160, on a phone', () => {
+    expect(codeDefaultWidth(1280)).toBe(520);
+    expect(codeDefaultWidth(1024, true)).toBe(520);
+    expect(codeDefaultWidth(390)).toBe(294);
+    expect(codeDefaultWidth(700, true)).toBe(520);
+    expect(codeDefaultWidth(599)).toBe(503);
+    expect(codeDefaultWidth(200)).toBe(160);
+    expect(newCodeFields('', 294).w).toBe(294);
+  });
+});

@@ -78,7 +78,7 @@ describe.skipIf(!available)('the code highlighter in the app', { timeout: 200_00
     // the export has the same coloured runs
     const { svg } = await page.evaluate(`(async () => (await import('/src/exporters.ts')).exportSvg(window.__board, ['c1']))()`) as { svg: string };
     expect(svg).not.toContain('foreignObject');
-    expect(svg).toMatch(/<tspan fill="#[0-9a-fA-F]{6}">/);
+    expect(svg).toMatch(/<tspan x="[\d.]+" fill="#[0-9a-fA-F]{6}">/);
     // another app theme: the tokens are re-made for it
     await setTheme(page, 'ayu');
     await page.waitForFunction((old) => {

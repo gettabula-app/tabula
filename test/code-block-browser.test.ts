@@ -435,6 +435,101 @@ describe.skipIf(!available)('the keyboard, read-only and export', { timeout: 200
     await page.context().close();
   });
 
+  it('keeps indentation on the board and in the exported file, plain and highlighted (Python and TypeScript)', async () => {
+    const page = await open();
+    const cases = [
+      { lang: 'python', text: 'def f():\n    return 1', indents: [0, 4] },
+      { lang: 'ts', text: 'const a = 1;\n  const x = 1;\n    \n  const y = 2;  ', indents: [0, 2, 4, 2] },
+    ];
+    for (const c of cases) {
+      for (const mode of ['plain', 'highlighted'] as const) {
+        await page.evaluate(() => (window as any).__board.store.remove(['c1']));
+        await seed(page, { text: c.text, lang: mode === 'plain' ? 'plaintext' : c.lang });
+        if (mode === 'highlighted') {
+          await page.waitForFunction(() => new Set([...document.querySelectorAll('svg.canvas .code-text tspan')].map((t) => t.getAttribute('fill')).filter(Boolean)).size > 1, null, { timeout: budget(30_000) });
+        }
+        const { charW, textX } = await page.evaluate(`(async () => { const m = await import('/src/code-layout.ts'); const o = window.__board.store.get('c1'); return { charW: m.codeCharWidth(), textX: m.layoutCode(o).textX }; })()`) as { charW: number; textX: number };
+        // the first glyph of every row with code, measured in the browser: textX + indent * charW, within 1px
+        const starts = await page.evaluate(() => [...document.querySelectorAll('svg.canvas .code-text text')].map((t) => {
+          const e = t as SVGTextContentElement;
+          return { x: e.getStartPositionOfChar(0).x, text: e.textContent ?? '' };
+        }));
+        const first = starts.find((s) => !s.text.startsWith(' '))!;
+        const rows = c.text.split('\n').map((l, i) => ({ l, indent: c.indents[i] })).filter((r) => r.l.trim());
+        expect(starts).toHaveLength(rows.length);
+        starts.forEach((s, i) => expect(Math.abs(s.x - (first.x + rows[i].indent * charW))).toBeLessThan(1));
+        // and the exported SVG, rasterised through an image (the PNG path), draws the first glyphs at the same columns
+        const px = await page.evaluate(`(async (arg) => {
+          const mod = await import('/src/exporters.ts');
+          const lay = await import('/src/code-layout.ts');
+          const o = window.__board.store.get('c1');
+          const { svg, w, h } = mod.exportSvg(window.__board, ['c1']);
+          const img = new Image();
+          await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg); });
+          const cv = document.createElement('canvas'); cv.width = Math.ceil(w); cv.height = Math.ceil(h);
+          const g = cv.getContext('2d', { willReadFrequently: true }); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); g.drawImage(img, 0, 0, w, h);
+          const L = lay.layoutCode(o);
+          const out = [];
+          for (const r of L.rows) {
+            if (!L.lines[r.line].trim()) { out.push(null); continue; }
+            const y0 = Math.round(40 + 10 + L.top + r.y + 2), y1 = Math.round(y0 + L.lineH - 4);
+            const x0 = Math.round(40 + L.textX - 6);
+            const data = g.getImageData(x0, y0, 220, y1 - y0).data;
+            let left = null;
+            for (let x = 0; x < 220 && left === null; x++) for (let y = 0; y < y1 - y0; y++) { const i = (y * 220 + x) * 4; if (data[i] + data[i + 1] + data[i + 2] < 600) { left = x + x0 - 40 - L.textX; break; } }
+            out.push(left);
+          }
+          return { svg, left: out };
+        })(null)`) as { svg: string; left: Array<number | null> };
+        const lefts = px.left.filter((v) => v !== null) as number[];
+        expect(lefts).toHaveLength(rows.length);
+        lefts.forEach((v, i) => expect(Math.abs(v - lefts[0] - rows[i].indent * charW)).toBeLessThanOrEqual(2.5));
+        // the file itself carries the offsets: every run has an x, no leading spaces, and the space-keeping style is on the text
+        expect(px.svg).toContain('white-space: pre');
+        expect(px.svg).toContain('xml:space="preserve"');
+        const exported = [...px.svg.matchAll(/<tspan x="([\d.]+)"/g)].map((m) => Number(m[1]));
+        expect(exported.length).toBeGreaterThanOrEqual(rows.length);
+        expect(px.svg).not.toMatch(/<tspan[^>]*> /);
+        expect(textX).toBeGreaterThan(0);
+      }
+    }
+    await page.context().close();
+  });
+
+  it('a new block on a 390px phone is narrower than the viewport', async () => {
+    const page = await open({ width: 390, height: 800, mobile: true });
+    await page.evaluate(() => { (window as any).__board.setTool({ kind: 'code' }); });
+    await page.mouse.click(195, 400);
+    await page.locator('textarea.text-editor').waitFor({ state: 'visible' });
+    await page.keyboard.type('x');
+    const o = await page.evaluate(() => [...(window as any).__board.store.cache.values()].find((x: any) => x.type === 'code'));
+    expect(o.w).toBe(390 - 96);
+    const r = await page.evaluate(() => { const b = document.querySelector('svg.canvas .code-card')!.getBoundingClientRect(); return { left: b.left, right: b.right }; });
+    expect(r.left).toBeGreaterThanOrEqual(0);
+    expect(r.right).toBeLessThanOrEqual(390);
+    await page.context().close();
+  });
+
+  it('editing a code block shows no emoji button and no empty edit bar, while a text note still does', async () => {
+    const page = await open();
+    await seed(page);
+    await select(page, ['c1']);
+    await page.keyboard.press('Enter');
+    await typing(page);
+    expect(await page.evaluate(() => {
+      const bar = document.querySelector('.edit-bar');
+      return { shown: !!bar?.classList.contains('show'), emoji: !!document.querySelector('.edit-bar.show .edit-emoji') };
+    })).toEqual({ shown: false, emoji: false });
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => {
+      const app = (window as any).__board;
+      app.store.transactAs(() => { app.store.create({ id: 't1', type: 'text', x: 100, y: 400, w: 240, h: 28, rotation: 0, z: app.store.topZ(), text: 'hi' }); }, 'seed');
+      app.editor.start('t1');
+    });
+    await page.waitForSelector('.edit-bar.show .edit-emoji');
+    await page.context().close();
+  });
+
   it('draws in system colours with forced colours on, and the card edge is a 1px line', async () => {
     const page = await open();
     await seed(page, { lang: 'ts' });

@@ -45,7 +45,7 @@ import { guestMark } from './ui/guest-mark';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
 import { watchMarkdownHeights } from './markdown-heal';
-import { CODE, codeBoxHeight, layoutCode, newCodeFields } from './code-layout';
+import { CODE, codeBoxHeight, codeDefaultWidth, layoutCode, newCodeFields } from './code-layout';
 import { setCodeRepaint } from './code-markup';
 import { codeMaxScroll, codeWrapDefault, defaultCodeLang } from './code-ui-logic';
 import { codeScroll, setCodeScroll } from './code-view';
@@ -2312,7 +2312,7 @@ export class BoardApp {
       case 'sticky': return { w: 192, h: 192 };
       case 'text': return { w: 240, h: 28 };
       case 'markdown': return { w: 360, h: 120 };
-      case 'code': { const f = newCodeFields(); return { w: f.w, h: f.h }; }
+      case 'code': { const f = newCodeFields('', codeDefaultWidth(window.innerWidth, typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)); return { w: f.w, h: f.h }; }
       case 'table': return { w: DEFAULT_COL_WIDTH * 3, h: 3 * 40 };
       case 'frame': return { w: 960, h: 600 };
       case 'shape': return shapeDefaultSize(t.shape);

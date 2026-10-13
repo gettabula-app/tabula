@@ -65,13 +65,41 @@ function usable(tokens: CodeLines | null, lines: readonly string[]): CodeLines |
 const COLOR_RE = /^(?:#[0-9a-fA-F]{3,8}|(?:rgb|hsl)a?\([0-9.,%\s/-]{1,48}\)|color-mix\([0-9a-zA-Z%.,\s()#-]{1,120}\)|var\(--[a-z0-9-]{1,32}(?:,\s*#[0-9a-fA-F]{3,8})?\))$/;
 const safeFill = (c: string | null | undefined) => (typeof c === 'string' && COLOR_RE.test(c) ? c : null);
 
-function runs(row: readonly CodeToken[]): string {
-  let out = '';
+const cpLen = (s: string) => (hasSurrogates(s) ? Array.from(s).length : s.length);
+
+/**
+ * The runs of one row as <tspan>s, each at an explicit x (its character column times the character width). Nothing depends on how a renderer treats
+ * whitespace: spaces between runs, runs of two or more spaces and the leading spaces of a run become a gap in x instead of characters (a renderer that
+ * collapses spaces, as Chromium does for SVG text whatever xml:space says, then draws the same columns). They also stay as trailing spaces of the run
+ * before, so the text of a row still reads as the line (only the line's own leading spaces are left out). `white-space: pre` and xml:space on the <text>
+ * keep them as well where they are honoured.
+ */
+export function runs(row: readonly CodeToken[], x0: number, charW: number): string {
+  const segs: Array<{ col: number; text: string; tk: CodeToken }> = [];
+  let col = 0;
+  let pending = 0; // spaces since the last run: a gap in x, and (so the text still reads as the line) trailing spaces of the run before
   for (const tk of row) {
     if (!tk.t) continue;
+    for (const part of tk.t.split(/( {2,})/)) {
+      if (!part) continue;
+      if (/^ {2,}$/.test(part)) { col += part.length; pending += part.length; continue; }
+      const lead = part.length - part.trimStart().length;
+      col += lead;
+      pending += lead;
+      const text = part.slice(lead);
+      if (!text) continue;
+      if (pending > 0 && segs.length) segs[segs.length - 1].text += ' '.repeat(pending);
+      pending = 0;
+      segs.push({ col, text, tk });
+      col += cpLen(text);
+    }
+  }
+  if (pending > 0 && segs.length) segs[segs.length - 1].text += ' '.repeat(pending);
+  let out = '';
+  for (const { col: c, text, tk } of segs) {
     const fill = safeFill(tk.c);
     const attrs = `${fill ? ` fill="${escapeXml(fill)}"` : ''}${tk.b ? ' font-weight="700"' : ''}${tk.i ? ' font-style="italic"' : ''}`;
-    out += `<tspan${attrs}>${escapeXml(tk.t)}</tspan>`;
+    out += `<tspan x="${n(x0 + c * charW)}"${attrs}>${escapeXml(text)}</tspan>`;
   }
   return out;
 }
@@ -106,7 +134,8 @@ export function codeMarkup(o: BaseObj, layout: CodeLayout = layoutCode(o), token
     if (L.showLines && r.first) nums += `<text x="${L.gutterW - 10}" y="${y}" text-anchor="end">${r.line + 1}</text>`;
     const row = toks ? sliceTokens(toks[r.line], r.col, r.col + r.len) : [{ t: r.text, c: null } as CodeToken];
     if (opts.editing || row.every((t) => !t.t)) continue;
-    body += `<text x="${n(L.textX + r.indent * L.charW)}" y="${y}">${runs(row)}</text>`;
+    const spans = runs(row, L.textX + r.indent * L.charW, L.charW);
+    if (spans) body += `<text x="${n(L.textX + r.indent * L.charW)}" y="${y}" style="white-space: pre" xml:space="preserve">${spans}</text>`;
   }
   // long lines (wrap off) are clipped inside the card, right of the numbers, and slide under that edge when the block is scrolled sideways
   const scroll = opts.editing || L.long ? 0 : Math.max(0, opts.scrollX ?? 0);
@@ -114,7 +143,7 @@ export function codeMarkup(o: BaseObj, layout: CodeLayout = layoutCode(o), token
   if (L.showLines) out += `<g class="code-nums" font-family="${family}" font-size="${CODE.GUTTER_NUM}" fill="${GRAPHITE}" style="font-variant-numeric: tabular-nums" xml:space="preserve">${nums}</g>`;
   if (!opts.editing) {
     out += `<svg x="${L.gutterW}" y="${L.headerH}" width="${n(Math.max(0, o.w - L.gutterW))}" height="${n(Math.max(0, o.h - L.headerH - 1))}" overflow="hidden"><g transform="translate(${n(-L.gutterW - scroll)} ${-L.headerH})">`;
-    out += `<g class="code-text" font-family="${family}" font-size="${CODE.FONT}" fill="${INK}" style="font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0; tab-size: ${CODE.TAB}" xml:space="preserve">`;
+    out += `<g class="code-text" font-family="${family}" font-size="${CODE.FONT}" fill="${INK}" style="font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0; tab-size: ${CODE.TAB}; white-space: pre" xml:space="preserve">`;
     out += empty
       ? `<text class="code-empty" x="${L.textX}" y="${n(L.top + (L.lineH - CODE.FONT) / 2 + CODE.FONT * 0.8)}" fill="${GRAPHITE}" opacity="0.7">${escapeXml(CODE_STRINGS.empty)}</text>`
       : body;

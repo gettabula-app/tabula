@@ -154,7 +154,13 @@ export function codeBoxHeight(o: CodeLayoutInput, width: number = o.w, opts?: { 
   return layoutCode({ ...o, w: width }, opts).height;
 }
 
+/** The width of a new code block: 520, but on a phone (a coarse pointer or a viewport under 600px) at most the viewport less 96px, never under MIN_W; the code scrolls inside. */
+export function codeDefaultWidth(viewportW: number, coarse = false): number {
+  if (!Number.isFinite(viewportW) || !(coarse || viewportW < 600)) return CODE.DEFAULT_W;
+  return Math.max(CODE.MIN_W, Math.min(CODE.DEFAULT_W, Math.floor(viewportW - 96)));
+}
+
 /** Fields of a new, empty code block (the creation tool spreads them into the object). */
-export function newCodeFields(text = ''): { text: string; lang: 'plaintext'; lines: false; wrap: false; w: number; h: number } {
-  return { text, lang: 'plaintext', lines: false, wrap: false, w: CODE.DEFAULT_W, h: codeBoxHeight({ text, w: CODE.DEFAULT_W }) };
+export function newCodeFields(text = '', w: number = CODE.DEFAULT_W): { text: string; lang: 'plaintext'; lines: false; wrap: false; w: number; h: number } {
+  return { text, lang: 'plaintext', lines: false, wrap: false, w, h: codeBoxHeight({ text, w }) };
 }

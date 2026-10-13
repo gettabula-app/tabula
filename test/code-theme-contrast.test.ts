@@ -32,6 +32,14 @@ describe('clampCodeColour', () => {
     expect(clampCodeColour('#333344', '#2A2A37', '#DCD7BA')).toMatch(/^#[0-9a-f]{6}$/);
   });
 
+  it('lifts on a dark surface toward a neutral light, not the ink, so the hue stays', () => {
+    const out = clampCodeColour('#2f6f9f', '#0B140C', '#3DFF70')!; // a dim blue on the Matrix surface, ink is bright green
+    const [r, g, b] = parseHexColour(out)!;
+    expect(ratio(out, '#0B140C')).toBeGreaterThanOrEqual(MIN_CODE_CONTRAST);
+    expect(b).toBeGreaterThan(g);
+    expect(b).toBeGreaterThan(r);
+  });
+
   it('gives the plain ink (null) for missing or non-hex colours, and composites alpha over the surface', () => {
     expect(clampCodeColour(undefined, '#FFFFFF', '#111111')).toBeNull();
     expect(clampCodeColour('red', '#FFFFFF', '#111111')).toBeNull();
@@ -67,5 +75,28 @@ describe.each(CODE_THEMES.map((t) => [t.id, t] as const))('code colours on the %
     });
     console.info(`[code-theme] ${theme.id}/${theme.shiki}: ${raw.length} distinct colours, ${lifted.length} lifted, ${distinct.length} distinct after, ${collapsed.length} lifted ones within 12 RGB units of another`);
     expect(distinct.length).toBeGreaterThanOrEqual(6);
+  });
+});
+
+/** Hue bucket (30 degrees) of a #rrggbb colour, or null when it is nearly grey (HSL saturation 0.15 or less). */
+function hueBucket(hex: string): number | null {
+  const [r, g, b] = parseHexColour(hex)!.map((v) => v / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  const l = (max + min) / 2;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  if (s <= 0.15) return null;
+  const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return Math.floor((h * 60) / 30) % 12;
+}
+
+describe.each(CODE_THEMES.map((t) => [t.id, t] as const))('hues on the %s theme', (_id, theme) => {
+  it('keeps at least five distinct hue buckets among the clamped token colours', async () => {
+    const colours = themeTokenColours(await load(theme.shiki)).filter((c) => parseHexColour(c));
+    const after = colours.map((c) => clampCodeColour(c, theme.surface, theme.ink)!);
+    const buckets = new Set(after.map(hueBucket).filter((b) => b !== null));
+    const before = new Set(colours.map((c) => `#${rgb(c, theme.surface).map((v) => v.toString(16).padStart(2, '0')).join('')}`).map(hueBucket).filter((b) => b !== null));
+    console.info(`[code-theme-hues] ${theme.id}/${theme.shiki}: ${before.size} hue buckets raw, ${buckets.size} after the clamp`);
+    for (const c of after) expect(ratio(c, theme.surface)).toBeGreaterThanOrEqual(MIN_CODE_CONTRAST);
+    expect(buckets.size).toBeGreaterThanOrEqual(5);
   });
 });
