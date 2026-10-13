@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import * as encoding from 'lib0/encoding';
+import WebSocket from 'ws';
 import { createHarness, until, type Account } from './mcp-harness';
 
 // The board activity log over the real relay (TAB-158, docs/agent-presence.md): an MCP call is logged in words, anyone who can see the board reads the log,
@@ -211,6 +212,32 @@ describe('who sees an agent, and who can claim its place (cybersec review)', () 
     const diff = { a: { before: null, after: sticky('a', 0) }, p: { before: null, after: sticky('p', 5000, { privateStep: 's1' }) } };
     expect(diffCenter(diff as never)).toEqual({ x: 50, y: 50 });
     expect(diffCenter({ p: diff.p } as never)).toBeNull();
+  });
+
+  it('never sends a guest socket the names, in any awareness frame: on joining, on an update, and with a person\'s own update in the same moment', async () => {
+    const code = await h.api(alice.cookie, 'POST', `/api/boards/${board}/join-codes`, { role: 'commenter' });
+    const joined = await h.api(undefined, 'POST', '/api/join', { code: code.body.code, name: 'Raw guest' }, { 'x-forwarded-for': '198.51.100.78' });
+    const cookie = joined.headers.getSetCookie()[0].split(';')[0];
+    const first = alice.user.name.split(/\s+/)[0];
+    const ws = new WebSocket(`ws://127.0.0.1:${h.port}/sync/${board}`, { headers: { Origin: h.base, Cookie: cookie } });
+    const frames: string[] = [];
+    ws.on('message', (data: Buffer) => frames.push(Buffer.from(data).toString('latin1')));
+    ws.on('error', () => undefined);
+    await until(() => frames.length > 0);
+    const member = h.connect(board, dave.cookie);
+    await member.synced();
+    await until(() => agentStates(member).length === 0, 10_000);
+    // a person's update and the agent's change in the same moment
+    member.provider.awareness.setLocalStateField('cursor', { x: 9, y: 9 });
+    await h.tool(writer, 'create_objects', { boardId: board, objects: [{ type: 'sticky', text: 'raw', x: 7000, y: 8000 }] });
+    await until(() => agentStates(member).length === 1);
+    await new Promise((r) => setTimeout(r, 600));
+    ws.close();
+    const all = frames.join('\n');
+    expect(all).not.toContain('Claude');
+    expect(all).not.toContain(`"member":"${first}"`); // a person's own name appears in presence (their avatar); what an agent is for does not
+    expect(all).not.toMatch(/"member":"[^"]/);
+    expect(all).toContain('"token":"Agent"'); // the redacted entry did arrive
   });
 });
 
