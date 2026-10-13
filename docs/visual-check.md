@@ -150,9 +150,10 @@ Each shot also checks that the page is not wider than the window and that no scr
 `npm run docs:images` re-creates the screenshots of the README and the user guide in `docs/images` (the user guide serves its screenshots from the same folder, so there is one copy) from the built app. It starts throwaway open-mode and accounts-mode relays on OS-assigned loopback ports, seeds fixed demo data (the board objects, a Design team with Maya and Ana, Sam in a second team, the boards and shares the shots need) and takes each image in a fresh headless context at 2x with the clock, locale, zone and theme fixed. The Chat tray uses a separate accounts-mode relay so enabling chat cannot change the other images. Its synthetic user IDs, messages, replies, mention, reaction and object links are fixed in real chat storage; retention is disabled in that throwaway workspace so the fixed dates never expire. The Backups tab uses a fixed list response with one protected backup and two unreadable backups; it needs no storage bucket or encryption key.
 
 ```bash
-npm run docs:images                                  # all sixteen, into docs/images
+npm run docs:images                                  # the sixteen guide images, into docs/images (the README hero is `npm run docs:hero`)
 npm run docs:images -- --only share-roles,signin     # some of them
 npm run docs:images -- --out /tmp/shots --no-build   # elsewhere, reusing dist/
+npm run docs:hero                                   # docs/images/readme-hero.png (the retro board and the Q4 delivery kanban side by side)
 ```
 
 The images are: `shapes-panel`, `quick-actions`, `text-options`, `locked-badge`, `themes-menu-matrix`, `theme-ayu`, `business-model-canvas` (written as `template-business-model-canvas.png`), `signin`, `teams-home`, `access-removed`, `share-roles`, `admin-backups`, `chat-tray`, `chat-page`, `kanban-card-dialog` and `layers-panel`. Change the code in `scripts/docs-images.mjs` when the UI moves; look at every image after a run, because a crop that was right can pick up a new bar or badge. Fontshare fonts are fetched once per run; offline, the shots use the system fonts.

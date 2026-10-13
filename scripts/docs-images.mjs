@@ -405,6 +405,7 @@ const SHOTS = {
     await page.evaluate(`(${seeds.theme.toString()})(window.__board)`);
     await placeAt(page, ['docs-note', 'docs-box', 'docs-text'], 1, 500, 220);
     await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.locator('.board-menu-appearance .board-menu-sub-trigger').click(); // the themes sit in the Theme submenu of the board menu
     await page.locator('.theme-item').first().waitFor();
     await park(page);
     await settle(page);
@@ -428,7 +429,8 @@ const SHOTS = {
     const { context, page } = await newPage(browser, { base: open.base, width: 1280, height: 800, user: OPEN_USER });
     await openBoard(page, open.base, 'docs-template');
     await page.getByRole('button', { name: 'Templates and team exercises' }).click();
-    await page.locator('.tpl-name', { hasText: 'Business Model Canvas' }).first().click();
+    await page.locator('.template-picker-card', { hasText: 'Business Model Canvas' }).first().click(); // the template picker (cards, then Use template)
+    await page.locator('.template-picker-use').click();
     await page.getByText('Session ready').waitFor();
     await page.evaluate(() => window.__board.store.setMeta({ name: 'Strategy workshop' }));
     await page.waitForFunction(() => !document.querySelector('.toast.show'), null, { timeout: 12_000 });
