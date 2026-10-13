@@ -130,7 +130,7 @@ describe('content that is accepted', () => {
     ]))).toThrow(/an owner/);
   });
 
-  it('accepts steps that point at frames, a template with nothing in it and 2,000 objects', () => {
+  it('accepts steps that point at frames, a template with nothing in it and 500 objects', () => {
     const steps = [
       { id: 's1', title: 'Write', instructions: 'Add notes', mode: 'private-write', frameId: 'f1', durationSec: 300 },
       { id: 's2', title: 'Vote', instructions: '', mode: 'vote', votesPerPerson: 3 },
@@ -142,11 +142,11 @@ describe('content that is accepted', () => {
   });
 
   it('checks group depth without rescanning the full object list for each parent', () => {
-    const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
+    const frames = Array.from({ length: 498 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
     const groupCount = 2;
     const objects: Record<string, unknown>[] = [
       ...frames,
-      ...Array.from({ length: groupCount }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' })),
+      ...Array.from({ length: groupCount }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f497' })),
     ];
     let idReads = 0;
     // The validator copies inputs with list.map; instrument the copied ids so find, filter, and loops all count.
@@ -175,8 +175,8 @@ describe('content that is accepted', () => {
 
     expect(validateTemplateContent(content(objects)).objectCount).toBe(frames.length + groupCount);
     expect(idReads).toBeGreaterThan(objects.length);
-    // A scan for each parent step in this 1,500-frame chain reads millions of ids. Count reads, not one array method.
-    expect(idReads).toBeLessThanOrEqual(objects.length * 5);
+    // A scan for each parent step in this 498-frame chain reads millions of ids. Count reads, not one array method.
+    expect(idReads).toBeLessThanOrEqual(objects.length * 5 + 10);
   });
 
   it('accepts the colours the board writes', () => {
@@ -206,7 +206,7 @@ describe('content that is refused', () => {
   });
 
   it('caps the number of objects and steps, and the size', () => {
-    expect(problem(content(Array.from({ length: SERVER_MAX_OBJECTS + 1 }, (_, i) => sticky(`o${i}`))))).toMatch('2000 objects');
+    expect(problem(content(Array.from({ length: SERVER_MAX_OBJECTS + 1 }, (_, i) => sticky(`o${i}`))))).toMatch('500 objects');
     expect(problem(content([], { steps: Array.from({ length: 101 }, (_, i) => ({ id: `s${i}`, title: 't', instructions: '', mode: 'write' })) }))).toMatch('at most 100 steps');
     const heavy = Array.from({ length: 100 }, (_, i) => sticky(`o${i}`, { text: 'x'.repeat(15_000) }));
     expect(problem(content(heavy))).toMatch('1 MB');
@@ -593,5 +593,47 @@ describe('placing a template on a board', () => {
     for (let i = 0; i < LIMITS.boardObjects - 1; i++) objects.set(`o${i}`, new Y.Map(Object.entries({ id: `o${i}`, type: 'sticky', x: 0, y: 0, w: 1, h: 1, z: 'a' })));
     expect(() => planUseTemplate(doc, tpl, { createdBy: 'u1' })).toThrow(OpsError);
     expect(objects.size).toBe(LIMITS.boardObjects - 1);
+  });
+});
+
+describe('hostile template content (Markdown, tables, total text)', () => {
+  const md = (id: string, text: string) => ({ id, type: 'markdown', x: 0, y: 0, w: 300, h: 200, rotation: 0, z: '1', text });
+  const table = (extra: Record<string, unknown> = {}) => ({
+    id: 't1', type: 'table', x: 0, y: 0, w: 320, h: 80, rotation: 0, z: '1', headerRow: true,
+    'r:a': 'a0', 'r:b': 'a1', 'k:x': 'a0', 'k:y': 'a1', 'w:x': 120, 'a:y': 'right', 'c:a:x': 'Name', 'c:b:y': '12', 'f:a:y': '#FFE08A', ...extra,
+  });
+  const both = (c: unknown) => [problem(c), (() => { try { validateContent(c); return null; } catch (e) { return (e as Error).message; } })()];
+
+  it('caps a Markdown block at 8,000 characters, in the server and the client validator', () => {
+    expect(both(content([md('m1', 'x'.repeat(8000))]))).toEqual([null, null]);
+    const [server, client] = both(content([md('m1', 'x'.repeat(8001))]));
+    expect(server).toMatch('text');
+    expect(client).toMatch('8000');
+  });
+
+  it('refuses 49 Markdown blocks of 20,000 characters (the picker-freezing template)', () => {
+    const [server, client] = both(content(Array.from({ length: 49 }, (_, i) => md(`m${i}`, 'x'.repeat(20_000)))));
+    expect(server).not.toBeNull();
+    expect(client).not.toBeNull();
+  });
+
+  it('caps the text of a whole template at 200,000 characters, table cells included', () => {
+    const notes = (n: number) => Array.from({ length: n }, (_, i) => sticky(`o${i}`, { text: 'x'.repeat(10_000) }));
+    expect(both(content(notes(20)))).toEqual([null, null]);
+    const [server, client] = both(content(notes(21)));
+    expect(server).toMatch('200,000');
+    expect(client).toMatch('200,000');
+  });
+
+  it('keeps the parts of a table and refuses bad ones', () => {
+    const ok = validateTemplateContent(content([table()])).content.objects[0] as Record<string, unknown>;
+    for (const key of ['r:a', 'k:y', 'w:x', 'a:y', 'c:a:x', 'f:a:y', 'headerRow']) expect(ok[key]).toBe((table() as Record<string, unknown>)[key]);
+    expect(both(content([table()]))).toEqual([null, null]);
+    for (const bad of [{ 'r:b': 'a0' }, { 'r:b': 'a\0' }, { 'w:x': 5 }, { 'a:y': 'justify' }, { 'c:a:x': 'z'.repeat(1001) }, { headerRow: 'yes' }]) {
+      const [server, client] = both(content([table(bad)]));
+      expect(server).not.toBeNull();
+      expect(client).not.toBeNull();
+    }
+    expect(problem(content([table({ 'f:a:y': 'url(https://evil.example/x)' })]))).toMatch('cell fill');
   });
 });

@@ -217,6 +217,48 @@ export function tableChars(obj) {
   return n;
 }
 
+/**
+ * A readable problem with the table parts of an object that arrives from outside (a template, a file): a rank that is not valid, two equal ranks, too many
+ * rows or columns, a width or alignment out of range, a cell over MAX_CELL_CHARS, the cell text over MAX_TABLE_CHARS, a header flag that is not true or false.
+ * Null when it is fine. Colours of `f:` keys are for the caller's own colour check.
+ */
+export function tablePartsProblem(o) {
+  const rows = new Set();
+  const cols = new Set();
+  let rowCount = 0;
+  let colCount = 0;
+  let chars = 0;
+  for (const key of Object.keys(o)) {
+    if (key === 'headerRow' || key === 'headerCol') {
+      if (typeof o[key] !== 'boolean') return `${key} must be true or false.`;
+      continue;
+    }
+    const p = parseTableKey(key);
+    if (!p) continue;
+    const v = o[key];
+    if (p.kind === 'r' || p.kind === 'k') {
+      if (!isValidRank(v)) return 'a row or column has a rank that is not valid.';
+      const seen = p.kind === 'r' ? rows : cols;
+      if (seen.has(v)) return 'two rows or two columns have the same rank.';
+      seen.add(v);
+      if (p.kind === 'r') rowCount++; else colCount++;
+    } else if (p.kind === 'w') {
+      if (typeof v !== 'number' || !Number.isFinite(v) || v < MIN_COL_WIDTH || v > MAX_COL_WIDTH) return 'a column width is out of range.';
+    } else if (p.kind === 'a') {
+      if (!ALIGNS.includes(v)) return 'a column alignment is not left, center or right.';
+    } else if (p.kind === 'c') {
+      if (typeof v !== 'string' || [...v].length > MAX_CELL_CHARS) return `a cell is longer than ${MAX_CELL_CHARS} characters.`;
+      chars += v.length;
+    } else if (p.kind === 'f') {
+      if (typeof v !== 'string') return 'a cell fill is not a colour.';
+    }
+  }
+  if (rowCount > MAX_TABLE_ROWS) return `a table has at most ${MAX_TABLE_ROWS} rows.`;
+  if (colCount > MAX_TABLE_COLS) return `a table has at most ${MAX_TABLE_COLS} columns.`;
+  if (chars > MAX_TABLE_CHARS) return `the cells hold more than ${MAX_TABLE_CHARS} characters.`;
+  return null;
+}
+
 /** The characters of cell text in a grid, as `tableFromGrid` would keep them (each cell cut at MAX_CELL_CHARS). */
 export function gridChars(grid) {
   let n = 0;

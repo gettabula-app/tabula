@@ -157,7 +157,7 @@ describe('exportTemplateFile and parseTemplateFile', () => {
     it('content over the object limit, and files over the size limit', () => {
       const big = template();
       big.content.objects = Array.from({ length: 2001 }, (_, i) => sticky(`b${i}`, i, 0));
-      expect(() => parseTemplateFile(file({}, big), 'u')).toThrow(/at most 2000 objects/);
+      expect(() => parseTemplateFile(file({}, big), 'u')).toThrow(/at most 500 objects/);
       expect(() => parseTemplateFile(' '.repeat(2_000_001), 'u')).toThrow(/too large/);
     });
 
