@@ -3,6 +3,7 @@ import { copyMarkdownSource, copyTable } from './markdown-actions';
 import { leaveOutWithheld } from '../private-select';
 import type { BaseObj, ConnectorObj, Head, Obj, Route, ShapeKind, UmlRelation, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
+import { isLine } from '../line-geometry';
 import { isSticker } from '../stickers';
 import { h, icon } from './dom';
 import { field, segmented, swatches } from './common';
@@ -89,7 +90,9 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }
     const first = sel[0];
     const same = sel.every((o) => o.type === first.type);
-    const title = sel.length === 1 ? (isSticker(first) ? 'Sticker' : TYPE_LABEL[first.type] ?? 'Object') : `${sel.length} selected`;
+    // a selection of lines is titled Line, whatever its count (their own panel: no route, no label, no UML relationship)
+    const allLines = sel.length > 0 && sel.every(isLine);
+    const title = allLines ? 'Line' : sel.length === 1 ? (isSticker(first) ? 'Sticker' : TYPE_LABEL[first.type] ?? 'Object') : `${sel.length} selected`;
     const styleSel = app.selectedLeaves();
     const styleFirst = styleSel[0] ?? first;
     const styleSame = styleSel.length > 0 && styleSel.every((o) => o.type === styleFirst.type);
@@ -152,7 +155,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       if (sel.length === 1) appearance.push(h('button', { class: 'btn wide', onclick: () => app.editor.start(first.id) }, 'Edit name and members'));
     }
 
-    if (sel.every(isConnector)) appearance.push(...connectorFields(app, sel as ConnectorObj[]));
+    if (sel.every(isConnector)) appearance.push(...connectorFields(app, sel as ConnectorObj[], allLines));
     appearance.push(...kanbanFields(app, sel));
 
     // ---- fill & stroke
@@ -168,7 +171,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         app.store.transact(() => styleSel.filter(HAS_STROKE).forEach((o) => app.store.update(o.id, o.type === 'icon' ? { textColor: v } : { stroke: v })));
         app.store.undo.stopCapturing();
       };
-      appearance.push(field(isIcon ? 'Colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), lineValue, (v) => {
+      appearance.push(field(isIcon ? 'Colour' : allLines ? 'Stroke colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), lineValue, (v) => {
         setLine(v);
       }, { label: 'Line colour' })));
       if (!isIcon) {
@@ -374,11 +377,15 @@ function frameSizeFields(app: BoardApp, frame: BaseObj): HTMLElement {
   return wrap;
 }
 
-function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
+/**
+ * The rows of a connector's panel. For `lines` (every selected connector is a plain line, see line-geometry.ts) there is no
+ * route, relationship or label: a line has heads, a colour, a width and a style, which the shared stroke rows give.
+ */
+function connectorFields(app: BoardApp, sel: ConnectorObj[], lines = false): HTMLElement[] {
   const c = sel[0];
   const up = (p: Partial<ConnectorObj>) => app.updateSelected(p, isConnector);
   const out: HTMLElement[] = [];
-  out.push(field('Route', segmented<Route>([
+  if (!lines) out.push(field('Route', segmented<Route>([
     { value: 'straight', label: 'Straight' }, { value: 'elbow', label: 'Elbow' }, { value: 'curved', label: 'Curved' },
   ], c.route, (v) => {
     up({ route: v });
@@ -404,14 +411,14 @@ function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
     const r = RELATIONS[v];
     return { relation: v, startHead: r.startHead, endHead: r.endHead, dash: r.dash };
   };
-  out.push(field('UML relationship', combo<UmlRelation | ''>({
+  if (!lines) out.push(field('UML relationship', combo<UmlRelation | ''>({
     label: 'UML relationship', value: same((x) => x.relation ?? ''),
     options: [{ value: '', label: 'None' }, ...Object.entries(RELATIONS).map(([k, r]) => ({ value: k as UmlRelation, label: r.label }))],
     onPreview: (v) => edit.preview(relPatch(v), isConnector),
     onRevert: () => edit.revert(),
     onCommit: (v) => edit.commit(relPatch(v), isConnector),
   })));
-  if (sel.length === 1) {
+  if (sel.length === 1 && !lines) {
     const lab = h('input', { class: 'input', value: c.label ?? '', placeholder: 'Add a label', 'aria-label': 'Connector label' });
     lab.addEventListener('change', () => up({ label: lab.value || undefined }));
     out.push(field('Label', lab));

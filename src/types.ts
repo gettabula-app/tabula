@@ -190,6 +190,11 @@ export interface ConnectorObj {
   startHead: Head;
   endHead: Head;
   relation?: UmlRelation;
+  /**
+   * A plain line: both ends free, route straight, no heads. Only meaningful while that holds; a bound, curved or elbow
+   * connector never keeps it (see lineFlag in src/line-geometry.ts).
+   */
+  line?: boolean;
   label?: string;
   stroke?: string;
   strokeWidth?: number;

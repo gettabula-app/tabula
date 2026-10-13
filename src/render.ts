@@ -1,5 +1,6 @@
-import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
+import type { BaseObj, ConnectorObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
+import { isLine } from './line-geometry';
 import { isConnectable } from './connectable';
 import { isContainerType, validLabel } from '../shared/containers';
 import { lowDetail, type FilterChip } from './ui/kanban-logic';
@@ -820,7 +821,7 @@ export class Renderer {
       }
     } else {
       // a dragged card's slot is its dashed placeholder, with no selection outline over it
-      for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += this.outline(o, px(1.5), 1);
+      for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += isLine(o) ? this.lineHalo(o, px) : this.outline(o, px(1.5), 1);
       if (sel.length > 1) {
         const b = this.contentBounds(ov.selection);
         if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${SELECTION_WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
@@ -839,7 +840,7 @@ export class Renderer {
       const half = px(coarse ? 8 : 4.5);
       for (const h of hs) {
         if (h.id === 'rot') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(1.5)}"/>`;
-        else if (h.id === 'from' || h.id === 'to') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5.5)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(2)}"/>`;
+        else if (h.id === 'from' || h.id === 'to') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(isLine(o) ? 5 : coarse ? 8 : 5.5)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(2)}"/>`;
         else out += `<rect x="${h.p.x - half}" y="${h.p.y - half}" width="${half * 2}" height="${half * 2}" rx="${px(2)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(1.5)}"/>`;
       }
     }
@@ -1011,6 +1012,25 @@ export class Renderer {
     return `<g class="link-hover" transform="rotate(${deg} ${c.x} ${c.y})" pointer-events="none">` +
       `<rect x="${o.x + 0.5}" y="${o.y + 0.5}" width="${o.w - 1}" height="${o.h - 1}" rx="4" fill="none" stroke="var(--ink, #18212B)" stroke-width="1"/>` +
       `<rect x="${gx}" y="${gy}" width="${size}" height="${size}" rx="4" fill="var(--paper, #FFFFFF)" stroke="var(--canvas-rule, #C9D1DA)"/>${arrow}</g>`;
+  }
+
+  /**
+   * The selection of a line: a 1px wire outline 3px wider than the line on each side, round at the ends (a capsule), so the
+   * line itself shows through. Forced colours take Highlight (styles.css, .line-halo).
+   */
+  private lineHalo(raw: Obj, px: (v: number) => number): string {
+    const o = safeObj(raw) as ConnectorObj;
+    const g = connectorGeom(this.safeGet, o, this.connectorLayout());
+    if (!g) return '';
+    const dx = g.end.x - g.start.x, dy = g.end.y - g.start.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return '';
+    const R = px((o.strokeWidth ?? 2) / 2 + 3);
+    const nx = (-dy / len) * R, ny = (dx / len) * R;
+    const a = g.start, b = g.end;
+    const d = `M${fin(a.x + nx)} ${fin(a.y + ny)}L${fin(b.x + nx)} ${fin(b.y + ny)}A${fin(R)} ${fin(R)} 0 0 0 ${fin(b.x - nx)} ${fin(b.y - ny)}`
+      + `L${fin(a.x - nx)} ${fin(a.y - ny)}A${fin(R)} ${fin(R)} 0 0 0 ${fin(a.x + nx)} ${fin(a.y + ny)}Z`;
+    return `<path class="line-halo" d="${d}" fill="none" stroke="${SELECTION_WIRE}" stroke-width="${px(1)}"/>`;
   }
 
   private outline(raw: Obj, sw: number, opacity: number, stroke = SELECTION_WIRE) {

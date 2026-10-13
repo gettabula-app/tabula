@@ -387,6 +387,8 @@ export const FIELDS = Object.freeze({
   connector: {
     id, type: str(40), z: str(64), from: END, to: END, route: oneOf(ROUTES), startHead: oneOf(HEADS), endHead: oneOf(HEADS),
     relation: oneOf(RELATIONS), label: str(LIMITS.label), stroke: color, strokeWidth: num(0, 1000), dash: oneOf(DASHES), opacity: num(0, 1),
+    // a line (docs/lines.md): both ends free and a straight route, checked across fields by lineViolation
+    line: bool,
     createdBy: str(128), updatedAt: timestamp, proposedBy: PROPOSED_BY,
     // unused geometry kept for uniform handling (src/types.ts ConnectorObj)
     x: COORD, y: COORD, w: num(0, LIMITS.size), h: num(0, LIMITS.size), rotation: num(-LIMITS.rotation, LIMITS.rotation),
@@ -650,8 +652,24 @@ export function validateBoardObject(id_, value, ctx = {}, opts = {}) {
   }
 
   if (type === 'table') v.push(...tableCountCodes(value, only));
+  if (type === 'connector' && (!only || ['line', 'from', 'to', 'route'].some((k) => only.has(k)))) {
+    // with the previous state, a change to one end still sees the line flag and the other end as they are stored
+    const bad = lineViolation(isRecord(opts.prev) ? { ...opts.prev, ...value } : value);
+    if (bad) v.push({ code: bad, path: 'line' });
+  }
   v.push(...checkObjectAuthorship(id_, value, ctx, opts, only));
   return result(v);
+}
+
+/**
+ * A line (docs/lines.md) has both ends free and a straight route if it has a route. Returns the violation code, or null.
+ * A connector without `line` is never checked here, so the rule costs nothing for ordinary connectors.
+ */
+function lineViolation(value) {
+  if (value.line !== true) return null;
+  if (value.from?.kind !== 'free' || value.to?.kind !== 'free') return 'bad_value';
+  if (value.route !== undefined && value.route !== 'straight') return 'bad_value';
+  return null;
 }
 
 /** createdBy is stamped by the writer; the owner fields name a board member and change only with canEditObject. */

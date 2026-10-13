@@ -595,3 +595,36 @@ describe('placing a template on a board', () => {
     expect(objects.size).toBe(LIMITS.boardObjects - 1);
   });
 });
+
+describe('line connectors in server templates (docs/lines.md)', () => {
+  const lineContent = (connector: Record<string, unknown>) => content([sticky('s1'), { id: 'c1', type: 'connector', z: '2', ...connector }]);
+
+  it('keeps line: true on a free, straight connector and gives it line defaults', () => {
+    const { content: stored } = validateTemplateContent(lineContent({ line: true, from: { kind: 'free', x: 1, y: 2 }, to: { kind: 'free', x: 9, y: 9 } }));
+    const c1 = (stored.objects as Record<string, unknown>[])[1];
+    expect(c1).toEqual({
+      id: 'c1', type: 'connector', z: '2', line: true, from: { kind: 'free', x: 1, y: 2 }, to: { kind: 'free', x: 9, y: 9 },
+      route: 'straight', startHead: 'none', endHead: 'none',
+    });
+  });
+
+  it('drops line when an end is bound or the route is not straight, and keeps the connector', () => {
+    const bound = validateTemplateContent(lineContent({ line: true, from: { kind: 'bound', id: 's1', anchor: 'auto' }, to: { kind: 'free', x: 9, y: 9 } }));
+    expect((bound.content.objects as Record<string, unknown>[])[1]).not.toHaveProperty('line');
+    const curved = validateTemplateContent(lineContent({ line: true, route: 'curved', from: { kind: 'free', x: 0, y: 0 }, to: { kind: 'free', x: 9, y: 9 } }));
+    const c = (curved.content.objects as Record<string, unknown>[])[1];
+    expect(c).not.toHaveProperty('line');
+    expect(c.route).toBe('curved');
+  });
+
+  it('refuses a line flag that is not a boolean', () => {
+    expect(problem(lineContent({ line: 'yes', from: { kind: 'free', x: 0, y: 0 }, to: { kind: 'free', x: 1, y: 1 } }))).toMatch(/line must be true or false/);
+  });
+
+  it('a template line round-trips: the stored content validates again unchanged', () => {
+    const first = validateTemplateContent(lineContent({ line: true, from: { kind: 'free', x: 1, y: 2 }, to: { kind: 'free', x: 9, y: 9 }, stroke: '#112233', strokeWidth: 3 }));
+    const second = validateTemplateContent(first.content);
+    expect(second.content).toEqual(first.content);
+    expect((second.content.objects as Record<string, unknown>[])[1]).toMatchObject({ line: true, strokeWidth: 3, stroke: '#112233' });
+  });
+});

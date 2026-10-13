@@ -24,7 +24,7 @@ import {
   addReply, addThread, aiAuthor, applyPlan, assertLinkedCardEdit, boardTitle, check, cleanForModel, fence, fitList, getObjectsDetail, hiddenIds, hiddenOf, newObjectId, readAll,
   listThreads, planAddKanbanLane, planCreate, planCreateKanban, planCreateKanbanLabel, planDelete, planDeleteKanbanLabel, planDeleteKanbanLane,
   planUpdate, planUpdateKanbanLabel, planUpdateKanbanLane, planUseTemplate, resolveAnchor, summariseBoard,
-  objectVisibility,
+  objectVisibility, objectTypeOf,
 } from './board-ops.mjs';
 import {
   commentTicket, createLabel, createTicket, findTicketByIdempotency, getTicket, listLabels, listStates, listTickets, searchTickets,
@@ -125,14 +125,19 @@ const tableRowsSchema = {
   items: { type: 'array', minItems: 1, maxItems: MAX_TABLE_COLS, items: { type: 'string', maxLength: MAX_CELL_CHARS } },
 };
 
+/** The types get_objects can filter on: the stored types and `line`, which is a connector with line: true. */
+const FILTER_TYPES = [...OBJ_TYPES, 'line'];
+
 const createItemSchema = {
   type: 'object',
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source: headings, lists, [ ] tasks, tables, code, links; no HTML), x, y, w?, h?, fontSize?. table: rows (a list of rows, each a list of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source: headings, lists, [ ] tasks, tables, code, links; no HTML), x, y, w?, h?, fontSize?. table: rows (a list of rows, each a list of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?, line?. from and to are an object id, a ref, or {x, y} points. line: a plain line (type line is the same, stored as a connector): from and to are {x, y} points; optional stroke, strokeWidth?, dash?, startHead?, endHead? (defaults: none, none, 2, solid). Any object but a connector may have parent.',
   properties: {
-    type: { enum: ['sticky', 'shape', 'text', 'markdown', 'table', 'frame', 'connector', 'link'] },
+    type: { enum: ['sticky', 'shape', 'text', 'markdown', 'table', 'frame', 'connector', 'line', 'link'] },
+    line: { type: 'boolean', description: 'true on a connector makes it a line: both ends free, straight.' },
+    strokeWidth: num('A line\'s stroke width: 0 to 20 (default 2).'),
     ref: refSchema,
     url: { type: 'string', maxLength: 2048, description: 'A link card: an http or https web address, without a user name or password.' },
     text: { type: 'string', maxLength: LIMITS.text },
@@ -165,7 +170,7 @@ const updateItemSchema = {
   additionalProperties: false,
   required: ['id'],
   description:
-    'id plus the fields to change. Box objects can set flipX and flipY to mirror their drawn content; values must be booleans. Sticky notes and text do not mirror, and frames, containers, lanes and cards cannot be flipped by the board UI. Sticky, shape, text and frame objects can change their listed text, style and geometry fields. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards must use update_kanban_card; lanes and kanbans cannot be changed with this tool. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. Unknown fields are refused; null clears an optional field.',
+    'id plus the fields to change. Box objects can set flipX and flipY to mirror their drawn content; values must be booleans. Sticky notes and text do not mirror, and frames, containers, lanes and cards cannot be flipped by the board UI. Sticky, shape, text and frame objects can change their listed text, style and geometry fields. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards must use update_kanban_card; lanes and kanbans cannot be changed with this tool. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. A line (type line) can change from and to (points, or an end that attaches it, which makes it an ordinary connector), stroke, strokeWidth, dash, startHead and endHead; a bound end or a route other than straight turns it into a connector. Unknown fields are refused; null clears an optional field.',
   properties: {
     id: { type: 'string' },
     x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
@@ -916,7 +921,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         {
           boardId: boardIdSchema,
           frameId: { type: 'string', description: 'Only descendants of this frame, including items inside groups.' },
-          types: { type: 'array', items: { enum: OBJ_TYPES }, maxItems: 20 },
+          types: { type: 'array', items: { enum: FILTER_TYPES }, maxItems: 20 },
           bounds: objectSchema({ x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } }, ['x', 'y', 'w', 'h']),
           limit: { type: 'integer', minimum: 1, maximum: LIMITS.pageMax, description: `Default ${LIMITS.pageDefault}.` },
           cursor: { type: 'string', description: 'nextCursor of the previous page.' },
@@ -927,7 +932,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         const boardId = boardArgs(args, ['frameId', 'types', 'bounds', 'limit', 'cursor']);
         const options = {};
         if (args.frameId !== undefined) options.frameId = check.idString(args.frameId, 'frameId');
-        if (args.types !== undefined) options.types = check.listOf(args.types, 'types', 1, 20).map((t, i) => check.choice(t, OBJ_TYPES, `types[${i}]`));
+        if (args.types !== undefined) options.types = check.listOf(args.types, 'types', 1, 20).map((t, i) => check.choice(t, FILTER_TYPES, `types[${i}]`));
         if (args.bounds !== undefined) {
           const b = check.record(args.bounds, 'bounds', ['x', 'y', 'w', 'h']);
           options.bounds = {
@@ -1139,7 +1144,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
             const codePointAt = Array.from(cleaned.slice(0, at)).length;
             found.push({
               id: cleanForModel(object.id, 64).text,
-              type: cleanForModel(object.type, 40).text,
+              type: cleanForModel(objectTypeOf(object), 40).text,
               parentFrameId: parentFrame ? cleanForModel(parentFrame.id, 64).text : null,
               parentFrameName: parentFrame ? cleanForModel(parentFrame.name || parentFrame.text || '', 200).text : null,
               snippet: snippetFor(cleaned, codePointAt),
@@ -1670,7 +1675,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'create_objects',
       title: 'Add objects',
       description:
-        'Adds up to 100 stickies, shapes, text, frames, link cards (an address only) and connectors in one all-or-nothing call. Connectors may point at objects created in the same call through ref. New objects appear for everyone viewing the board at once.',
+        'Adds up to 100 stickies, shapes, text, frames, link cards (an address only), connectors and lines in one all-or-nothing call. Connectors may point at objects created in the same call through ref. New objects appear for everyone viewing the board at once.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: false },
