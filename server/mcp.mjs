@@ -36,6 +36,7 @@ import { createSavedView, deleteSavedView, getSavedView, listSavedViews, updateS
 import { diffBoardUpdates } from './board-diff.mjs';
 import { exportBoardMarkdown } from './board-export.mjs';
 import { MAX_CELL_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS } from '../shared/tables.mjs';
+import { composeDiffs } from './activity.mjs';
 
 export const MCP_SERVER_NAME = 'board';
 const SERVER_VERSION = '1.0.0';
@@ -212,8 +213,10 @@ function linkValue(value, path) {
  * @param {{ read(room: string, fn: (doc: any) => any): any, write(room: string, origin: string, fn: (doc: any) => any): any, exists(room: string): boolean }} deps.roomAccess
  * @param {(...args: unknown[]) => void} deps.log
  */
-export function createMcp({ config, directory, cloud = null, canWriteRoom, roomAccess, notifications = null, log, now = Date.now, snapshotBarrier = null, history = null }) {
+export function createMcp({ config, directory, cloud = null, canWriteRoom, roomAccess, notifications = null, log, now = Date.now, snapshotBarrier = null, history = null, activity = null }) {
   const open = config.mcp.mode === 'open';
+  /** The tool call being run (calls are synchronous): what its board writes changed, collected for the activity log (docs/agent-presence.md). */
+  let currentCall = null;
   const dailyWriteCap = config.mcp.dailyWrites ?? 2000;
   for (const name of config.mcp.ignored ?? []) log(`${name} is ignored: it only applies in open mode`);
 
@@ -354,7 +357,8 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       },
       writeBoard(fn) {
         authorise(actor, boardId, 'write', 'board');
-        return roomAccess.write(boardId, origin, fn, { actor: trackerActor(actor), source: 'mcp' });
+        const call = currentCall;
+        return roomAccess.write(boardId, origin, fn, { actor: trackerActor(actor), source: 'mcp', ...(call ? { activity: { onDiff: (diff) => call.diffs.push(diff) } } : {}) });
       },
       writeComments(fn, { threadId = null } = {}) {
         authorise(actor, boardId, 'comment', 'comments');
@@ -2521,9 +2525,23 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     if (!tool) return { rpc: [-32602, 'Unknown tool'] };
     const args = params.arguments === undefined ? {} : params.arguments;
     if (typeof args !== 'object' || args === null || Array.isArray(args)) return { rpc: [-32602, 'arguments must be an object'] };
+    const call = activity ? { diffs: [] } : null;
     try {
-      const out = tool.run(actor, args);
+      currentCall = call;
+      let out;
+      try {
+        out = tool.run(actor, args);
+      } finally {
+        currentCall = null;
+      }
       if (out.audit) recordAudit(actor, tool.name, out.audit.boardId, out.audit.room, out.audit);
+      if (call?.diffs.length && out.audit?.boardId) {
+        try {
+          activity.record(out.audit.boardId, { userId: actor.createdBy, tokenName: actor.tokenName, userName: actor.userName, tool: tool.name, diff: composeDiffs(call.diffs) });
+        } catch (err) {
+          log('mcp: could not write an activity entry', err?.message);
+        }
+      }
       return { result: textResult(out.text), data: out.data, format: out.format };
     } catch (err) {
       if (err instanceof OpsError) {

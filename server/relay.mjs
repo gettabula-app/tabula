@@ -31,6 +31,7 @@ import { loadConfig } from './config.mjs';
 import { ogKind, withOgTags } from './og-tags.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
+import { createActivity, diffObjects, snapshotObjects } from './activity.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
 import { createSnapshotBarrier } from './snapshot-barrier.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
@@ -288,6 +289,8 @@ function boardState(id) {
   }
 }
 const history = createHistory({ dataDir: DATA_DIR, boardState, log });
+// The board activity log (TAB-158): what each MCP tool call changed, and the means to revert it
+const activity = createActivity({ dataDir: DATA_DIR, log });
 
 // Live AI runs, shared by the run routes of both modes and the board rooms below.
 const aiLive = createLiveRuns();
@@ -550,7 +553,7 @@ const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpe
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, activity, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
@@ -1155,6 +1158,8 @@ const roomAccess = {
         return thread instanceof Y.Map ? thread.toJSON() : null;
       };
       const commentBefore = commentThreadId && commentActorId ? commentSnapshot() : null;
+      // an MCP write is logged with what it changed (docs/agent-presence.md): the objects as they were and as they are
+      const trace = room.kind === 'board' && typeof trackerContext?.activity?.onDiff === 'function' ? { before: snapshotObjects(room.doc) } : null;
       let result;
       const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
@@ -1167,6 +1172,13 @@ const roomAccess = {
           throw new OpsError(code, `Linked card write was refused (${refused.reason}).`, refused.reason === 'title_invalid' ? 'title' : undefined);
         }
       } else apply();
+      if (trace) {
+        try {
+          trackerContext.activity.onDiff(diffObjects(trace.before, snapshotObjects(room.doc)));
+        } catch (err) {
+          log('activity: could not read the change of a write', err?.message);
+        }
+      }
       const commentAfter = commentThreadId && commentActorId ? commentSnapshot() : null;
       if (commentBefore && commentAfter && commentBefore.authorId !== commentActorId && typeof commentBefore.authorId === 'string') {
         const beforeReplies = commentBefore.replies ?? {};
@@ -1230,7 +1242,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, notifications: notificationStore, log, snapshotBarrier, history });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, notifications: notificationStore, log, snapshotBarrier, history, activity });
 }
 
 let oauthRoutes = null;
