@@ -12,7 +12,7 @@ let readToken: string;
 // TAB-161 package 3 intentionally adds three read tools: the count is 50 and Q5 (the tool budget) remains open.
 // The measured 46,110 definition bytes have 3% headroom; a future package must still remove or merge tools.
 const TOOL_COUNT_LIMIT = 50;
-const TOOL_BYTES_LIMIT = 47_900; // was 47,494: the code block adds its type and four fields to create_objects and update_objects (about 310 bytes)
+const TOOL_BYTES_LIMIT = 47_810; // was 47,494: the code block adds its type and four fields to create_objects and update_objects (about 310 bytes); measured 47,802
 // Explicit exceptions for definitions over 700 characters; TODO: remove each name when it is shortened. Empty today.
 const LONG_DESCRIPTION_ALLOWLIST: string[] = [];
 
