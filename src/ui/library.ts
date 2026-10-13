@@ -4,21 +4,16 @@ import { ICONS, h, icon } from './dom';
 import { dialog, toast } from './common';
 import { SHAPE_KINDS, SHAPE_GROUPS, defaultSize, shapePreviewSvg } from '../shapes';
 import { RELATIONS, UML_ELEMENTS, classHeight, type UmlElementDef } from '../uml';
-import { TEMPLATES, insertCustomTemplate, insertTemplate } from '../templates';
-import { listTemplates, onTemplatesChange } from '../template-store';
-import { accountId, scopeLabel, splitMine } from '../template-share';
-import { authState } from '../auth';
-import type { CustomTemplate } from '../custom-templates';
 import { POPULAR_SETS, failureMessage, failureOf, iconData, iconLoader, iconSets, onlineIconSets, searchIcons, collectionIcons, type IconSet } from '../icons';
 import { layout, parseMermaid } from '../mermaid';
 import { objectMarkup } from '../markup';
 import { gridView, placeSticker, previewFiller, stickersTab, withPreviews, type StickerDrag } from './stickers';
 import { openIconCredits } from './icon-credits';
 import { offlineRow } from './icon-offline';
-import { reopenSession } from './idle-bar';
 import { placeClicked } from './place-click';
 import { layersTab } from './layers';
 import { DEMO } from '../demo';
+import { openTemplatePicker } from './template-picker';
 
 export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates' | 'layers';
 
@@ -29,9 +24,25 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
   parent.appendChild(drawer);
   let tab: DrawerTab | null = null;
   let stop = new AbortController();
+  let templatePicker: ReturnType<typeof openTemplatePicker> | null = null;
   const listeners = new Set<(t: DrawerTab | null) => void>();
 
   const open = (t: DrawerTab | null) => {
+    if (t === 'templates') {
+      if (tab) {
+        stop.abort();
+        stop = new AbortController();
+        tab = null;
+        drawer.dataset.tab = '';
+        drawer.classList.remove('show');
+        listeners.forEach((l) => l(null));
+        drawer.replaceChildren();
+      }
+      if (!templatePicker) templatePicker = openTemplatePicker(app, () => { templatePicker = null; });
+      return;
+    }
+    templatePicker?.close();
+    templatePicker = null;
     stop.abort();
     stop = new AbortController();
     tab = tab === t ? null : t;
@@ -41,12 +52,23 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
     if (!tab) return drawer.replaceChildren();
     const title = { shapes: 'Shapes', uml: 'UML', icons: 'Icons', stickers: 'Stickers', templates: 'Templates', layers: 'Layers' }[tab];
     const layers = tab === 'layers' ? layersTab(app, stop.signal) : null;
-    const body = layers ? layers.body : tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app, stop.signal) : tab === 'stickers' ? stickersTab(app, draggable, stop.signal) : templatesTab(app, () => open(null));
+    const body = layers?.body
+      ?? (tab === 'shapes' ? shapesTab(app, () => open(null))
+        : tab === 'uml' ? umlTab(app)
+          : tab === 'icons' ? iconsTab(app, stop.signal)
+            : tab === 'stickers' ? stickersTab(app, draggable, stop.signal)
+              : null);
+    if (!body) return drawer.replaceChildren();
     drawer.replaceChildren(
       h('div', { class: 'drawer-head' }, h('span', { class: 'panel-grabber', 'aria-hidden': 'true' }), h('h2', null, title, layers?.count), h('button', { class: 'icon-btn', 'aria-label': 'Close library', onclick: () => open(null) }, icon('close', 18))),
       body,
     );
   };
+
+  app.lifetime.signal.addEventListener('abort', () => {
+    templatePicker?.close();
+    templatePicker = null;
+  }, { once: true });
 
   // Drag from the library onto the canvas.
   const svg = app.r.svg;
@@ -64,7 +86,7 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
     await dropItem(app, JSON.parse(raw), p);
   });
 
-  return { open, onChange: (fn: (t: DrawerTab | null) => void) => listeners.add(fn), get tab() { return tab; } };
+  return { open, onChange: (fn: (t: DrawerTab | null) => void) => listeners.add(fn), get tab() { return templatePicker ? 'templates' : tab; } };
 }
 
 type DropItem =
@@ -373,57 +395,4 @@ function iconsTab(app: BoardApp, signal: AbortSignal) {
   loader.reload();
   requestAnimationFrame(() => input.focus());
   return h('div', { class: 'drawer-body' }, input, setSel, onlineBtn, onlineMsg, grid, more, offline.el, note);
-}
-
-function templatesTab(app: BoardApp, close: () => void) {
-  const templates = TEMPLATES;
-  const cats = [...new Set(templates.map((t) => t.category))];
-  const mine = h('div', null);
-  const paintMine = (list: CustomTemplate[]) => {
-    const userId = accountId(authState());
-    const { mine: own, shared } = splitMine(list, userId);
-    const row = (t: CustomTemplate, note: string) => h('button', {
-      class: 'template-row',
-      onclick: () => {
-        insertCustomTemplate(app, t);
-        close();
-        toast(t.content.steps.length ? `${t.name} added. Start the session from the bar at the bottom.` : `${t.name} added.`);
-      },
-    }, h('span', { class: 'tpl-name' }, t.name), h('span', { class: 'tpl-desc' }, note));
-    mine.replaceChildren(
-      h('div', { class: 'list-label' }, 'My templates'),
-      ...(own.length ? own.map((t) => row(t, t.description || t.category))
-        : [h('p', { class: 'muted small' }, 'Templates you save from a board appear here.')]),
-      ...(shared.length ? [
-        h('div', { class: 'list-label' }, 'Shared with me'),
-        ...shared.map((t) => row(t, `${scopeLabel(t, userId)}${t.ownerName ? ` · ${t.ownerName}` : ''}`)),
-      ] : []));
-  };
-  const loadMine = () => {
-    void listTemplates().then((list) => {
-      if (mine.isConnected) paintMine(list);
-    });
-  };
-  loadMine();
-  // The drawer is rebuilt each time it opens; this one stops listening once it has left the page.
-  const off = onTemplatesChange(() => {
-    if (!mine.isConnected) off();
-    else loadMine();
-  });
-  return h('div', { class: 'drawer-body' },
-    h('p', { class: 'muted small' }, 'Each template adds frames and a facilitation flow with timed steps, private writing and dot voting.'),
-    mine,
-    ...cats.flatMap((c) => [
-      h('div', { class: 'list-label' }, c),
-      ...templates.filter((t) => t.category === c).map((t) => h('button', {
-        class: 'template-row',
-        onclick: () => {
-          reopenSession(app.user.id, app.conn.id);
-          insertTemplate(app, t);
-          close();
-          toast(`${t.name} added. Start the session from the bar at the bottom.`);
-        },
-      }, h('span', { class: 'tpl-name' }, t.name), h('span', { class: 'tpl-desc' }, t.description))),
-    ]),
-  );
 }

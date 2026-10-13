@@ -2903,7 +2903,7 @@ const STATES = {
   async 'empty-templates'(env) {
     await openEmptyBoard(env);
     await env.page.getByRole('button', { name: 'Start from a template' }).click();
-    await env.page.locator('.drawer.show').waitFor();
+    await env.page.locator('.template-picker').waitFor();
   },
   async 'empty-share'(env) {
     await openEmptyBoard(env);
@@ -4292,11 +4292,11 @@ const STATES = {
     await openSeedBoard(env);
     const button = env.page.getByRole('button', { name: 'Templates and team exercises' });
     await button.click();
-    await env.page.locator('.drawer.show').waitFor();
+    await env.page.locator('.template-picker').waitFor();
     await env.page.keyboard.press('Escape');
-    await env.page.locator('.drawer.show').waitFor({ state: 'hidden' });
+    await env.page.locator('.template-picker').waitFor({ state: 'detached' });
     const result = await env.page.evaluate(() => ({
-      open: !!document.querySelector('.drawer.show'),
+      open: !!document.querySelector('.template-picker'),
       focusReturned: document.activeElement === document.querySelector('[data-drawer="templates"]'),
     }));
     if (result.open || !result.focusReturned) throw new Error(`templates-esc: ${JSON.stringify(result)}`);

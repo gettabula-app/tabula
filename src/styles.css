@@ -26,6 +26,7 @@
   --rule: #EAEAEA;
   --signal: #111111;
   --wire: #2A64D6;
+  --category-green: #278449;
   --selection-handle-fill: var(--paper);
   --selection-handle-stroke: var(--wire);
   --danger: #D41E24;

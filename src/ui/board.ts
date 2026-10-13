@@ -427,6 +427,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   layersBtn.setAttribute('aria-keyshortcuts', 'Alt+L');
   layersBtn.dataset.tipKey = 'alt+l';
   const templatesBtn = drawerBtn('Templates and team exercises', 'templates', 'templates');
+  templatesBtn.setAttribute('aria-haspopup', 'dialog');
+  templatesBtn.setAttribute('aria-expanded', 'false');
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
   const shapesBtn = h('button', { class: 'rail-btn', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
   const connectorBtn = toolBtn('Connector', 'connector', { kind: 'connector' }, 'L');
@@ -735,7 +737,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     liveRunsFor(app)?.onChange(renderPeople);
   }
   if (!scratch && !demo) mountAiBar(app, chrome);
-  if (!scratch && !demo) firstRunHint(app, chrome);
+  if (!scratch && !demo) firstRunHint(app, chrome, () => library.open('templates'));
 
   // View-only boards keep Select and Hand; the rest of the editing chrome is disabled.
   const syncReadOnly = () => {
@@ -853,7 +855,9 @@ async function importInto(app: BoardApp, file: File) {
 
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
-export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
+export function firstRunHint(app: BoardApp, chrome: HTMLElement, openTemplates: () => void = () => {
+  document.querySelector<HTMLElement>('[data-drawer="templates"]')?.click();
+}) {
   if (app.store.cache.size || app.readOnly) return;
   // opens the AI bar with Generate armed and only the prompt to send; it runs nothing. Shown while the bar is on the board.
   const generate = h('button', {
@@ -863,7 +867,12 @@ export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
     h('p', { class: 'hint-title' }, 'An empty board'),
     h('p', null, 'Press N for a sticky note, R for a rectangle, or double-click to write. Hold Space and drag to move around.'),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn primary', onclick: () => (document.querySelector('[data-drawer="templates"]') as HTMLElement)?.click() }, 'Start from a template'),
+      h('button', {
+        class: 'btn primary',
+        'aria-haspopup': 'dialog',
+        'aria-expanded': 'false',
+        onclick: openTemplates,
+      }, 'Start from a template'),
       h('button', { class: 'btn', onclick: () => openMermaidImport(app) }, 'Import Mermaid'),
       generate,
     ),
