@@ -206,8 +206,8 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     mount.wrapper.classList.toggle('is-work', live);
     mount.wrapper.classList.toggle('is-selected', selected(obj.id));
     const hovered = mount.wrapper.dataset.hovered === 'true';
-    // the Open chip is the phone's gateway to the full-screen route; on the desktop the element is live where it is
-    mount.open.hidden = !(isPhone() && (selected(obj.id) || hovered));
+    // the Open chip is the way into the full-screen route wherever the frame is not live: always on the phone, and on the desktop for a snapshot (zoomed out, over the live cap)
+    mount.open.hidden = !((isPhone() || !live) && (selected(obj.id) || hovered));
     if (mount.shell) {
       const shell = mount.shell.el;
       shell.hidden = !live;
