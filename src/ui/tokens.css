@@ -88,3 +88,16 @@
   .tokens-row { grid-template-columns: minmax(0, 1fr); row-gap: 16px; }
   .tokens-row .btn { justify-self: start; }
 }
+
+/* The Access tokens tab is a paper page; the token dialog keeps its theme tray. */
+.admin-token-panel {
+  --tray: var(--paper); --tray-2: color-mix(in srgb, var(--ink) 4%, var(--paper));
+  --tray-text: var(--ink); --tray-muted: var(--graphite); --tray-line: var(--page-hairline);
+}
+.admin-token-panel .tokens-section-title { font: 400 22px/1.2 var(--font-serif); letter-spacing: -0.01em; }
+.admin-token-panel .tokens-list { border-top: 1px solid var(--page-hairline); border-bottom-color: var(--page-hairline); }
+.admin-token-panel .tokens-row { min-height: 56px; border-top-color: var(--page-hairline); }
+.admin-token-panel .tokens-code { border-top-width: 1px; border-color: var(--page-hairline); background: color-mix(in srgb, var(--ink) 4%, var(--paper)); }
+.admin-token-panel .tokens-label { font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; }
+.admin-token-panel .tokens-badge.tag { margin-left: 8px; border: 0; padding: 2px 9px; vertical-align: middle; }
+.admin-token-panel .admin-box:focus-visible { outline-color: var(--ink); }

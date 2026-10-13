@@ -15,7 +15,7 @@ import { boardUnread, onChatBadge, onPresenceFrame, setPresenceWatch, watchChat 
 import { openCreateTeam, openTeamManager, openWorkspaceMembers } from './teams';
 import { createWorkspaceBanner } from './workspace';
 import { accountMe, createTopbar, pageFooter, searchField } from './topbar';
-import { customRef, customThumbnail, featuredTemplates, useTemplate } from './templates-page';
+import { customRef, customThumbnail, featuredTemplates, templateTagTone, useTemplate } from './templates-page';
 import { builtinThumbnail } from '../template-thumb';
 import { listTemplates, onTemplatesChange } from '../template-store';
 import type { CustomTemplate } from '../custom-templates';
@@ -34,6 +34,16 @@ const UNTITLED = 'Untitled board';
 const ACCESS: Partial<Record<BoardRole, string>> = { commenter: 'Can comment', viewer: 'View only' };
 
 const emptyLine = (text: string) => h('p', { class: 'home-empty' }, text);
+function emptyBoardState(onNew: () => void, onImport?: () => void, disabled = false): HTMLElement {
+  return h('section', { class: 'home-empty-state' },
+    h('h2', null, 'No boards yet'),
+    h('p', null, 'Create a board, or start from a template.'),
+    h('div', { class: 'home-empty-actions' },
+      h('button', { class: 'btn ghost', disabled, onclick: onNew }, 'New board'),
+      onImport
+        ? h('button', { class: 'btn ghost', disabled, onclick: onImport }, 'Import file')
+        : h('a', { class: 'btn ghost', href: '#/templates' }, 'Start from a template')));
+}
 const normalise = (query: string) => query.trim().toLowerCase();
 const matches = (title: string, query: string) => !query || title.toLowerCase().includes(query);
 const noMatch = (query: string) => emptyLine(`No boards match “${query.trim()}”.`);
@@ -49,38 +59,44 @@ export function renderHome(root: HTMLElement, nav: HomeNav, auth: AuthState = { 
   const fileInput = boardFileInput(nav);
   const groups = h('div', { class: 'home-groups' });
   let query = '';
+  const toolbar = h('div', { class: 'home-toolbar' },
+    searchField('Search boards', query, (value) => {
+      query = value;
+      paint();
+    }),
+    h('div', { class: 'home-actions' },
+      h('button', { class: 'btn primary', onclick: () => nav.open(newId()) }, 'New board'),
+      h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Import file')));
 
+  const relay = relayUrl();
+  const templates = templateStrip(nav, false);
+  const footer = pageFooter(relay
+    ? `Boards are stored ${storedWhere()} and sync through ${relay.replace(/^ws/, 'http').replace(/\/sync$/, '')} when it is reachable.`
+    : `Sync is off. Boards are stored ${storedWhere()} only.`);
+  const main = h('main', { class: 'home' },
+    h('header', { class: 'home-head' },
+      h('h1', { class: 'home-title' }, 'Boards'),
+      h('p', { class: 'home-lede' }, LEDE),
+      toolbar),
+    groups, templates, footer, fileInput);
   const paint = () => {
     const q = normalise(query);
     const all = listBoards();
     const shown = all.filter((b) => matches(b.name || UNTITLED, q));
+    const empty = all.length === 0;
+    toolbar.hidden = empty;
+    main.classList.toggle('empty', empty);
+    templates.hidden = empty;
+    footer.hidden = empty;
     groups.replaceChildren(
-      !all.length ? emptyLine('No boards on this device yet. Create one, or open a link someone shared with you.')
+      empty ? emptyBoardState(() => nav.open(newId()), () => fileInput.click())
         : !shown.length ? noMatch(query)
           : boardTable('Your boards', shown.map((b) => localRow(b, paint)), 'plain'));
   };
 
-  const relay = relayUrl();
   root.replaceChildren(h('div', { class: 'home-page' },
     createTopbar('boards', null),
-    h('main', { class: 'home' },
-      h('header', { class: 'home-head' },
-        h('div', { class: 'home-titlerow' },
-          h('h1', { class: 'home-title' }, 'Boards'),
-          h('div', { class: 'home-actions' },
-            h('button', { class: 'btn primary', onclick: () => nav.open(newId()) }, 'New board'),
-            h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Import file'),
-            fileInput)),
-        h('p', { class: 'home-lede' }, LEDE),
-        searchField('Search boards', query, (value) => {
-          query = value;
-          paint();
-        })),
-      groups,
-      templateStrip(nav, false),
-      pageFooter(relay
-        ? `Boards are stored ${storedWhere()} and sync through ${relay.replace(/^ws/, 'http').replace(/\/sync$/, '')} when it is reachable.`
-        : `Sync is off. Boards are stored ${storedWhere()} only.`))));
+    main));
   paint();
 }
 
@@ -173,33 +189,42 @@ function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
   const admin = me.user.role === 'owner' || me.user.role === 'admin';
   const fileInput = boardFileInput(nav);
   const groups = h('div', { class: 'home-groups' });
-  const paintGroups = () => groups.replaceChildren(...accountGroups(v, data));
+  const toolbar = h('div', { class: 'home-toolbar' },
+    searchField('Search boards', v.query.value, (value) => {
+      v.query.value = value;
+      paintGroups();
+    }),
+    h('div', { class: 'home-actions' },
+      h('button', { class: 'btn primary', disabled: down, onclick: () => nav.open(newId()) }, 'New board'),
+      h('button', { class: 'btn', disabled: down, onclick: () => fileInput.click() }, 'Import file'),
+      me.user.role === 'guest' ? null : h('button', { class: 'btn', disabled: down, onclick: () => openCreateTeam(v.refresh) }, 'New team'),
+      admin ? h('button', { class: 'btn', disabled: down, onclick: () => openWorkspaceMembers(me, v.refresh) }, 'Members') : null));
+  const templates = templateStrip(nav, down);
+  const footer = pageFooter('Boards sync through your workspace server when it is reachable.');
+  const main = h('main', { class: 'home' },
+    h('header', { class: 'home-head' },
+      h('h1', { class: 'home-title' }, 'Boards'),
+      down ? h('p', { class: 'home-note', role: 'status' }, 'You are offline. Showing the last list from this device.') : null,
+      toolbar),
+    groups, templates, footer, fileInput);
+  const paintGroups = () => {
+    const empty = data?.boards.length === 0;
+    toolbar.hidden = empty;
+    main.classList.toggle('empty', empty);
+    templates.hidden = empty;
+    footer.hidden = empty;
+    groups.replaceChildren(...accountGroups(v, data));
+  };
   paintGroups();
 
   return h('div', { class: 'home-page' },
     createTopbar('boards', me),
-    h('main', { class: 'home' },
-      h('header', { class: 'home-head' },
-        h('div', { class: 'home-titlerow' },
-          h('h1', { class: 'home-title' }, 'Boards'),
-          h('div', { class: 'home-actions' },
-            h('button', { class: 'btn primary', disabled: down, onclick: () => nav.open(newId()) }, 'New board'),
-            h('button', { class: 'btn', disabled: down, onclick: () => fileInput.click() }, 'Import file'),
-            me.user.role === 'guest' ? null : h('button', { class: 'btn', disabled: down, onclick: () => openCreateTeam(v.refresh) }, 'New team'),
-            admin ? h('button', { class: 'btn', disabled: down, onclick: () => openWorkspaceMembers(me, v.refresh) }, 'Members') : null,
-            fileInput)),
-        down ? h('p', { class: 'home-note', role: 'status' }, 'You are offline. Showing the last list from this device.') : null,
-        searchField('Search boards', v.query.value, (value) => {
-          v.query.value = value;
-          paintGroups();
-        })),
-      groups,
-      templateStrip(nav, down),
-      pageFooter('Boards sync through your workspace server when it is reachable.')));
+    main);
 }
 
 function accountGroups(v: AccountView, data: AccountData | null): HTMLElement[] {
   if (!data) return [h('p', { class: 'home-empty', role: 'status' }, 'Loading…')];
+  if (!data.boards.length) return [emptyBoardState(() => v.nav.open(newId()), undefined, v.down)];
   const q = normalise(v.query.value);
   const boards = data.boards.filter((b) => matches(b.title || UNTITLED, q));
   const groups: HTMLElement[] = [];
@@ -225,7 +250,7 @@ function group(heading: string, badge: string | null, actions: (HTMLElement | nu
   return h('section', { class: 'board-group', 'aria-label': heading },
     h('div', { class: 'group-head' },
       h('h2', null, heading),
-      badge ? h('span', { class: 'badge' }, badge) : null,
+      badge ? h('span', { class: 'badge tag tag-blue' }, badge) : null,
       actions.some(Boolean) ? h('div', { class: 'group-actions' }, ...actions) : null),
     body);
 }
@@ -327,7 +352,7 @@ export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'acc
       h('span', { class: 'board-sub' },
         r.here ? presenceCell(boardsPresence, r.id, () => link) : null,
         h('span', { class: 'board-edited' }, h('span', { class: 'board-lbl' }, 'Edited '), fmtAgo(r.updatedAt)),
-        r.role ? h('span', { class: 'board-access' }, ACCESS[r.role] ? h('span', { class: 'badge' }, ACCESS[r.role]) : null) : null),
+        r.role ? h('span', { class: 'board-access' }, ACCESS[r.role] ? h('span', { class: `badge tag ${r.role === 'viewer' ? 'tag-yellow' : 'tag-blue'}` }, ACCESS[r.role]) : null) : null),
       h('span', { class: 'board-actions' }, ...r.actions));
     })));
 }
@@ -379,17 +404,18 @@ const STRIP_SIZE = 4;
 
 /** A short list of templates under the boards: saved ones first, then built-in ones; the templates page has the rest. */
 function templateStrip(nav: HomeNav, down: boolean) {
-  const tile = (key: string, label: string, title: string, thumb: string) => h('li', null,
+  const tile = (key: string, label: string, title: string, description: string, thumb: string) => h('li', null,
     h('button', { class: 'tpl-tile', disabled: down, onclick: () => useTemplate(nav, key) },
       h('span', { class: 'tpl-thumb', html: thumb }),
-      h('span', { class: 'tpl-label' }, label),
-      h('span', { class: 'tpl-title' }, title)));
+      h('span', { class: `tpl-label tag tag-${templateTagTone(label)}` }, label),
+      h('span', { class: 'tpl-title' }, title),
+      h('span', { class: 'tpl-text' }, description)));
   const list = h('ul', { class: 'tpl-strip' });
   const paint = (mine: CustomTemplate[]) => {
     const own = mine.slice(0, STRIP_SIZE);
     list.replaceChildren(
-      ...own.map((t) => tile(customRef(t), t.category, t.name, customThumbnail(t))),
-      ...featuredTemplates(STRIP_SIZE - own.length).map((t) => tile(t.id, t.category, t.name, builtinThumbnail(t))));
+      ...own.map((t) => tile(customRef(t), t.category, t.name, t.description, customThumbnail(t))),
+      ...featuredTemplates(STRIP_SIZE - own.length).map((t) => tile(t.id, t.category, t.name, t.description, builtinThumbnail(t))));
   };
   const load = () => {
     void listTemplates().then((mine) => {
