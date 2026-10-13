@@ -186,7 +186,7 @@ describe('ghost markup', () => {
       expect(svg).not.toContain('<img');
       expect(svg).not.toContain('<svg');
       expect(svg).not.toContain('<b>');
-      expect(svg).not.toMatch(/onerror=[^&]*>/);
+      expect(svg).not.toMatch(/onerror=[^<&]*>/); // (a long word wraps over tspans, so the text may be cut anywhere)
       // the only elements are the ones the ghost draws itself
       const tags = new Set([...svg.matchAll(/<\/?([a-zA-Z][\w-]*)/g)].map((m) => m[1]));
       expect([...tags].filter((t) => !['g', 'rect', 'text', 'tspan', 'path'].includes(t))).toEqual([]);

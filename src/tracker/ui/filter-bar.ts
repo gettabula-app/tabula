@@ -227,6 +227,14 @@ export function createFilterBar(options: FilterBarOptions = {}): FilterBarContro
       else if (input.value.includes(':')) { event.preventDefault(); addChip(); }
     } else if (event.key === 'Escape') {
       if (!suggestionsEl.hidden) { event.preventDefault(); hideSuggestions(); }
+      else if (input.value) {
+        // like the board menu search: the first Esc clears the text, a second one leaves
+        event.preventDefault();
+        event.stopPropagation();
+        input.value = '';
+        updateSearch();
+        hideSuggestions();
+      }
       clearError();
     } else if (event.key === 'Backspace' && !input.value && chips.some((chip) => !chip.locked)) {
       event.preventDefault();

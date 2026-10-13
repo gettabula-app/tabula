@@ -148,14 +148,16 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     const wrapper = h('div', { class: 'trk-frame-wrap' });
     const workHost = h('div', { class: 'trk-frame-work-host' });
     const open = h('button', { class: 'trk-frame-open', type: 'button', 'aria-label': 'Open tracker', onclick: () => enterWork(mount) }, 'Open');
+    // the label gives way to a glyph when the frame is narrow (tracker.css, container query); the accessible name stays
     const expand = h('button', { class: 'trk-frame-expand', type: 'button', 'aria-label': 'Open full screen', onclick: () => {
       openFullscreenRoute(mount);
-    } }, 'Open full screen');
+    } }, h('span', { class: 'trk-frame-expand-label' }, 'Open full screen'), h('span', { class: 'trk-frame-expand-glyph', 'aria-hidden': 'true' }, '↗'));
+    const actions = h('div', { class: 'trk-frame-actions' }, open, expand);
     const mount: FrameMount = {
       obj, wrapper, workHost, open, expand, requestedWork: false, shell: null,
       drag: null, pinchPoints: new Map(), pinch: null,
     };
-    wrapper.append(workHost, open, expand);
+    wrapper.append(workHost, actions);
     overlay.appendChild(wrapper);
     wrapper.addEventListener('pointerenter', () => { wrapper.dataset.hovered = 'true'; reposition(mount); });
     wrapper.addEventListener('pointerleave', () => { wrapper.dataset.hovered = 'false'; reposition(mount); });

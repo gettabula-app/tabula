@@ -128,6 +128,19 @@ describe('image markup', () => {
     expect(small).not.toContain('img-off');
   });
 
+  it('keeps a placeholder label on one clipped line when the 12 px floor is bigger than the box (far-out zoom)', () => {
+    const failed = { kind: 'failed', why: 'toobig' } as const;
+    const svg = objectMarkup(image({ w: 417, h: 100 }), { ...ctx(failed), zoom: 0.25 });
+    const lines = [...svg.matchAll(/<text\b[^>]*>(.*?)<\/text>/g)].map((match) => match[1]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].endsWith('…')).toBe(true);
+    const size = Number(/<text\b[^>]*font-size="([^"]+)"/.exec(svg)![1]);
+    expect(measure(lines[0], fontCss('satoshi', size, 600))).toBeLessThanOrEqual(417 - 16);
+    expect(size * 1.3).toBeLessThanOrEqual(100);
+    // a box shorter than one 12 px line (here at 15 %) draws no text at all, and so cannot overlap its neighbour
+    expect(objectMarkup(image({ w: 417, h: 100 }), { ...ctx(failed), zoom: 0.15 })).not.toContain('<text');
+  });
+
   it('draws the placeholder without a loader, as an export does', () => {
     expect(objectMarkup(image(), ctx())).toContain('Loading');
   });

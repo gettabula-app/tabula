@@ -77,6 +77,26 @@ describe('constants that mirror the client', () => {
 });
 
 describe('content that is accepted', () => {
+  it('keeps lineHeight on supported objects through server and client template validation', () => {
+    const input = content([
+      sticky('sticky', { lineHeight: 0.8 }),
+      { ...sticky('shape'), type: 'shape', kind: 'rect', lineHeight: 1.15 },
+      { ...sticky('text'), type: 'text', lineHeight: 2 },
+      { ...sticky('markdown'), type: 'markdown', lineHeight: 3 },
+    ]);
+    const server = validateTemplateContent(input).content;
+    expect(server.objects.map((o: { lineHeight?: number }) => o.lineHeight)).toEqual([0.8, 1.15, 2, 3]);
+    expect(validateContent(server).objects.map((o) => (o as { lineHeight?: number }).lineHeight)).toEqual([0.8, 1.15, 2, 3]);
+  });
+
+  it('rejects lineHeight outside 0.8 to 3 or on an unsupported template object', () => {
+    for (const value of [0.79, 3.01, 'x']) {
+      expect(() => validateTemplateContent(content([sticky('bad', { lineHeight: value })]))).toThrow(/lineHeight/);
+      expect(() => validateContent(content([sticky('bad', { lineHeight: value })]))).toThrow(/lineHeight/);
+    }
+    expect(() => validateContent(content([frame('frame', { lineHeight: 1.5 })]))).toThrow(/cannot have lineHeight/);
+  });
+
   it('preserves boolean flip flags through both template validators and rejects other values', () => {
     const input = content([sticky('flipped', { flipX: true, flipY: false })]);
     expect(validateTemplateContent(input).content.objects[0]).toMatchObject({ flipX: true, flipY: false });

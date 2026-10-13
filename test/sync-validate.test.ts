@@ -131,6 +131,23 @@ describe('what the client writes passes', () => {
   });
 });
 
+describe('line height', () => {
+  it('accepts values from 0.8 through 3 on text, sticky, shape and Markdown objects', () => {
+    const base = { id: 'lh', x: 0, y: 0, w: 100, h: 80, rotation: 0, z: 'a0', createdBy: 'u1' };
+    for (const [type, value] of [
+      ['sticky', 0.8], ['text', 1.3], ['shape', 3], ['markdown', 1.15],
+    ] as const) {
+      expect(check({ ...base, type, lineHeight: value }, ctx, { isNew: true })).toEqual({ ok: true });
+    }
+  });
+
+  it('rejects values below or above the range and non-numbers', () => {
+    for (const value of [0.79, 3.01, 'x']) {
+      expect(check(sticky({ lineHeight: value }), ctx, { isNew: true }).ok).toBe(false);
+    }
+  });
+});
+
 describe('report-only text caps and link cards', () => {
   it('marks a text-length cap reportOnly while ENFORCE_TEXT_CAPS is off, and keeps structural limits hard', () => {
     expect(ENFORCE_TEXT_CAPS).toBe(false);
