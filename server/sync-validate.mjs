@@ -42,6 +42,7 @@
 import { cleanColor } from '../shared/colors.mjs';
 import { isDueDate, isSafeHttpUrl, kanbanColor, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES } from '../shared/containers.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
+import { MAX_CELL_CHARS, MAX_COL_WIDTH, MAX_TABLE_COLS, MAX_TABLE_ROWS, MIN_COL_WIDTH, parseTableKey } from '../shared/tables.mjs';
 import { MAX_SVG_BODY } from '../shared/svg-safety.mjs';
 
 // ---------------------------------------------------------------- limits (one table, adjust here)
@@ -110,7 +111,7 @@ export const FORBIDDEN_KEYS = Object.freeze(['__proto__', 'constructor', 'protot
 // ---------------------------------------------------------------- enumerations (kept equal to board-ops.mjs by a test)
 
 export const OBJ_TYPES = Object.freeze([
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ]);
 /** Object types the validator knows beyond board-ops.mjs's list: none now that link cards (docs/link-cards.md) are in both. */
@@ -324,12 +325,36 @@ const TRACKER_CARD = {
   trackerId: str(64, { pattern: TRACKER_FIELD_RE }), tracker: sizeCapped(LIMITS.trackerBytes), trackerUnmappedState: bool,
 };
 
+/** The rule for one key of a table: a row or column rank, a column width, or a cell's text. Null for a key that is not a table part. */
+function tablePartCheck(key) {
+  const p = parseTableKey(key);
+  if (!p) return null;
+  if (p.kind === 'r' || p.kind === 'k') return str(64, { min: 1 });
+  if (p.kind === 'w') return num(MIN_COL_WIDTH, MAX_COL_WIDTH);
+  return str(MAX_CELL_CHARS, { cp: true });
+}
+
+/** A table has at most MAX_TABLE_ROWS rows and MAX_TABLE_COLS columns, whatever order the writes came in. */
+function tableCountCodes(value, only) {
+  if (only && ![...only].some((k) => parseTableKey(k)?.kind === 'r' || parseTableKey(k)?.kind === 'k')) return [];
+  let rows = 0;
+  let cols = 0;
+  for (const k of Object.keys(value)) {
+    const p = parseTableKey(k);
+    if (p?.kind === 'r') rows++;
+    else if (p?.kind === 'k') cols++;
+  }
+  return [...(rows > MAX_TABLE_ROWS ? [{ code: 'too_many_rows', path: '' }] : []), ...(cols > MAX_TABLE_COLS ? [{ code: 'too_many_columns', path: '' }] : [])];
+}
+
 /** Per type: its own fields added to BOX (or, for connector and group, a list of their own). */
 export const FIELDS = Object.freeze({
   shape: { ...BOX, kind: oneOf(SHAPE_KINDS) },
   sticky: { ...BOX },
   text: { ...BOX },
   markdown: { ...BOX },
+  // a table (docs/tables.md): the header flags, and rows, columns, widths and cells as keys of their own, checked by tablePartCheck
+  table: { ...BOX, headerRow: bool, headerCol: bool },
   frame: { ...BOX, name: str(LIMITS.name) },
   tracker: {
     ...BOX, trackerId: str(64, { pattern: TRACKER_FIELD_RE }), view: oneOf(TRACKER_VIEWS),
@@ -605,7 +630,7 @@ export function validateBoardObject(id_, value, ctx = {}, opts = {}) {
     if (FORBIDDEN_KEYS.includes(key)) continue; // already reported by the walk
     if (only && !only.has(key) && !(typeChanged && key === 'type')) continue;
     if (value[key] === undefined) continue;
-    const check = Object.hasOwn(table, key) ? table[key] : null;
+    const check = Object.hasOwn(table, key) ? table[key] : type === 'table' ? tablePartCheck(key) : null;
     if (check) {
       const bad = check(value[key]);
       if (bad) v.push({ code: bad, path: cleanKey(key) });
@@ -618,6 +643,7 @@ export function validateBoardObject(id_, value, ctx = {}, opts = {}) {
     } else v.push({ code: 'unknown_field', path: cleanKey(key) });
   }
 
+  if (type === 'table') v.push(...tableCountCodes(value, only));
   v.push(...checkObjectAuthorship(id_, value, ctx, opts, only));
   return result(v);
 }

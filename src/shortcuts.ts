@@ -4,12 +4,12 @@ import type { Tool } from './app';
 export const TOOL_KEYS: Record<string, Tool> = {
   v: { kind: 'select' }, h: { kind: 'hand' }, n: { kind: 'sticky' }, s: { kind: 'sticky' }, t: { kind: 'text' },
   r: { kind: 'shape', shape: 'rect' }, o: { kind: 'shape', shape: 'ellipse' }, d: { kind: 'shape', shape: 'diamond' },
-  l: { kind: 'connector' }, x: { kind: 'connector' }, p: { kind: 'pen' }, f: { kind: 'frame' }, c: { kind: 'comment' },
+  l: { kind: 'connector' }, x: { kind: 'connector' }, p: { kind: 'pen' }, f: { kind: 'frame' }, c: { kind: 'comment' }, g: { kind: 'table' },
 };
 
 export const TOOL_LABELS: Record<string, string> = {
   v: 'Select', h: 'Hand', n: 'Sticky note', s: 'Sticky note', t: 'Text', r: 'Rectangle', o: 'Ellipse', d: 'Diamond',
-  l: 'Connector', x: 'Connector', p: 'Pen', f: 'Frame', c: 'Comment',
+  l: 'Connector', x: 'Connector', p: 'Pen', f: 'Frame', c: 'Comment', g: 'Table',
 };
 
 export interface Shortcut {

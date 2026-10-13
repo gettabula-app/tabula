@@ -3,6 +3,7 @@ import { isConnector } from './types';
 import { TYPE_LABEL } from './layers';
 import { STICKY_COLORS } from './palette';
 import { markdownReading, markdownTitle } from './markdown';
+import { tableModel } from '../shared/tables';
 
 /**
  * What a screen reader is told about an object in the canvas outline (docs/canvas-keyboard.md): a name built in a fixed order,
@@ -89,6 +90,12 @@ export function describeObject(o: Obj, ctx: DescribeContext): Description {
       const reading = markdownReading(source);
       const tasks = reading.tasks ? [`${plural(reading.tasks, 'task')}, ${reading.done} done.`] : [];
       return { name: `Markdown block${title ? `, "${title}"` : ''}${suffix}`, description: [...rest.filter((r) => r !== oneLine(source)), reading.text, ...tasks].filter(Boolean).join(' ') };
+    }
+    case 'table': {
+      // rows by columns; the first row's text (a header when it is one) and the filled cells are the description
+      const model = tableModel(o as unknown as Record<string, unknown>);
+      const first = model.cols.map((c) => oneLine(model.cell(model.rows[0], c))).filter(Boolean).join(', ');
+      return { name: `Table, ${plural(model.rows.length, 'row')} by ${plural(model.cols.length, 'column')}${suffix}`, description: [...rest, first ? `First row: ${first}.` : ''].filter(Boolean).join(' ') };
     }
     case 'path':
       return { name: `Drawing${suffix}`, description: rest.join(' ') };

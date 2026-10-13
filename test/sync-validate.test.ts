@@ -59,7 +59,7 @@ describe('the module is pure and its tables match the app', () => {
   it('imports no Yjs, no node: module and no clock or randomness', () => {
     const source = fs.readFileSync(new URL('../server/sync-validate.mjs', import.meta.url), 'utf8');
     const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]);
-    expect(imports.sort()).toEqual(['../shared/colors.mjs', '../shared/containers.mjs', '../shared/svg-safety.mjs', '../shared/text-limits.mjs']);
+    expect(imports.sort()).toEqual(['../shared/colors.mjs', '../shared/containers.mjs', '../shared/svg-safety.mjs', '../shared/tables.mjs', '../shared/text-limits.mjs']);
     expect(source).not.toMatch(/Date\.now|Math\.random|process\.(?!env)|require\(/);
   });
 
@@ -156,6 +156,33 @@ describe('report-only text caps and link cards', () => {
     expect(paths(check(link({ edited: ['title', 'url'] })))).toEqual(['bad_value:edited']);
     expect(paths(check(link({ hack: 1 })))).toEqual(['unknown_field:hack']);
     expect(codes(check({ id: 'k2', type: 'link2' }))).toEqual(['unknown_type']);
+  });
+});
+
+describe('tables', () => {
+  const table = (extra: Record<string, unknown> = {}) => ({
+    id: 'tb1', type: 'table', x: 0, y: 0, w: 320, h: 80, rotation: 0, z: 'a0', createdBy: 'u1', headerRow: true,
+    'r:r1': 'a0', 'r:r2': 'a1', 'k:c1': 'a0', 'k:c2': 'a1', 'w:c1': 200, 'c:r1:c1': 'Name', 'c:r2:c2': '**bold**', ...extra,
+  });
+  it('accepts the keys of a table (rows, columns, a width, cells) and the header flags', () => {
+    expect(check(table(), ctx, { isNew: true })).toEqual({ ok: true });
+    expect(check(table({ headerCol: false, 'c:r1:c2': '' }))).toEqual({ ok: true });
+  });
+  it('rejects a cell that is too long or not text, a width out of range, an empty rank, and keys that are not table parts', () => {
+    expect(paths(check(table({ 'c:r1:c2': 'x'.repeat(1001) })))).toEqual(['too_long:c:r1:c2']);
+    expect(paths(check(table({ 'c:r1:c2': 5 })))).toEqual(['bad_type:c:r1:c2']);
+    expect(paths(check(table({ 'w:c1': 5 })))).toEqual(['out_of_range:w:c1']);
+    expect(paths(check(table({ 'r:r3': '' })))).toEqual(['too_short:r:r3']);
+    expect(paths(check(table({ 'c:R1:c2': 'x' })))).toEqual(['unknown_field:c:R1:c2']);
+    expect(paths(check(table({ 'q:r1': 'x' })))).toEqual(['unknown_field:q:r1']);
+    expect(paths(check(table({ headerRow: 'yes' })))).toEqual(['bad_type:headerRow']);
+  });
+  it('limits a table to 100 rows and 30 columns however the writes arrive, and only another type is refused its keys', () => {
+    const many = (kind: string, n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`${kind}:i${i}`, `a${String(i).padStart(3, '0')}`]));
+    expect(codes(check(table({ ...many('r', 101) })))).toContain('too_many_rows');
+    expect(codes(check(table({ ...many('k', 31) })))).toContain('too_many_columns');
+    expect(check(table({ ...many('r', 98), ...many('k', 28) }))).toEqual({ ok: true });
+    expect(paths(check({ id: 'x1', type: 'sticky', x: 0, y: 0, w: 10, h: 10, rotation: 0, z: 'a0', createdBy: 'u1', 'c:r1:c1': 'x' }))).toEqual(['unknown_field:c:r1:c1']);
   });
 });
 

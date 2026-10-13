@@ -1,5 +1,6 @@
 // Small Markdown export for MCP. Every board-authored string is cleaned before formatting.
 import { boardTitle, cleanForModel, readAll } from './board-ops.mjs';
+import { parseTableKey, toMarkdownTable } from '../shared/tables.mjs';
 
 function inline(value, max = 20_000) {
   return cleanForModel(value, max).text
@@ -56,6 +57,12 @@ export function exportBoardMarkdown(doc, titleOverride = undefined) {
       // the block's own Markdown, quoted so its headings and lists do not become the summary's: one line each, cleaned like every board-authored string
       const lines = cleanForModel(object.text, 4_000).text.split(/\r?\n/u).map((line) => line.replace(/\s+$/u, ''));
       return lines.length && lines.some(Boolean) ? lines.map((line) => (line ? '> ' + line : '>')).join('\n') : null;
+    }
+    if (object.type === 'table') {
+      // a table as a Markdown table, quoted like a Markdown block; every cell is cleaned like any board-authored string
+      const clean = Object.fromEntries(Object.entries(object).map(([k, v]) => [k, parseTableKey(k)?.kind === 'c' && typeof v === 'string' ? cleanForModel(v, 1_000).text : v]));
+      const table = toMarkdownTable(clean);
+      return table ? table.split('\n').map((line) => '> ' + line).join('\n') : null;
     }
     if (object.type === 'sticky' || object.type === 'text' || object.type === 'shape') {
       const text = typeof object.text === 'string' && object.text ? inline(object.text) : '';

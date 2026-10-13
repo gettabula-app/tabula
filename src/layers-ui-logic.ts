@@ -59,6 +59,7 @@ export function typeGlyph(type: string, kind?: string): IconName {
     case 'sticky': case 'card': return 'sticky';
     case 'text': return 'text';
     case 'markdown': return 'markdown';
+    case 'table': return 'table';
     case 'frame': case 'tracker': return 'frame';
     case 'icon': return 'icons';
     case 'image': return 'image';

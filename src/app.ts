@@ -18,7 +18,7 @@ import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, objBounds, pointInRect, rectContains, rectOfPoints, rectsIntersect,
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
-import { cardBody, kanbanHeaderControls, markdownBoxHeight, objectMarkup, styleOf, textHeight } from './markup';
+import { cardBody, kanbanHeaderControls, markdownBoxHeight, objectMarkup, styleOf, tableBoxSize, tableStyle, textHeight } from './markup';
 import { cornerBox, cornerFactor, isCorner, keyResize, scaledText, type Corner, type TextKey } from './text-resize';
 import {
   addLane, addLaneRefusal, moveLaneRefusal, laneReorderRefusal, moveLaneTo, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
@@ -43,6 +43,9 @@ import { guestMark } from './ui/guest-mark';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
 import { watchMarkdownHeights } from './markdown-heal';
+import { watchTableSizes } from './table-heal';
+import { cellAt, layoutTable } from './table-layout';
+import { MAX_TABLE_COLS, MAX_TABLE_ROWS, DEFAULT_COL_WIDTH, newTableFields, parseGrid, tableFromGrid } from '../shared/tables';
 import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
@@ -78,6 +81,7 @@ export type Tool =
   | { kind: 'sticky' }
   | { kind: 'text' }
   | { kind: 'markdown' }
+  | { kind: 'table' }
   | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'connector'; relation?: UmlRelation }
   | { kind: 'pen' }
@@ -287,6 +291,7 @@ export class BoardApp {
     });
     this.disposers.push(this.watchCardHeights());
     this.disposers.push(this.watchMarkdownHeights());
+    this.disposers.push(this.watchTableSizes());
 
     this.bindPointer();
     this.bindKeys();
@@ -340,6 +345,24 @@ export class BoardApp {
       busy: () => Boolean(this.drag || this.editor.active || this.cardInput.active),
       hidden: (o) => !this.store.isShown(o) || this.flow.isHidden(o),
     });
+  }
+
+  /** Keeps a table's stored size equal to its columns and rows after remote edits, agent writes and on load. */
+  private watchTableSizes(): () => void {
+    return watchTableSizes({
+      store: this.store,
+      role: () => this.role,
+      busy: () => Boolean(this.drag || this.editor.active || this.cardInput.active),
+      hidden: (o) => !this.store.isShown(o) || this.flow.isHidden(o),
+    });
+  }
+
+  /** Fits a table object to its columns and rows after this person changed it (the same size the heal gives everyone else). */
+  fitTable(id: Id) {
+    const o = this.store.get(id);
+    if (!o || o.type !== 'table') return;
+    const size = tableBoxSize(o as BaseObj);
+    if (Math.abs(o.w - size.w) > 0.5 || Math.abs(o.h - size.h) > 0.5) this.store.transact(() => this.store.update(id, size));
   }
 
   // ---------------------------------------------------------------- events
@@ -2149,6 +2172,7 @@ export class BoardApp {
       case 'sticky': return { w: 192, h: 192 };
       case 'text': return { w: 240, h: 28 };
       case 'markdown': return { w: 360, h: 120 };
+      case 'table': return { w: DEFAULT_COL_WIDTH * 3, h: 3 * 40 };
       case 'frame': return { w: 960, h: 600 };
       case 'shape': return shapeDefaultSize(t.shape);
       case 'uml': return { w: t.def.w, h: t.def.h };
@@ -2162,6 +2186,13 @@ export class BoardApp {
       case 'sticky': return this.makeObj('sticky', rect);
       case 'text': return this.makeObj('text', { ...rect, h: Math.max(rect.h, 28) });
       case 'markdown': return this.makeObj('markdown', { ...rect, w: Math.max(rect.w, 160), h: Math.max(rect.h, 60) });
+      case 'table': {
+        // a dragged box asks for as many columns and rows as fit it; a click makes 3 x 3
+        const cols = Math.min(MAX_TABLE_COLS, Math.max(1, Math.round(rect.w / DEFAULT_COL_WIDTH)));
+        const rows = Math.min(MAX_TABLE_ROWS, Math.max(1, Math.round(rect.h / 40)));
+        const o = this.makeObj('table', { x: rect.x, y: rect.y, w: cols * DEFAULT_COL_WIDTH, h: rows * 40 }, newTableFields(rows, cols, () => Math.random().toString(36).slice(2, 8).padEnd(6, '0')) as Partial<BaseObj>);
+        return { ...o, ...tableBoxSize(o) };
+      }
       case 'frame': return this.makeObj('frame', rect, { name: 'Frame' });
       case 'shape': return this.makeObj('shape', rect, { kind: t.shape });
       case 'uml': return this.makeObj(t.def.type, rect, structuredClone(t.def.defaults || {}));
@@ -2197,6 +2228,16 @@ export class BoardApp {
     if (o.type === 'frame') this.adoptInto(o);
     this.setTool({ kind: 'select' });
     if (o.type === 'sticky' || o.type === 'text' || o.type === 'shape' || o.type === 'markdown') this.editor.start(o.id);
+    if (o.type === 'table') this.startFirstCell(o.id);
+  }
+
+  /** Opens the first cell of a table for typing. */
+  private startFirstCell(id: Id) {
+    const o = this.store.get(id);
+    if (!o || o.type !== 'table') return;
+    const layout = layoutTable(o as unknown as Record<string, unknown>, tableStyle(o as BaseObj));
+    const first = layout.cells[0];
+    if (first) this.editor.startCell(id, first.rowId, first.colId);
   }
 
   /** A new frame drawn over existing objects takes them as children. */
@@ -2323,6 +2364,14 @@ export class BoardApp {
     if (hit?.type === 'card') {
       this.setSelection([hit.id]);
       this.openCardDialog(hit.id);
+      return;
+    }
+    if (hit?.type === 'table') {
+      // a double click edits the cell under it
+      const layout = layoutTable(hit as unknown as Record<string, unknown>, tableStyle(hit as BaseObj));
+      const cell = cellAt(layout, p.x - hit.x, p.y - hit.y);
+      this.setSelection([hit.id]);
+      if (cell) this.editor.startCell(hit.id, cell.rowId, cell.colId);
       return;
     }
     if (hit) {
@@ -2771,6 +2820,22 @@ export class BoardApp {
     return this.makeObj('text', { x: at.x, y: at.y, w, h: textHeight(probe) }, { text: content });
   }
 
+  /** Tab-separated lines (a copy from Excel, Sheets or Numbers) as a new table at the pointer; false when the text is not that. */
+  private pasteTable(text: string): boolean {
+    const lines = text.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.trim() !== '');
+    if (lines.length === 0 || !lines.every((l) => l.includes('\t'))) return false;
+    const grid = parseGrid(text);
+    if (!grid.length || Math.max(...grid.map((r) => r.length)) < 2) return false;
+    const fields = tableFromGrid(grid, () => Math.random().toString(36).slice(2, 8).padEnd(6, '0'));
+    if (!fields) return false;
+    const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());
+    const probe = this.makeObj('table', { x: at.x, y: at.y, w: 100, h: 100 }, fields as Partial<BaseObj>);
+    const size = tableBoxSize(probe);
+    const o = { ...probe, ...size, x: at.x - size.w / 2, y: at.y - size.h / 2 };
+    this.createObject(o);
+    return true;
+  }
+
   pasteText(text: string) {
     if (this.readOnly) return;
     try {
@@ -2786,6 +2851,8 @@ export class BoardApp {
       }
     } catch { /* not JSON */ }
     if (this.clipboard.length && text === JSON.stringify({ driftboard: 1, objects: this.clipboard })) return;
+    // a copy from a spreadsheet (every line has a tab) becomes a table (docs/tables.md)
+    if (this.pasteTable(text)) return;
     // Preserve the clipboard's line breaks, removing only empty lines at either end.
     const lines = text.replace(/\r\n?/g, '\n').split('\n');
     while (lines.length && !lines[0].trim()) lines.shift();
@@ -2901,6 +2968,9 @@ export class BoardApp {
     }
     if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
       this.store.update(o.id, { h: markdownBoxHeight({ ...o, ...patch } as BaseObj) });
+    }
+    if (o.type === 'table' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'headerRow' in patch || 'headerCol' in patch)) {
+      this.store.update(o.id, tableBoxSize({ ...o, ...patch } as BaseObj));
     }
     if (o.type === 'uml-class' && 'stereotype' in patch) {
       this.store.update(o.id, { h: classHeight({ ...o, ...patch } as BaseObj) });

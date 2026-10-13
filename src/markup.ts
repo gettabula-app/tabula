@@ -17,6 +17,7 @@ import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
 import { renderTrackerFrame } from './tracker-frame';
 import { linkMarkup } from './link-markup';
+import { layoutTable } from './table-layout';
 import { layoutMarkdown, type MdStyle } from './markdown-layout';
 import { mdItemsMarkup } from './markdown-svg';
 import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
@@ -77,6 +78,7 @@ export const DEFAULTS = {
   text: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 20, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   frame: { fill: '#FFFFFF', stroke: 'var(--canvas-rule, #C9D1DA)', strokeWidth: 1, textColor: 'var(--graphite, #5B6672)', fontSize: 14, fontWeight: 600, align: 'left' as const, valign: 'top' as const },
   markdown: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
+  table: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 15, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   uml: { fill: '#FFFFFF', stroke: INK, strokeWidth: 1.5, textColor: INK, fontSize: 14, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
   path: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 3, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
   icon: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 0, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
@@ -86,6 +88,7 @@ export function defaultsFor(o: Obj) {
   if (o.type === 'sticky') return DEFAULTS.sticky;
   if (o.type === 'text') return DEFAULTS.text;
   if (o.type === 'markdown') return DEFAULTS.markdown;
+  if (o.type === 'table') return DEFAULTS.table;
   if (o.type === 'frame') return DEFAULTS.frame;
   if (o.type === 'tracker') return DEFAULTS.frame;
   if (o.type === 'path') return DEFAULTS.path;
@@ -279,6 +282,30 @@ function markdownMarkup(o: BaseObj, ctx: MarkupCtx) {
   const { items } = layoutMarkdown(o.text || '', o.w, markdownStyle(o));
   const body = mdItemsMarkup(items, { color: s.textColor, family: fontFamily(s.font), owner: o.id });
   return wrapG(o, `${background}<svg x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" overflow="hidden">${body}</svg>`, s.opacity);
+}
+
+/** What a table lays its cells out with: the object's own font, size and weight (the defaults of DEFAULTS.table without them). */
+export function tableStyle(o: BaseObj): MdStyle {
+  const s = styleOf(o);
+  return { font: s.font, size: s.fontSize, weight: s.fontWeight };
+}
+
+/** The size a table needs for its cells: columns' widths in total, rows' heights in total (the app and the table heal fit the object to it). */
+export function tableBoxSize(o: BaseObj): { w: number; h: number } {
+  const { w, h } = layoutTable(o as unknown as Record<string, unknown>, tableStyle(o));
+  return { w, h };
+}
+
+/**
+ * A table (docs/tables.md): a grid of cells in SVG, each cell's text laid out as inline Markdown. The layout (src/table-layout.ts) is the same for the canvas,
+ * the exports and the print, and nothing of a cell reaches an attribute except as an escaped number or text.
+ */
+function tableMarkup(o: BaseObj) {
+  const s = styleOf(o);
+  const { items, w, h } = layoutTable(o as unknown as Record<string, unknown>, tableStyle(o));
+  const fill = s.fill === 'none' ? '' : `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" fill="${escapeXml(s.fill)}"/>`;
+  const body = mdItemsMarkup(items, { color: s.textColor, family: fontFamily(s.font), owner: o.id });
+  return wrapG(o, `${fill}${body}`, s.opacity);
 }
 
 function frameMarkup(o: BaseObj) {
@@ -989,6 +1016,7 @@ export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
     case 'sticky': return stickyMarkup(o, ctx);
     case 'text': return textMarkup(o, ctx);
     case 'markdown': return markdownMarkup(o, ctx);
+    case 'table': return tableMarkup(o);
     case 'frame': return frameMarkup(o);
     case 'tracker': return wrapG(o, renderTrackerFrame(o), styleOf(o).opacity);
     case 'icon': return iconMarkup(o);

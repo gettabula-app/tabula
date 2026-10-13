@@ -175,8 +175,10 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
   if (o.type === 'text') hs = all.filter((h) => h.id === 'e' || h.id === 'w' || h.id.length === 2);
   // a Markdown block: the sides change the width the text wraps at; its height follows its content (src/markdown-heal.ts)
   if (o.type === 'markdown') hs = all.filter((h) => h.id === 'e' || h.id === 'w');
+  // a table: its size is its columns and rows, changed with their own controls (docs/tables.md), so the box has no handles
+  if (o.type === 'table') hs = [];
   if (o.type === 'uml-initial' || o.type === 'uml-final') hs = all.filter((h) => h.id.length === 2);
-  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package' && o.type !== 'markdown') {
+  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package' && o.type !== 'markdown' && o.type !== 'table') {
     hs = [...hs, { id: 'rot', p: L(o.w / 2, -24 / zoom) }];
   }
   return hs;

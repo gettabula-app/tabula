@@ -1,5 +1,5 @@
 import type { BoardApp } from '../app';
-import { copyMarkdownSource } from './markdown-actions';
+import { copyMarkdownSource, copyTable } from './markdown-actions';
 import { leaveOutWithheld } from '../private-select';
 import type { BaseObj, ConnectorObj, Head, Obj, Route, ShapeKind, UmlRelation, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
@@ -253,6 +253,8 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       btn('backward', 'Send backward', () => void app.sendBackward(), '', 'mod+['),
       btn('back', 'Send to back', () => app.sendToBack(), '', '['),
       sel.length === 1 && sel[0].type === 'markdown' ? btn('copy', 'Copy as Markdown', () => copyMarkdownSource((sel[0] as BaseObj).text ?? '')) : null,
+      sel.length === 1 && sel[0].type === 'table' ? btn('copy', 'Copy for a spreadsheet', () => copyTable(sel[0] as unknown as Record<string, unknown>, 'tsv')) : null,
+      sel.length === 1 && sel[0].type === 'table' ? btn('copy', 'Copy as Markdown', () => copyTable(sel[0] as unknown as Record<string, unknown>, 'markdown')) : null,
       btn('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
       btn(locked ? 'unlock' : 'lock', locked ? 'Unlock' : 'Lock', () => app.toggleLock()),
       sel.some((o) => o.type === 'uml-class' || o.type === 'shape') ? btn('mermaid', 'Copy as Mermaid', () => {
