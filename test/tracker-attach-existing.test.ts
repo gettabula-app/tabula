@@ -32,6 +32,13 @@ function put(doc: Y.Doc, id: string, type: string, fields: Record<string, unknow
 const api = (who: Account, method: string, route: string, body?: unknown) => h.api(who.cookie, method, route, body);
 const attach = (who: Account, link: string, body: unknown) => api(who, 'POST', `/api/tracker/links/${link}/cards/attach`, body);
 
+/**
+ * Waits until the tracker restore gate answers open again. The server caches its answer for a second, so right after a test removes the gate row a
+ * request can still be refused with 503. A refused request is not counted against the attach limiter (the gate is checked before it), and the one
+ * that finally gets through counts once: never poll for a state in which attach calls are accepted and counted (60 a minute per person).
+ */
+const gateOpen = () => until(async () => (await attach(owner, linkId, {})).status !== 503);
+
 function sql<T>(fn: (db: DatabaseSync) => T): T {
   const db = new DatabaseSync(path.join(h.dir, 'directory.sqlite'));
   try { return fn(db); } finally { db.close(); }
@@ -183,13 +190,14 @@ describe('POST /api/tracker/links/:id/cards/attach', () => {
       expect(await attach(owner, linkId, { cardId: 'card-6', ticket: t.key })).toMatchObject({ status: 503, body: { error: 'tracker_restoring' } });
     } finally {
       sql((db) => db.prepare("DELETE FROM settings WHERE key = 'tracker.restore_gate'").run());
+      await gateOpen(); // the next test starts with the gate open, not with a cached closed answer
     }
     expect(activeLinks(t.id)).toBe(0);
   });
 });
 
 describe('board snapshot before an attach replaces card text', () => {
-  beforeAll(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)); }); // the restore gate answer is cached for a second
+  beforeAll(async () => { await gateOpen(); }); // the restore gate answer is cached for a second: wait until it is open, not a fixed time
 
   it('keeps the old text in a labelled version first, and restoring it brings the text back', async () => {
     const t = await newTicket('Snap title');
@@ -197,7 +205,8 @@ describe('board snapshot before an attach replaces card text', () => {
     expect(versionsBefore.some((v) => v.label === `Before attaching ${t.key}`)).toBe(false);
     expect(objs(live.doc).get('card-7')?.get('text')).toBe('Old line\nSecond line');
 
-    expect((await attach(owner, linkId, { cardId: 'card-7', ticket: t.key })).status).toBe(201);
+    const attached = await attach(owner, linkId, { cardId: 'card-7', ticket: t.key });
+    expect({ status: attached.status, body: attached.body }).toMatchObject({ status: 201 }); // a failure shows the status and body
     await until(() => objs(live.doc).get('card-7')?.get('text') === 'Snap title\nSecond line');
 
     const versions = (await api(owner, 'GET', `/api/boards/${boardId}/versions`)).body.versions as { id: string; label: string | null; kind: string }[];
@@ -221,7 +230,8 @@ describe('board snapshot before an attach replaces card text', () => {
     const t = await newTicket('No snap');
     const count = async () => ((await api(owner, 'GET', `/api/boards/${boardId}/versions`)).body.versions as { label: string | null }[])
       .filter((v) => v.label === `Before attaching ${t.key}`).length;
-    expect((await attach(owner, linkId, { cardId: 'no-such-card', ticket: t.key })).status).toBe(400);
+    const refused = await attach(owner, linkId, { cardId: 'no-such-card', ticket: t.key });
+    expect({ status: refused.status, body: refused.body }).toMatchObject({ status: 400 });
     expect(await count()).toBe(0);
   });
 });
