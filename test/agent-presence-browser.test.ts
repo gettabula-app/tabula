@@ -82,6 +82,7 @@ describe.skipIf(!available)('agent drafts', () => {
     await page.getByText('Drafted by an agent for Ada').waitFor();
     await page.getByRole('button', { name: 'Accept draft' }).click();
     await page.waitForFunction(() => document.querySelectorAll('[data-agent-draft]').length === 0);
+    expect(await page.evaluate(() => (window as any).__board.store.get('d1').proposedBy)).toBeUndefined();
     await page.close();
   });
 
@@ -139,3 +140,41 @@ describe.skipIf(!available)('agents at work', () => {
     await page.close();
   });
 });
+
+describe.skipIf(!available)('the Agent activity panel', () => {
+  const entry = (over: Record<string, unknown> = {}) => ({
+    id: 'e1', at: Date.now() - 60_000, agent: { token: 'Claude', member: 'Ada' }, tool: 'create_objects', summary: 'created 3 sticky notes',
+    counts: { created: 3, changed: 0, removed: 0 }, ids: ['d1'], revertible: true, ...over,
+  });
+
+  it('lists what agents did, names the member first and the token quoted, and reverts one call with the result said in words', async () => {
+    const page = await open();
+    await seedDraft(page);
+    let reverts = 0;
+    await page.route('**/api/boards/*/activity', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ entries: [entry(), entry({ id: 'e2', summary: 'changed 2 frames', revertible: false, reason: 'expired' }), entry({ id: 'e3', summary: 'removed 1 shape', reverted: { at: Date.now() - 5000, by: 'Bo' } })] }) }));
+    await page.route('**/api/boards/*/activity/*/revert', (route) => { reverts++; return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ applied: 2, skipped: [{ id: 'x', reason: 'changed' }] }) }); });
+    await page.evaluate(() => { (window as any).__board.role = 'editor'; });
+    await page.evaluate(`(async () => { const m = await import('/src/ui/agent-activity.ts'); m.openAgentActivity(window.__board); })()`);
+    await page.getByRole('dialog', { name: 'Agent activity' }).waitFor();
+    const rows = page.locator('.agent-activity-row');
+    await rows.nth(0).waitFor();
+    expect(await rows.count()).toBe(3);
+    expect(await rows.nth(0).textContent()).toContain("Ada's agent “Claude” created 3 sticky notes");
+    expect(await rows.nth(1).textContent()).toContain('Too old to revert');
+    expect(await rows.nth(2).textContent()).toContain('Reverted by Bo');
+    await rows.nth(0).getByRole('button', { name: 'Revert' }).click();
+    await page.getByText('Reverted 2, left 1 that was changed since.').waitFor();
+    expect(reverts).toBe(1);
+    await page.close();
+  });
+
+  it('says so when the board has no workspace log (open mode), and when there is nothing yet', async () => {
+    const page = await open();
+    await page.route('**/api/boards/*/activity', (route) => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not_found' }) }));
+    await page.evaluate(`(async () => { const m = await import('/src/ui/agent-activity.ts'); m.openAgentActivity(window.__board); })()`);
+    await page.getByText('Agent activity is kept for boards in a workspace with accounts.').waitFor();
+    expect(await page.locator('.agent-activity-row').count()).toBe(0);
+    await page.close();
+  });
+});
+

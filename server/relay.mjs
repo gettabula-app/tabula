@@ -95,7 +95,7 @@ const ROLE_RECHECK_MS = 5_000;
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 /** How long an agent shows as at work on a board after its last change (TAB-158), and how many are shown at once. */
-const AGENT_PRESENCE_MS = Number(process.env.TABULA_TEST_AGENT_PRESENCE_MS) > 0 ? Number(process.env.TABULA_TEST_AGENT_PRESENCE_MS) : 30_000; // the env knob is for tests
+const AGENT_PRESENCE_MS = Math.min(10 * 60_000, Number(process.env.TABULA_TEST_AGENT_PRESENCE_MS) > 0 ? Number(process.env.TABULA_TEST_AGENT_PRESENCE_MS) : 30_000); // the env knob is for tests; never more than 10 minutes
 const MAX_AGENTS_SHOWN = 6;
 // Not a y-websocket type (it uses 0 sync, 1 awareness, 2 auth, 3 query awareness). Relay to client only: a hosted
 // workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.
@@ -732,11 +732,37 @@ class Room {
         removed.forEach((id) => ids.delete(id));
         this.updatePresenceColour(conn);
       }
-      const enc = encoding.createEncoder();
-      encoding.writeVarUint(enc, MSG_AWARENESS);
-      encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
-      this.broadcast(encoding.toUint8Array(enc));
+      if (!changed.includes(this.awareness.clientID)) {
+        const enc = encoding.createEncoder();
+        encoding.writeVarUint(enc, MSG_AWARENESS);
+        encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
+        this.broadcast(encoding.toUint8Array(enc));
+        return;
+      }
+      // the agents the relay publishes: who they work for and their token names go to the people in the workspace, a join-code guest gets a generic entry
+      for (const guest of [false, true]) {
+        const msg = this.awarenessMessage(changed, guest);
+        for (const ws of this.conns.keys()) if ((ws.guest === true) === guest) send(ws, msg);
+      }
     });
+  }
+
+  /** An awareness update for `ids`, with the relay's own agents entry redacted for a guest (no names, no positions of what was drafted). */
+  awarenessMessage(ids, guest) {
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, MSG_AWARENESS);
+    const inner = encoding.createEncoder();
+    encoding.writeVarUint(inner, ids.length);
+    for (const id of ids) {
+      const meta = this.awareness.meta.get(id);
+      let state = this.awareness.getStates().get(id) ?? null;
+      if (guest && id === this.awareness.clientID && state?.agents) state = { agents: state.agents.map((a) => ({ id: a.id, token: 'Agent', member: null, x: null, y: null })) };
+      encoding.writeVarUint(inner, id);
+      encoding.writeVarUint(inner, meta?.clock ?? 0);
+      encoding.writeVarString(inner, JSON.stringify(state));
+    }
+    encoding.writeVarUint8Array(enc, encoding.toUint8Array(inner));
+    return encoding.toUint8Array(enc);
   }
 
   broadcast(msg) {
@@ -906,12 +932,7 @@ class Room {
     send(ws, encoding.toUint8Array(enc));
 
     const states = this.awareness.getStates();
-    if (states.size > 0) {
-      const a = encoding.createEncoder();
-      encoding.writeVarUint(a, MSG_AWARENESS);
-      encoding.writeVarUint8Array(a, awarenessProtocol.encodeAwarenessUpdate(this.awareness, [...states.keys()]));
-      send(ws, encoding.toUint8Array(a));
-    }
+    if (states.size > 0) send(ws, this.awarenessMessage([...states.keys()], ws.guest === true));
     // only when there are runs: a client starts with none, and an app older than the message logs each one it gets
     const snapshot = this.kind === 'board' ? aiLive.snapshotFor(this.name, aiViewer(ws)) : null;
     if (snapshot?.runs.length) sendAiRuns(ws, snapshot);
@@ -1110,6 +1131,8 @@ class Room {
         // Every socket may only write the clientIDs it controls; guests and read-only viewers also get sanitised state.
         const others = [];
         for (const [other, ids] of this.conns) if (other !== ws) others.push({ ids, userId: other.userId, guest: other.guest === true });
+        // the room's own awareness id (the agents it publishes) belongs to the relay: no socket can write it, whatever clock it sends
+        others.push({ ids: new Set([this.awareness.clientID]), userId: '__relay__', guest: false });
         const clean = ws.guest
           ? (state) => cleanGuestAwarenessState(state, ws)
           : typeof ws.userId === 'string' && ws.userId !== '' ? (state) => cleanAccountAwarenessState(state, ws) : undefined;

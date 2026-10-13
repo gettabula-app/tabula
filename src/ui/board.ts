@@ -202,7 +202,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     }
     knownPeople = now;
     const runs = liveRunsFor(app)?.list() ?? [];
-    const agents = app.agents();
+    const agents = typeof app.agents === 'function' ? app.agents() : []; // a board shell built for a test may not have the live presence
     const agentNow = new Map(agents.map((a) => [a.id, `${agentName(a)} “${a.token}”`]));
     for (const [id, who] of agentNow) if (!knownAgents.has(id)) announce(`${who} is working on the board`, { key: 'presence', delay: 700, merge: true });
     for (const id of knownAgents.keys()) if (!agentNow.has(id)) announce(`${knownAgents.get(id)} finished`, { key: 'presence', delay: 700, merge: true });
@@ -899,7 +899,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       demoWorkspaceItems(),
     ] : openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     // what agents did on this board, with a revert for editors (TAB-158); kept for boards in a workspace with accounts
-    !scratch && !demo && authState().mode === 'signed-in' ? item('spark', 'Agent activity', () => openAgentActivity(app)) : null,
+    !scratch && !demo && authState().mode === 'signed-in' ? item('history', 'Agent activity', () => openAgentActivity(app)) : null,
     item('layers', 'Layers', openLayers, 'Alt+L'),
     demo || !canChangeProfile(auth.mode) ? null : item('user', 'Your name and colour', () => openProfile(app)),
     mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,

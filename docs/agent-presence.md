@@ -29,3 +29,15 @@ The log goes with what it describes: the sweep (at start and daily) deletes the 
 - Every object it would write is first checked with the validator that live writes get (`validateBoardObject`); one that fails is left out (`invalid`).
 - Nothing the tracker guards is written, in either direction: an object with a tracker field, a tracker frame, or revert data that names such a field is left alone (`linked`), so a revert can never link a card again that a call unlinked.
 - When nothing at all could be applied the entry stays revertible, so the person can sort out what is in the way and try again.
+
+## Presence (agents at work)
+
+An MCP call that changes a board makes its agent show as at work for 30 seconds (`AGENT_PRESENCE_MS`, at most 10 minutes even when the test knob `TABULA_TEST_AGENT_PRESENCE_MS` is set): `Room.setAgent` (`server/relay.mjs`) puts `{ agents: [{ id, token, member, x, y }] }` into the room's own awareness state. `id` is a 12-character hash of the token's id (never the token id); `x, y` is the middle of what the call changed (`diffCenter`), leaving out notes kept private until the board is revealed.
+
+- **Only the relay writes it.** `stripRelayFields` (`server/awareness-guard.mjs`) removes an `agents` field from every state a client sends, in every path; and the relay's own awareness client id is reserved: a client update for that id is ignored (it could otherwise erase the agent for everyone).
+- **Who sees what.** People in the workspace see who the agent works for, its token name and where it works. A join-code guest sees only that an agent is at work (`{ token: 'Agent', member: null, x: null, y: null }`): `Room.awarenessMessage` redacts the relay's entry for guest sockets, on every update and on joining.
+- **In the app.** `BoardApp.agents()` reads the field as untrusted text (names cleaned and cut, ids and positions checked) and shows a cursor in the room ("Ada's agent" with the token name quoted after it, gliding to where the agent works) and an avatar with the spark in the people list that goes there when pressed. The member comes first and the token name is quoted and apart, because a member names their own tokens.
+- **Drafts.** Objects an MCP `create_objects` call makes carry `proposedBy: { feature: 'agent', by: { id, name } }` (the name is the member's first name; the token name is not stored). The app marks them with a dashed outline and an "Agent draft" label until a person edits one (any edit through the store removes the field) or presses Accept draft in the properties panel (one undo step). The properties panel says "Drafted by an agent for Ada".
+- **Activity panel.** "Agent activity" in the board menu (workspace boards only) lists the log (`GET /api/boards/:id/activity`) and, for editors, Revert (`POST .../revert`), saying in words what a revert left because it had been changed since.
+
+Tests: `test/agent-activity.test.ts` (log, revert, presence, expiry, forging, reserved id, guest redaction), `test/awareness-guard.test.ts`, `test/agent-presence-browser.test.ts` (drafts, cursor, avatar, the panel).

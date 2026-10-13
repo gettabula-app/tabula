@@ -99,6 +99,7 @@ export function diffCenter(diff) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const { before, after } of Object.values(diff)) {
     const o = after ?? before;
+    if (o?.privateStep) continue; // a note kept private until the board is revealed is not where an agent is seen to work
     if (![o?.x, o?.y, o?.w, o?.h].every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
     x0 = Math.min(x0, o.x); y0 = Math.min(y0, o.y); x1 = Math.max(x1, o.x + o.w); y1 = Math.max(y1, o.y + o.h);
   }
