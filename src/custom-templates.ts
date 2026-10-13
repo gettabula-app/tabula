@@ -9,10 +9,15 @@ import { newId } from './store';
 import { isSafeColor } from '../shared/colors';
 import { TEMPLATE_STRIPPED, checkTemplateKanbanLimits, isContainerType, splitRank, templateKanbanFields, templateLabels } from '../shared/containers';
 import { STICKY_COLORS } from './palette';
+import { parseTableKey, tablePartsProblem } from '../shared/tables';
 import { OBJ_ENUMS, cleanProposedBy } from './safe-obj';
 import { GROUP_MAX_DEPTH, GROUP_MAX_MEMBERS, GROUP_MAX_PER_BOARD, GROUP_NAME_MAX } from './groups';
 
-export const MAX_TEMPLATE_OBJECTS = 2000;
+export const MAX_TEMPLATE_OBJECTS = 500;
+/** All the text of a template together (object text, names, table cells); the server holds the same number (server/templates.mjs). */
+export const MAX_TEMPLATE_TEXT = 200_000;
+/** A Markdown block's text; the sync validator holds the same number. */
+export const MAX_MARKDOWN_TEXT = 8_000;
 export const MAX_TEMPLATE_BYTES = 1_000_000;
 
 /** A label a template carries for its cards; merged by name into the board's labels when it is used (docs/kanban.md, Templates). */
@@ -275,6 +280,7 @@ export function validateContent(c: unknown): TemplateContent {
   }
 
   const ids = new Set<Id>();
+  let textChars = 0;
   for (const [i, o] of list.entries()) {
     if (!isRecord(o)) fail(`Object ${i + 1} is not an object.`);
     if (o.type === 'tracker') fail('Templates cannot contain tracker frames.');
@@ -298,7 +304,20 @@ export function validateContent(c: unknown): TemplateContent {
       if (key === 'fill' && isContainerType(o.type) && typeof v === 'string' && STICKY_COLORS.some((c) => c.name.toLowerCase() === v.toLowerCase())) continue;
       fail(`Object "${o.id}" has a ${key} that is not a colour the board can draw.`);
     }
+    // text every viewer lays out: a Markdown block is capped lower than a note, and a whole template at MAX_TEMPLATE_TEXT
+    for (const key of ['text', 'name', 'label']) if (typeof o[key] === 'string') textChars += (o[key] as string).length;
+    if (o.type === 'markdown' && typeof o.text === 'string' && o.text.length > MAX_MARKDOWN_TEXT) fail(`Markdown block "${o.id}" holds more than ${MAX_MARKDOWN_TEXT} characters.`);
+    if (o.type === 'table') {
+      const problem = tablePartsProblem(o);
+      if (problem) fail(`Table "${o.id}": ${problem}`);
+      for (const [key, v] of Object.entries(o)) {
+        const part = parseTableKey(key);
+        if (part?.kind === 'c') textChars += (v as string).length;
+        else if (part?.kind === 'f' && !isSafeColor(v)) fail(`Table "${o.id}" has a cell fill that is not a colour the board can draw.`);
+      }
+    }
   }
+  if (textChars > MAX_TEMPLATE_TEXT) fail(`A template can hold at most ${MAX_TEMPLATE_TEXT.toLocaleString('en')} characters of text; this one has ${textChars.toLocaleString('en')}.`);
 
   const known = (id: unknown) => typeof id === 'string' && ids.has(id);
   // kanbans: every field checked one by one, the same rules as the server's (shared/containers.mjs)

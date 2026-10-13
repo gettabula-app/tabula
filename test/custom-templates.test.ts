@@ -297,7 +297,7 @@ describe('validateContent', () => {
 
   it('rejects more than the object limit', () => {
     const many = Array.from({ length: MAX_TEMPLATE_OBJECTS + 1 }, (_, i) => box(`n${i}`, 0, 0));
-    expect(run({ ...good(), objects: many })).toThrow(/at most 2000 objects/);
+    expect(run({ ...good(), objects: many })).toThrow(/at most 500 objects/);
     const atLimit = Array.from({ length: MAX_TEMPLATE_OBJECTS }, (_, i) => box(`n${i}`, 0, 0));
     expect(validateContent({ ...good(), objects: atLimit, steps: [] }).objects).toHaveLength(MAX_TEMPLATE_OBJECTS);
   });
