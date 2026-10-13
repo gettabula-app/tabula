@@ -272,10 +272,13 @@ export class TextEditor {
     this.app.store.undo.stopCapturing();
     this.reposition();
     this.unsubCam = this.app.r.onCamera(() => this.reposition());
+    // The opening selection is set now, while the box is already on screen and can be typed in; the deferred step below only
+    // takes focus. Setting it there put it after anything the person did in the first frame (select all, a first keystroke).
+    if (markdown || code) this.ta.setSelectionRange(this.original.length, this.original.length);
+    else this.ta.select();
     requestAnimationFrame(() => {
-      this.ta.focus();
-      if (markdown || code) this.ta.setSelectionRange(this.original.length, this.original.length);
-      else this.ta.select();
+      if (this.id !== id) return;
+      if (document.activeElement !== this.ta) this.ta.focus();
       this.rememberSelection();
     });
     this.app.emit('editing');
@@ -474,7 +477,7 @@ export class TextEditor {
     const scale = this.setEditorFont(fontSize);
     // room kept clear at the bottom for the corner button: screen px, so divided by the overlay's scale
     if (this.bottomInset) ta.style.paddingBottom = `${this.bottomInset / (z * scale)}px`;
-    ta.style.lineHeight = centredLayout ? `${centredLayout.lineHeight / scale}px` : '1.3';
+    ta.style.lineHeight = centredLayout ? `${centredLayout.lineHeight / scale}px` : String(st.lineHeight);
     ta.style.paddingTop = centredLayout ? `${Math.max(0, centredLayout.top - box.y) / scale}px` : '0px';
     ta.style.setProperty('--touch-editor-class-padding', `${8 / scale}px`);
     const c = center(b);

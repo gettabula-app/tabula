@@ -131,6 +131,23 @@ describe('what the client writes passes', () => {
   });
 });
 
+describe('line height', () => {
+  it('accepts values from 0.8 through 3 on text, sticky, shape and Markdown objects', () => {
+    const base = { id: 'lh', x: 0, y: 0, w: 100, h: 80, rotation: 0, z: 'a0', createdBy: 'u1' };
+    for (const [type, value] of [
+      ['sticky', 0.8], ['text', 1.3], ['shape', 3], ['markdown', 1.15],
+    ] as const) {
+      expect(check({ ...base, type, lineHeight: value }, ctx, { isNew: true })).toEqual({ ok: true });
+    }
+  });
+
+  it('rejects values below or above the range and non-numbers', () => {
+    for (const value of [0.79, 3.01, 'x']) {
+      expect(check(sticky({ lineHeight: value }), ctx, { isNew: true }).ok).toBe(false);
+    }
+  });
+});
+
 describe('report-only text caps and link cards', () => {
   it('marks a text-length cap reportOnly while ENFORCE_TEXT_CAPS is off, and keeps structural limits hard', () => {
     expect(ENFORCE_TEXT_CAPS).toBe(false);
@@ -617,5 +634,16 @@ describe('the other board maps', () => {
     expect(one({ kind: 'label', key: 'b1', value: { id: 'b1', name: 'Bug', color: 'pink', order: 0 } }).ok).toBe(true);
     expect(one({ kind: 'label', key: 'b1', value: { id: 'b1', name: 'x'.repeat(41), color: 'pink', order: 0 } }).ok).toBe(false);
     expect(one({ kind: 'label', key: 'b1', value: { id: 'b1', name: 'Bug', color: 'url(//evil)', order: 0 } }).ok).toBe(false);
+  });
+});
+
+describe('tracker frame size and view', () => {
+  const tracker = (extra: Record<string, unknown> = {}) => ({
+    id: 'trk1', type: 'tracker', x: 0, y: 0, w: 720, h: 480, rotation: 0, z: 'a0', trackerId: 'ws-1', view: 'all',
+    createdBy: 'u1', updatedAt: 1_700_000_000_000, ...extra,
+  });
+  it('accepts the 360 x 280 minimum and the 720 x 480 default, and the all view', () => {
+    expect(check(tracker({ w: 360, h: 280 }))).toEqual({ ok: true });
+    expect(check(tracker())).toEqual({ ok: true });
   });
 });

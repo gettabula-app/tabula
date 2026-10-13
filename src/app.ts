@@ -2144,8 +2144,8 @@ export class BoardApp {
       if (h.includes('n') && sy === null) t = snapTo(o0.y + t, g) - o0.y;
       if (h.includes('s') && sy === null) b = snapTo(o0.y + b, g) - o0.y;
     }
-    const minW = o0.type === 'tracker' ? 480 : o0.type === 'markdown' ? 120 : o0.type === 'code' ? 160 : 8;
-    const minH = o0.type === 'tracker' ? 360 : 8;
+    const minW = o0.type === 'tracker' ? 360 : o0.type === 'markdown' ? 120 : o0.type === 'code' ? 160 : 8;
+    const minH = o0.type === 'tracker' ? 280 : 8;
     if (r - l < minW) {
       if (h.includes('w')) l = r - minW;
       else r = l + minW;
@@ -2597,7 +2597,9 @@ export class BoardApp {
     window.addEventListener('keydown', (e) => {
       this.links.noteKey(e);
       const tgt = e.target as HTMLElement;
-      const typing = !!tgt?.closest?.('[data-card-link]') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
+      // a key pressed inside the live tracker (a ticket row, its menus) belongs to the tracker: Backspace archives a ticket there and
+      // must not also delete the selected tracker frame, and a letter must not switch the board's tool
+      const typing = !!tgt?.closest?.('[data-card-link], .trk') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
       const k = e.key.toLowerCase();
       // Cmd/Ctrl+Enter on a selected link card opens it, like Enter (shortcuts with a modifier are handled below)
       if (k === 'enter' && (e.ctrlKey || e.metaKey) && !typing && this.selection.length === 1 && this.store.get(this.selection[0])?.type === 'link') {
@@ -3150,12 +3152,12 @@ export class BoardApp {
     });
   }
 
-  updateSelectedLeaves(patch: Record<string, unknown>, filter?: (o: Obj) => boolean) {
+  updateSelectedLeaves(patch: Record<string, unknown> | ((o: Obj) => Record<string, unknown>), filter?: (o: Obj) => boolean) {
     this.store.undo.stopCapturing();
     this.store.transact(() => {
       for (const o of this.selectedLeaves()) {
         if (filter && !filter(o)) continue;
-        this.writeStyle(o, patch);
+        this.writeStyle(o, typeof patch === 'function' ? patch(o) : patch);
       }
     });
   }
@@ -3163,14 +3165,14 @@ export class BoardApp {
   /** One object's style change, with the size it implies: a text box's height, a class's header. */
   private writeStyle(o: Obj, patch: Record<string, unknown>) {
     this.store.update(o.id, patch);
-    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'lineHeight' in patch)) {
       this.store.update(o.id, { h: textHeight({ ...o, ...patch } as BaseObj) });
     }
     // a code block's height is its rows: a title adds the header, wrapping and the width change the row count
     if (o.type === 'code' && ('title' in patch || 'wrap' in patch || 'lines' in patch || 'w' in patch)) {
       this.store.update(o.id, { h: codeBoxHeight({ ...o, ...patch } as BaseObj) });
     }
-    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'lineHeight' in patch)) {
       this.store.update(o.id, { h: markdownBoxHeight({ ...o, ...patch } as BaseObj) });
     }
     if (o.type === 'table' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'headerRow' in patch || 'headerCol' in patch)) {

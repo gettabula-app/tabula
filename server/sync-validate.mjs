@@ -369,11 +369,11 @@ function tableCountCodes(value, only) {
 
 /** Per type: its own fields added to BOX (or, for connector and group, a list of their own). */
 export const FIELDS = Object.freeze({
-  shape: { ...BOX, kind: oneOf(SHAPE_KINDS) },
-  sticky: { ...BOX },
-  text: { ...BOX },
+  shape: { ...BOX, kind: oneOf(SHAPE_KINDS), lineHeight: num(0.8, 3) },
+  sticky: { ...BOX, lineHeight: num(0.8, 3) },
+  text: { ...BOX, lineHeight: num(0.8, 3) },
   // a Markdown block's text is capped lower than a note: every viewer lays it out
-  markdown: { ...BOX, text: str(LIMITS.markdown) },
+  markdown: { ...BOX, text: str(LIMITS.markdown), lineHeight: num(0.8, 3) },
   // a code block (docs/code-blocks.md): the code is `text` (the cap is report-only like every text cap), the language one of the shared list
   code: { ...BOX, text: str(MAX_CODE_CHARS), lang: oneOf(CODE_LANG_IDS), title: str(MAX_CODE_TITLE), lines: bool, wrap: bool },
   // a table (docs/tables.md): the header flags, and rows, columns, widths and cells as keys of their own, checked by tablePartCheck

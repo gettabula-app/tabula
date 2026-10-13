@@ -128,6 +128,7 @@ export function styleOf(o: Obj) {
     font: b.font ?? 'satoshi',
     fontWeight: num(b.fontWeight, d.fontWeight),
     fontSize: num(b.fontSize, d.fontSize),
+    lineHeight: num(b.lineHeight, o.type === 'markdown' ? 1.45 : 1.3),
     textColor: safeColor(b.textColor, o.type === 'sticky' ? inkOn(fill) : d.textColor),
     align: b.align ?? d.align,
     valign: b.valign ?? d.valign,
@@ -149,9 +150,9 @@ export function layoutText(
   s: ReturnType<typeof styleOf>, opts: { valign?: VAlign; shrink?: boolean } = {},
 ): { lines: string[]; size: number; lineHeight: number; height: number; top: number } {
   const { lines, size, lineHeight, height } = opts.shrink
-    ? fitText(text, s.font, s.fontWeight, s.fontSize, box.w, box.h)
+    ? fitText(text, s.font, s.fontWeight, s.fontSize, box.w, box.h, 9, s.lineHeight)
     : (() => {
-        const lh = n(s.fontSize * 1.3);
+        const lh = n(s.fontSize * s.lineHeight);
         const ls = wrap(text, fontCss(s.font, s.fontSize, s.fontWeight), box.w);
         return { lines: ls, size: s.fontSize, lineHeight: lh, height: ls.length * lh };
       })();
@@ -178,7 +179,7 @@ export function textBlock(
 export function textHeight(o: BaseObj): number {
   const s = styleOf(o);
   const lines = wrap(o.text || ' ', fontCss(s.font, s.fontSize, s.fontWeight), o.w);
-  return Math.max(s.fontSize * 1.3, lines.length * s.fontSize * 1.3);
+  return Math.max(s.fontSize * s.lineHeight, lines.length * s.fontSize * s.lineHeight);
 }
 
 function wrapG(o: BaseObj, inner: string, opacity: number) {
@@ -269,7 +270,7 @@ function textMarkup(o: BaseObj, ctx: MarkupCtx) {
 /** What the Markdown block lays its source out with: the object's own font, size and weight. */
 export function markdownStyle(o: BaseObj): MdStyle {
   const s = styleOf(o);
-  return { font: s.font, size: s.fontSize, weight: s.fontWeight };
+  return { font: s.font, size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight };
 }
 
 /** The height a Markdown block needs for its source at its current width (the app, the editor and the height heal fit the object to it). */
@@ -608,15 +609,19 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
     right = m.x - 8;
   }
   const full = count.state !== '';
-  const fullText = 'WIP full';
+  // at the limit: a quiet yellow "At limit" pill; over it: a red "Over limit" pill (the words differ, not only the colour)
+  const over = count.state === 'over';
+  const fullText = over ? 'Over limit' : 'At limit';
   const badgeFont = fontCss(o.font, 11, 600);
   const badgeW = measure(fullText, badgeFont) + 12;
   const badgeLeft = right - countW - (full ? badgeW + 8 : 0) - (full && count.block ? 18 : 0);
   const countRight = right - (full && count.block ? 18 : 0);
   inner += `<title>${escapeXml(count.title)}</title>` + uiText(count.text, countRight, mid + 4, K.meta, o.font, 12, 400, 'end');
   if (full) {
-    inner += `<rect x="${n(badgeLeft)}" y="${mid - 10}" width="${n(badgeW)}" height="20" rx="4" style="fill:var(--tag-yellow, #FBF3DB);"/>`;
-    inner += uiText(fullText, badgeLeft + 6, mid + 4, 'var(--on-tag-yellow, #956400)', o.font, 11, 600);
+    inner += over
+      ? `<rect x="${n(badgeLeft)}" y="${mid - 10}" width="${n(badgeW)}" height="20" rx="4" style="fill:var(--tag-red, #FDEBEC);"/>`
+      : `<rect x="${n(badgeLeft)}" y="${mid - 10}" width="${n(badgeW)}" height="20" rx="4" style="fill:var(--tag-yellow, #FBF3DB);"/>`;
+    inner += uiText(fullText, badgeLeft + 6, mid + 4, over ? 'var(--on-tag-red, #9F2F2D)' : 'var(--on-tag-yellow, #956400)', o.font, 11, 600);
   }
   if (full && count.block) inner += kIcon(ICON_LOCK, badgeLeft - 16, mid - 6, 12, K.meta);
   // The lane name and its quiet done marker.
@@ -816,6 +821,14 @@ function containerMarkup(o: BaseObj, ctx: MarkupCtx) {
  */
 export const placeholderZoom = (zoom: number): number => (zoom > 0 && Number.isFinite(zoom) ? 2 ** (Math.floor(Math.log2(zoom) * 2) / 2) : 1);
 
+/** `text` cut to `width` with a trailing ellipsis (the whole text when it already fits). */
+function ellipsize(text: string, font: string, width: number) {
+  if (measure(text, font) <= width) return text;
+  let cut = text.length;
+  while (cut > 0 && measure(`${text.slice(0, cut).trimEnd()}…`, font) > width) cut--;
+  return cut > 0 ? `${text.slice(0, cut).trimEnd()}…` : '';
+}
+
 /** An image: its pixels through `<image>` (never as markup, so nothing in the file can run), or a placeholder that says why not. */
 function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
   const state: ImageState = ctx.imageState?.(o) ?? { kind: 'loading' };
@@ -853,6 +866,14 @@ function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
         layout = side;
       }
     }
+  }
+  // At a far-out zoom the 12 px floor is wider and taller than the box: the lines would spill over their neighbours. Then the label
+  // alone stays, on one line cut with an ellipsis to the box width; a box too short even for that keeps only its title.
+  const spills = layout.height > o.h || Math.max(0, ...layout.lines.map((t) => measure(t, fontCss('satoshi', layout.size, 600)))) > o.w - 16;
+  if (spills) {
+    place = 'none';
+    layout = { ...layout, lines: [ellipsize(label, fontCss('satoshi', layout.size, 600), o.w - 16)], height: layout.lineHeight };
+    if (layout.lineHeight > o.h - 4) layout = { ...layout, lines: [] };
   }
   const ink = 'color-mix(in srgb, var(--ink, #18212B) 85%, var(--paper, #FFFFFF))';
   const textStyle = `fill:${ink};font-family:var(--ui, 'Instrument Sans', ui-sans-serif, system-ui, sans-serif);font-weight:600`;
