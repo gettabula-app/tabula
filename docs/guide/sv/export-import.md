@@ -10,6 +10,7 @@ Du kan spara en tavla som en bild, en fil som du kan öppna igen eller text. Du 
 |---|---|
 | **PNG image** (PNG-bild) | En rasterbild i 2× storlek med vit bakgrund. |
 | **SVG vector** (SVG-vektor) | En skalbar bild med vit bakgrund. |
+| **Print or save as PDF…** (Skriv ut eller spara som PDF…) | En eller flera sidor via webbläsarens utskriftsdialog. Se [Skriv ut eller spara som PDF](#skriv-ut-eller-spara-som-pdf). |
 | **Board file (.drift)** (Tavelfil (.drift)) | Hela tavlan med historiken, för säkerhetskopiering eller flytt. |
 | **JSON snapshot** (JSON-ögonblicksbild) | En läsbar kopia av tavlan. |
 | **Markdown summary** (Markdown-sammanfattning) | Textanteckningar grupperade efter ram, med röster och omröstningsresultat. |
@@ -21,6 +22,18 @@ Filerna får tavlans namn.
 ### PNG och SVG
 
 Bilderna använder de ljusa standardfärgerna på vit bakgrund, oavsett vilket tema du använder. Kommentarsnålar tas inte med. När du exporterar en PNG- eller SVG-fil hämtas de teckensnitt som används på tavlan, och tillgängliga WOFF2-filer bäddas in. När en exporterad SVG-fil öppnas görs ingen begäran till Fontshare. Om ett teckensnitt inte kan hämtas eller den sammanlagda rådata som teckensnitten innehåller blir större än 1,5 MB används ett systemteckensnitt i stället. Mycket stora PNG-tavlor skalas ned så att de ryms inom en maximal bildstorlek.
+
+### Skriv ut eller spara som PDF
+
+**Print or save as PDF…** (Skriv ut eller spara som PDF…) i avsnittet Export öppnar ett kort formulär. Välj vad som ska skrivas ut:
+
+- **Hela tavlan, på en sida.**
+- **Markeringen, på en sida.** Visas när något är markerat.
+- **Varje ram på en egen sida.** Visas när tavlan har ramar. Ramarna skrivs ut i läsordning: rader uppifrån och ned, och från vänster till höger inom en rad. Ramar inuti andra ramar skrivs ut som en del av den yttre ramen.
+
+Välj sedan papper (A4 eller Letter), orientering (automatisk följer de flesta sidorna) och om varje sida ska få en rubrik: ramens namn, eller tavlans namn för hela tavlan och för en markering. Varje bild anpassas till sin sida.
+
+Tabula gör inte PDF-filen själv. **PDF-filen går via webbläsarens utskriftsdialog**: tryck på **Continue** (Fortsätt) och välj sedan **Save as PDF** (Spara som PDF) som mål där för att få en fil, eller välj en skrivare. Text förblir text i PDF-filen. Testat i Chrome och Edge; andra webbläsares utskriftsdialoger skiljer sig åt, och en ram som är större än en sida skalas ned. Mjuka skuggor bakom anteckningar utelämnas vid utskrift. Precis som de andra exporterna använder en utskrift de ljusa standardfärgerna på vit bakgrund och utelämnar kommentarsnålar och dolda objekt.
 
 ### Tavelfil (.drift)
 
