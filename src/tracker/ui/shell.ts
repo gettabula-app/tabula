@@ -22,6 +22,7 @@ import { mountInbox } from './inbox';
 import { renderSnippet } from './snippet';
 import { trackerErrorField } from './error-path';
 import { buildTrackerPath } from '../../tracker-route';
+import { trackerPeekAllowed } from './peek-rule';
 
 const TABS: ReadonlyArray<{ id: TrackerView; label: string; shortLabel: string; glyph: string }> = [
   { id: 'inbox', label: 'Inbox', shortLabel: 'Inbox', glyph: '◉' },
@@ -439,11 +440,13 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const elementTab = (): TrackerView => (state.tab === 'my' || state.tab === 'board' ? state.tab : 'all');
   /** The saved view the element is showing, or null (the element only: the full-screen route keeps its own list). */
   const elementView = (): string | null => (elementMode && state.viewId && state.viewFilter ? state.viewId : null);
+  const peekAllowed = () => trackerPeekAllowed({ element: elementMode, fullScreen, tab: state.tab, width: layoutWidth });
   const elementTabLabel = () => ({ all: 'All', my: 'My', board: 'Board' } as const)[elementTab() as 'all' | 'my' | 'board'];
   /** The element header: All, My and Board (the shared segmented control), Back while a ticket is open, New ticket, expand, and the menu. */
   const renderElementHeader = () => {
     const width = layoutWidth;
-    const inPlace = Boolean(state.ticketKey);
+    // a ticket open beside the list (the side panel) keeps the list's header; only a ticket in place takes over the header
+    const inPlace = Boolean(state.ticketKey) && !peekAllowed();
     const view = elementView();
     elementName.textContent = inPlace ? state.ticketKey ?? 'Tracker' : 'Tracker';
     elementSub.textContent = view ? (getMeta()?.views ?? []).find((item) => item.id === view)?.name ?? 'Workspace tickets' : 'Workspace tickets';
@@ -584,7 +587,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const startWatch = () => {
     stopList?.();
-    if (!meta || (state.tab !== 'all' && state.tab !== 'my') || (state.ticketKey && !(fullScreen && layoutWidth > 1100))) return;
+    if (!meta || (state.tab !== 'all' && state.tab !== 'my') || (state.ticketKey && !peekAllowed())) return;
     const query = stableQuery(state);
     currentCache = options.store.list(query);
     stopList = options.store.watchList(query, (cache) => {
@@ -818,7 +821,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const wasEmpty = elementEmpty;
     elementEmpty = elementMode && !cache.loading && tickets.length === 0 && state.tab === 'all' && !filterActive && !elementView();
     if (elementMode && wasEmpty !== elementEmpty) updateActions(); // the header's New ticket comes and goes with the empty state
-    const columns: Column[] = elementMode ? elementColumns(layoutWidth) : visibleColumns(layoutWidth, state.columns);
+    const columns: Column[] = elementMode ? elementColumns(peekAllowed() && state.ticketKey ? Math.round(layoutWidth * 0.48) : layoutWidth) : visibleColumns(layoutWidth, state.columns);
     if (elementMode && !cache.loading && tickets.length === 0) {
       listRenderHost.replaceChildren(h('div', { class: 'trk-element-empty' },
         h('h2', null, state.tab === 'my' ? (state.mySubtab === 'active' ? 'Nothing assigned to you.' : 'Nothing created by you yet.') : 'No tickets yet'),
@@ -944,9 +947,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
 
   const drawRows = (cache: typeof currentCache) => {
+    // the rows are rebuilt on every draw: a row that had the focus gets it back (the element's side panel and its close depend on it)
+    const focusedKey = elementMode && listRenderHost?.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.key ?? null : null;
     try { renderRows(cache); }
     catch (error) { showListError(error instanceof Error ? error.message : 'Could not render issues.'); }
     if (elementMode) renderElementHeader();
+    if (focusedKey) listRenderHost?.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusedKey)}"]`)?.focus({ preventScroll: true });
   };
 
   const publishCurrentSnapshot = () => {
@@ -1143,7 +1149,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const renderTicket = () => {
     const key = state.ticketKey!;
-    const canPeek = (state.tab === 'all' || state.tab === 'my') && fullScreen && layoutWidth > 1100;
+    const canPeek = peekAllowed();
     if (!canPeek) stopList?.();
     const cached = options.store.list(stableQuery(state)).tickets.find((ticket) => ticket.key === state.ticketKey);
     const ticketState = options.store.ticket(key);
@@ -1160,6 +1166,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       return;
     }
     if (canPeek) {
+      // the row the ticket was opened from keeps the focus it had (the list is redrawn beside the panel)
+      const hadFocus = root.contains(document.activeElement);
       const all = makeAllIssues();
       const page = ticketPageHost('peek', ticket.key);
       content.replaceChildren(h('div', { class: 'trk-peek-layout' },
@@ -1169,6 +1177,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       startWatch();
       all.updateSelectionBar();
       drawRows(currentCache);
+      if (hadFocus && elementMode) (root.querySelector<HTMLElement>(`[data-key="${CSS.escape(ticket.key)}"]`) ?? root).focus({ preventScroll: true });
       return;
     }
     content.replaceChildren(ticketPageHost('page', ticket.key));
@@ -1573,7 +1582,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   }
 
   function watchQuery() {
-    if ((state.tab !== 'all' && state.tab !== 'my') || (state.ticketKey && !(fullScreen && layoutWidth > 1100)) || destroyed) return;
+    if ((state.tab !== 'all' && state.tab !== 'my') || (state.ticketKey && !peekAllowed()) || destroyed) return;
     startWatch();
   }
 
@@ -1592,10 +1601,13 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   }
 
   function setTicket(key: string | null) {
+    // a side panel closes back to its row, so the focus that was in the panel goes to the row it came from
+    const closingPeek = key === null && state.ticketKey && peekAllowed() ? state.ticketKey : null;
     state.ticketKey = key;
     ticketError = '';
     options.onTicketChange?.(key);
     renderPage();
+    if (closingPeek) (root.querySelector<HTMLElement>(`[data-key="${CSS.escape(closingPeek)}"]`) ?? root).focus({ preventScroll: true });
   }
 
   const openCommand = () => {

@@ -759,4 +759,8 @@
   .trk.trk-element .trk-board-card { border-color: CanvasText; }
   .trk.trk-element .trk-board-ghost { border: 1px solid CanvasText; }
 }
+/* the side panel (slice 3): a ticket opens beside the list at 48 : 52 of the element body, with a hairline between them */
+.trk.trk-element .trk-peek-layout { grid-template-columns: minmax(0, 48fr) minmax(0, 52fr); grid-template-rows: minmax(0, 1fr); }
+.trk.trk-element .trk-peek-panel { display: flex; min-width: 0; min-height: 0; flex-direction: column; border-left: 1px solid var(--tray-line); overflow: hidden; }
+.trk.trk-element .trk-peek-panel .trk-ticket-page-host { flex: 1 1 auto; min-height: 0; }
 /* element-look:end */

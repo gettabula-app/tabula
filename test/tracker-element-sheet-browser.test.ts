@@ -132,4 +132,61 @@ describe.skipIf(!available)('tracker element: saved views and the side panel in 
       await page.context().close();
     }
   });
+
+  it('(B) at 900 a ticket opens beside the list: Escape closes it and focus returns to its row', async () => {
+    const page = await openElementPage();
+    try {
+      await mount(page, 900);
+      const key = await page.locator('.trk-element .trk-list-row').first().getAttribute('data-key');
+      await page.click(`.trk-element .trk-list-row[data-key="${key}"] .trk-title-link`);
+      await page.locator('.trk-element .trk-peek-panel .tk-page--peek, .trk-element .trk-peek-panel main').first().waitFor();
+      const widths = await page.evaluate(() => {
+        const element = document.querySelector('.trk-element')!.getBoundingClientRect();
+        const list = document.querySelector('.trk-element .trk-peek-list')!.getBoundingClientRect();
+        const panel = document.querySelector('.trk-element .trk-peek-panel')!.getBoundingClientRect();
+        return { element: element.width, list: list.width, panel: panel.width, panelLeft: panel.left - element.left, listLeft: list.left - element.left };
+      });
+      expect(widths.listLeft).toBeLessThan(widths.panelLeft);
+      expect(widths.panel / widths.element).toBeGreaterThan(0.48);
+      expect(widths.panel / widths.element).toBeLessThan(0.56);
+      expect(await page.locator('.trk-element .trk-element-back').isHidden()).toBe(true);
+      expect(await rowCount(page)).toBeGreaterThan(3);
+
+      await page.keyboard.press('Escape');
+      await page.waitForFunction(() => document.querySelectorAll('.trk-element .trk-peek-panel').length === 0, null, { timeout: budget(10_000) });
+      const focused = await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key ?? null);
+      expect(focused).toBe(key);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  it('(B) the close button closes the side panel and focus returns to the row', async () => {
+    const page = await openElementPage();
+    try {
+      await mount(page, 900);
+      const key = await page.locator('.trk-element .trk-list-row').nth(1).getAttribute('data-key');
+      await page.click(`.trk-element .trk-list-row[data-key="${key}"] .trk-title-link`);
+      await page.locator('.trk-element .trk-peek-panel').waitFor();
+      await page.click('.trk-element .trk-peek-panel [aria-label="Close ticket"]');
+      await page.waitForFunction(() => document.querySelectorAll('.trk-element .trk-peek-panel').length === 0, null, { timeout: budget(10_000) });
+      expect(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.key ?? null)).toBe(key);
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  it('(B) at 600 the ticket opens in place, with Back and no side panel', async () => {
+    const page = await openElementPage();
+    try {
+      await mount(page, 600);
+      const key = await page.locator('.trk-element .trk-list-row').first().getAttribute('data-key');
+      await page.click(`.trk-element .trk-list-row[data-key="${key}"] .trk-title-link`);
+      await page.locator('.trk-element .trk-element-back').waitFor();
+      expect(await page.locator('.trk-element .trk-peek-panel').count()).toBe(0);
+      expect(await page.locator('.trk-element .trk-element-back').isHidden()).toBe(false);
+    } finally {
+      await page.context().close();
+    }
+  });
 });

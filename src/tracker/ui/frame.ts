@@ -280,7 +280,7 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     wrapper.addEventListener('pointerleave', () => { wrapper.dataset.hovered = 'false'; refresh(); });
     wrapper.addEventListener('wheel', (event) => {
       const modified = event.ctrlKey || event.metaKey;
-      const scrollArea = (event.target as HTMLElement | null)?.closest<HTMLElement>('.trk-list-host, .trk-filter-host, .trk-ticket-stub');
+      const scrollArea = (event.target as HTMLElement | null)?.closest<HTMLElement>('.trk-list-host, .trk-filter-host, .trk-ticket-stub, .trk-ticket-page-host');
       const disposition = wheelDisposition({
         modified, deltaY: event.deltaY, scrollTop: scrollArea?.scrollTop ?? 0,
         scrollHeight: scrollArea?.scrollHeight ?? 0, clientHeight: scrollArea?.clientHeight ?? 0,
@@ -310,7 +310,7 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
         }
         return;
       }
-      if (target.closest('button,input,textarea,select,[role="row"],[role="tab"],.trk-filter-bar,.trk-view-bar')) return;
+      if (target.closest('button,input,textarea,select,[role="row"],[role="tab"],.trk-filter-bar,.trk-view-bar,.trk-peek-panel')) return;
       mount.drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, camX: app.r.cam.x, camY: app.r.cam.y };
       wrapper.setPointerCapture?.(event.pointerId);
       event.preventDefault();
