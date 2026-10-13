@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
+import { budget } from './wait-budget';
 
 // The Markdown block in the real app (TAB-140, docs/markdown-blocks.md): it renders as SVG, a task box ticks and a link opens only on a selected block,
 // a board-item link jumps, the source is edited in place, the rail tool creates one, and the SVG export draws it as plain SVG (no foreignObject).
@@ -30,12 +31,13 @@ const SOURCE = '# Plan\n\n- [ ] one\n- [x] two\n\nSee [the site](https://example
 
 async function open(width = 1280): Promise<Page> {
   const page = await browser!.newPage({ viewport: { width, height: 800 } });
+  page.setDefaultTimeout(budget(45_000)); // one shared budget (test/wait-budget.ts): a slow machine takes tens of seconds for what a quiet one does in one
   await page.addInitScript(() => {
     (window as unknown as { __opened: unknown[] }).__opened = [];
     window.open = ((url: string) => { (window as unknown as { __opened: unknown[] }).__opened.push(url); return null; }) as typeof window.open;
   });
   await page.goto(`${base}?debug#/b/md-${Math.random().toString(36).slice(2, 8)}`);
-  await page.waitForFunction(() => (window as any).__board, null, { timeout: 20_000 });
+  await page.waitForFunction(() => (window as any).__board, null, { timeout: budget(20_000) });
   return page;
 }
 
@@ -51,11 +53,20 @@ async function seed(page: Page, text = SOURCE): Promise<string> {
     return 'md1';
   }, text).then(async (id) => {
     await page.waitForFunction(() => [...document.querySelectorAll('svg.canvas text')].some((t) => t.textContent === 'Target'));
-    await page.waitForTimeout(800); // the block is drawn, then its height corrected, on the frames after the object appears
+    await healed(page); // the block is drawn, then its height corrected, on the frames after the object appears
     return id;
   });
 }
 
+const height = (page: Page) => page.evaluate(() => (window as any).__board.store.get('md1').h as number);
+/** Waits until the heal has corrected the seeded estimate (100) and the height has stood still for a moment, however slow the machine. */
+const healed = (page: Page) => page.waitForFunction(() => {
+  const w = window as any;
+  const h = w.__board.store.get('md1')?.h;
+  if (h !== w.__mdH) { w.__mdH = h; w.__mdAt = performance.now(); }
+  const still = performance.now() - w.__mdAt;
+  return h !== undefined && ((h !== 100 && still > 300) || still > 3000); // a height that really is the estimate is accepted after a long still moment
+}, null, { polling: 100 });
 const source = (page: Page) => page.evaluate(() => (window as any).__board.store.get('md1')?.text as string | undefined);
 const box = (page: Page, selector: string) => page.evaluate((sel) => {
   const el = document.querySelector(sel) as Element | null;
@@ -92,15 +103,14 @@ describe.skipIf(!available)('the Markdown block', () => {
   it('keeps its stored height equal to its content (the heal), also after the source is rewritten from outside', async () => {
     const page = await open();
     await seed(page, 'x');
-    const heights = await page.evaluate(async () => {
+    await healed(page);
+    const small = await height(page);
+    await page.evaluate(() => {
       const app = (window as any).__board;
-      const wait = () => new Promise((r) => setTimeout(r, 400));
-      await wait();
-      const small = app.store.get('md1').h;
       app.store.transactAs(() => app.store.update('md1', { text: `# Big\n\n${'a long paragraph of words '.repeat(40)}\n\n- one\n- two\n- three` }), 'remote');
-      await wait();
-      return { small, big: app.store.get('md1').h };
     });
+    await page.waitForFunction((min) => (window as any).__board.store.get('md1').h > min, small * 3);
+    const heights = { small, big: await height(page) };
     expect(heights.big).toBeGreaterThan(heights.small * 3);
     await page.close();
   });
@@ -144,7 +154,7 @@ describe.skipIf(!available)('the Markdown block', () => {
     await page.waitForTimeout(700);
     expect(popup0.length).toBe(0);
     at = await link();
-    const [popup] = await Promise.all([context.waitForEvent('page', { timeout: 5000 }), page.mouse.click(at!.x, at!.y)]);
+    const [popup] = await Promise.all([context.waitForEvent('page', { timeout: budget(5000) }), page.mouse.click(at!.x, at!.y)]);
     expect(popup.url()).toContain('example.com');
     await popup.close();
     await page.close();
