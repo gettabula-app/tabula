@@ -41,7 +41,7 @@
 .notif-link:focus-visible, .notif-check:focus-visible, .notif-text-btn:focus-visible, .notif-chip:focus-visible, .notif-outline-btn:focus-visible, .notif-new:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
 .notif-dot { width: 8px; height: 8px; margin-top: 10px; border-radius: 50%; background: transparent; }
 .notif-row.unread .notif-dot { background: var(--signal); }
-.notif-sq { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-xs); background: var(--u, var(--tray-2)); color: #fff; font-size: 12px; font-weight: 700; }
+.notif-sq { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-xs); background: var(--u, var(--tray-2)); color: #fff; font-size: 12px; font-weight: 600; }
 .notif-sq.neutral { color: var(--tray-text); }
 .notif-text { display: grid; gap: 2px; min-width: 0; font-size: 13.5px; line-height: 1.4; }
 .notif-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

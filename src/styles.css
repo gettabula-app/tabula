@@ -249,7 +249,12 @@ select.input {
 .phone-people { display: none; }
 .avatar {
   position: relative; width: 30px; height: 30px; margin-left: -6px; flex: none; border-radius: 50%; border: 2px solid var(--tray); background: var(--c, var(--graphite));
-  color: #fff; font: 700 11px var(--ui); display: grid; place-items: center; padding: 0;
+  color: #fff; font: 600 12px/1 var(--ui); display: grid; place-items: center; padding: 0;
+}
+/* initials circles: the capitals are centred by their cap height (not the line box), a size of about 42% of the circle leaves even room
+   for two letters (M W) and one (I), and the line height is 1 so no font adds a stray half-leading */
+:is(.avatar, .phone-avatar, .phone-person-avatar, .comment-avatar, .chat-avatar, .here-sq, .notif-sq) {
+  line-height: 1; letter-spacing: 0; text-align: center; font-variant-numeric: tabular-nums; text-box: trim-both cap alphabetic;
 }
 .avatar:first-child { margin-left: 0; }
 .avatar.more { background: var(--tray-2); color: var(--tray-text); }
@@ -809,7 +814,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .phone-avatar {
     display: grid; place-items: center; position: relative; width: 22px; height: 22px; margin-left: -8px; flex: none;
     border: 2px solid var(--tray); border-radius: 50%; background: var(--c, var(--graphite));
-    font: 700 8px var(--ui); box-sizing: border-box;
+    font: 600 9px/1 var(--ui); box-sizing: border-box;
   }
   .phone-avatar.first { margin-left: 0; }
   .phone-people-count { min-width: 10px; color: var(--tray-text); font-size: 11px; font-weight: 650; line-height: 1; text-align: center; }
@@ -821,7 +826,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .phone-people-list { display: grid; gap: 2px; }
   .phone-person-option { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 10px; text-align: left; color: var(--tray-text); }
   .phone-person-option[aria-disabled='true'] { opacity: 0.72; }
-  .phone-person-avatar { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border: 2px solid var(--tray-line); border-radius: 50%; background: var(--c, var(--graphite)); font: 700 10px var(--ui); }
+  .phone-person-avatar { display: grid; place-items: center; width: 28px; height: 28px; flex: none; border: 2px solid var(--tray-line); border-radius: 50%; background: var(--c, var(--graphite)); font: 600 11px/1 var(--ui); }
   .phone-person-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .phone-person-mark { flex: none; padding: 2px 6px; border-radius: var(--radius-xs); background: var(--tray-2); color: var(--tray-muted); font-size: 11px; }
   .phone-person-mark.guest { color: var(--signal); }
@@ -1029,7 +1034,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 .chrome > .top-left .sync-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .chrome > .top-left .sync-status[data-state='live'] .sync-status-dot { background: var(--wire); }
 .chrome > .top-left .sync-status-label { display: inline; }
-.chrome > .top-right .avatar { width: 24px; height: 24px; }
+.chrome > .top-right .avatar { width: 24px; height: 24px; font-size: 10px; }
 .chrome > .top-right .share-label { font-size: 13px; letter-spacing: normal; text-transform: none; }
 .chrome > .top-right .share-btn { height: 32px; padding: 0 12px; border-radius: var(--radius-sm); }
 .chrome > .zoom-tray > .icon-btn:nth-of-type(4) { position: relative; margin-left: 6px; }
