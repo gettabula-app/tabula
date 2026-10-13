@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks';
 import * as Checks from '../scripts/lib/playbook-checks.mjs';
 import { boardSnapshot, buildFixture, revealFlow } from '../scripts/lib/playbook-fixtures.mjs';
+import { actionsFrom } from '../scripts/lib/playbook-gold.mjs';
 import * as Y from 'yjs';
 import { setup, type World } from './ai-run-harness';
 
@@ -46,20 +47,6 @@ export async function playbookWorld(): Promise<World> {
   const world = await setup();
   world.enable();
   return world;
-}
-
-/** Action items from the 'Action:' notes of a summary, the way the app would list them. Owner and due are read from the text. */
-function actionsFrom(run: { proposal: any; fixture: Run['fixture'] }): NonNullable<Run['actions']> {
-  if (!run.proposal || run.proposal.kind !== 'create') return [];
-  const roster = (run.fixture.truth.roster ?? []) as { id: string; name: string }[];
-  return (run.proposal.objects as { text: string }[])
-    .filter((note) => note.text.startsWith('Action:'))
-    .map((note) => {
-      const owner = /Owner:\s*([^,.]+)/.exec(note.text)?.[1]?.trim();
-      const due = /due\s+(\d{4}-\d{2}-\d{2})/.exec(note.text)?.[1];
-      const ownerId = roster.find((person) => person.name === owner)?.id;
-      return { text: note.text, ...(ownerId ? { ownerId } : {}), ...(due ? { due } : {}) };
-    });
 }
 
 /** Loads the fixture, runs the feature through the route and returns the Run record with the grading options. */
