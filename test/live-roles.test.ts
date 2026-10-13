@@ -54,10 +54,10 @@ const stopRelay = (p: ChildProcess) =>
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const until = async (fn: () => boolean, ms = 5000) => {
+const until = async (fn: () => boolean, ms = 5000, scale = true) => {
   const t0 = Date.now();
   while (!fn()) {
-    if (Date.now() - t0 > budget(ms)) throw new Error('timed out');
+    if (Date.now() - t0 > (scale ? budget(ms) : ms)) throw new Error('timed out');
     await sleep(20);
   }
 };
@@ -215,27 +215,31 @@ function harness(getPort: () => number, getDir: () => string) {
   }
 
   const pair = (board: string, cookie: string): Pair => ({ board: connect(board, cookie), comments: connect(`${board}${COMMENTS}`, cookie) });
-  const synced = (c: Conn) => until(() => c.provider.wsconnected && c.provider.synced);
-  const pairSynced = (p: Pair) => Promise.all([synced(p.board), synced(p.comments)]);
+  // `rawMs`: a wait that is NOT scaled for a slow machine (see `lands`)
+  const synced = (c: Conn, rawMs?: number) => until(() => c.provider.wsconnected && c.provider.synced, rawMs ?? 5000, rawMs === undefined);
+  const pairSynced = (p: Pair, rawMs?: number) => Promise.all([synced(p.board, rawMs), synced(p.comments, rawMs)]);
   const peers = (c: Conn, name: string) => [...c.provider.awareness.getStates().values()].some((s) => s.user?.name === name || s.marker === name);
 
   /** `from` sends a real document update and then awareness over its own socket; resolves to whether `to` received the update. */
-  async function writes(from: Conn, to: Conn, map: string, key: string) {
+  async function writes(from: Conn, to: Conn, map: string, key: string, rawMs?: number) {
     const name = unique('marker');
     const ws = from.provider.ws!;
     ws.send(updateFrame(map, key));
     ws.send(awarenessFrame(name, ws));
-    await until(() => peers(to, name));
+    await until(() => peers(to, name), rawMs ?? 5000, rawMs === undefined);
     return to.doc.getMap(map).has(key);
   }
 
   /** Whether `key` made it from one side's board room and comments room to the other's. */
-  async function lands(from: Pair, to: Pair, key: string) {
+  // `rawMs`: for a caller that polls until a role change shows. A frame sent while the relay closes the socket for the new receive
+  // limit (4511) is lost, so its marker never arrives; a wait scaled for a slow machine (ten times longer on Windows) would then
+  // outlast the whole test, where a short unscaled one lets the caller send again.
+  async function lands(from: Pair, to: Pair, key: string, rawMs?: number) {
     // A role change that alters the receive limit closes the socket (4411) and the provider reconnects with the right-sized
     // receiver; give the close time to arrive, then wait for both sides to be connected and synced again.
     await sleep(300);
-    await Promise.all([pairSynced(from), pairSynced(to)]);
-    return [await writes(from.board, to.board, 'objects', key), await writes(from.comments, to.comments, 'threads', key)];
+    await Promise.all([pairSynced(from, rawMs), pairSynced(to, rawMs)]);
+    return [await writes(from.board, to.board, 'objects', key, rawMs), await writes(from.comments, to.comments, 'threads', key, rawMs)];
   }
 
   // connected, and never closed for any reason but a change of role (4511: reconnect with a receiver of the right size)
@@ -498,7 +502,7 @@ describe('open sockets follow role changes', { timeout: 30_000 }, () => {
     const t0 = Date.now();
     for (let n = 0; Date.now() - t0 < ROLE_RECHECK_MS + 12000 && !landed.every(Boolean); n++) {
       // the first write after the recheck may find its socket closed for the new receive limit (4511): poll again
-      landed = await lands(mine, watcher, `poll${n}`).catch(() => [false, false]);
+      landed = await lands(mine, watcher, `poll${n}`, 3000).catch(() => [false, false]);
       if (!landed.every(Boolean)) await sleep(250);
     }
     expect(landed).toEqual([true, true]);
