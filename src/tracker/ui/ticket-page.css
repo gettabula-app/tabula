@@ -270,3 +270,6 @@
    scrolls and `contain` on a box that never overflows would stop the wheel from chaining to that panel. */
 .trk .trk-ticket-page-host { overflow-y: auto; scroll-padding-bottom: 16px; }
 @media (max-width: 600px) { .trk .trk-ticket-page-host { overscroll-behavior: contain; } }
+
+/* the comment row sits on a faint tint of the text colour, which takes the muted grey under 4.5:1 in Ayu: its times use a stronger grey */
+.trk.tk-page .tk-comment-row .trk-relative-time { color: color-mix(in srgb, var(--trk-text) 78%, var(--trk-ground)); }
