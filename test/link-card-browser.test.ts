@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
+import { budget } from './wait-budget';
 
 // Link cards in the real app (docs/link-cards.md, proto/designer-preview/link-cards/SPEC.md): the board runs from the dev server with
 // no relay (it opens from this browser's own copy), and the API the card needs is answered by the test: config, the unfurl route
@@ -47,6 +48,8 @@ async function open(over: Partial<Stub> = {}, width = 1280): Promise<{ page: Pag
     ...over,
   };
   const page = await browser!.newPage({ viewport: { width, height: 800 } });
+  // under heavy machine load a wait that takes seconds on a quiet one can take tens of seconds: one shared budget (test/wait-budget.ts)
+  page.setDefaultTimeout(budget(45_000));
   await page.addInitScript(() => {
     (window as unknown as { __opened: unknown[] }).__opened = [];
     window.open = ((url: string, target: string, features: string) => { (window as unknown as { __opened: unknown[] }).__opened.push([url, target, features]); return null; }) as typeof window.open;
@@ -59,7 +62,7 @@ async function open(over: Partial<Stub> = {}, width = 1280): Promise<{ page: Pag
   });
   await page.route('**/api/boards/*/assets/**', (route) => route.fulfill({ contentType: 'image/png', body: GREY_PNG }));
   await page.goto(`${base}?debug#/b/link-${Math.random().toString(36).slice(2, 8)}`);
-  await page.waitForFunction(() => (window as any).__board, null, { timeout: 20_000 });
+  await page.waitForFunction(() => (window as any).__board, null, { timeout: budget(20_000) });
   await page.waitForFunction(() => document.querySelector('.rail-btn[aria-label="Link"]'));
   return { page, stub };
 }
@@ -282,7 +285,7 @@ describe.skipIf(!available)('a dropped link', () => {
       const drop = new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 400, clientY: 300 });
       (window as any).__board.r.svg.dispatchEvent(drop);
     });
-    await page.waitForFunction(() => [...(window as any).__board.store.cache.values()].filter((o: any) => o.type === 'link').length === 10, null, { timeout: 8000 });
+    await page.waitForFunction(() => [...(window as any).__board.store.cache.values()].filter((o: any) => o.type === 'link').length === 10, null, { timeout: budget(8000) });
     expect(await page.locator('.toast').textContent()).toBe('10 links added');
     await page.close();
   });
@@ -338,7 +341,7 @@ describe.skipIf(!available)('the quick bar', () => {
     const title = page.getByRole('textbox', { name: 'Title' });
     await title.fill('Renamed');
     await page.keyboard.press('Escape');
-    await page.locator('.link-edit').waitFor({ state: 'detached', timeout: 5000 });
+    await page.locator('.link-edit').waitFor({ state: 'detached', timeout: budget(5000) });
     expect((await links(page))[0].title).toBe('Example Domain');
     await bar(page).getByRole('button', { name: 'Edit' }).click();
     await page.getByRole('textbox', { name: 'Title' }).fill('Renamed');
