@@ -37,7 +37,7 @@ Tracker rows remain in the tracker's notification table and are merged at read t
 
 ## Settings
 
-Notification settings (the bell's **Notification settings** link, the chat page's **Notifications** button and the **Chat notifications** menu item) holds four switches under **In your notifications**. Each is on until it is switched off, and each is saved as it is changed:
+Notification settings (the bell's **Notification settings** link, the chat page's **Notifications** button and the **Notification settings** menu item in the board menu and the account menu) holds four switches under **In your notifications**. Each is on until it is switched off, and each is saved as it is changed:
 
 - **Mentions of me in chats and comments**: `chat_mention`, `comment_mention`.
 - **Replies to my comments**: `comment_reply`.

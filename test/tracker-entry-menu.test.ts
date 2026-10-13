@@ -130,13 +130,13 @@ describe('the Tracker link of the Boards top bar', () => {
     const button = barWithMcp.querySelector('.topbar-me-btn') as FakeElement;
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
     button.click();
-    expect(menuItems()).toEqual(['Your name and colour', 'AI tool access', 'Your AI key', 'Chat notifications', 'Sign out']);
+    expect(menuItems()).toEqual(['Your name and colour', 'AI tool access', 'Your AI key', 'Notification settings', 'Sign out']);
     (await import('../src/ui/common')).closePopover();
     await new Promise((resolve) => setTimeout(resolve, 5)); // the popover's pointer listener is added on a timer
-    // without the server offering them, the menu is the name and Sign out
+    // without the server offering them, the menu is the name, Notification settings (for every signed-in account) and Sign out
     const plain = createTopbar('boards', me(true)) as unknown as FakeElement;
     (plain.querySelector('.topbar-me-btn') as FakeElement).click();
-    expect(menuItems()).toEqual(['Your name and colour', 'Sign out']);
+    expect(menuItems()).toEqual(['Your name and colour', 'Notification settings', 'Sign out']);
     (await import('../src/ui/common')).closePopover();
     await new Promise((resolve) => setTimeout(resolve, 5)); // the popover's pointer listener is added on a timer
     expect(links(createTopbar('boards', me(false)))).toEqual(['Boards', 'Templates', 'Help']);
