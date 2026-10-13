@@ -218,7 +218,9 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
           value, label: String(value), ariaLabel: `Line height ${value}`,
         })), typeof lineHeight === 'number' && presets.includes(lineHeight) ? lineHeight : undefined,
         (value) => upLeaves((o) => ({ lineHeight: value === 1.3 && o.type !== 'markdown' ? undefined : value }), HAS_LINE_HEIGHT), 'Line height');
-        const custom = typeof lineHeight === 'number' && !presets.includes(lineHeight)
+        // a Markdown block left at its own default (1.45) has no stored value: nothing is selected, and it is not "custom"
+        const stored = sharedLeaves((o) => (o as BaseObj).lineHeight, HAS_LINE_HEIGHT);
+        const custom = typeof lineHeight === 'number' && typeof stored === 'number' && !presets.includes(lineHeight)
           ? h('div', { class: 'line-height-custom' }, `Custom ${lineHeight}`)
           : null;
         text.push(field('Line height', h('div', null, control, custom)));
