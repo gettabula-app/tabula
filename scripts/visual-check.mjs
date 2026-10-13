@@ -1700,7 +1700,8 @@ const STATES = {
         const ratio = contrast(getComputedStyle(element).color, background(element));
         if (ratio < 4.5) failures.push(`text contrast ${ratio.toFixed(2)}:1 on .${element.className}`);
       }
-      const nonText = [...document.querySelectorAll('.trk .trk-glyph, .trk .trk-label-chip, .trk .trk-count-badge, .trk .trk-actor-badge, .trk .trk-due-chip, .trk .trk-filter-chip')];
+      // `.trk-count-badge` is not in this list on purpose (designer's decision, 2026-10-13): the count is information in text, which is checked at 4.5:1 above, so WCAG 1.4.11 does not ask for a 3:1 outline on the soft-tinted pill of the M style.
+      const nonText = [...document.querySelectorAll('.trk .trk-glyph, .trk .trk-label-chip, .trk .trk-actor-badge, .trk .trk-due-chip, .trk .trk-filter-chip')];
       for (const element of nonText) {
         const style = getComputedStyle(element);
         const foreground = element.matches('svg') ? style.color : style.borderTopColor;
