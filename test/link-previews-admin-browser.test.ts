@@ -67,6 +67,8 @@ describe.skipIf(!available)('the Link previews admin row', () => {
     await sw.click();
     await page.waitForFunction(() => document.querySelector('.lp-switch')?.getAttribute('aria-checked') === 'true');
     expect(fake.puts).toEqual([{ enabled: true }]);
+    // the switch flips at once, the outcome text arrives with the server's answer: wait for it instead of reading it straight away (it was '' on a slow CI runner)
+    await page.waitForFunction(() => document.querySelector('.lp-outcome')?.textContent === 'Saved.');
     expect(await page.locator('.lp-outcome').textContent()).toBe('Saved.');
     expect(await page.locator('.lp-note').count()).toBe(0);
     await page.close();
