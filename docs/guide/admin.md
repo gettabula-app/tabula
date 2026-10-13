@@ -235,3 +235,5 @@ Entries with no person are shown as the system, for example when a hosted worksp
 - [Sharing, roles and teams](sharing.md)
 - [Access tokens and AI tools](ai-tools.md)
 - [Your AI key](ai-keys.md)
+- [Link cards](link-cards.md)
+- [Link previews](link-previews.md)
