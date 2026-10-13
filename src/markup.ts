@@ -363,7 +363,7 @@ const K = {
   linked: 'var(--canvas-ink, #18212B)',
   linkedBadge: 'color-mix(in srgb, var(--canvas-ink, #18212B) 8%, var(--paper, #FFFFFF))',
   linkedBadgeInk: 'var(--ink, #18212B)',
-  unmappedBadge: 'color-mix(in srgb, var(--signal, #FFD23F) 24%, var(--paper, #FFFFFF))',
+  unmappedBadge: 'color-mix(in srgb, var(--canvas-signal, #FFD23F) 24%, var(--paper, #FFFFFF))',
   canceledBadge: 'color-mix(in srgb, var(--danger, #D41E24) 15%, var(--paper, #FFFFFF))',
   edge: 'color-mix(in srgb, var(--canvas-ink, #18212B) 28%, transparent)',
   dash: 'color-mix(in srgb, var(--canvas-ink, #18212B) 40%, transparent)',
@@ -504,9 +504,9 @@ function headerControlsMarkup(o: BaseObj, c: HeaderControls, open: MarkupCtx['op
   if (c.filter) {
     const { rect: r, text, on } = c.filter;
     const pressed = on || (open?.id === o.id && open.kind === 'filter');
-    const ink = on ? 'var(--on-signal, #18212B)' : pressed ? K.canvas : K.canvasInk;
+    const ink = on ? 'var(--on-canvas-signal, #18212B)' : pressed ? K.canvas : K.canvasInk;
     out += `<g class="k-filter">`;
-    out += on ? `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle('var(--signal, #FFD23F)')}/>`
+    out += on ? `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle('var(--canvas-signal, #FFD23F)')}/>`
       : pressed ? `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle(K.canvasInk)}/>`
       : `<rect x="${n(r.x + 0.5)}" y="${n(r.y + 0.5)}" width="${n(r.w - 1)}" height="${n(r.h - 1)}" ${strokeStyle(K.canvasInk)} stroke-width="1"/>`;
     out += kIcon(ICON_FILTER, r.x + 10, r.y + 8, 16, ink) + label(text, r.x + 32, r.y + 20, ink, o.font) + '</g>';

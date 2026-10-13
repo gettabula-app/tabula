@@ -45,7 +45,8 @@ describe('UI chrome radii', () => {
     const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8');
     const root = rules(css).find((rule) => rule.selector === ':root')?.body ?? '';
     expect(root).toMatch(/--radius-xs:\s*4px\s*;/);
-    expect(root).toMatch(/--radius-sm:\s*8px\s*;/);
+    // Johan's M ruling (13 Oct 2026) sets the shared small-control radius to 6px.
+    expect(root).toMatch(/--radius-sm:\s*6px\s*;/);
     expect(root).toMatch(/--radius-md:\s*12px\s*;/);
     expect(root).toMatch(/--radius-lg:\s*12px\s*;/);
     expect(root).toMatch(/--radius:\s*var\(--radius-md\)\s*;/);

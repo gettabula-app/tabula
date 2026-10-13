@@ -106,7 +106,7 @@
 .admin .backups-pick-row.on { border-left-color: var(--signal); }
 .backups-pick-row input {
   appearance: none; -webkit-appearance: none; display: grid; place-content: center; flex: none;
-  width: 16px; height: 16px; margin: 3px 0 0; border: 1px solid var(--ink); border-radius: var(--radius-xs); background: var(--paper);
+  width: 16px; height: 16px; margin: 3px 0 0; border: 1px solid var(--field-edge-strong); border-radius: var(--radius-xs); background: var(--paper);
 }
 .backups-pick-row input::before { content: ''; width: 8px; height: 8px; background: var(--ink); transform: scale(0); }
 .backups-pick-row input:checked::before { transform: scale(1); }

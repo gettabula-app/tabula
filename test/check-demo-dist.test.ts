@@ -18,7 +18,7 @@ function hashed(value: string) {
   return { bytes, hash: crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 8) };
 }
 
-const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
+const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src 'self' https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
 
 function validFixture() {
   const shard = hashed(JSON.stringify({ icons: { a: { body: '<path d="M0 0"/>' } } }));
