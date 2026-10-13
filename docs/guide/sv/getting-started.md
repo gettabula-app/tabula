@@ -32,7 +32,7 @@ Om du hellre vill börja med en färdig layout väljer du **Start from a templat
 Uppifrån och ned:
 
 - **Select** (Markera) (`V`) och **Hand** (Hand) (`H`).
-- **Sticky note** (Lapp) (`N`), **Text** (Text) (`T`), **Shapes** (Former), **Connector** (Kopplingslinje) (`L`), **Pen** (Penna) (`P`), **Frame** (Ram) (`F`) och **Comment** (Kommentar) (`C`). **Shapes** öppnar en panel med ett sökfält. Klicka på en form för att rita den eller dra den till tavlan.
+- **Sticky note** (Lapp) (`N`), **Text** (Text) (`T`), **Markdown block** (Markdown-block) (för längre anteckningar med rubriker, listor och uppgiftsrutor, se [Markdown-block](markdown-blocks.md)), **Shapes** (Former), **Connector** (Kopplingslinje) (`L`), **Pen** (Penna) (`P`), **Frame** (Ram) (`F`) och **Comment** (Kommentar) (`C`). **Shapes** öppnar en panel med ett sökfält. Klicka på en form för att rita den eller dra den till tavlan.
 - Menyer för **UML** (UML), **Icons** (Ikoner), **Stickers** (Klistermärken) och **Templates and team exercises** (Mallar och teamövningar).
 - En knapp för punktröstning och en knapp för snabbomröstning.
 - **Undo** (Ångra) och **Redo** (Gör om).
