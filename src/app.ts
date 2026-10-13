@@ -3084,7 +3084,7 @@ export class BoardApp {
 
   private bindPresence() {
     const aw = this.conn.awareness;
-    const render = () => {
+    const render = (fromCamera = false) => {
       const remote: { ids: Id[]; color: string }[] = [];
       const cursors: { id: number; name: string; guest: boolean; color: string; p: Point }[] = [];
       aw.getStates().forEach((st, clientId) => {
@@ -3093,15 +3093,21 @@ export class BoardApp {
         if (st.cursor) cursors.push({ id: clientId, name: st.user.name, guest: st.user.guest === true, color: personColor(st.user.color), p: st.cursor });
       });
       this.r.setOverlay({ remote });
-      this.renderCursors(cursors);
+      this.renderCursors(cursors, !fromCamera);
       this.emit('presence');
     };
-    aw.on('change', render);
-    this.r.onCamera(render);
+    aw.on('change', () => render());
+    // the cursors take the camera in the frame that draws it, not when it is set: the canvas applies it on the next frame, and a cursor set earlier leads the board
+    this.r.onCameraApplied(() => render(true));
   }
 
   private cursorEls = new Map<number, HTMLDivElement>();
-  private renderCursors(cs: { id: number; name: string; guest: boolean; color: string; p: Point }[]) {
+  /**
+   * A remote cursor is kept in board coordinates and projected with the camera of this very frame: a pan or a zoom moves it with the board,
+   * at once (no transition, or it trails the canvas by the length of the transition). Only a cursor that moved on the board glides, 90 ms.
+   */
+  private cursorBoard = new Map<number, Point>();
+  private renderCursors(cs: { id: number; name: string; guest: boolean; color: string; p: Point }[], animate = true) {
     const seen = new Set<number>();
     for (const c of cs) {
       seen.add(c.id);
@@ -3132,9 +3138,14 @@ export class BoardApp {
         guestBadge?.remove();
       }
       const s = this.r.toScreen(c.p);
+      const before = this.cursorBoard.get(c.id);
+      const moved = !before || before.x !== c.p.x || before.y !== c.p.y;
+      this.cursorBoard.set(c.id, { x: c.p.x, y: c.p.y });
+      const glide = animate && moved && !!before && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+      el.style.transition = glide ? 'transform 90ms linear' : 'none';
       el.style.transform = `translate(${s.x}px, ${s.y}px)`;
     }
-    for (const [id, el] of this.cursorEls) if (!seen.has(id)) { el.remove(); this.cursorEls.delete(id); }
+    for (const [id, el] of this.cursorEls) if (!seen.has(id)) { el.remove(); this.cursorEls.delete(id); this.cursorBoard.delete(id); }
   }
 
   private broadcastCursor(p: Point) {
