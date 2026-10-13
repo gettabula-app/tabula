@@ -381,9 +381,10 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     const id = app.selection.length === 1 ? app.selection[0] : '';
     const mount = frames.get(id);
     if (!mount) return;
-    if (event.key === 'Enter') { event.preventDefault(); enterWork(mount); }
+    // these keys are the element's: the board must not also act on them (Enter would start a text edit and F would arm the frame tool)
+    if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); enterWork(mount); }
     else if (event.key.toLowerCase() === 'f') {
-      event.preventDefault(); openFullscreenRoute(mount);
+      event.preventDefault(); event.stopPropagation(); openFullscreenRoute(mount);
     }
   };
 

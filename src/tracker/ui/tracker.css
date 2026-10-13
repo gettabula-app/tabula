@@ -611,7 +611,11 @@
 .trk.trk-element .trk-element-sub { flex: none; overflow: hidden; color: var(--graphite); font-size: 12px; white-space: nowrap; }
 .trk.trk-element .trk-element-actions { display: flex; flex: none; align-items: center; gap: 10px; }
 .trk.trk-element .trk-element-actions > * { flex: none; }
-.trk.trk-element .trk-element-switch .segmented { margin: 0; }
+.trk.trk-element .trk-element-switch .segmented { margin: 0; background: color-mix(in srgb, var(--trk-text) 5%, var(--trk-ground)); }
+/* the card is paper in every theme, so the switch takes the card's own tokens, not the tray's (Evergreen's tray is dark) */
+.trk.trk-element .trk-element-switch .segmented button { color: var(--trk-text); }
+.trk.trk-element .trk-element-switch .segmented button:hover { background: color-mix(in srgb, var(--trk-text) 6%, transparent); }
+.trk.trk-element .trk-element-switch .segmented button.on { background: var(--trk-ground); color: var(--trk-text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--trk-text) 30%, var(--trk-ground)); }
 .trk.trk-element .trk-primary-button {
   height: 30px; min-height: 30px; padding: 0 12px; border: 0; border-radius: 6px;
   background: var(--ink); color: var(--paper); font: 500 13px/1 var(--ui); white-space: nowrap;

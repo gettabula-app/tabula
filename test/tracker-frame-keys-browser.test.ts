@@ -192,4 +192,21 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     expect(state.shown).toBe(false);
     await page.close();
   });
+
+  it('Enter on a selected tracker element focuses it and does not start a text edit (no edit bar, no emoji button)', async () => {
+    const page = await open();
+    const id = await frameId(page);
+    await page.evaluate((i) => { (window as any).__board.zoomTo(0.5); (window as any).__board.setSelection([i]); }, id);
+    await page.keyboard.press('Enter');
+    await page.locator('.trk-frame-wrap.is-work .trk-shell').waitFor({ timeout: budget(10_000) });
+    const state = await page.evaluate(() => ({
+      active: (window as any).__board.editor.active as boolean,
+      bar: document.querySelector('.edit-bar')?.classList.contains('show') ?? false,
+      focusInShell: document.activeElement?.closest('.trk') !== null,
+    }));
+    expect(state.active).toBe(false);
+    expect(state.bar).toBe(false);
+    expect(state.focusInShell).toBe(true);
+    await page.close();
+  });
 });

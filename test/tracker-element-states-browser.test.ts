@@ -80,4 +80,35 @@ describe.skipIf(!available)('tracker element states', { timeout: 200_000 }, () =
     await shot(page, 'error');
     await page.close();
   });
+
+  it.each(['default', 'evergreen', 'ayu', 'matrix'])('the All/My switch reads on its card in the %s theme (labels and the raised thumb at 4.5:1)', async (theme) => {
+    const page = await browser!.newPage({ viewport: { width: 1280, height: 800 } });
+    page.setDefaultTimeout(budget(45_000));
+    await page.addInitScript((id) => { try { localStorage.setItem('driftboard:theme', id); } catch { /* the test falls back to the default theme and says so below */ } }, theme);
+    await page.goto(`${base}?debug&trackerMock=board#/b/trk-sw-${theme}`);
+    await page.waitForFunction(() => document.querySelector('.trk-frame-wrap.is-work .trk-element-switch .segmented button.on') !== null, null, { timeout: budget(30_000) });
+    const result = await page.evaluate(() => {
+      const px = (css: string) => {
+        const c = document.createElement('canvas').getContext('2d')!;
+        c.fillStyle = '#000000'; c.fillStyle = css;
+        const v = c.fillStyle as string;
+        if (v.startsWith('#')) return [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16));
+        const nums = (v.replace(/^color\(srgb/, '').match(/[\d.]+/g) ?? ['0', '0', '0']).slice(0, 3).map(Number);
+        return v.startsWith('color(') ? nums.map((x) => x * 255) : nums;
+      };
+      const lum = (rgb: number[]) => { const [r, g, b] = rgb.map((x) => { const c = x / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+      const ratio = (a: number[], b: number[]) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
+      const track = document.querySelector('.trk-frame-wrap.is-work .trk-element-switch .segmented') as HTMLElement;
+      const on = track.querySelector('button.on') as HTMLElement;
+      const off = [...track.querySelectorAll('button')].find((b) => !b.classList.contains('on')) as HTMLElement;
+      const bg = (el: HTMLElement) => px(getComputedStyle(el).backgroundColor);
+      const fg = (el: HTMLElement) => px(getComputedStyle(el).color);
+      return { theme: document.documentElement.dataset.theme ?? 'default', off: ratio(fg(off), bg(track)), on: ratio(fg(on), bg(on)) };
+    });
+    await shot(page, `switch-${theme}`);
+    expect(result.theme).toBe(theme); // the stored theme was applied, so the check below is about that theme
+    expect(result.off).toBeGreaterThanOrEqual(4.5);
+    expect(result.on).toBeGreaterThanOrEqual(4.5);
+    await page.close();
+  });
 });
