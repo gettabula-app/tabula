@@ -51,7 +51,7 @@ export function parseTableKey(key) {
 
 /** Whether a stored rank is a key fractional-indexing accepts: anything else (a hostile or damaged value) would make generateKeyBetween throw. */
 export function isValidRank(rank) {
-  if (typeof rank !== 'string' || rank === '' || rank.length > 64) return false;
+  if (typeof rank !== 'string' || rank === '' || rank.length > 64 || !/^[0-9A-Za-z]+$/.test(rank)) return false;
   try {
     generateKeyBetween(rank, null);
     return true;
@@ -118,8 +118,16 @@ export function newTableFields(rows, cols, newId) {
  * sorts last and is skipped: the new rank goes between the valid ranks around that place, so a damaged value never stops the table from changing.
  */
 function rankAfter(ranks, at) {
-  const valid = ranks.filter((r) => r !== null);
-  const upTo = ranks.slice(0, Math.max(0, at + 1)).filter((r) => r !== null).length;
+  // keep only ranks that strictly rise: a rank equal to (two clients inserting after the same line) or below the one before it cannot bound a new key
+  const keep = [];
+  let last = null;
+  for (const r of ranks) {
+    const ok = r !== null && (last === null || r > last);
+    keep.push(ok);
+    if (ok) last = r;
+  }
+  const valid = ranks.filter((_, i) => keep[i]);
+  const upTo = keep.slice(0, Math.max(0, at + 1)).filter(Boolean).length;
   return generateKeyBetween(valid[upTo - 1] ?? null, valid[upTo] ?? null);
 }
 
@@ -192,10 +200,20 @@ export function setCellPatch(obj, rowId, colId, text) {
   return { [cellKey(rowId, colId)]: clean === '' ? undefined : clean };
 }
 
-/** The characters of cell text in a table object, counted over every cell key (also those of a row or column that is gone). */
+/** The characters of cell text in a table object, counted over the cells of rows and columns it has (a cell outside the grid is not shown and does not count). */
 export function tableChars(obj) {
+  const rows = new Set();
+  const cols = new Set();
+  const cells = [];
+  for (const key of Object.keys(obj ?? {})) {
+    const p = parseTableKey(key);
+    if (!p) continue;
+    if (p.kind === 'r') rows.add(p.id);
+    else if (p.kind === 'k') cols.add(p.id);
+    else if (p.kind === 'c' && typeof obj[key] === 'string') cells.push(p);
+  }
   let n = 0;
-  for (const key of Object.keys(obj ?? {})) if (parseTableKey(key)?.kind === 'c' && typeof obj[key] === 'string') n += obj[key].length;
+  for (const p of cells) if (rows.has(p.rowId) && cols.has(p.colId)) n += obj[cellKey(p.rowId, p.colId)].length;
   return n;
 }
 
@@ -276,7 +294,7 @@ export function parseGrid(text) {
 export function tableFromGrid(grid, newId) {
   if (!grid.length) return null;
   const rows = Math.min(MAX_TABLE_ROWS, grid.length);
-  const cols = Math.min(MAX_TABLE_COLS, Math.max(1, ...grid.map((r) => r.length)));
+  const cols = Math.min(MAX_TABLE_COLS, Math.max(1, grid.reduce((n, r) => Math.max(n, r.length), 0)));
   const fields = newTableFields(rows, cols, newId);
   const m = tableModel(fields);
   for (let r = 0; r < rows; r++) {
@@ -290,31 +308,53 @@ export function tableFromGrid(grid, newId) {
 
 /** A pasted grid written into an existing table from the cell (rowId, colId) down and right; rows and columns beyond the table are added. */
 export function fillFromPatch(obj, rowId, colId, grid, newId) {
-  let model = tableModel(obj);
-  let r0 = model.rows.indexOf(rowId);
-  let c0 = model.cols.indexOf(colId);
+  const model = tableModel(obj);
+  const r0 = model.rows.indexOf(rowId);
+  const c0 = model.cols.indexOf(colId);
   if (r0 < 0 || c0 < 0 || !grid.length) return null;
   if (tableChars(obj) + gridChars(grid) > MAX_TABLE_CHARS) return null;
-  const working = { ...obj };
   const patch = {};
-  const apply = (p) => { Object.assign(patch, p); Object.assign(working, p); };
+  const rows = [...model.rows];
+  const cols = [...model.cols];
+  let widest = 0;
+  for (const line of grid) if (line.length > widest) widest = line.length;
   const needRows = Math.min(MAX_TABLE_ROWS, r0 + grid.length);
-  const needCols = Math.min(MAX_TABLE_COLS, c0 + Math.max(...grid.map((r) => r.length)));
-  while (model.rows.length < needRows) { const p = insertRowPatch(working, model.rows.length - 1, newId()); if (!p) break; apply(p); model = tableModel(working); }
-  while (model.cols.length < needCols) { const p = insertColPatch(working, model.cols.length - 1, newId()); if (!p) break; apply(p); model = tableModel(working); }
-  for (let r = 0; r < grid.length && r0 + r < model.rows.length; r++) {
-    for (let c = 0; c < grid[r].length && c0 + c < model.cols.length; c++) {
-      const p = setCellPatch(working, model.rows[r0 + r], model.cols[c0 + c], grid[r][c]);
-      if (p) apply(p);
+  const needCols = Math.min(MAX_TABLE_COLS, c0 + widest);
+  // new lines go after the last one, their ranks made in one batch (linear in the number of lines)
+  const grow = (lines, need, ranksOf, keyOf) => {
+    const n = need - lines.length;
+    if (n <= 0) return;
+    const ids = [];
+    const seen = new Set(lines);
+    for (let i = 0; i < n; i++) {
+      const id = newId();
+      if (!ID_RE.test(id) || seen.has(id)) break;
+      seen.add(id);
+      ids.push(id);
+    }
+    const ranks = ranksOf(ids.length);
+    ids.forEach((id, i) => { patch[keyOf(id)] = ranks[i]; lines.push(id); });
+  };
+  grow(rows, needRows, (n) => generateNKeysBetween(rankAfter(orderedRanks(model.rowRanks, model.rows), model.rows.length - 1), null, n), rowKey);
+  grow(cols, needCols, (n) => generateNKeysBetween(rankAfter(orderedRanks(model.colRanks, model.cols), model.cols.length - 1), null, n), colKey);
+  for (let r = 0; r < grid.length && r0 + r < rows.length; r++) {
+    for (let c = 0; c < grid[r].length && c0 + c < cols.length; c++) {
+      const text = typeof grid[r][c] === 'string' ? grid[r][c].replace(/\r\n?/g, '\n') : '';
+      if ([...text].length > MAX_CELL_CHARS) continue;
+      patch[cellKey(rows[r0 + r], cols[c0 + c])] = text === '' ? undefined : text;
     }
   }
   return patch;
 }
 
+// what a spreadsheet would run as a formula (the same guard as src/csv.ts): a quote in front makes it text
+const FORMULA = /^[\t\r]|^[\s\p{Cc}\p{Cf}\p{Z}]*[=+\-@＝＋－＠]/u;
+const formulaSafe = (v) => (FORMULA.test(v) ? `'${v}` : v);
+
 /** The table as tab separated text, for a paste into a spreadsheet. A tab or line break in a cell becomes a space. */
 export function toTsv(obj) {
   const m = tableModel(obj);
-  return m.rows.map((r) => m.cols.map((c) => m.cell(r, c).replace(/[\t\n]+/g, ' ')).join('\t')).join('\n');
+  return m.rows.map((r) => m.cols.map((c) => formulaSafe(m.cell(r, c).replace(/[\t\n]+/g, ' '))).join('\t')).join('\n');
 }
 
 /** The table as a Markdown table (first row as the header), with `|` and line breaks in a cell made safe. Empty for no rows. */
