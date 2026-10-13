@@ -10,14 +10,14 @@ const visibleHeight = () => Math.min(window.innerHeight, window.visualViewport ?
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
 /** Floating panel anchored to an element; closes on outside click or Escape. */
-export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; fitBelow?: boolean; getAnchorRect?: () => Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>; className?: string; label?: string; onClose?: () => void; onKeyDown?: (event: KeyboardEvent) => boolean; avoidAnchor?: boolean; trap?: boolean } = {}) {
+export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; fitBelow?: boolean; getAnchorRect?: () => Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>; className?: string; label?: string; role?: 'dialog' | 'menu'; onClose?: () => void; onKeyDown?: (event: KeyboardEvent) => boolean; avoidAnchor?: boolean; trap?: boolean } = {}) {
   closePopover();
   const label = opts.label ?? (anchor.getAttribute('aria-label') || anchor.textContent?.trim() || 'Options');
   const trackerSurface = opts.className?.split(/\s+/u).includes('trk-pop') === true;
-  const el = h('div', { class: `popover${trackerSurface ? '' : ' tray'} ${opts.className ?? ''}`, role: 'dialog', 'aria-label': label }, content);
+  const el = h('div', { class: `popover${trackerSurface ? '' : ' tray'} ${opts.className ?? ''}`, role: opts.role ?? 'dialog', 'aria-label': label }, content);
   const opener = anchor.tagName === 'BUTTON' ? anchor : null;
   if (opener) {
-    if (!opener.hasAttribute('aria-haspopup')) opener.setAttribute('aria-haspopup', 'dialog');
+    if (!opener.hasAttribute('aria-haspopup')) opener.setAttribute('aria-haspopup', opts.role ?? 'dialog');
     opener.setAttribute('aria-expanded', 'true');
   }
   document.body.appendChild(el);

@@ -259,20 +259,21 @@ select.input {
 @media (max-height: 820px) {
   .rail { gap: 1px; }
   .rail .rail-btn { width: 34px; height: 34px; }
-  .rail hr { margin: 3px 0; }
+  .rail hr { margin: 2px 0; }
 }
 .rail-btn { width: 40px; height: 40px; position: relative; }
 /* TAB-272: when constrained, only the tools scroll; Undo and Redo stay in the sibling block below it. */
 .rail-tools { display: flex; flex: 1 1 auto; flex-direction: column; align-items: center; gap: inherit; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+@media (max-height: 820px) { .rail-tools { gap: 0; } }
 /* a rail that scrolls fades the edge with more behind it (the tools scroll when the window is short and the scrollbar is hidden) */
 .rail-tools[data-more-y='down'] { -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 12px), transparent); }
 .rail-tools[data-more-y='up'] { -webkit-mask-image: linear-gradient(to top, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to top, var(--ink) calc(100% - 12px), transparent); }
 .rail-tools[data-more-y='both'] { -webkit-mask-image: linear-gradient(to bottom, transparent, var(--ink) 12px, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to bottom, transparent, var(--ink) 12px, var(--ink) calc(100% - 12px), transparent); }
-/* A short window on a mouse or trackpad: tools 28 px, icons 18 px, 1 px gaps, tighter dividers, and the rail starts at 64 px with a 12 px bottom margin, so it needs about 626 px and does not scroll at 720. Touch keeps 44 px targets and the cue below. */
+/* A short window on a mouse or trackpad: tools 30 px, icons 18 px, 1 px gaps and a 64 px rail start. Touch keeps 44 px targets and the cue below. */
 @media (max-height: 720px) and (pointer: fine) {
   .rail { top: calc(64px + var(--safe-top)); max-height: calc(100% - 76px - var(--safe-top) - var(--safe-bottom)); }
   .rail, .rail-tools, .rail-end { gap: 1px; }
-  .rail .rail-btn { width: 28px; height: 28px; } /* 28 since the Link tool made nineteen: 30 px no longer fit a 720 px window without scrolling */
+  .rail .rail-btn { width: 30px; height: 30px; }
   .rail .rail-btn svg { width: 18px; height: 18px; }
   .rail hr { margin: 2px 0; }
 }
@@ -282,6 +283,8 @@ select.input {
 .rail-more[hidden], .rail-track[hidden] { display: none; }
 .rail-more[data-dir='up'] svg { transform: rotate(180deg); }
 .rail-track { position: absolute; right: 2px; width: 2px; border-radius: 1px; background: var(--tray-line); pointer-events: none; }
+/* The rail scrolls by wheel, touch and keyboard and shows the fading edge and the chevron when more tools are out of view; the 2px track is kept in the layout for the scroll cue's measurements but is not drawn: people read it as a scrollbar (Johan, 13 Oct 2026). */
+.rail-track { opacity: 0; }
 .rail-track-thumb { display: block; width: 100%; border-radius: 1px; background: color-mix(in srgb, var(--tray-text) 40%, transparent); }
 .rail-tools { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { .rail-tools { scroll-behavior: auto; } }
@@ -987,3 +990,155 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 .link-edit-title, .link-edit-description { width: 100%; padding: 6px 8px; box-sizing: border-box; border: 1px solid var(--rule); border-radius: var(--radius-xs); background: var(--paper); color: var(--ink); font: inherit; }
 .link-edit-title { font-weight: 700; }
 .link-edit-description { resize: none; font-weight: 400; font-size: 0.9em; color: var(--graphite); }
+
+/* M canvas chrome: theme surfaces, fine hairlines and diffuse depth stay scoped to the board. */
+.chrome > :is(.top-left, .top-right, .rail, .zoom-tray, .quickbar, .props, .drawer) {
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 1px var(--tray-line), 0 4px 24px color-mix(in srgb, var(--shade) 5%, transparent);
+}
+.chrome > .top-left, .chrome > .top-right { height: 44px; }
+.chrome > .top-left { max-width: calc(100% - 380px - var(--safe-left) - var(--safe-right)); }
+.chrome > .top-right { gap: 4px; }
+.chrome > .rail .rail-btn { width: 36px; height: 36px; }
+.chrome > .rail .rail-btn.on,
+.chrome > .zoom-tray .icon-btn.on,
+.chrome > .quickbar .icon-btn.on,
+.chrome > .top-right .comment-toggle.on {
+  background: color-mix(in srgb, var(--tray-text) 8%, transparent);
+  color: var(--tray-text);
+}
+.chrome > .rail .rail-btn svg,
+.chrome > .top-left .ico svg,
+.chrome > .top-right .ico svg,
+.chrome > .zoom-tray .ico svg,
+.chrome > .quickbar .ico svg,
+.chrome > .props .ico svg,
+.chrome > .drawer .ico svg,
+.chrome > .history-panel .ico svg,
+.chrome > .side-tray .ico svg,
+.comment-card .ico svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.8;
+}
+.chrome > .quickbar .ico.group-action-icon svg,
+.chrome > .props .ico.group-action-icon svg { stroke-width: 2; }
+.chrome > .rail .rail-group-chevron { position: absolute; top: -7px; right: -7px; display: grid; place-items: center; width: 24px; height: 24px; color: var(--tray-muted); }
+.chrome > .rail .rail-group-chevron .ico svg { width: 10px; height: 10px; }
+.chrome > .rail .rail-group-chevron .ico { width: 10px; height: 10px; transform: translate(-4px, 4px); }
+.chrome > .rail .rail-tool-group { position: relative; }
+.chrome > .rail .rail-btn[data-tool='sticky']::after { display: none; }
+.chrome > .rail .rail-btn:focus-visible { outline-offset: 2px; }
+.chrome > .top-left .board-name { font: 500 16px var(--font-serif); }
+.chrome > .top-left .sync-status { height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font-size: 12px; }
+.chrome > .top-left .sync-status:hover { background: var(--tray-hover); }
+.chrome > .top-left .sync-status[data-state='live'],
+.chrome > .top-left .sync-status[data-state='denied'] { color: var(--tray-muted); }
+.chrome > .top-left .sync-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chrome > .top-left .sync-status[data-state='live'] .sync-status-dot { background: var(--wire); }
+.chrome > .top-left .sync-status-label { display: inline; }
+.chrome > .top-right .avatar { width: 24px; height: 24px; }
+.chrome > .top-right .share-label { font-size: 13px; letter-spacing: normal; text-transform: none; }
+.chrome > .top-right .share-btn { height: 32px; padding: 0 12px; border-radius: var(--radius-sm); }
+.chrome > .zoom-tray > .icon-btn:nth-of-type(4) { position: relative; margin-left: 6px; }
+.chrome > .zoom-tray > .icon-btn:nth-of-type(4)::before { content: ''; position: absolute; top: 6px; bottom: 6px; left: -4px; width: 1px; background: var(--tray-line); }
+.chrome > .zoom-tray .icon-btn { width: 28px; height: 28px; }
+.chrome > .quickbar .icon-btn:not(.qb-text) { width: 28px; height: 28px; }
+.chrome > .quickbar .qb-sep { height: 20px; }
+.chrome > .props { width: 280px; padding: 0 12px 12px; }
+.chrome > .drawer { width: 280px; bottom: calc(12px + var(--safe-bottom)); }
+.chrome > .props .swatch.on { box-shadow: 0 0 0 2px var(--tray), 0 0 0 4px var(--tray-text); }
+.chrome > .props .props-head { position: relative; min-height: 48px; padding: 8px 0 4px; }
+.chrome > .props .props-head h2 { margin: 0; font: 400 18px/1.2 var(--font-serif); }
+.chrome > .drawer .drawer-head { position: relative; min-height: 48px; padding: 4px 12px 4px 16px; border-bottom: 1px solid var(--tray-line); }
+.chrome > .drawer .drawer-head h2 { margin: 0; font: 600 14px/1.2 var(--ui); letter-spacing: normal; }
+.chrome > .drawer .drawer-body { scrollbar-width: thin; }
+.chrome > .drawer :is(.list-label, .stickers-label) { letter-spacing: normal; text-transform: none; }
+.chrome > .drawer .layers-count { letter-spacing: normal; text-transform: none; }
+.chrome > .props .props-section { border-top: 1px solid var(--tray-line); }
+.chrome > .props .props-section:first-of-type { border-top: 0; }
+.chrome > .props .props-section-toggle {
+  display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 28px; padding: 0 2px;
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); text-align: left;
+}
+.chrome > .props .props-section-toggle:hover { background: var(--tray-hover); }
+.chrome > .props .props-section-toggle > span { font: 600 11px/1.2 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; }
+.chrome > .props .props-section-toggle[aria-expanded='false'] .ico { transform: rotate(-90deg); }
+.chrome > .props .props-section-body { padding: 2px 0 8px; }
+.chrome > .props .props-section-body[hidden] { display: none; }
+.chrome > .props .props-section-body > .field { margin-top: 8px; }
+.chrome > .props .props-section-body .field-label { margin-bottom: 4px; font-size: 11px; }
+.chrome > .props .props-section-body .row2 { gap: 8px; }
+.chrome > .props .props-section-body .row2 .field { margin-top: 8px; }
+.chrome > .props .props-section-body :is(.input, .font-btn, .num-field, .combo) { height: 28px; }
+.chrome > .props .props-section-body .font-btn { font-size: 13px; }
+.chrome > .props .props-section-body .arrange { margin-top: 8px; padding-top: 8px; }
+.panel-grabber { display: none; }
+.rail-tool-list { min-width: 184px; padding: 4px; }
+.rail-tool-list .rail-tool-option { width: 100%; min-height: 36px; }
+.rail-tool-list .rail-tool-option .ico { width: 20px; height: 20px; }
+.rail-tool-list .rail-tool-option .ico svg { width: 20px; height: 20px; stroke-width: 1.8; }
+.rail-tool-list .rail-tool-option kbd { margin-left: auto; }
+
+@media (max-height: 820px) {
+  .chrome > .rail .rail-btn { width: 36px; height: 36px; }
+}
+@media (max-height: 720px) and (pointer: fine) {
+  /* 28 since the Link tool made nineteen tools (main): the short window keeps main's size and 18px icons */
+  .chrome > .rail .rail-btn { width: 28px; height: 28px; }
+  .chrome > .rail .rail-btn svg { width: 18px; height: 18px; }
+}
+@media (max-width: 720px) and (pointer: fine) {
+  .chrome > .rail .rail-btn { width: 28px; height: 28px; }
+  .chrome > .rail .rail-btn svg { width: 16px; height: 16px; }
+}
+@media (max-width: 860px) {
+  .chrome > .props { width: calc(100% - 92px - var(--safe-left) - var(--safe-right)); }
+  .chrome > .drawer { width: calc(100% - 88px - var(--safe-left) - var(--safe-right)); }
+}
+@media (max-width: 860px) {
+  .chrome > .props {
+    left: 0; right: 0; bottom: 0; width: 100%; max-height: min(85dvh, 760px); padding: 0 14px 12px;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .chrome > .props .props-head { min-height: 64px; padding: 24px 0 4px; }
+  .chrome > .props .panel-grabber { position: absolute; top: 8px; left: calc(50% - 16px); display: block; width: 32px; height: 4px; border-radius: 2px; background: var(--tray-muted); opacity: 0.45; }
+  .chrome > .drawer {
+    left: 0; right: 0; bottom: 0; width: 100%; max-height: 72dvh;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .chrome > .drawer .drawer-head { position: relative; min-height: 64px; padding: 24px 12px 4px 16px; }
+  .chrome > .drawer .panel-grabber { position: absolute; top: 8px; left: calc(50% - 16px); display: block; width: 32px; height: 4px; border-radius: 2px; background: var(--tray-muted); opacity: 0.45; }
+}
+@media (max-width: 480px) {
+  .chrome > .top-left { max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
+  .chrome > .top-left > .sync-status { width: auto; min-width: 0; height: 44px; flex: 0 1 auto; justify-content: flex-start; gap: 5px; padding: 0 6px; }
+  .chrome > .top-left > .sync-status .sync-status-label { display: inline; }
+  .chrome > .top-left > .sync-status .sync-status-dot { width: 6px; height: 6px; }
+  .chrome > .top-right .phone-avatar { width: 24px; height: 24px; }
+  .chrome > .top-right .share-btn {
+    width: auto; min-width: 0; height: 44px; flex: 0 0 auto; gap: 6px; padding: 0 10px;
+    background: var(--signal) !important; color: var(--on-signal) !important;
+  }
+  .chrome > .top-right .share-label { display: inline; }
+}
+/* at phone width the title keeps its room: the status shows its dot, and its name stays on the button for screen readers */
+@media (max-width: 400px) {
+  .chrome > .top-left > .sync-status[data-state='live'] .sync-status-label { display: none; }
+}
+@media (pointer: coarse) {
+  .chrome button, .chrome [role='button'], .chrome [role='tab'], .chrome [role='menuitem'],
+  .chrome input, .chrome select, .chrome textarea { min-width: 44px; min-height: 44px; }
+  .chrome > .rail .rail-group-chevron { top: -3px; right: -3px; width: 24px; height: 24px; }
+  .chrome > .rail .rail-group-chevron .ico { transform: none; }
+  .rail-tool-list .rail-tool-option { min-height: 44px; }
+}
+@media (forced-colors: active) {
+  .chrome > .rail .rail-btn.on,
+  .chrome > .zoom-tray .icon-btn.on,
+  .chrome > .quickbar .icon-btn.on,
+  .chrome > .top-right .comment-toggle.on { border: 1px solid Highlight; }
+}
+
+/* Long floating panels scroll with a thin themed scrollbar, never the platform default. */
+.chrome :is(.props, .drawer-body, .history-body, .side-tray-panel, .comment-msgs, .aireview-body) { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--tray-text) 28%, transparent) transparent; }

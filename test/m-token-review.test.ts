@@ -114,7 +114,10 @@ describe('M token review findings', () => {
     // Focus indicators (:focus, :focus-within, :focus-visible) are keyboard indicators, not elevation. It keeps its high-contrast color; elevation shadows use --shade.
     const nonFocusShadows = shadowRules.filter(({ selectors }) => !/:focus(?:-within|-visible)?\b/.test(selectors));
     const rawSurfaceColor = /var\(\s*--(?:tray|ink|tray-text)(?:\s|,|\))/;
-    expect(nonFocusShadows.filter(({ value }) => rawSurfaceColor.test(value))).toEqual([]);
+    // a ring (offset 0, blur 0, a spread: the selected-swatch and live-avatar separators) casts no shade, so it may use a surface color; blur or offset may not
+    const isRing = (layer: string) => /^\s*0(?:px)?\s+0(?:px)?\s+0(?:px)?\s+\d+(?:\.\d+)?px\s+var\(/.test(layer);
+    const castsFromSurface = ({ value }: { value: string }) => value.split(/,(?![^(]*\))/).some((layer) => rawSurfaceColor.test(layer) && !isRing(layer));
+    expect(nonFocusShadows.filter(castsFromSurface)).toEqual([]);
 
     for (const selector of ['.modal-back', '.trk-modal.modal-back', '.chat-dock-scrim', '.ks-scrim']) {
       const relatedRules = rules.filter((candidate) => candidate.selectors.split(',').map((value) => value.trim()).includes(selector));
