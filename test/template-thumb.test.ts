@@ -91,3 +91,34 @@ describe('builtinThumbnail', () => {
     expect(builtinThumbnail(def)).toBe(builtinThumbnail(def));
   });
 });
+
+describe('Markdown blocks and tables in a thumbnail', () => {
+  const md = (id: string, x: number, y: number, text: string) => box(id, 'markdown' as BaseObj['type'], x, y, 360, 200, { text });
+
+  it('draws a quiet box at the object\'s own position and size, with no text, and never reads the content', () => {
+    let reads = 0;
+    const hostile = { ...md('m', 40, 60, 'x'.repeat(8000)) } as Record<string, unknown>;
+    Object.defineProperty(hostile, 'text', { get() { reads++; return 'x'.repeat(8000); }, enumerable: true });
+    const svg = thumbnailSvg([hostile as unknown as Obj]);
+    expect(reads).toBe(0);
+    expect(svg).toContain('<rect x="40" y="60" width="360" height="200" rx="4" fill="var(--paper, #FFFFFF)"');
+    expect(svg).toContain('color-mix(in srgb, var(--ink, #18212B) 22%, var(--paper, #FFFFFF))');
+    expect(svg).not.toContain('<text');
+  });
+
+  it('draws a table the same way, from its box only', () => {
+    const svg = thumbnailSvg([{ ...box('t', 'table' as BaseObj['type'], 0, 0, 480, 120), 'r:r1': 'a0', 'k:c1': 'a0', 'c:r1:c1': 'cell text' } as unknown as Obj]);
+    expect(svg).toContain('width="480" height="120" rx="4"');
+    expect(svg).not.toContain('<text');
+    expect(svg).not.toContain('cell text');
+  });
+
+  it('draws 25 blocks of 8,000 characters at once, with no text measuring', () => {
+    const blocks = Array.from({ length: 25 }, (_, i) => md(`m${i}`, (i % 5) * 400, Math.floor(i / 5) * 240, 'y'.repeat(8000)));
+    const started = performance.now();
+    const svg = thumbnailSvg(blocks);
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(svg).not.toContain('<text');
+    expect(svg.match(/rx="4"/g)).toHaveLength(25);
+  });
+});
