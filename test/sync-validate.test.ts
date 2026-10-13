@@ -36,8 +36,9 @@ const check = (value: unknown, c: Ctx = ctx, opts = {}) => validateBoardObject((
 
 describe('mode (TABULA_SYNC_VALIDATE)', () => {
   it('defaults to off and reads the three modes', () => {
-    expect(syncValidateMode({})).toBe('off');
-    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '' })).toBe('off');
+    expect(syncValidateMode({})).toBe('report');
+    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '' })).toBe('report');
+    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '  ' })).toBe('report');
     for (const mode of ['off', 'report', 'enforce']) expect(syncValidateMode({ TABULA_SYNC_VALIDATE: mode })).toBe(mode);
     expect(syncValidateMode({ TABULA_SYNC_VALIDATE: ' Enforce ' })).toBe('enforce');
   });

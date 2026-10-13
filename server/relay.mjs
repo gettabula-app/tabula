@@ -180,7 +180,7 @@ const log = (...a) => {
   if (process.env.QUIET !== '1') console.log(new Date().toISOString(), ...a);
 };
 
-// TABULA_SYNC_VALIDATE=off|report|enforce (default off), read once: a bad value stops the server at startup.
+// TABULA_SYNC_VALIDATE=off|report|enforce (default report: counts, blocks nothing; off is the explicit switch), read once: a bad value stops the server at startup.
 const syncGuard = createSyncGuard({ mode: syncValidateMode(process.env), log });
 
 /** The validator's view of the socket's person (server/sync-validate.mjs ctx). No user id (open mode) means no identity. */
