@@ -129,6 +129,11 @@ export class TextEditor {
     return this.id !== null;
   }
 
+  /** The object being edited, if any. */
+  get editingId(): Id | null {
+    return this.id;
+  }
+
   private isMarkdown(): boolean {
     return this.active && this.app.store.get(this.id ?? undefined)?.type === 'markdown';
   }

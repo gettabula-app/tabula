@@ -428,7 +428,8 @@ describe.skipIf(!available)('the keyboard, read-only and export', { timeout: 200
       return mod.exportSvg(window.__board, ['c1']);
     })()`) as { svg: string };
     expect(svg).toContain('<tspan');
-    expect(svg).toContain('const a = 1;');
+    // the runs may be coloured by the highlighter by now, so the text is read across the tspans
+    expect(svg.replace(/<[^>]+>/g, '')).toContain('const a = 1;');
     expect(svg).not.toContain('foreignObject');
     expect(svg).not.toMatch(/<button|code-ctl|code-bar|Copy code|<textarea/);
     await page.context().close();
