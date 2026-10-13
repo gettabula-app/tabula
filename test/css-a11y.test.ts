@@ -68,7 +68,7 @@ describe('stylesheets', () => {
     // the stickers search is a plain .input and nothing of the stickers rules takes that focus away
     expect(readFileSync(join(ROOT, 'src/ui/stickers.ts'), 'utf8')).toMatch(/h\('input', \{ type: 'search', class: 'input'/);
     const stickerRules = [...css.matchAll(/(\.stickers \.input[^{]*)\{([^}]*)\}/g)].map(([, selectors, body]) => ({ selectors, body }));
-    for (const rule of stickerRules) expect(rule.body, rule.selectors).not.toMatch(/outline:\s*(?:0|none)|box-shadow:\s*none/);
+    expect(stickerRules.filter((rule) => /outline:\s*(?:0|none)|box-shadow:\s*none/.test(rule.body)).map((rule) => rule.selectors)).toEqual([]);
   });
 
   it('give every field inside a popover, menu or drawer the shared focus, because the popover outline rule leaves inputs out', () => {
@@ -76,9 +76,9 @@ describe('stylesheets', () => {
     expect(css).toMatch(/\.popover :focus-visible:not\(input\):not\(textarea\):not\(select\)/);
     const sources = ['stickers', 'emoji-picker', 'controls', 'board'].map((name) => readFileSync(join(ROOT, `src/ui/${name}.ts`), 'utf8')).join('\n');
     // every search or number field made for them carries the .input class (the board menu's own wrapper search is styled on its wrapper)
-    for (const m of sources.matchAll(/h\('input', \{\s*(?:class: '([^']*)')?[^}]*type: '(?:search|text)'/g)) {
-      if (m[1] !== undefined) expect(m[1]).toMatch(/\binput\b/);
-    }
+    const classes = [...sources.matchAll(/h\('input', \{\s*(?:class: '([^']*)')?[^}]*type: '(?:search|text)'/g)].flatMap((m) => (m[1] === undefined ? [] : [m[1]]));
+    expect(classes.length).toBeGreaterThan(0);
+    expect(classes.filter((value) => !/\binput\b/.test(value))).toEqual([]);
   });
 
   it('keep swatch colours and mark selected things with an outline in forced colours', () => {

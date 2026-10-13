@@ -24,7 +24,7 @@ const NAMED = (type: string) => type === 'frame' || type === 'container' || type
  */
 export function editColours(o: Obj, mode: EditMode): { color: string; background: string } {
   if (mode === 'text') return { color: styleOf(o).textColor, background: '' };
-  if (mode === 'frame') return { color: 'var(--ink)', background: '' };
+  if (mode === 'frame') return { color: o.type === 'frame' ? styleOf(o).textColor : 'var(--ink)', background: '' };
   // stored colours become inline styles here (`background` would load a url()), so only the colour grammar (TAB-203)
   if (mode === 'label') {
     // the renderer draws a label in the connector's own colour
@@ -353,7 +353,8 @@ export class TextEditor {
       // a frame's name sits above it; a container's and a lane's sit in their header band
       box = b.type === 'lane' ? { x: KANBAN.lanePad, y: 8, w: b.w - KANBAN.lanePad * 2, h: 32 }
         : b.type === 'container' ? { x: KANBAN.pad, y: 10, w: Math.max(200, b.w / 2), h: 28 }
-        : { x: 0, y: -34, w: Math.max(b.w, 200), h: 28 };
+        // a frame's name is edited exactly where it is drawn (markup.ts: x 2, baseline 10 above the frame): the line box is centred on the drawn text
+        : { x: 2, y: -10 - st.fontSize, w: Math.max(b.w - 2, 200), h: Math.round(st.fontSize * 1.3) };
       fontSize = st.fontSize;
       ta.style.textAlign = 'left';
     }
