@@ -1,43 +1,55 @@
 import type { BaseObj } from '../../types';
-import type { TrackerTicket, TrackerView } from '../../tracker-types';
+import { trackerNoTicketsLine } from '../../tracker-frame';
+import type { TrackerTicket } from '../../tracker-types';
 
-interface Snapshot { tab: TrackerView; rows: Array<{ key: string; title: string; state: string }>; count: number }
+interface Snapshot { open: number; inProgress: number }
+/** Keyed by the frame object's id, so two frames on one tracker (with different views) never share a snapshot. */
 const snapshots = new Map<string, Snapshot>();
-const TAB_LABEL: Record<TrackerView, string> = { inbox: 'Inbox', my: 'My issues', all: 'All issues', board: 'Board', projects: 'Projects' };
 
-export function publishTrackerSnapshot(trackerId: string, tab: TrackerView, tickets: readonly TrackerTicket[], count: number): void {
-  snapshots.set(trackerId, {
-    tab,
-    rows: tickets.slice(0, 12).map((ticket) => ({ key: ticket.key, title: ticket.title, state: ticket.state.name })),
-    count: Math.max(0, Math.floor(count)),
-  });
+/**
+ * Publishes the counts over the tickets an element has loaded (the view it shows).
+ * `objectId` is the frame object's id. A ticket is open unless its state is completed or canceled; in progress means started.
+ */
+export function publishTrackerSnapshot(objectId: string, tickets: readonly Pick<TrackerTicket, 'state'>[]): void {
+  let open = 0;
+  let inProgress = 0;
+  for (const ticket of tickets) {
+    const category = ticket.state?.category;
+    if (category !== 'completed' && category !== 'canceled') open += 1;
+    if (category === 'started') inProgress += 1;
+  }
+  snapshots.set(objectId, { open, inProgress });
 }
 
-const xml = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
+/** Drops every published snapshot: on sign-out and when the store reports that access to the tracker was lost. */
+export function clearTrackerSnapshots(): void {
+  snapshots.clear();
+}
+
 const n = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0;
 
-/** Cheap static overview for board paint, thumbnails, SVG export, and frames whose DOM is not mounted. */
+/** The skeleton lines under the count, as fractions of the card's text width (10px bars, 10% ink tint). */
+const SKELETON_WIDTHS = [1, 0.88, 0.74, 0.92] as const;
+
+/**
+ * Cheap static overview for board paint, thumbnails, SVG export, and frames whose DOM is not mounted: the element card with its
+ * title and counts, and skeleton lines. No text beyond these, and no foreignObject, so the exporter can draw it.
+ */
 export function renderTrackerSnapshot(frame: BaseObj): string {
-  const w = n(frame.w), h = n(frame.h), id = typeof frame.trackerId === 'string' ? frame.trackerId : '';
-  const snapshot = snapshots.get(id);
-  const tab = snapshot?.tab ?? (frame.view === 'inbox' || frame.view === 'my' || frame.view === 'all' || frame.view === 'board' || frame.view === 'projects' ? frame.view : 'inbox');
-  const rows = snapshot?.rows ?? [];
-  const left = 28, top = 94, line = 40;
+  const w = n(frame.w), h = n(frame.h);
+  const snapshot = snapshots.get(frame.id);
+  // no snapshot means no store (a guest, or no workspace): the copy says how to get tickets, not that there are none
+  const countLine = snapshot ? `${snapshot.open} open · ${snapshot.inProgress} in progress` : trackerNoTicketsLine();
   const pieces = [
-    `<rect x="0" y="0" width="${w}" height="${h}" fill="var(--paper, #FFFFFF)" stroke="var(--ink, #18212B)" stroke-width="1"/>`,
-    `<text x="28" y="42" font-family="var(--ui, sans-serif)" font-size="24" font-weight="650" fill="var(--ink, #18212B)">Tracker</text>`,
-    `<text x="${Math.max(left, w - left)}" y="42" text-anchor="end" font-family="var(--ui, sans-serif)" font-size="13" fill="var(--graphite, #5B6672)">${xml(TAB_LABEL[tab])}</text>`,
-    `<line x1="0" y1="64" x2="${w}" y2="64" stroke="var(--rule, #D5DBE2)" stroke-width="1"/>`,
+    `<rect x="0.5" y="0.5" width="${Math.max(0, w - 1)}" height="${Math.max(0, h - 1)}" rx="12" fill="var(--paper, #FFFFFF)" fill-opacity="1" stroke="var(--ink, #111111)" stroke-opacity="0.22" stroke-width="1"/>`,
+    `<text x="20" y="44" font-family="var(--font-serif, Georgia, serif)" font-size="28" font-weight="400" fill="var(--ink, #111111)">Tracker</text>`,
+    `<text x="20" y="72" font-family="var(--ui, sans-serif)" font-size="15" fill="var(--graphite, #65635F)">${countLine.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</text>`,
   ];
-  const shown = rows.slice(0, Math.min(12, Math.max(0, Math.floor((h - top - 28) / line))));
-  shown.forEach((row, index) => {
-    const y = top + index * line;
-    pieces.push(`<line x1="${left}" y1="${y + 13}" x2="${w - left}" y2="${y + 13}" stroke="var(--rule, #D5DBE2)" stroke-width=".65"/>`);
-    pieces.push(`<text x="${left}" y="${y}" font-family="var(--ui, sans-serif)" font-size="12" font-weight="650" fill="var(--ink, #18212B)">${xml(row.key)}</text>`);
-    pieces.push(`<text x="${left + 92}" y="${y}" font-family="var(--ui, sans-serif)" font-size="13" fill="var(--ink, #18212B)">${xml(row.title.slice(0, 96))}</text>`);
-    pieces.push(`<text x="${w - left}" y="${y}" text-anchor="end" font-family="var(--ui, sans-serif)" font-size="11" fill="var(--graphite, #5B6672)">${xml(row.state)}</text>`);
+  const textWidth = Math.max(0, w - 40);
+  SKELETON_WIDTHS.forEach((fraction, index) => {
+    const y = 100 + index * 22;
+    if (y + 10 > h - 12) return;
+    pieces.push(`<rect x="20" y="${y}" width="${Math.round(textWidth * fraction)}" height="10" rx="3" fill="var(--ink, #111111)" fill-opacity="0.1"/>`);
   });
-  if (!shown.length) pieces.push(`<text x="${left}" y="${top}" font-family="var(--ui, sans-serif)" font-size="13" fill="var(--graphite, #5B6672)">Open this frame to work with workspace tickets.</text>`);
-  pieces.push(`<text x="${w - left}" y="${h - 22}" text-anchor="end" font-family="var(--ui, sans-serif)" font-size="12" fill="var(--graphite, #5B6672)">${snapshot ? `${snapshot.count} issues` : 'Overview'}</text>`);
   return pieces.join('');
 }
