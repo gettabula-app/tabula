@@ -10,6 +10,7 @@ Open the board menu (the three-dot **Menu** button at the top right). The **Expo
 |---|---|
 | **PNG image** | A 2x raster image on a white background. |
 | **SVG vector** | A scalable image on white. |
+| **Print or save as PDF…** | One or more pages through your browser's print dialog. See [Print or save as PDF](#print-or-save-as-pdf). |
 | **Board file (.drift)** | The whole board with its history, for backup or moving it. |
 | **JSON snapshot** | A readable copy of the board. |
 | **Markdown summary** | Text notes grouped by frame, with votes and poll results. |
@@ -21,6 +22,18 @@ Files are named after the board.
 ### PNG and SVG
 
 Images use the light default colours on white whatever theme you are using. Comment pins are left out. PNG and SVG exports fetch fonts used by the board while exporting and embed available WOFF2 files; opening an exported SVG makes no Fontshare request. If a font cannot be fetched or the combined raw font data would exceed 1.5 MB, that font falls back to a system font. Very large PNG boards are scaled down to fit a maximum image size.
+
+### Print or save as PDF
+
+**Print or save as PDF…** in the Export section opens a short form. Choose what to print:
+
+- **The whole board, on one page.**
+- **The selection, on one page.** Shown when something is selected.
+- **Each frame on its own page.** Shown when the board has frames. Frames print in reading order: rows from top to bottom, and left to right within a row. Frames inside other frames print as part of the outer frame.
+
+Then choose the paper (A4 or Letter), the orientation (automatic follows most of the pages) and whether each page gets a title: the frame's name, or the board's name for the whole board and a selection. Each picture is fitted to its page.
+
+Tabula does not make the PDF itself. **The PDF goes through your browser's print dialog**: press **Continue**, then choose **Save as PDF** as the destination there to get a file, or pick a printer. Text stays text in the PDF. Tested in Chrome and Edge; other browsers' print dialogs differ, and a frame larger than a page is scaled down. Soft shadows behind notes are left out of the print. Like the other exports, a print uses the light default colours on white and leaves out comment pins and hidden objects.
 
 ### Board file (.drift)
 
