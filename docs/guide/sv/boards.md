@@ -93,7 +93,7 @@ De här inställningarna hör till tavlan och delas med alla som använder den.
 
 ## Tavlans meny
 
-Knappen **Menu** längst upp till höger har följande avsnitt:
+Knappen **Menu** (Meny) längst upp till höger har följande avsnitt. Skriv i **Search actions** (Sök åtgärder) överst i menyn (eller tryck på `/` när menyn är öppen) för att hitta en åtgärd med namn. **Appearance** (Utseende) och **Export** (Exportera) öppnas som undermenyer bredvid menyn:
 
 - **Account** (Konto) i arbetsytor med inloggning: ditt namn och din e-postadress, **Sign out**, **Sign out everywhere** (Logga ut överallt) och **Admin** för ägare och administratörer. Om administratören har aktiverat AI-verktyg visas även **AI tool access** (Åtkomst till AI-verktyg). Om du får använda din egen AI-nyckel visas även **Your AI key** (Din AI-nyckel). Se [Åtkomsttoken och AI-verktyg](ai-tools.md) och [Din AI-nyckel](ai-keys.md).
 - **Board** (Tavla): **Board settings**, **Save board as template** (Spara tavlan som mall) ([Mallar](templates.md)), **Version history** (Versionshistorik) ([Versionshistorik](version-history.md)), **Your name and colour** (Ditt namn och din färg), **Show comments** (Visa kommentarer) ([Kommentarer](comments.md)), **Import a board file into this board** (Importera en tavelfil till den här tavlan) och **Import Mermaid** (Importera Mermaid).
