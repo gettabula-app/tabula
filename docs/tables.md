@@ -24,7 +24,7 @@ TAB-186 (typed columns, formulas, named variables) adds more per-column keys bes
 
 ## Limits
 
-100 rows, 30 columns, 1,000 characters per cell (the validator counts code points), and 150,000 characters of cell text in one table (`MAX_TABLE_CHARS`, summed over every `c:` key, so it also bounds orphan cell keys). The total keeps a table inside the validator's per-object byte cap (256 KiB) with room for its keys; it is enforced in the model (`setCellPatch`, `fillFromPatch`), in a new-table paste, in MCP `rows`, and in the validator (`table_too_big`). Ranks must be keys fractional-indexing accepts (`isValidRank`): the validator refuses others, and the model tolerates a damaged rank anyway (that row or column sorts last, keeps its cells, and gets a valid rank when it is moved), so a hostile write cannot stop inserts and moves. `parseGrid` reads at most 1 MB. `server/sync-validate.mjs` checks every key by its pattern (`tablePartCheck`) and the counts (`tableCountCodes`).
+100 rows, 30 columns, 1,000 characters per cell (the validator counts code points), and 150,000 characters of cell text in one table (`MAX_TABLE_CHARS`, summed over the `c:` keys of rows and columns the table has; a cell outside the grid is dropped by the client heal, `src/table-heal.ts`, and does not count). The total keeps a table inside the validator's per-object byte cap (256 KiB) with room for its keys; it is enforced in the model (`setCellPatch`, `fillFromPatch`), in a new-table paste, in MCP `rows`, and in the validator (`table_too_big`). Ranks must be keys fractional-indexing accepts (`isValidRank`): the validator refuses others, and the model tolerates a damaged rank anyway (that row or column sorts last, keeps its cells, and gets a valid rank when it is moved), so a hostile write cannot stop inserts and moves. Ranks are base62 characters only, and equal ranks (two clients inserting after the same line) are tolerated: `rankAfter` places a new line between the strictly rising ranks around it. The sync validator reports equal ranks (`duplicate_rank`, report-only). `parseGrid` reads at most 1 MB. `server/sync-validate.mjs` checks every key by its pattern (`tablePartCheck`) and the counts (`tableCountCodes`).
 
 ## Size
 
@@ -48,7 +48,7 @@ A full-size table (100 rows x 30 columns of 40-character cells) measures in abou
 
 ## Clipboard text
 
-Copying cells writes plain tab-separated text. A cell that starts with `=`, `+`, `-` or `@` can be read as a formula by a program that opens pasted text; nothing is added or removed on copy. If a CSV export is added, prefix such cells with an apostrophe there.
+Copying cells writes plain tab-separated text. A cell that a spreadsheet would run as a formula (it starts with `=`, `+`, `-` or `@`, after any spaces or invisible characters) gets an apostrophe in front on copy, the same guard as the CSV export (`src/csv.ts`). That includes a plain negative number such as `-5`, which pastes as `'-5`.
 
 ## Not in v1
 

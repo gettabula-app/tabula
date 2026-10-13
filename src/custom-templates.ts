@@ -262,11 +262,12 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** Check untrusted template content (from a file or a client) and return a safe copy. Throws a readable Error. */
-export function validateContent(c: unknown): TemplateContent {
+export function validateContent(c: unknown, opts: { stored?: boolean } = {}): TemplateContent {
+  // (`stored`: a template already saved before the object and text caps existed is read, copied and exported as it is; the caps apply when one is saved or uploaded)
   if (!isRecord(c)) fail('Template content must be an object.');
   const { objects: list, steps, bounds, fonts, labels: labelList } = c;
   if (!Array.isArray(list)) fail('Template content needs a list of objects.');
-  if (list.length > MAX_TEMPLATE_OBJECTS) {
+  if (list.length > MAX_TEMPLATE_OBJECTS && !opts.stored) {
     fail(`A template can hold at most ${MAX_TEMPLATE_OBJECTS} objects; this one has ${list.length}.`);
   }
   let json: string;
@@ -306,7 +307,7 @@ export function validateContent(c: unknown): TemplateContent {
     }
     // text every viewer lays out: a Markdown block is capped lower than a note, and a whole template at MAX_TEMPLATE_TEXT
     for (const key of ['text', 'name', 'label']) if (typeof o[key] === 'string') textChars += (o[key] as string).length;
-    if (o.type === 'markdown' && typeof o.text === 'string' && o.text.length > MAX_MARKDOWN_TEXT) fail(`Markdown block "${o.id}" holds more than ${MAX_MARKDOWN_TEXT} characters.`);
+    if (!opts.stored && o.type === 'markdown' && typeof o.text === 'string' && o.text.length > MAX_MARKDOWN_TEXT) fail(`Markdown block "${o.id}" holds more than ${MAX_MARKDOWN_TEXT} characters.`);
     if (o.type === 'table') {
       const problem = tablePartsProblem(o);
       if (problem) fail(`Table "${o.id}": ${problem}`);
@@ -317,7 +318,7 @@ export function validateContent(c: unknown): TemplateContent {
       }
     }
   }
-  if (textChars > MAX_TEMPLATE_TEXT) fail(`A template can hold at most ${MAX_TEMPLATE_TEXT.toLocaleString('en')} characters of text; this one has ${textChars.toLocaleString('en')}.`);
+  if (textChars > MAX_TEMPLATE_TEXT && !opts.stored) fail(`A template can hold at most ${MAX_TEMPLATE_TEXT.toLocaleString('en')} characters of text; this one has ${textChars.toLocaleString('en')}.`);
 
   const known = (id: unknown) => typeof id === 'string' && ids.has(id);
   // kanbans: every field checked one by one, the same rules as the server's (shared/containers.mjs)
