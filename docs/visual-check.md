@@ -153,7 +153,7 @@ Each shot also checks that the page is not wider than the window and that no scr
 npm run docs:images                                  # the sixteen guide images, into docs/images (the README hero is `npm run docs:hero`)
 npm run docs:images -- --only share-roles,signin     # some of them
 npm run docs:images -- --out /tmp/shots --no-build   # elsewhere, reusing dist/
-npm run docs:hero                                   # docs/images/readme-hero.png (the retro board and the Q4 delivery kanban side by side)
+npm run docs:hero                                   # docs/images/readme-hero.png (the Q4 delivery kanban, 1600 x 760)
 ```
 
 The images are: `shapes-panel`, `quick-actions`, `text-options`, `locked-badge`, `themes-menu-matrix`, `theme-ayu`, `business-model-canvas` (written as `template-business-model-canvas.png`), `signin`, `teams-home`, `access-removed`, `share-roles`, `admin-backups`, `chat-tray`, `chat-page`, `kanban-card-dialog` and `layers-panel`. Change the code in `scripts/docs-images.mjs` when the UI moves; look at every image after a run, because a crop that was right can pick up a new bar or badge. Fontshare fonts are fetched once per run; offline, the shots use the system fonts.

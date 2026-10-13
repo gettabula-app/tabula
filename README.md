@@ -2,7 +2,7 @@
 
 Tabula is free software under AGPL-3.0-only. It is a self-hostable alternative to hosted whiteboards for workshops and teams. Boards work offline first and sync through a relay when it is available.
 
-![Two Tabula boards side by side: a sprint retro with sticky notes, frames and connectors on the left, and a four-lane kanban board with labelled cards on the right](docs/images/readme-hero.png)
+![A Tabula kanban board with four lanes (To do, Doing, Review, Shipped) and labelled cards with owners and due dates](docs/images/readme-hero.png)
 
 ## Features at a glance
 

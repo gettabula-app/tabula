@@ -4431,7 +4431,7 @@ const STATES = {
       const app = window.__board;
       app.store.remove(['k-frame', 'k-note-1', 'k-note-2']);
       app.setSelection([]);
-      app.r.fit(app.r.contentBounds(['k-box']), 28, 1.4);
+      app.r.fit(app.r.contentBounds(['k-box']), 40, 1.6);
     });
     await settle(env.page);
     await bareCanvas(env.page);
