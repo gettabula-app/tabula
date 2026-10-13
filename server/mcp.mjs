@@ -130,7 +130,7 @@ const createItemSchema = {
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color?, lineHeight? (0.8 to 3). shape: x, y, kind?, text?, w?, h?, fill?, stroke?, lineHeight? (0.8 to 3). text: text, x, y, w?, fontSize?, lineHeight? (0.8 to 3). markdown: text (Markdown source: headings, lists, [ ] tasks, tables, code, links; no HTML), x, y, w?, h?, fontSize?, lineHeight? (0.8 to 3). table: rows (a list of rows, each a list of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source, no HTML), x, y, w?, h?, fontSize?. table: rows (lists of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
   properties: {
     type: { enum: ['sticky', 'shape', 'text', 'markdown', 'table', 'frame', 'connector', 'link'] },
     ref: refSchema,
@@ -145,7 +145,7 @@ const createItemSchema = {
     w: num('Width.'),
     h: num('Height.'),
     fontSize: num('Font size.'),
-    lineHeight: { type: 'number', minimum: 0.8, maximum: 3, description: 'Line-height ratio for text, sticky, shape and markdown objects.' },
+    lineHeight: { type: 'number' },
     flipX: { type: 'boolean' }, flipY: { type: 'boolean' },
     color: { type: 'string', description: `Sticky colour: ${STICKY_COLORS.map((c) => c.name).join(', ')} or #RRGGBB.` },
     fill: { type: 'string', description: `${colourText} or none.` },
@@ -166,7 +166,7 @@ const updateItemSchema = {
   additionalProperties: false,
   required: ['id'],
   description:
-    'id plus the fields to change. Box objects can set flipX and flipY to mirror their drawn content; values must be booleans. Sticky notes and text do not mirror, and frames, containers, lanes and cards cannot be flipped by the board UI. Sticky, shape and text objects can change their listed text, style and geometry fields; markdown objects can also change lineHeight. Line height is 0.8 to 3 and is available on sticky, shape, text and markdown objects. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards must use update_kanban_card; lanes and kanbans cannot be changed with this tool. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. Unknown fields are refused; null clears an optional field.',
+    'id plus the fields to change. Box objects can set flipX and flipY to mirror their drawn content; values must be booleans. Sticky notes and text do not mirror, and frames, containers, lanes and cards cannot be flipped by the board UI. Sticky, shape, text and frame objects can change their listed text, style and geometry fields. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards must use update_kanban_card; lanes and kanbans cannot be changed with this tool. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. Unknown fields are refused; null clears an optional field.',
   properties: {
     id: { type: 'string' },
     x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
@@ -183,7 +183,7 @@ const updateItemSchema = {
     stroke: { type: ['string', 'null'] },
     strokeWidth: { type: ['number', 'null'] },
     fontSize: { type: ['number', 'null'] },
-    lineHeight: { type: ['number', 'null'], minimum: 0.8, maximum: 3, description: 'Line-height ratio for text, sticky, shape and markdown objects; null clears it.' },
+    lineHeight: { type: ['number', 'null'] },
     textColor: { type: ['string', 'null'] },
     kind: { enum: SHAPE_KINDS },
     from: endSchema,

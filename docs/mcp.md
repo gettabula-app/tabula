@@ -199,7 +199,7 @@ Summary   { id, type, kind?, x, y, w, h, rotation, text?, textTruncated?, name?,
           { id, type: 'connector', from: End, to: End, route, startHead, endHead, label?, dash?, relation? }                     connectors (End as stored)
 ```
 
-Numbers must be finite. Coordinates are within ±1,000,000 and rounded to 2 decimals. `w` and `h` are 8 to 20,000, `fontSize` 8 to 200, `strokeWidth` 0 to 20. `lineHeight` är 0.8 till 3 för text, klisterlappar, former och Markdown-block.
+Numbers must be finite. Coordinates are within ±1,000,000 and rounded to 2 decimals. `w` and `h` are 8 to 20,000, `fontSize` 8 to 200, `strokeWidth` 0 to 20. `lineHeight` is 0.8 to 3 for text, sticky, shape and Markdown objects.
 
 ### `whoami`
 
@@ -267,7 +267,7 @@ This applies to `create_objects`, `add_kanban_card`, `add_kanban_cards`, `create
 { type: 'connector', from: End, to: End, label?, route? = 'elbow', startHead? = 'none', endHead? = 'arrow', dash?, stroke? }
 ```
 
-Limits: `text` at most 4,000 characters (the comment limit), `name` 100, `label` 200, and `lineHeight` 0.8 to 3. När du väljer 1.3 raderas `lineHeight` för text, klisterlappar och former. När du väljer 1.3 för ett Markdown-block sparas värdet, eftersom ett tomt värde betyder 1.45. `parent` is the id of an existing frame, or `{ref}` of a frame in the same call (frames cannot parent each other in a loop). The server does not auto-parent by position the way the canvas does; pass `parent`. Connector ends may be free points or bound to an object, but cannot bind to another connector, a lane or a kanban container. A new lane or container end is `invalid_input` at the end's path; cards remain valid ends.
+Limits: `text` at most 4,000 characters (the comment limit), `name` 100, `label` 200, and `lineHeight` 0.8 to 3. Choosing 1.3 in the app clears `lineHeight` on text, sticky and shape objects; on a Markdown block it stores 1.3, because an empty value means 1.45. `parent` is the id of an existing frame, or `{ref}` of a frame in the same call (frames cannot parent each other in a loop). The server does not auto-parent by position the way the canvas does; pass `parent`. Connector ends may be free points or bound to an object, but cannot bind to another connector, a lane or a kanban container. A new lane or container end is `invalid_input` at the end's path; cards remain valid ends.
 
 Result: `{ created: [{ref?, id, type}], refs: {ref: id}, objectCount }`. New objects are placed above everything else: `z` comes from `generateNKeysBetween` over the current maximum (`fractional-indexing` is already a dependency), in input order. Fonts come from the board's `meta` (`bodyFont`, `headingFont` for frames) like the app does. The call fails with `limit_exceeded` if the board would exceed 5,000 objects.
 

@@ -50,7 +50,7 @@ The stored height `h` is the height of the drawn content (hit areas, selection a
 - **Templates**: a template may hold Markdown blocks.
 - **AI**: the AI bar reads the block's text where it reads other text; it does not write Markdown blocks (follow-up).
 
-När du lämnar `lineHeight` tomt används 1.45. När du ändrar värdet ändras radavståndet i hela blocket. Rubriker behåller sin storlek i förhållande till brödtexten.
+Leave `lineHeight` empty and a block uses 1.45. Setting it changes the line spacing of the whole block; headings keep their size relative to the body text.
 
 ## Themes and phones
 
