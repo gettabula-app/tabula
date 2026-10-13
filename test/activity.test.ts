@@ -290,7 +290,7 @@ describe('what the review of the log asked for (cybersec, TAB-158)', () => {
       fresh.flush();
       expect(createActivity({ dataDir: dir, now: tick }).list('b1').map((e: { ids: string[] }) => e.ids[0])).toEqual(['o2']);
       expect(createActivity({ dataDir: dir, now: tick }).list('b2')).toEqual([]);
-      expect(fresh.sweep((id) => id === 'b1')).toBe(1); // b2 is gone: its file goes
+      expect(fresh.sweep((id: string) => id === 'b1')).toBe(1); // b2 is gone: its file goes
       expect(fs.existsSync(path.join(dir, 'activity', 'b2.json'))).toBe(false);
       expect(fs.existsSync(path.join(dir, 'activity', 'b1.json'))).toBe(true);
     });
