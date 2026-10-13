@@ -7,7 +7,7 @@ import { createHarness, until, type Account } from './mcp-harness';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
-const h = createHarness({ accounts: true, settings: { MCP: 'on' } });
+const h = createHarness({ accounts: true, settings: { MCP: 'on' }, env: { TABULA_TEST_AGENT_PRESENCE_MS: '1500' } });
 let owner: Account;
 let alice: Account; // owns the board
 let bob: Account; // editor
@@ -113,3 +113,42 @@ describe('reverting a call', () => {
     expect(objects()[id]).toBeTruthy();
   });
 });
+
+describe('an agent at work (presence)', () => {
+  const agentsSeenBy = (conn: ReturnType<typeof h.connect>) => {
+    const out: { clientId: number; agents: { id: string; token: string; member: string | null; x: number | null; y: number | null }[] }[] = [];
+    conn.provider.awareness.getStates().forEach((st, clientId) => {
+      if (Array.isArray((st as { agents?: unknown }).agents)) out.push({ clientId, agents: (st as { agents: never }).agents });
+    });
+    return out;
+  };
+
+  it('shows an agent that changed the board, as who it works for and its token name, at the middle of what it changed, and takes it away after a while', async () => {
+    const watcher = h.connect(board, dave.cookie); // a viewer sees presence too
+    await watcher.synced();
+    await until(() => agentsSeenBy(watcher).length === 0, 10_000); // an earlier test's agent has gone
+    await h.tool(writer, 'create_objects', { boardId: board, objects: [{ type: 'sticky', text: 'presence', x: 1000, y: 2000 }] });
+    await until(() => agentsSeenBy(watcher).length === 1);
+    const [{ agents }] = agentsSeenBy(watcher);
+    expect(agents).toHaveLength(1);
+    expect(agents[0]).toMatchObject({ token: 'Claude', member: alice.user.name.split(/\s+/)[0] });
+    expect(agents[0].id).toMatch(/^[0-9a-f]{12}$/); // a hash, never the token's own id
+    expect(agents[0].x).toBeGreaterThan(900);
+    expect(agents[0].y).toBeGreaterThan(1900);
+    await until(() => agentsSeenBy(watcher).length === 0, 10_000); // TABULA_TEST_AGENT_PRESENCE_MS = 1.5 s here, 30 s in production
+  });
+
+  it('can not be forged: an agents field a client puts in its own awareness reaches nobody, and a read leaves no agent behind', async () => {
+    const watcher = h.connect(board, dave.cookie);
+    const forger = h.connect(board, alice.cookie); // bob's access was withdrawn by an earlier test
+    await Promise.all([watcher.synced(), forger.synced()]);
+    forger.provider.awareness.setLocalState({ user: { id: alice.user.id, name: 'Admin', color: '#112233' }, cursor: { x: 5, y: 5 }, agents: [{ id: 'abcdef012345', token: 'Admin', member: 'Ada', x: 0, y: 0 }] });
+    await until(() => agentsSeenBy(watcher).length === 0, 10_000).catch((e) => { throw new Error(`${e.message}: ${JSON.stringify(agentsSeenBy(watcher))}`); });
+    await until(() => [...watcher.provider.awareness.getStates().values()].some((st) => JSON.stringify((st as { cursor?: unknown }).cursor) === '{"x":5,"y":5}'));
+    expect(agentsSeenBy(watcher)).toEqual([]);
+    await h.tool(writer, 'get_board', { boardId: board });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(agentsSeenBy(watcher)).toEqual([]);
+  });
+});
+

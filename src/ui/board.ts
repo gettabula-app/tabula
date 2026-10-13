@@ -36,6 +36,7 @@ import { mountCanvasFocus } from './canvas-focus';
 import { mountSideTray } from './side-tray';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
+import { openAgentActivity } from './agent-activity';
 import { openFontPicker } from './fontpicker';
 import { openPrint } from './print';
 import { csvKanbans, download, downloadCardsCsv, exportPng, exportSvgFile, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
@@ -897,6 +898,8 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       h('div', { class: 'list-label' }, 'Workspace features'),
       demoWorkspaceItems(),
     ] : openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
+    // what agents did on this board, with a revert for editors (TAB-158); kept for boards in a workspace with accounts
+    !scratch && !demo && authState().mode === 'signed-in' ? item('spark', 'Agent activity', () => openAgentActivity(app)) : null,
     item('layers', 'Layers', openLayers, 'Alt+L'),
     demo || !canChangeProfile(auth.mode) ? null : item('user', 'Your name and colour', () => openProfile(app)),
     mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,

@@ -638,6 +638,20 @@ export interface TemplateInput {
   content: TemplateContent;
 }
 
+/** One line of a board's agent activity log, as the server sends it (no content, no revert data). */
+export interface AgentActivityEntry {
+  id: string;
+  at: number;
+  agent: { token: string; member: string | null };
+  tool: string;
+  summary: string;
+  counts: { created: number; changed: number; removed: number };
+  ids: string[];
+  revertible: boolean;
+  reason?: 'too_large' | 'expired';
+  reverted?: { at: number; by: string | null };
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -890,6 +904,11 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     removeMember: (id: string) => call<void>('DELETE', `/api/members/${seg(id)}`),
 
     billingPortal: () => call<{ url: string }>('POST', '/api/billing/portal'),
+
+    /** The agent activity log of a board (TAB-158, docs/agent-presence.md) and taking one call back (editors and owners). */
+    agentActivity: (boardId: string) => call<{ entries: AgentActivityEntry[] }>('GET', `/api/boards/${seg(boardId)}/activity`),
+    revertAgentActivity: (boardId: string, entryId: string) =>
+      call<{ applied: number; skipped: { id: string; reason: string }[] }>('POST', `/api/boards/${seg(boardId)}/activity/${seg(entryId)}/revert`),
 
     versions: (boardId: string) => call<{ versions: Version[] }>('GET', `/api/boards/${seg(boardId)}/versions`),
     versionState: (boardId: string, id: string) => callBytes(`/api/boards/${seg(boardId)}/versions/${seg(id)}/state`),
