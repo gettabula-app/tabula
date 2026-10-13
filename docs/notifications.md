@@ -53,11 +53,21 @@ What a switch does:
 - It stops new rows of its kinds. `notifications.record()` returns null for a person who has the group off, so no row is written, no count changes and no live `notify` frame is sent. The write that caused it (a share, a comment, a card edit) still succeeds.
 - A card reminder that is due while its switch is off is marked as told without a row. Turning the switch back on does not release the reminders from the time it was off; only reminders that come due afterwards are shown.
 - Rows already in the list stay listed and counted until they are read or pruned. A switch does not hide or delete them.
-- It does not change email. No notification row sends an email, and the chat mention email (docs/chat.md) keeps its own switch under **Email**.
+- It does not change email. No notification row sends an email, and the chat mention email (docs/chat.md) keeps its own switch under **Email**. The daily digest (Digest below) has its own switch and is the only email this list can send.
 
 Not built: quiet hours. It would be a pause-until switch if push or per-event email ever exists.
 
 No new email is sent. When a row is created or marked read, connected `/chat` sockets for its recipient receive `{t:'notify', unread, unreadMentions}`. The frame contains counts only.
+
+## Digest
+
+The **Email digest** section of Notification settings (above the chat **Email** section) can send you one email a day listing what is new in your notifications. It is off until you turn it on, and nothing is sent when you turn it on: the first mail lists only what arrives after the switch-on, never a backlog.
+
+- What it holds: one line per unread notification newer than the last digest, in the words of the bell: who, what and the board or team (for example "Ana replied to your comment on Launch plan" or "A card is due soon on Sprint board"). A tracker item is named by its key only. It never holds the text of a message, comment, card or ticket, and never a card title or snippet. Ten lines at most, then "and N more".
+- Hour and zone: `GET /api/notifications/digest` and `PUT /api/notifications/digest` take `{ on?, hour?, tz? }`: `on` a boolean, `hour` a whole number from 0 to 23 (the local hour, default 8), and `tz` an IANA zone (the browser's zone is sent on every save). A strict body: an unknown field, a bad value or an empty body returns 400 `invalid_input`; a guest gets 403 `forbidden`. Both return `{ digest: { on, hour, tz } }`.
+- One mail a day: the 15-minute digest sweep sends at most one mail per person per local date, from the chosen hour on. When there is nothing unread the day is marked handled and no mail is sent; a row that arrives later that day waits for tomorrow. A failed mail is retried at a later sweep, at most three times that day, and the log names the error only. At most 200 mails go in one sweep. Disabled people, guests and people without an email are skipped.
+- Prefs in `user_prefs`: `notify.digest` (`1` on), `notify.digestHour`, `notify.tz`, `notify.digestLastAt` (the cutoff) and `notify.digestDay` (the local date already handled).
+- The mail (`notification-digest`, subject "Your Tabula notifications") carries a link to the app, the count and the lines; its plain-text version ends with a note that the digest is on in Notification settings. The relay's file mail mode records only the subject and text.
 
 ## Retention and schema
 

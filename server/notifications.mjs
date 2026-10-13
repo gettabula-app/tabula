@@ -26,6 +26,38 @@ const clip = (value, max = 140) => {
   return plain.length > max ? `${plain.slice(0, max - 1).join('')}…` : plain.join('');
 };
 
+// The bell's sentence for one list item (src/ui/notifications-logic.ts, rowText), as plain text for the digest email. It uses
+// only who, what and the board or team name; never a snippet, a card title or a ticket title (a ticket is named by its key).
+const sentenceName = (value, max = 80) => String(value ?? '').replace(/[\p{Cc}\p{Cf}\s]+/gu, ' ').trim().slice(0, max);
+const TICKET_KEY = /^\/t\/([A-Za-z0-9_-]{1,32})$/u;
+
+/** @param {{ kind: string, actor?: { name?: string } | null, board?: { title?: string } | null, team?: { name?: string } | null, target?: string | null }} item */
+export function sentenceFor(item) {
+  const who = sentenceName(item.actor?.name) || 'Someone';
+  const board = sentenceName(item.board?.title, 200);
+  const team = sentenceName(item.team?.name, 200);
+  switch (item.kind) {
+    case 'card_assigned': return `${who} assigned you a card on ${board || 'a board'}`;
+    case 'card_due_soon': return `A card is due soon on ${board || 'a board'}`;
+    case 'card_overdue': return `A card is overdue on ${board || 'a board'}`;
+    case 'chat_mention': {
+      const place = team || board;
+      return `${who} mentioned you in ${place ? `${place} chat` : 'the workspace chat'}`;
+    }
+    case 'comment_mention': return `${who} mentioned you in a comment on ${board || 'a board'}`;
+    case 'comment_reply': return `${who} replied to your comment on ${board || 'a board'}`;
+    case 'board_shared': return `${who} shared ${board || 'a board'} with you`;
+    case 'team_joined': return `${who} joined ${team || 'a team'}`;
+    default: {
+      if (String(item.kind).startsWith('ticket_')) {
+        const key = TICKET_KEY.exec(String(item.target ?? ''))?.[1];
+        return key ? `Your ticket ${key} changed` : 'Your ticket changed';
+      }
+      return 'You have a new notification';
+    }
+  }
+}
+
 function timestampOf(item) {
   return Number(item.at ?? item.createdAt ?? item.created_at ?? 0);
 }

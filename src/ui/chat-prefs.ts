@@ -1,4 +1,4 @@
-import { api, type NotificationPrefs } from '../api';
+import { api, type NotificationDigest, type NotificationPrefs } from '../api';
 import { chatAvailable } from '../auth';
 import { dialog, toast } from './common';
 import { h } from './dom';
@@ -22,6 +22,13 @@ function switchControlOf(box: HTMLInputElement): HTMLElement {
     h('span', { class: 'chat-switch-track', 'aria-hidden': 'true' }, h('span', { class: 'chat-switch-thumb' })));
 }
 
+/** The hours of the day, each as the user's locale shows the time (08:00 or 8:00 AM). */
+const hourLabel = (hour: number): string =>
+  new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(2000, 0, 1, hour));
+
+/** The browser's zone, sent with every digest save (docs/notifications.md, Digest). */
+const browserZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
 export function openChatNotifications(): void {
   const switchBoxes = new Map<keyof NotificationPrefs, HTMLInputElement>();
   const notifStatus = h('p', { class: 'muted small', role: 'status' }, 'Loading…');
@@ -43,6 +50,56 @@ export function openChatNotifications(): void {
     });
     return h('label', { class: 'chat-prefs-switch' }, h('span', null, label), switchControlOf(box));
   });
+
+  // The daily digest (docs/notifications.md, Digest): off by default; the time select shows only while it is on.
+  const digestStatus = h('p', { class: 'muted small', role: 'status' }, 'Loading…');
+  const digestBox = h('input', { type: 'checkbox', role: 'switch', disabled: true, 'aria-label': 'Email me a daily summary' });
+  const digestHour = h('select', { disabled: true, 'aria-label': 'Send at' },
+    ...Array.from({ length: 24 }, (_unused, hour) => h('option', { value: String(hour) }, hourLabel(hour))));
+  const digestHourRow = h('label', { class: 'chat-prefs-switch' }, h('span', null, 'Send at'), digestHour);
+  digestHourRow.hidden = true;
+  digestHour.value = '8';
+  let digestHourValue = 8;
+  const setDigestOn = (on: boolean) => {
+    digestBox.checked = on;
+    digestHourRow.hidden = !on;
+  };
+  const saveDigest = async (patch: Partial<NotificationDigest>, revert: () => void) => {
+    digestBox.disabled = true;
+    digestHour.disabled = true;
+    try {
+      const saved = await api.setNotificationDigest({ ...patch, tz: browserZone() });
+      digestHourValue = saved.digest.hour;
+      digestHour.value = String(saved.digest.hour);
+      toast('Notification settings saved');
+    } catch {
+      revert();
+      toast('Could not save that. Check your connection and try again.');
+    } finally {
+      digestBox.disabled = false;
+      digestHour.disabled = false;
+    }
+  };
+  digestBox.addEventListener('change', () => {
+    const on = digestBox.checked;
+    setDigestOn(on);
+    void saveDigest({ on }, () => setDigestOn(!on));
+  });
+  digestHour.addEventListener('change', () => {
+    const hour = Number(digestHour.value);
+    const previous = digestHourValue;
+    void saveDigest({ hour }, () => {
+      digestHourValue = previous;
+      digestHour.value = String(previous);
+    });
+  });
+  const digestSection = h('div', { class: 'stack' },
+    h('h3', { class: 'admin-sub' }, 'Email digest'),
+    h('label', { class: 'chat-prefs-switch', 'aria-describedby': 'chat-digest-note' }, h('span', null, 'Email me a daily summary'), switchControlOf(digestBox)),
+    digestHourRow,
+    h('p', { class: 'muted small', id: 'chat-digest-note' },
+      'One email a day with a list of what is new in your notifications: who and where, never what was written. Off by default.'),
+    digestStatus);
 
   const box = h('input', { type: 'checkbox', role: 'switch', disabled: true, 'aria-label': 'Email me when I am mentioned in chat', 'aria-describedby': 'chat-prefs-note' });
   const switchControl = switchControlOf(box);
@@ -66,6 +123,7 @@ export function openChatNotifications(): void {
 
   const sections: HTMLElement[] = [
     h('div', { class: 'stack' }, h('h3', { class: 'admin-sub' }, 'In your notifications'), ...inApp, notifStatus),
+    digestSection,
   ];
   const chat = chatAvailable();
   if (chat) {
@@ -85,6 +143,17 @@ export function openChatNotifications(): void {
     notifStatus.textContent = '';
   }, () => {
     notifStatus.textContent = 'Could not load your notification settings. Check your connection.';
+  });
+
+  api.notificationDigest().then(({ digest }) => {
+    digestHourValue = digest.hour;
+    digestHour.value = String(digest.hour);
+    setDigestOn(digest.on);
+    digestBox.disabled = false;
+    digestHour.disabled = false;
+    digestStatus.textContent = '';
+  }, () => {
+    digestStatus.textContent = 'Could not load your digest settings. Check your connection.';
   });
 
   if (!chat) return;

@@ -10,6 +10,7 @@ let browser: FakeBrowser;
 let stored = true;
 let chatOn = true;
 let notif = { mentions: true, replies: true, cards: true, shares: true };
+let digest = { on: false, hour: 8, tz: 'UTC' };
 
 vi.mock('../src/auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/auth')>()),
@@ -23,6 +24,12 @@ beforeEach(() => {
   stored = true;
   chatOn = true;
   notif = { mentions: true, replies: true, cards: true, shares: true };
+  digest = { on: false, hour: 8, tz: 'UTC' };
+  vi.spyOn(api, 'notificationDigest').mockImplementation(async () => ({ digest: { ...digest } }));
+  vi.spyOn(api, 'setNotificationDigest').mockImplementation(async (p) => {
+    digest = { ...digest, ...p };
+    return { digest: { ...digest } };
+  });
   vi.spyOn(api, 'chatPrefs').mockImplementation(async () => ({ emailMentions: stored }));
   vi.spyOn(api, 'setChatPrefs').mockImplementation(async (p) => {
     stored = p.emailMentions;
@@ -119,9 +126,9 @@ describe('notification settings: in your notifications', () => {
     openChatNotifications();
     await flush();
     const headings = [...dialogEl().querySelectorAll('h3')].map((el) => textOf(el));
-    expect(headings).toEqual(['In your notifications', 'Email']);
+    expect(headings).toEqual(['In your notifications', 'Email digest', 'Email']);
     for (const label of SWITCH_LABELS) expect(switchFor(label)).toBeTruthy();
-    expect(dialogEl().querySelectorAll('input[type="checkbox"]')).toHaveLength(5);
+    expect(dialogEl().querySelectorAll('input[type="checkbox"]')).toHaveLength(6);
   });
 
   it('shows each switch as the person has it, with all four on for someone who never changed them', async () => {
@@ -171,9 +178,81 @@ describe('notification settings: in your notifications', () => {
     openChatNotifications();
     await flush();
     const headings = [...dialogEl().querySelectorAll('h3')].map((el) => textOf(el));
-    expect(headings).toEqual(['In your notifications']);
+    expect(headings).toEqual(['In your notifications', 'Email digest']);
     expect(textOf(dialogEl())).not.toContain('Email me when I am mentioned in chat');
     expect(api.chatPrefs).not.toHaveBeenCalled();
     expect(switchFor(SWITCH_LABELS[0]).checked).toBe(true);
   });
 });
+
+describe('email digest section', () => {
+  const digestBox = () => switchFor('Email me a daily summary');
+  const sendAt = () => dialogEl().querySelector('select') as unknown as HTMLSelectElement;
+  /** The row that holds the time select: the label with the text "Send at". */
+  const sendAtRow = () => [...dialogEl().querySelectorAll('label')].find((l) => textOf(l).includes('Send at')) as unknown as { hidden: boolean };
+  const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  it('sits above the chat email section, off by default, with the helper text and no time select', async () => {
+    openChatNotifications();
+    await flush();
+    const headings = [...dialogEl().querySelectorAll('h3')].map((el) => textOf(el));
+    expect(headings).toEqual(['In your notifications', 'Email digest', 'Email']);
+    expect(digestBox().checked).toBe(false);
+    expect(digestBox().disabled).toBe(false);
+    expect(textOf(dialogEl())).toContain('One email a day with a list of what is new in your notifications: who and where, never what was written. Off by default.');
+    expect(sendAtRow().hidden).toBe(true);
+  });
+
+  it('shows the time select when on, with the hours of the day and 08:00 by default, and saves the zone with it', async () => {
+    digest = { on: true, hour: 8, tz: 'UTC' };
+    openChatNotifications();
+    await flush();
+    expect(digestBox().checked).toBe(true);
+    expect(sendAtRow().hidden).toBe(false);
+    expect(sendAt().querySelectorAll('option').length).toBe(24);
+    expect(sendAt().value).toBe('8');
+    expect(api.setNotificationDigest).not.toHaveBeenCalled();
+  });
+
+  it('turning it on saves it with the browser zone, and sends nothing else', async () => {
+    openChatNotifications();
+    await flush();
+    toggle(digestBox(), true);
+    await flush();
+    expect(api.setNotificationDigest).toHaveBeenCalledWith({ on: true, tz: browserZone });
+    expect(digest.on).toBe(true);
+  });
+
+  it('saves a new hour on change, with the zone', async () => {
+    digest = { on: true, hour: 8, tz: 'UTC' };
+    openChatNotifications();
+    await flush();
+    sendAt().value = '20';
+    sendAt().dispatchEvent(new FakeEvent('change') as unknown as Event);
+    await flush();
+    expect(api.setNotificationDigest).toHaveBeenCalledWith({ hour: 20, tz: browserZone });
+    expect(digest.hour).toBe(20);
+  });
+
+  it('puts the switch and the hour back when a save fails, with the same message as the other switches', async () => {
+    digest = { on: false, hour: 8, tz: 'UTC' };
+    openChatNotifications();
+    await flush();
+    vi.mocked(api.setNotificationDigest).mockRejectedValue(new Error('offline'));
+    toggle(digestBox(), true);
+    await flush();
+    expect(digestBox().checked).toBe(false);
+    expect(sendAtRow().hidden).toBe(true);
+    expect(digestBox().disabled).toBe(false);
+    expect(textOf(browser.document.body)).toContain('Could not save that. Check your connection and try again.');
+  });
+
+  it('says so when the digest could not be loaded', async () => {
+    vi.mocked(api.notificationDigest).mockRejectedValue(new Error('offline'));
+    openChatNotifications();
+    await flush();
+    expect(textOf(dialogEl())).toContain('Could not load your digest settings');
+    expect(digestBox().disabled).toBe(true);
+  });
+});
+
