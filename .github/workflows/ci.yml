@@ -18,7 +18,7 @@ on:
         type: boolean
         default: false
       max-workers:
-        description: 'Test files vitest runs at once on each runner (an experiment; empty uses 4 on Linux and 2 on Windows and macOS)'
+        description: 'Test files vitest runs at once on each runner (an experiment; empty uses 4 on Linux)'
         type: string
         default: ''
   # release.yml (a v* tag, or by hand) runs these gates before it builds and pushes the image. A tag no longer starts CI by itself:
@@ -195,7 +195,7 @@ jobs:
   # The browser tests (Playwright Chromium, about 30 test files) run in their own job, alongside the unit legs and the Docker build, so the
   # slowest leg is no longer unit tests plus browser tests in a row. Chromium is installed here only (see docs/testing.md, "Browser tests in CI").
   # A failed browser test is retried once and listed in the job summary (scripts/flake-reporter.mjs) instead of turning main red; a run with
-  # full-matrix (the release gates) retries nothing. test/setup-retry.ts limits the retry to the files that ask for Chromium.
+  # with-node22 (the release gates) retries nothing. test/setup-retry.ts limits the retry to the files that ask for Chromium.
   browser:
     name: Browser tests (ubuntu-latest, node 24)
     runs-on: ubuntu-latest
@@ -222,7 +222,7 @@ jobs:
       - run: npm test -- --reporter=default --reporter=json --outputFile.json=test-results.json --reporter=./scripts/flake-reporter.mjs
         env:
           TABULA_TEST_SET: browser
-          TABULA_BROWSER_RETRY: ${{ inputs.full-matrix && '0' || '1' }}
+          TABULA_BROWSER_RETRY: ${{ inputs.with-node22 && '0' || '1' }}
           TABULA_MAX_WORKERS: ${{ inputs.max-workers }}
       # A browser test that skipped because Chromium went missing would stay green: fail this job if any browser test file passed nothing
       - name: Browser tests really ran

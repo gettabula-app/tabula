@@ -27,7 +27,7 @@ describe('ci.yml structure', () => {
     expect(job('test')).not.toContain('TABULA_BROWSER_RETRY');
     const browser = job('browser');
     expect(browser).toContain('TABULA_TEST_SET: browser');
-    expect(browser).toContain("TABULA_BROWSER_RETRY: ${{ inputs.full-matrix && '0' || '1' }}");
+    expect(browser).toContain("TABULA_BROWSER_RETRY: ${{ inputs.with-node22 && '0' || '1' }}");
     expect(browser).toContain('npx playwright install --with-deps chromium');
     expect(browser).toContain('node scripts/check-browser-tests.mjs test-results.json');
   });
