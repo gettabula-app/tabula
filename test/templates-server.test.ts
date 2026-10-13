@@ -637,3 +637,38 @@ describe('hostile template content (Markdown, tables, total text)', () => {
     expect(problem(content([table({ 'f:a:y': 'url(https://evil.example/x)' })]))).toMatch('cell fill');
   });
 });
+
+describe('link cards, tables and direction marks in a server template', () => {
+  const link = (extra: Record<string, unknown> = {}) => ({
+    id: 'l1', type: 'link', x: 0, y: 0, w: 280, h: 120, rotation: 0, z: '1', url: 'https://example.com/a', title: 'Example', description: 'A page',
+    siteName: 'example.com', finalUrl: 'https://example.com/a?x=1', unfurl: 'ok', fetchedAt: 1760000000000, edited: ['title'], ...extra,
+  });
+
+  it('keeps every field of a link card and a table when saved, and the client accepts what comes back', () => {
+    const table = {
+      id: 't1', type: 'table', x: 0, y: 0, w: 320, h: 80, rotation: 0, z: '2', headerRow: true, headerCol: false,
+      'r:a': 'a0', 'r:b': 'a1', 'k:x': 'a0', 'k:y': 'a1', 'w:x': 120, 'a:y': 'center', 'c:a:x': 'Name', 'c:b:y': '12', 'f:a:y': '#FFE08A',
+    };
+    const { content: stored } = validateTemplateContent(content([link(), table]));
+    expect(stored.objects).toEqual([link(), table]);
+    expect(() => validateContent(JSON.parse(JSON.stringify(stored)))).not.toThrow();
+  });
+
+  it('refuses a link card address that is not http(s) and a bad unfurl state', () => {
+    for (const url of ['javascript:alert(1)', 'data:text/html,x', 'https://u:p@example.com/', 'https://exa mple.com/']) expect(problem(content([link({ url })]))).toMatch('http');
+    expect(problem(content([link({ finalUrl: 'ftp://example.com/' })]))).toMatch('finalUrl');
+    expect(problem(content([link({ unfurl: 'sure' })]))).toMatch('unfurl');
+  });
+
+  it('strips direction overrides from names and text, in cells too', () => {
+    const { content: stored } = validateTemplateContent(content([
+      frame('f1', { name: 'Plan‮slin' }),
+      sticky('s1', { text: 'a⁦b‏c' }),
+      { id: 't1', type: 'table', x: 0, y: 0, w: 100, h: 40, rotation: 0, z: '3', 'r:a': 'a0', 'k:x': 'a0', 'c:a:x': 'ok‮x' },
+    ]));
+    const [f1, s1, t1] = stored.objects as Record<string, unknown>[];
+    expect(f1.name).toBe('Planslin');
+    expect(s1.text).toBe('abc');
+    expect(t1['c:a:x']).toBe('okx');
+  });
+});

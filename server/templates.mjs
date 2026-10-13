@@ -7,7 +7,7 @@
 import crypto from 'node:crypto';
 import { DASHES, HEADS, OBJ_TYPES, ROUTES, SHAPE_KINDS, SIDES, STICKY_COLORS } from './board-ops.mjs';
 import { cleanColor } from '../shared/colors.mjs';
-import { checkTemplateKanbanLimits, templateKanbanFields, templateLabels } from '../shared/containers.mjs';
+import { checkTemplateKanbanLimits, isSafeHttpUrl, templateKanbanFields, templateLabels } from '../shared/containers.mjs';
 import { parseTableKey, tablePartsProblem } from '../shared/tables.mjs';
 import { MAX_SVG_BODY, svgProblem } from '../shared/svg-safety.mjs';
 
@@ -97,6 +97,8 @@ const hasTextControl = (v) => {
   }
   return false;
 };
+// direction overrides and marks: they reorder text on screen (a name that reads as another), and no template needs them
+const BIDI_RE = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 const ALIGNS = ['left', 'center', 'right'];
 const VALIGNS = ['top', 'middle', 'bottom'];
 const VISIBILITIES = ['+', '-', '#', '~', ''];
@@ -114,7 +116,7 @@ function text(v, what, max, { lines = false, min = 0 } = {}) {
   if (typeof v !== 'string' || v.length < min || v.length > max || (lines ? hasTextControl(v) : LINE_CONTROL_RE.test(v))) {
     fail(`${what} must be text of ${min === 0 ? 'at most' : `${min} to`} ${max} characters${lines ? '' : ', on one line'}.`);
   }
-  return v;
+  return v.replace(BIDI_RE, '');
 }
 
 function oneOf(v, list, what) {
@@ -265,6 +267,25 @@ function box(o, what, ids, labels) {
       Object.assign(out, fields);
       break;
     }
+    case 'link': {
+      // a link card keeps its address, title, description and site name (docs/link-cards.md); its picture and icon are board assets, which a template holds none of
+      for (const key of ['url', 'finalUrl']) {
+        if (o[key] === undefined) continue;
+        if (!isSafeHttpUrl(o[key])) fail(`${what} ${key} must be an http or https address.`);
+        out[key] = o[key];
+      }
+      if (o.title !== undefined) out.title = text(o.title, `${what} title`, 500);
+      if (o.description !== undefined) out.description = text(o.description, `${what} description`, 2000, { lines: true });
+      if (o.siteName !== undefined) out.siteName = text(o.siteName, `${what} siteName`, 200);
+      if (o.unfurl !== undefined) out.unfurl = oneOf(o.unfurl, ['pending', 'ok', 'failed', 'off'], `${what} unfurl`);
+      if (o.unfurlError !== undefined) out.unfurlError = text(o.unfurlError, `${what} unfurlError`, 500);
+      if (o.fetchedAt !== undefined) out.fetchedAt = number(o.fetchedAt, `${what} fetchedAt`, 0, 1e15);
+      if (o.edited !== undefined) {
+        if (!Array.isArray(o.edited) || o.edited.length > 2 || !o.edited.every((k) => k === 'title' || k === 'description')) fail(`${what} edited must list title or description.`);
+        out.edited = [...o.edited];
+      }
+      break;
+    }
     case 'table': {
       // rows, columns, widths, alignments, cells and fills are keys of the object itself (docs/tables.md): checked as a group, then each value rebuilt
       const problem = tablePartsProblem(o);
@@ -273,7 +294,7 @@ function box(o, what, ids, labels) {
       for (const key of Object.keys(o)) {
         const p = parseTableKey(key);
         if (!p) continue;
-        out[key] = p.kind === 'f' ? paint(o[key], `${what} cell fill`) : o[key];
+        out[key] = p.kind === 'f' ? paint(o[key], `${what} cell fill`) : p.kind === 'c' ? o[key].replace(BIDI_RE, '') : o[key];
       }
       break;
     }
