@@ -1,11 +1,14 @@
 .popover.emoji-pop {
+  display: flex; flex-direction: column;
   width: min(344px, calc(100vw - 24px - var(--safe-left) - var(--safe-right)));
   max-width: calc(100vw - 24px - var(--safe-left) - var(--safe-right));
-  padding: 0;
+  padding: 0; overflow: hidden;
 }
 
-.emoji-picker { padding: 6px; }
-.emoji-search { height: 44px; font: 16px var(--ui); }
+/* the search stays put and the results scroll in what room the panel was given, so a short space never cuts the grid off */
+.emoji-picker { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; padding: 6px; }
+.emoji-results { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.emoji-search { flex: none; height: 44px; font: 16px var(--ui); }
 .emoji-section + .emoji-section { margin-top: 8px; }
 .emoji-section .list-label { margin: 8px 0 4px; }
 .emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 4px; }

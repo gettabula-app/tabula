@@ -3594,6 +3594,12 @@ const STATES = {
     });
     await settle(env.page);
   },
+  // typing in the search: the results stay in view, with a header named Emoji
+  async 'emoji-search'(env) {
+    await openEmojiPickerForNote(env, { clearPoll: true });
+    await env.page.getByLabel('Search emoji').fill(env.query ?? 'smile');
+    await env.page.waitForTimeout(250);
+  },
   async 'emoji-picker'(env) {
     const page = env.page;
     await openEmojiPickerForNote(env, { clearPoll: true });

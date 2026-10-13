@@ -1157,13 +1157,15 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     }
     panel.style.position = 'fixed';
     panel.style.zIndex = '51';
+    // attached to the menu's edge, level with the row that opened it; it flips to the left only when the right has no room
     const anchorRect = triggers[key].getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
     const panelWidth = panelRect.width || 280;
     const panelHeight = panelRect.height || 240;
-    const fitsRight = anchorRect.right + panelWidth + 8 <= window.innerWidth;
-    const left = fitsRight ? anchorRect.right + 4 : Math.max(8, anchorRect.left - panelWidth - 4);
-    const top = Math.max(8, Math.min(anchorRect.top, window.innerHeight - panelHeight - 8));
+    const fitsRight = menuRect.right + panelWidth + 8 <= window.innerWidth;
+    const left = fitsRight ? menuRect.right + 2 : Math.max(8, menuRect.left - panelWidth - 2);
+    const top = Math.max(8, Math.min(anchorRect.top - 5, window.innerHeight - panelHeight - 8));
     panel.style.left = Math.round(left) + 'px';
     panel.style.top = Math.round(top) + 'px';
     if (moveFocus) {
@@ -1273,6 +1275,19 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     onKeyDown: menuKeyDown,
     onClose: () => stopTheme(),
   });
+  // a mouse opens a list after a short rest on its row and closes it when the pointer rests on another row; never on open
+  let hoverTimer = 0;
+  menu.addEventListener('pointerover', (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse' || isPhone()) return;
+    const row = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('.menu-item') : null;
+    if (!row) return;
+    window.clearTimeout(hoverTimer);
+    if (row.closest('.board-menu-submenu')) return;
+    const key = row === exportTrigger ? 'export' : row === themeTrigger ? 'theme' : null;
+    if (key === activeSubmenu) return;
+    if (key === null && activeSubmenu === null) return;
+    hoverTimer = window.setTimeout(() => { if (menu.isConnected) setSubmenu(key, false); }, key ? 150 : 250);
+  });
   menu.addEventListener('keydown', (event: KeyboardEvent) => {
     if (activeSubmenu !== 'theme' || event.key !== 'ArrowLeft' || !(event.target instanceof HTMLElement) || !event.target.closest('.board-theme-options')) return;
     event.preventDefault();
@@ -1281,7 +1296,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     themeTrigger.focus();
   }, true);
   stopTheme = onThemeChange(updateThemeName);
-  setSubmenu('export', false);
+  setSubmenu(null, false);
 }
 
 function openShare(app: BoardApp) {

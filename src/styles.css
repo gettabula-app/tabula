@@ -373,9 +373,7 @@ select.input {
 .icon-tile img { width: 26px; height: 26px; }
 /* Stickers: Swiss rules on the tray. Hairlines and 2px rules, xs tiles, sm controls, no shadows, labels 11px uppercase, 8px grid. */
 .stickers-label { margin: 16px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tray-muted); }
-.stickers .input { height: 40px; padding: 0 8px; border: 0; border-bottom: 2px solid var(--tray-text); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); }
-.stickers .input:focus { border-bottom-color: var(--tray-text); }
-.stickers .input:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+.stickers .input { height: 40px; padding: 0 8px; }
 .sticker-sets .segmented { gap: 0; padding: 0; border-radius: var(--radius-sm); background: transparent; border-top: 1px solid var(--field-edge-strong); border-bottom: 1px solid var(--field-edge-strong); }
 .sticker-sets .segmented button { height: 32px; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 .sticker-sets .segmented button + button { border-left: 1px solid var(--field-edge-strong); }
@@ -586,8 +584,10 @@ select.input {
 }
 .board-menu-search .ico { flex: none; }
 .board-menu-search-input.input { flex: 1; min-width: 0; height: 30px; padding: 0 2px; border: 0; background: transparent; box-shadow: none; color: var(--tray-text); }
-.board-menu-search-input.input:focus { box-shadow: none; }
-.board-menu-search:focus-within { box-shadow: inset 0 0 0 1px var(--tray-text); }
+.board-menu-search { box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule); }
+/* the wrapper is the field: it carries the shared focus (inset edge and soft ring); the input inside draws nothing of its own */
+.board-menu-search-input.input, .board-menu-search-input.input:focus, .board-menu-search-input.input:focus-visible { outline: 0; box-shadow: none; }
+.board-menu-search:focus-within { box-shadow: inset 0 0 0 1px var(--tray-text), 0 0 0 3px color-mix(in srgb, var(--tray-text) 10%, transparent); }
 .board-menu-search-input::placeholder { color: var(--tray-muted); opacity: 1; }
 .board-menu-search kbd { min-width: 16px; height: 20px; padding: 0 5px; }
 .board-menu-groups { display: flex; flex-direction: column; }
@@ -603,8 +603,10 @@ select.input {
 .board-menu-sub-trigger > .ico:last-child svg { transform: rotate(-90deg); }
 .board-theme-label { flex: 1; }
 .board-theme-name { flex: none; color: var(--tray-muted); font-size: 12px; }
-.board-menu-submenu { position: fixed; z-index: 51; width: min(300px, calc(100vw - 16px)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; background: var(--tray); box-shadow: var(--popover-shadow); }
-.board-menu-submenu .menu-hint { flex: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-menu-submenu { position: fixed; z-index: 51; width: min(340px, calc(100vw - 16px)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; background: var(--tray); box-shadow: var(--popover-shadow); }
+.board-menu-submenu .menu-item:has(.menu-hint) { flex-wrap: wrap; row-gap: 0; padding-top: 4px; padding-bottom: 5px; }
+/* the hint goes under its label, whole, so no label or hint is ever cut */
+.board-menu-submenu .menu-hint { flex: 1 1 100%; margin: -2px 0 0 26px; font-size: 11.5px; white-space: normal; }
 .board-menu-submenu[hidden] { display: none; }
 .board-theme-options { display: flex; flex-direction: column; gap: 2px; }
 .board-theme-options .theme-item { border-radius: var(--radius-sm); }
@@ -689,7 +691,7 @@ select.input {
 .popover .btn.armed:not(:disabled):hover, .popover .btn.danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 95%, var(--on-danger)); color: var(--on-danger); }
 .modal .icon-btn, .popover .icon-btn { border-radius: var(--radius-sm); }
 .modal kbd { border-radius: var(--radius-xs); }
-.modal :focus-visible:not(input):not(textarea):not(select):not(.combo):not(.menu-item), .popover :focus-visible:not(.combo):not(.menu-item) { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+.modal :focus-visible:not(input):not(textarea):not(select):not(.combo):not(.menu-item), .popover :focus-visible:not(input):not(textarea):not(select):not(.combo):not(.menu-item) { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .modal .menu-item:focus-visible, .popover .menu-item:focus-visible { outline: 1px solid var(--field-edge-strong); outline-offset: -1px; background: var(--tray-hover); }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .copy-row { display: flex; gap: 8px; }
@@ -924,6 +926,9 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 }
 @media (forced-colors: active) {
   :root { --field-edge: CanvasText; }
+  .menu, .popover, .modal { border: 1px solid CanvasText; }
+  .board-menu-search { border: 1px solid CanvasText; box-shadow: none; }
+  .board-menu-search:focus-within { outline: 2px solid Highlight; outline-offset: 1px; }
   :is(.input, select, textarea:not(.text-editor), .combo, .aibar-input, .chat-input, .ks-input, .k-input, .layer-edit) { border: 1px solid CanvasText; box-shadow: none; }
   input[type='checkbox'], input[type='radio'], .segmented button { border: 1px solid CanvasText; }
 }
