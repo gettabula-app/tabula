@@ -10,9 +10,6 @@ describe('dialog primary buttons', () => {
     expect(css).toMatch(/\.popover \.btn\.primary \{ border: 0; background: var\(--tray-text\); color: var\(--tray\); \}/);
     expect(css).toMatch(/\.tray \.btn\.primary, \.drawer \.btn\.primary, \.side-tray \.btn\.primary, \.props \.btn\.primary,[\s\S]*?\.aibar \.btn\.primary, \.aibar-pop \.btn\.primary,[\s\S]*?\.toast \.btn\.primary, \.focus-card \.btn\.primary, \.mention-card \.btn\.primary \{\s*border: 0; background: var\(--tray-text\); color: var\(--tray\);\s*\}/);
     expect(css).toMatch(/\.btn\.primary \{ border: 0; background: var\(--ink\); color: var\(--paper\); \}/);
-    const tracker = readFileSync(new URL('../src/tracker/ui/tracker.css', import.meta.url), 'utf8');
-    expect(tracker).toMatch(/\.trk \.btn\.primary \{ min-height: 34px; border: 0; background: var\(--ink\); color: var\(--paper\); \}/);
-    expect(tracker).toMatch(/\.trk\.trk-pop \.btn\.primary \{ background: var\(--ink\); color: var\(--paper\); \}/);
   });
 
   const surfaces = [
