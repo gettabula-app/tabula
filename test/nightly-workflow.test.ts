@@ -20,12 +20,13 @@ describe('the nightly workflow', () => {
     expect(workflow).not.toMatch(/cron:\s*['"]?0\s/);
   });
 
-  it('serializes nightly runs and tests main on all three OSes with Node 24', () => {
+  it('serializes nightly runs and tests main on Linux only, with Node 22 and 24 (macOS, Windows and desktop are frozen)', () => {
     const suite = job('suite');
     expect(workflow).toMatch(/concurrency:\n\s+group: nightly-full-suite\n\s+cancel-in-progress: false/);
     expect(suite).toContain('fail-fast: false');
-    expect(suite).toContain('os: [ubuntu-latest, macos-latest, windows-latest]');
-    expect(suite).toContain('node: [24]');
+    expect(suite).toContain('os: [ubuntu-latest]');
+    expect(suite).not.toMatch(/macos|windows/);
+    expect(suite).toContain('node: [22, 24]');
     expect(suite).toMatch(/uses: actions\/checkout@[^\n]+\n\s+with:\n\s+ref: main/);
     for (const run of [1, 2, 3]) {
       expect(suite).toContain(`npm test -- --reporter=default --reporter=json --outputFile.json=nightly-${run}.json`);

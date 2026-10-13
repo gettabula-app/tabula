@@ -60,6 +60,9 @@ function swVersionPlugin() {
 
 /** The restore drill's test files, which only `npm run drill:local` runs. */
 export const DRILL_PATTERN = '**/*.drill.test.ts';
+// Desktop (Tauri) is frozen (platform freeze, Johan 2026-10-13): its four test files stay in the repository, with desktop/, but are not part of
+// `npm test` or CI. To run them again: TABULA_DESKTOP_TESTS=1 npx vitest run test/desktop-backup.test.ts test/desktop-config.test.ts test/desktop-env.test.ts test/desktop-logic.test.ts
+export const DESKTOP_TEST_PATTERNS = ['**/test/desktop-backup.test.ts', '**/test/desktop-config.test.ts', '**/test/desktop-env.test.ts', '**/test/desktop-logic.test.ts'];
 
 const docsPages = {
   ...docs(),
@@ -109,7 +112,7 @@ export default defineConfig({
   test: {
     // agent worktrees live under .claude/worktrees; never collect their tests. The restore drill (test/drill,
     // `npm run drill:local`, vitest.drill.config.ts) is not part of `npm test` or CI: test/drill-config.test.ts checks it.
-    exclude: [...configDefaults.exclude, '.claude/**', DRILL_PATTERN],
+    exclude: [...configDefaults.exclude, '.claude/**', DRILL_PATTERN, ...(process.env.TABULA_DESKTOP_TESTS === '1' ? [] : DESKTOP_TEST_PATTERNS)],
     // Many test files spawn a relay process each. On the small CI runners (Windows and macOS above all) running
     // them all at once starves the machine and unrelated tests time out, so CI runs two files at a time and every
     // test and hook gets room to wait for a relay. Both limits stay well above RELAY_START_MS (test/relay-timing.ts), so
