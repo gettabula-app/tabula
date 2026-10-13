@@ -52,6 +52,7 @@ export interface LayerBoard {
   layoutOrder: (containerId: Id) => Id[];
 }
 
+export const UNTITLED_FRAME = 'Untitled frame';
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
 
 /** The item's name, else the first words of its text, else its type: "Sticky note", "Frame". */
@@ -62,6 +63,8 @@ export function layerLabel(o: Obj): string {
   // a Markdown block is named by its first heading or line, not by its marks
   const text = typeof raw === 'string' ? (o.type === 'markdown' ? markdownTitle(raw, LABEL_MAX) : oneLine(raw)) : '';
   if (text) return text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1)}…` : text;
+  // a frame whose name was emptied draws no title on the board; this is only what the list and a screen reader say
+  if (o.type === 'frame' && typeof (o as { name?: unknown }).name === 'string') return UNTITLED_FRAME;
   return TYPE_LABEL[o.type] ?? 'Object';
 }
 

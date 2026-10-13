@@ -43,7 +43,7 @@ function signedOut(e: unknown): boolean {
 }
 
 const cellLabel = (label: string) => h('span', { class: 'admin-cell-label' }, `${label} `);
-const badge = (text: string, tone?: 'bad') => h('span', { class: tone === 'bad' ? 'admin-badge backups-badge bad' : 'admin-badge backups-badge' }, text);
+const badge = (text: string, tone: 'blue' | 'green' | 'yellow' | 'red' = 'blue') => h('span', { class: `admin-badge backups-badge tag tag-${tone}${tone === 'red' ? ' bad' : ''}` }, text);
 
 type Loaded = { off: true } | { off: false; data: BackupList };
 
@@ -123,7 +123,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
     return h('div', { class: 'backups-readiness-row', 'data-check-id': check.id },
       h('div', { class: 'backups-readiness-name' },
         h('strong', null, trackerCheckLabel(check.id, check.label)),
-        h('span', { class: `admin-badge backups-badge backups-check-state ${check.state === 'fail' ? 'bad' : ''}` }, stateIcon, h('span', null, checkStateLabel(check.state)))),
+        h('span', { class: `admin-badge backups-badge backups-check-state tag tag-${check.state === 'fail' ? 'red' : check.state === 'pass' ? 'green' : check.state === 'na' ? 'blue' : 'yellow'}${check.state === 'fail' ? ' bad' : ''}` }, stateIcon, h('span', null, checkStateLabel(check.state)))),
       // the badge already says Pass; the sentence is for the checks that need a second look
       check.state === 'fail' || check.state === 'unknown' ? h('p', { class: 'backups-readiness-sentence' }, checkStateSentence(check.state)) : null,
       check.detail === undefined ? null : h('p', { class: 'muted small backups-readiness-detail' }, check.detail));
@@ -153,7 +153,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       const overallLabel = readinessOverallLabel(readiness.overall);
       const overallIcon = readiness.overall === 'go' ? 'check' : readiness.overall === 'no_go' ? 'close' : 'timer';
       body.push(h('div', { class: 'backups-readiness-overall' },
-        h('span', { class: `admin-badge backups-badge ${readiness.overall === 'no_go' ? 'bad' : ''}`, 'aria-label': `Overall readiness: ${overallLabel}` }, icon(overallIcon, 16), h('span', null, overallLabel)),
+        h('span', { class: `admin-badge backups-badge tag tag-${readiness.overall === 'no_go' ? 'red' : 'green'}${readiness.overall === 'no_go' ? ' bad' : ''}`, 'aria-label': `Overall readiness: ${overallLabel}` }, icon(overallIcon, 16), h('span', null, overallLabel)),
         h('p', { class: 'muted small' }, `Targets: ${readiness.targets.rpoMinutes} ${readiness.targets.rpoMinutes === 1 ? 'minute' : 'minutes'} RPO, ${readiness.targets.rtoHours} ${readiness.targets.rtoHours === 1 ? 'hour' : 'hours'} RTO, ${readiness.targets.retentionDays} days retained.`)));
       if (readiness.gate) body.push(h('p', { class: 'backups-notice backups-readiness-gate' }, gateBannerSentence(readiness.gate, Date.now())));
       body.push(h('div', { class: 'backups-readiness-checks' }, [...readiness.checks].sort((x, y) => CHECK_ORDER[x.state] - CHECK_ORDER[y.state]).map(readinessCheckRow)));
@@ -386,7 +386,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
     h('dl', { class: 'admin-facts' }, rows.map((r) =>
       h('div', { class: 'admin-fact' },
         h('dt', null, r.label),
-        h('dd', null, r.badge ? [badge(r.badge, r.badge === 'Failed' ? 'bad' : undefined), ' '] : null, r.value, r.note ? h('div', { class: 'muted small' }, r.note) : null))));
+        h('dd', null, r.badge ? [badge(r.badge, r.badge === 'Failed' ? 'red' : 'green'), ' '] : null, r.value, r.note ? h('div', { class: 'muted small' }, r.note) : null))));
 
   function backupRow(b: BackupSummary, now: number): HTMLElement {
     const at = timeOf(b);
@@ -398,6 +398,11 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       }, 'Details')
       : null;
     const note = noteOf(b);
+    const noteParts = !b.readable
+      ? [badge('Unreadable', 'red'), note.slice('Unreadable'.length)]
+      : b.protected
+        ? [badge('Protected', 'blue'), note.slice('Protected'.length)]
+        : [note];
     const cell = (label: string, ...content: (Node | string | null)[]) => h('div', { class: 'admin-cell', role: 'cell' }, cellLabel(label), ...content);
     return h('div', { class: b.readable ? 'admin-row backups-row' : 'admin-row backups-row unreadable', role: 'row', 'aria-disabled': b.readable ? undefined : 'true' },
       h('div', { class: 'admin-cell backups-when', role: 'cell' },
@@ -407,7 +412,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
         cell('Files', b.readable ? String(b.files ?? 0) : '–'),
         cell('Size', b.readable ? formatSize(b.bytes) : '–'),
         cell('Key', b.readable ? shortKey(b.keyId) : '–')),
-      h('div', { class: 'admin-cell backups-note', role: 'cell' }, note),
+      h('div', { class: 'admin-cell backups-note', role: 'cell' }, ...noteParts),
       h('div', { class: 'btn-row admin-actions', role: 'cell' }, open));
   }
 
@@ -469,7 +474,9 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
 
   // ------------------------------------------------------------ one backup
 
-  const fact = (label: string, ...value: (Node | string | null)[]) => h('div', { class: 'admin-fact' }, h('dt', null, label), h('dd', null, ...value));
+  const fact = (label: string, ...value: (Node | string | null)[]) => h('div', { class: 'admin-fact' },
+    h('dt', null, label === 'Protected' ? h('span', { class: 'tag tag-blue' }, label) : label),
+    h('dd', null, ...value));
 
   function detailBody(p: BackupPreview): Node[] {
     const now = Date.now();
@@ -560,7 +567,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
             },
           }),
           h('span', { class: 'backups-pick-text' },
-            h('span', null, h('span', { class: 'admin-name' }, b.title), b.deleted ? [' ', badge('Deleted')] : null),
+            h('span', null, h('span', { class: 'admin-name' }, b.title), b.deleted ? [' ', badge('Deleted', 'red')] : null),
             h('span', { class: 'muted small' }, b.teamName ?? 'Personal')))));
       }
       sync();

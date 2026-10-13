@@ -192,19 +192,19 @@ describe('the tab', () => {
   it('is listed for an owner before the audit log, and shows the Backups tab', async () => {
     await open();
     const tabs = root.querySelectorAll('.admin-tab').map(textOf);
-    expect(tabs).toEqual(['01Overview', '02Members', '03Teams', '04Boards', '05Sessions', '06AI', '07Backups', '08Privacy', '09Audit log']);
-    expect(textOf(need(root, '.admin-tab.on'))).toBe('07Backups');
+    expect(tabs).toEqual(['Overview', 'Members', 'Teams', 'Boards', 'Sessions', 'AI', 'Backups', 'Privacy', 'Audit log']);
+    expect(textOf(need(root, '.admin-tab.on'))).toBe('Backups');
     expect(need(root, '.admin-tab.on').getAttribute('aria-current')).toBe('page');
     expect(need(root, '.admin-heading').textContent).toBe('Backups');
-    expect(need(root, '.admin-kicker').textContent).toBe('07 / 09');
+    expect(root.querySelectorAll('.admin-kicker').length).toBe(0);
   });
 
   it('is not listed for an admin, who is sent to the overview from its address', async () => {
     serve();
     renderAdmin(asHtml(root), 'backups', adminMe());
     await flush();
-    expect(root.querySelectorAll('.admin-tab').map(textOf)).not.toContain('07Backups');
-    expect(root.querySelectorAll('.admin-tab').map(textOf)).toContain('08Audit log');
+    expect(root.querySelectorAll('.admin-tab').map(textOf)).not.toContain('Backups');
+    expect(root.querySelectorAll('.admin-tab').map(textOf)).toContain('Audit log');
     expect(need(root, '.admin-heading').textContent).toBe('Overview');
     expect(asked('GET', '/api/admin/backups')).toEqual([]);
     expect(calls.some((c) => c.path.startsWith('/api/admin/backups'))).toBe(false);
@@ -212,7 +212,7 @@ describe('the tab', () => {
 
   it('is listed for an owner even when backups are off, and then says so', async () => {
     await open(owner(), { 'GET /api/admin/backups': refuse(409, 'backups_off') });
-    expect(root.querySelectorAll('.admin-tab').map(textOf)).toContain('07Backups');
+    expect(root.querySelectorAll('.admin-tab').map(textOf)).toContain('Backups');
     expect(textOf(panel())).toContain('Not set up');
   });
 });

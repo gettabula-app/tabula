@@ -556,9 +556,11 @@ describe('ticket page', () => {
     const { host } = await setup({ meta, issue: ticket({ assignee: { userId: 'user-me', name: 'Mara' }, due: '2031-10-12', priority: 'high' }) });
     const names = ['State: To do', 'Assignee: Mara', 'Priority: High priority', 'Due: Oct 12, 2031'];
     for (const name of names) expect(host.querySelectorAll('.tk-primary-property [aria-label]').some((control) => control.getAttribute('aria-label') === name)).toBe(true);
-    expect(host.querySelectorAll('.tk-primary-property .tk-property-name').every((nameNode) => nameNode.classList.contains('tk-sr-only'))).toBe(true);
+    // the primary names are visible, each beside its value in its row (one column on a phone); the accessible names above still hold
+    expect(host.querySelectorAll('.tk-primary-property .tk-property-name').length).toBe(4);
+    expect(host.querySelectorAll('.tk-primary-property .tk-property-name').some((nameNode) => nameNode.classList.contains('tk-sr-only'))).toBe(false);
     const more = host.querySelector('.tk-properties-more-toggle')!;
-    expect(more.textContent).toBe('More');
+    expect(more.textContent).toBe('More properties');
     expect(more.getAttribute('aria-expanded')).toBe('false');
     expect(host.querySelector('.tk-properties-more')?.getAttribute('data-expanded')).toBe('false');
     more.click();

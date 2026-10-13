@@ -326,7 +326,7 @@ describe('what is stored', () => {
     await refuse(content([sticky('a', { x: 'far' })]), /x must be a number/);
     await refuse(content([sticky('a', { fill: 'url(https://evil.example/a.svg#x)' })]), /fill/);
     await refuse({ objects: 'no', steps: [], bounds: {} }, /content\.objects/);
-    await refuse(content(Array.from({ length: 2001 }, (_, i) => sticky(`o${i}`))), /2000 objects/);
+    await refuse(content(Array.from({ length: 501 }, (_, i) => sticky(`o${i}`))), /500 objects/);
     expect((await listed(alice)).length).toBe(before);
   });
 
@@ -372,12 +372,12 @@ describe('what is stored', () => {
 describe('size', () => {
   const bulky = (kilobytes: number) => content(Array.from({ length: Math.ceil(kilobytes / 15) }, (_, i) => sticky(`o${i}`, { text: 'x'.repeat(15_000) })));
 
-  it('accepts a template of 900 KB', async () => {
-    const big = bulky(900);
-    expect(JSON.stringify(big).length).toBeGreaterThan(900_000);
+  it('accepts a template of 190 KB', async () => {
+    const big = bulky(190);
+    expect(JSON.stringify(big).length).toBeGreaterThan(190_000);
     const res = await create(alice, { content: big });
     expect(res.status).toBe(201);
-    expect(res.body.objectCount).toBe(60);
+    expect(res.body.objectCount).toBe(13);
     expect((await get(alice, res.body.id)).body.content).toEqual(big);
     expect((await h.api(alice.cookie, 'POST', `/api/templates/${res.body.id}/duplicate`)).status).toBe(201);
     expect((await patch(alice, res.body.id, { name: 'Big and renamed' })).status).toBe(200);

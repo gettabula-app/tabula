@@ -6,9 +6,9 @@
 .oauth-consent :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .oauth-consent-top {
   display: flex; align-items: center; height: 56px;
-  padding: 0 max(24px, calc((100% - 720px) / 2 + 24px)); border-bottom: 2px solid var(--ink);
+  padding: 0 max(24px, calc((100% - 720px) / 2 + 24px)); border-bottom: 1px solid var(--page-hairline);
 }
-.oauth-consent .wordmark { font: 800 20px/1 var(--display); letter-spacing: -0.03em; }
+.oauth-consent .wordmark { font: 400 20px/1 var(--font-serif); letter-spacing: -0.02em; }
 .oauth-consent-body { max-width: 720px; margin: 0 auto; padding: 40px 24px; }
 .oauth-consent-col { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
 .oauth-consent h1 { margin: 0; font: 700 26px/1.2 var(--display); letter-spacing: -0.02em; overflow-wrap: anywhere; }

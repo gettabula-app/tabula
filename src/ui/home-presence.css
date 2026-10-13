@@ -3,7 +3,7 @@
 .board-here:hover, .board-row:focus-within .board-here { z-index: 5; }
 .here-sq {
   flex: none; display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--radius-xs);
-  background: var(--u, var(--ink)); color: #fff; font-size: 10px; font-weight: 700;
+  background: var(--u, var(--ink)); color: #fff; font-size: 10px; font-weight: 600;
 }
 /* no colour to map: the ink, with the paper as its text so it reads on the light-ink themes too */
 .here-sq.plain { color: var(--paper); }

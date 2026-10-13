@@ -24,6 +24,8 @@ export function cellKey(rowId: string, colId: string): string;
 export function alignKey(colId: string): string;
 export function fillKey(rowId: string, colId: string): string;
 export function isValidRank(rank: unknown): boolean;
+/** A readable problem with the table parts of an object from outside (template, file), or null. */
+export function tablePartsProblem(obj: Record<string, unknown>): string | null;
 export function tableChars(obj: Fields | undefined): number;
 export function gridChars(grid: readonly (readonly string[])[]): number;
 export function isTableKey(key: unknown): boolean;

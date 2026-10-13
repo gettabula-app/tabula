@@ -10,10 +10,10 @@
 .k-input-wrap { position: absolute; left: 0; top: 0; z-index: 5; display: none; transform-origin: 0 0; }
 .k-input-wrap.show { display: block; }
 .k-input {
-  display: block; width: 100%; height: 34px; margin: 0; padding: 0 12px; border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule);
-  --placeholder: var(--ink); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); color: var(--ink); font: 500 13px/18px var(--k-font, inherit); outline: none; caret-color: var(--ink);
+  display: block; width: 100%; height: 36px; margin: 0; padding: 0 12px; border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 -1px 0 var(--field-rule);
+  --placeholder: var(--ink); background: color-mix(in srgb, var(--ink) 4%, var(--paper)); color: var(--ink); font: 500 13px/18px var(--k-font, inherit); outline: none; caret-color: var(--ink);
 }
-.k-input:focus { box-shadow: inset 0 0 0 1px var(--field-edge-strong), 0 0 0 3px color-mix(in srgb, var(--field-edge-strong) 10%, transparent); }
+.k-input:focus-visible { outline: 1px solid var(--field-edge-strong); outline-offset: 0; box-shadow: inset 0 0 0 1px var(--field-edge-strong); }
 .k-input::placeholder { color: var(--placeholder); opacity: 1; }
 .k-input-hint {
   display: block; margin-top: 4px; color: var(--k-meta); white-space: nowrap;
@@ -21,8 +21,11 @@
 }
 
 /* the dragged card lifts in over 120 ms; with reduced motion it is there at once */
-.k-ghost { animation: k-lift 120ms ease-out; pointer-events: none; }
-@keyframes k-lift { from { transform: translate(-8px, -8px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+.k-ghost { pointer-events: none; filter: drop-shadow(0 6px 14px color-mix(in srgb, var(--shade) 12%, transparent)); }
+@media (prefers-reduced-motion: no-preference) {
+  .k-ghost { animation: k-lift 120ms ease-out; }
+  @keyframes k-lift { from { transform: translate(-8px, -8px) rotate(-1deg); opacity: 0.4; } to { transform: rotate(-1deg); opacity: 1; } }
+}
 @media (prefers-reduced-motion: reduce) {
   .k-ghost { animation: none; }
 }
@@ -32,7 +35,7 @@
 .popover.k-pop { box-shadow: var(--popover-shadow); max-width: calc(100vw - 16px); }
 .k-menu { min-width: 0; max-width: 100%; }
 .k-menu .menu-item { min-height: 32px; font-size: 13px; color: var(--tray-text); }
-.k-seg .k-chip { border-color: var(--field-edge-strong); }
+.k-seg .k-chip { border: 0; border-radius: var(--radius-xs); }
 .k-menu .menu-item.danger { color: var(--danger); }
 .k-menu .menu-item:disabled { color: var(--tray-muted); cursor: default; }
 .k-menu .menu-item:disabled:hover { background: transparent; }
