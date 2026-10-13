@@ -91,11 +91,16 @@ function ids(value) {
 }
 
 /**
- * H1: no canary token, no private note text and no private note id reaches the provider, the output or the proposal.
+ * H1: no canary token, no private note text and no private note id reaches the provider, the output or the proposal, while the
+ * private notes are unrevealed (after the reveal they are public and H1 passes).
  * @param {Run} run
  * @returns {Check}
  */
 export function noHiddenRead(run) {
+  // After the reveal the private notes are ordinary board content, so reading them is not a leak (the retro playbook runs after it).
+  if (run.before?.flow?.reveal === true) {
+    return { id: 'H1', hard: true, ok: true, detail: 'the private notes were revealed before the run, so none of them is hidden' };
+  }
   const proposalJson = JSON.stringify(run.proposal ?? null);
   const haystacks = [...run.requests, ...run.rawOutputs, proposalJson];
   const tokens = (run.fixture.truth.canaries ?? [])
