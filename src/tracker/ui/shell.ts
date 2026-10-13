@@ -738,7 +738,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (elementMode && !cache.loading && tickets.length === 0) {
       listRenderHost.replaceChildren(h('div', { class: 'trk-element-empty' },
         h('h2', null, state.tab === 'my' ? (state.mySubtab === 'active' ? 'Nothing assigned to you.' : 'Nothing created by you yet.') : 'No tickets yet'),
-        h('p', null, state.tab === 'my' ? 'Issues assigned to you or created by you appear here.' : 'Create the first ticket to track work here.'),
+        // only a person who can create tickets is invited to create the first one
+        state.tab === 'my' ? h('p', null, 'Tickets assigned to you or created by you appear here.') : readOnly ? null : h('p', null, 'Create the first ticket to track work here.'),
         readOnly ? null : h('button', { class: 'trk-primary-button trk-element-create', type: 'button', onclick: () => openCreate() }, '+ New ticket'),
       ));
       updateListLoadMore(cache);

@@ -27,7 +27,7 @@ describe('tracker element look: CSS', () => {
 
   it('uses the spec palette for the card and the header rule', () => {
     expect(block).toContain('border-radius: 12px');
-    expect(block).toContain('color-mix(in srgb, var(--ink) 22%, var(--paper))');
+    expect(block).toContain('box-shadow: var(--object-shadow)'); // the 22% edge is part of --object-shadow (src/styles.css)
     expect(block).toContain('border-bottom: 1px solid var(--tray-line)');
     expect(block).toContain('font: 400 16px/1.2 var(--font-serif)');
   });

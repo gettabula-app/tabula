@@ -596,8 +596,8 @@
   --trk-assignee-width: 20px;
   --trk-priority-width: 11px;
   display: flex; flex-direction: column; overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--ink) 22%, var(--paper)); border-radius: 12px;
-  background: var(--paper); color: var(--ink); box-shadow: var(--popover-shadow);
+  border: 1px solid transparent; border-radius: 12px; /* the edge is in the shadow; the border keeps the layout and shows in forced colours */
+  background: var(--paper); color: var(--ink); box-shadow: var(--object-shadow);
 }
 .trk.trk-element .trk-element-header {
   display: flex; flex: none; align-items: center; justify-content: space-between; gap: 10px;

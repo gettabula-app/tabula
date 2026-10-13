@@ -1,4 +1,5 @@
 import type { BaseObj } from '../../types';
+import { trackerNoTicketsLine } from '../../tracker-frame';
 import type { TrackerTicket } from '../../tracker-types';
 
 interface Snapshot { open: number; inProgress: number }
@@ -38,7 +39,7 @@ export function renderTrackerSnapshot(frame: BaseObj): string {
   const w = n(frame.w), h = n(frame.h);
   const snapshot = snapshots.get(frame.id);
   // no snapshot means no store (a guest, or no workspace): the copy says how to get tickets, not that there are none
-  const countLine = snapshot ? `${snapshot.open} open · ${snapshot.inProgress} in progress` : 'Sign in to a workspace to see tickets.';
+  const countLine = snapshot ? `${snapshot.open} open · ${snapshot.inProgress} in progress` : trackerNoTicketsLine();
   const pieces = [
     `<rect x="0.5" y="0.5" width="${Math.max(0, w - 1)}" height="${Math.max(0, h - 1)}" rx="12" fill="var(--paper, #FFFFFF)" fill-opacity="1" stroke="var(--ink, #111111)" stroke-opacity="0.22" stroke-width="1"/>`,
     `<text x="20" y="44" font-family="var(--font-serif, Georgia, serif)" font-size="28" font-weight="400" fill="var(--ink, #111111)">Tracker</text>`,

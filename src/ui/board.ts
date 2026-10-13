@@ -8,7 +8,7 @@ import { openLinkPopover } from './link-add';
 import type { BoardApp, Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
-import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
+import { createTrackerFrame, setTrackerGuest, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
 import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from '../tracker-data';
 import { openRegisteredLinkDialog, openRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
 import { installTrackerLinkDialog } from '../tracker/ui/link-dialog-open';
@@ -782,6 +782,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   };
   const syncTracker = () => {
     const auth = authState();
+    setTrackerGuest(auth.mode === 'guest' || ((auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.user.role === 'guest'));
     const signedInWithTracker = (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
     const enabled = !scratch && !demo && (signedInWithTracker || trackerBoardMockVisual);
     trackerCommand.hidden = !enabled;
