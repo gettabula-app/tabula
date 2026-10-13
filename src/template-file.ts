@@ -30,7 +30,7 @@ export function copyName(name: string): string {
 
 /** The text of a template file: `{ format: 'tabula-template', version: 1, template }`. */
 export function exportTemplateFile(t: CustomTemplate): string {
-  return JSON.stringify({ format: TEMPLATE_FILE_FORMAT, version: 1, template: withoutSharing(validateTemplate(t)) }, null, 2);
+  return JSON.stringify({ format: TEMPLATE_FILE_FORMAT, version: 1, template: withoutSharing(validateTemplate(t, { stored: true })) }, null, 2);
 }
 
 /**
@@ -70,7 +70,7 @@ export function parseTemplateFile(text: string, userId: string, now = Date.now()
 
 /** A copy of a saved template for `userId`: same content, a new id, and "<name> (copy)". */
 export function duplicateTemplate(t: CustomTemplate, userId: string, now = Date.now()): CustomTemplate {
-  const safe = validateTemplate(t);
+  const safe = validateTemplate(t, { stored: true });
   return {
     ...withoutSharing(safe), content: structuredClone(safe.content), id: newId(), name: copyName(safe.name), createdBy: userId, createdAt: now, updatedAt: now,
   };

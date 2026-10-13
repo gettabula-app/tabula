@@ -148,6 +148,57 @@ export async function restoreMissing(deps: RestoreDeps): Promise<string[]> {
   return restored;
 }
 
+/** What the person is told when a backup cannot be used, and what they can do about it. */
+export interface RecoveryNoticeDeps {
+  toast: (message: string, ms?: number, action?: { label: string; onClick: () => void }) => void;
+  /** Reads the backup file again and tries again; rejects with the reason if it fails again. */
+  retry: (id: string) => Promise<void>;
+  /** Lets the person save a copy of the backup file somewhere safe. */
+  saveCopy: (id: string) => Promise<void>;
+  describe: (error: unknown) => string;
+}
+
+/**
+ * A backup that could not be used is never only logged: the person is told, the file is kept where it is, and they can try
+ * again; if that fails too they can save a copy of the file. `id` is the board's id, or null when the list of backups itself
+ * could not be read.
+ */
+export function showRecoveryFailure(deps: RecoveryNoticeDeps, id: string | null, error: unknown, attempt = 1): void {
+  const what = id === null ? 'look for the backup copies of your boards' : 'restore a board from its backup copy';
+  const message = `Could not ${what}: ${deps.describe(error)} The backup files are kept in the app's data folder.`;
+  if (attempt === 1) {
+    deps.toast(message, 60_000, {
+      label: 'Try again',
+      onClick: () => {
+        deps.retry(id ?? '').then(
+          () => deps.toast('The backup was restored.'),
+          (e) => showRecoveryFailure(deps, id, e, 2),
+        );
+      },
+    });
+    return;
+  }
+  deps.toast(id === null ? `${message} Restart the app to try again.` : message, 60_000, id === null ? undefined : {
+    label: 'Save a copy of the backup',
+    onClick: () => { deps.saveCopy(id).catch((e) => deps.toast(`Could not save a copy: ${deps.describe(e)}`)); },
+  });
+}
+
+/**
+ * The recovery on start: restores the boards the device's storage lost, and tells the person about every failure (a damaged
+ * or oversized backup, an unreadable backup folder) with a way to retry or to keep a copy. Resolves to the restored ids.
+ */
+export async function runRecovery(deps: Omit<RestoreDeps, 'onError'>, notice: RecoveryNoticeDeps, restoreOne: (id: string) => Promise<void>): Promise<string[]> {
+  try {
+    const restored = await restoreMissing({ ...deps, onError: (e, id) => showRecoveryFailure({ ...notice, retry: restoreOne }, id, e) });
+    if (restored.length) notice.toast(restored.length === 1 ? 'Restored 1 board from its backup copy' : `Restored ${restored.length} boards from their backup copies`);
+    return restored;
+  } catch (e) {
+    showRecoveryFailure({ ...notice, retry: async () => { await runRecovery(deps, notice, restoreOne); } }, null, e);
+    return [];
+  }
+}
+
 export interface MergeBackupDeps {
   /** Rejects when the board has no backup. */
   readBackup: (id: string) => Promise<Uint8Array>;

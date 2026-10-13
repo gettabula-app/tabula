@@ -2,6 +2,7 @@ import type { BoardRole } from './api';
 import { CARD_HEIGHT_HEAL_ORIGIN, needsCardHeightHeal } from './card-height-heal';
 import { tableBoxSize } from './markup';
 import { LOCAL, type Store } from './store';
+import { parseTableKey } from '../shared/tables';
 import type { BaseObj, Id } from './types';
 
 const INITIAL = Symbol('initial-table-sizes');
@@ -60,6 +61,7 @@ export function watchTableSizes({ store, role, busy, hidden }: TableSizeHealOpti
       return;
     }
     const updates: { id: Id; w: number; h: number }[] = [];
+    const ghosts: { id: Id; keys: string[] }[] = [];
     let checked = 0;
     for (const [id, origin] of pending) {
       pending.delete(id);
@@ -69,14 +71,17 @@ export function watchTableSizes({ store, role, busy, hidden }: TableSizeHealOpti
       }
       const o = store.get(id) as BaseObj | undefined;
       if (o?.type !== 'table' || hidden(o)) continue;
+      const orphans = ghostCells(o);
+      if (orphans.length && o.locked !== true) ghosts.push({ id, keys: orphans });
       const size = tableBoxSize(o);
       const common = { role: role(), origin, locked: o.locked === true, hidden: false };
       // the same rule serves both axes: it compares a stored number with a measured one
       const heal = needsCardHeightHeal({ storedHeight: o.h, measuredHeight: size.h, ...common }) || needsCardHeightHeal({ storedHeight: o.w, measuredHeight: size.w, ...common });
       if (heal) updates.push({ id, ...size });
     }
-    if (updates.length) {
+    if (updates.length || ghosts.length) {
       store.transactAs(() => {
+        for (const { id, keys } of ghosts) for (const key of keys) store.objects.get(id)?.delete(key);
         for (const { id, w, h } of updates) {
           const m = store.objects.get(id);
           m?.set('w', w);
@@ -93,4 +98,19 @@ export function watchTableSizes({ store, role, busy, hidden }: TableSizeHealOpti
     offChange();
     offReadOnly();
   };
+}
+
+/** The keys of cells and fills whose row or column the table does not have: never shown, they only take room (and the text budget in a hostile write). */
+function ghostCells(o: BaseObj): string[] {
+  const rows = new Set<string>();
+  const cols = new Set<string>();
+  const cells: { key: string; rowId: string; colId: string }[] = [];
+  for (const key of Object.keys(o)) {
+    const p = parseTableKey(key);
+    if (!p) continue;
+    if (p.kind === 'r') rows.add(p.id);
+    else if (p.kind === 'k') cols.add(p.id);
+    else if (p.kind === 'c' || p.kind === 'f') cells.push({ key, rowId: p.rowId, colId: p.colId });
+  }
+  return cells.filter((c) => !rows.has(c.rowId) || !cols.has(c.colId)).map((c) => c.key);
 }

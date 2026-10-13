@@ -52,8 +52,10 @@ describe('thumbnailSvg', () => {
   it('escapes user text', () => {
     const svg = thumbnailSvg([sticky('x', 0, 0)].map((o) => ({ ...o, text: '<img src=x onerror=alert(1)>' })));
     expect(svg).not.toContain('<img');
-    expect(svg).toContain('&lt;img</tspan>');
-    expect(svg).toContain('onerror=alert(1)&gt;</tspan>');
+    // a word wider than the box wraps over tspans, so the text is read back across them
+    const text = [...svg.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)].map((m) => m[1]).join('');
+    expect(text).toContain('&lt;img');
+    expect(text).toContain('onerror=alert(1)&gt;');
   });
 
   it('uses a fallback viewBox when there are no boxes', () => {

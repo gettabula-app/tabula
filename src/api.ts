@@ -139,6 +139,11 @@ export interface ChatChannelEntry {
 }
 
 /** GET and PUT /api/admin/chat. `retentionDays` is null for "forever". */
+/** The four switches of the notification bell (docs/notifications.md, Settings). Each is on unless switched off. */
+export type NotificationPrefs = { mentions: boolean; replies: boolean; cards: boolean; shares: boolean };
+/** The email digest (docs/notifications.md, Digest): off until on; `hour` is 0-23 in the zone `tz`. */
+export type NotificationDigest = { on: boolean; hour: number; tz: string };
+
 export interface ChatSettings {
   viewersMayPost: boolean;
   retentionDays: number | null;
@@ -954,6 +959,11 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     notificationsRead: (body: { ids: string[] } | { all: true }) => call<unknown>('POST', '/api/notifications/read', body),
     chatPrefs: () => call<{ emailMentions: boolean }>('GET', '/api/me/prefs'),
     setChatPrefs: (patch: { emailMentions: boolean }) => call<{ emailMentions: boolean }>('PUT', '/api/me/prefs', patch),
+    notificationPrefs: () => call<{ prefs: NotificationPrefs }>('GET', '/api/notifications/prefs'),
+    setNotificationPrefs: (patch: Partial<NotificationPrefs>) => call<{ prefs: NotificationPrefs }>('PUT', '/api/notifications/prefs', patch),
+    /** `digest: null` when this instance sends no email. */
+    notificationDigest: () => call<{ digest: NotificationDigest | null }>('GET', '/api/notifications/digest'),
+    setNotificationDigest: (patch: Partial<NotificationDigest>) => call<{ digest: NotificationDigest }>('PUT', '/api/notifications/digest', patch),
     chatChannels: () => call<{ channels: ChatChannelEntry[] }>('GET', '/api/chat/channels'),
     adminChat: () => call<ChatSettings>('GET', '/api/admin/chat'),
     setAdminChat: (patch: Partial<ChatSettings>) => call<ChatSettings>('PUT', '/api/admin/chat', patch),

@@ -47,8 +47,15 @@ const stampName = (actor) => (typeof actor.name === 'string' && actor.name.trim(
  * returns the kinds of change that were undone ('edit', 'delete', 'resolve', 'author', 'other'), for the notice the
  * sender gets. `isAccount(id)` says whether an author id is a current account, for the legacy marks.
  */
-/** @param {any} doc @param {{ isAccount: (id: string) => boolean, onReplyAdded?: ((event: { threadId: string, threadAuthorId: string, replyId: string, replyAuthorId: string }) => void) | null }} options */
-export function createCommentGuard(doc, { isAccount, onReplyAdded = null }) {
+/**
+ * @param {any} doc
+ * @param {{ isAccount: (id: string) => boolean,
+ *   onReplyAdded?: ((event: { threadId: string, threadAuthorId: string, replyId: string, replyAuthorId: string }) => void) | null,
+ *   onCommentAdded?: ((event: { threadId: string, replyId: string | null, authorId: string, text: string }) => void) | null }} options
+ *   onCommentAdded runs once for each new thread (replyId null) or new reply the sender's writes were allowed to add.
+ *   Edits, imported comments and legacy comments do not fire it.
+ */
+export function createCommentGuard(doc, { isAccount, onReplyAdded = null, onCommentAdded = null }) {
   const threads = doc.getMap('threads');
   /** threadId -> JSON of the thread as last allowed. */
   const mirror = new Map();
@@ -325,6 +332,27 @@ export function createCommentGuard(doc, { isAccount, onReplyAdded = null }) {
           try {
             onReplyAdded?.({ threadId: id, threadAuthorId: prior.authorId, replyId, replyAuthorId: actor.id });
           } catch { /* a notification hook cannot undo an accepted comment */ }
+        }
+      }
+      if (onCommentAdded) {
+        for (const id of ids) {
+          const prior = before.get(id);
+          const after = jsonOf(threads.get(id));
+          if (!after) continue;
+          const isNew = !prior || typeof prior !== 'object';
+          const previousReplies = isNew ? {} : (prior.replies ?? {});
+          const accepted = (c) => c && typeof c === 'object' && c.authorId === actor.id && c.imported !== true && c.legacy !== true;
+          const added = [];
+          if (isNew && accepted(after)) added.push({ threadId: id, replyId: null, text: after.text });
+          for (const [replyId, reply] of Object.entries(after.replies ?? {})) {
+            if (Object.hasOwn(previousReplies, replyId) || !accepted(reply)) continue;
+            added.push({ threadId: id, replyId, text: reply.text });
+          }
+          for (const event of added) {
+            try {
+              onCommentAdded({ ...event, authorId: actor.id, text: typeof event.text === 'string' ? event.text : '' });
+            } catch { /* a notification hook cannot undo an accepted comment */ }
+          }
         }
       }
       ids.forEach(refresh);

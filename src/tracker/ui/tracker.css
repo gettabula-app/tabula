@@ -367,8 +367,23 @@
 /* the header's empty strip lets a drag fall through to the canvas, so the element moves; its buttons and tabs stay live */
 .trk-frame-wrap.is-work .trk-header { pointer-events: none; }
 .trk-frame-wrap.is-work .trk-header button, .trk-frame-wrap.is-work .trk-header [role="tab"] { pointer-events: auto; }
-.trk-frame-open { position: absolute; z-index: 3; right: 10px; bottom: 10px; min-height: 44px; padding: 0 16px; border: 0; border-radius: var(--radius-sm, 8px); background: var(--ink); color: var(--paper); font: 500 13px var(--ui); pointer-events: auto; }
-.trk-frame-open[hidden] { display: none; }
+/* the two buttons are one quiet group in the frame's top-right corner: 8px apart, equal height, never overlapping; the second one is only a glyph in a narrow frame */
+.trk-frame-wrap { container-type: inline-size; }
+.trk-frame-actions { position: absolute; z-index: 3; top: 9px; right: 10px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; max-width: calc(100% - 20px); pointer-events: none; }
+.trk-frame-open, .trk-frame-expand {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; min-height: 32px; padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, var(--paper)); border-radius: var(--radius-sm, 6px);
+  background: var(--paper-hi, var(--paper)); color: var(--ink); font: 500 13px var(--ui); white-space: nowrap; pointer-events: auto;
+}
+.trk-frame-open:hover, .trk-frame-expand:hover { background: color-mix(in srgb, var(--ink) 5%, var(--paper)); }
+.trk-frame-open:focus-visible, .trk-frame-expand:focus-visible { outline: 0; box-shadow: inset 0 0 0 1px var(--ink), 0 0 0 3px color-mix(in srgb, var(--ink) 10%, transparent); }
+.trk-frame-expand-glyph { display: none; font-size: 15px; line-height: 1; }
+@container (max-width: 360px) {
+  .trk-frame-expand { width: 32px; padding: 0; }
+  .trk-frame-expand-label { display: none; }
+  .trk-frame-expand-glyph { display: inline; }
+}
+.trk-frame-open[hidden], .trk-frame-expand[hidden] { display: none; }
 .trk-fullscreen-portal { position: fixed; z-index: 20000; inset: 0; display: flex; padding: 0 var(--safe-right, env(safe-area-inset-right, 0px)) var(--safe-bottom, env(safe-area-inset-bottom, 0px)) var(--safe-left, env(safe-area-inset-left, 0px)); flex-direction: column; overflow: hidden; background: var(--paper-hi, var(--paper)); color: var(--ink); }
 .trk-fullscreen-portal > .trk-shell { width: 100%; height: 100%; border: 0; }
 .trk-fullscreen-portal .trk-fullscreen-strip { flex: none; }
@@ -406,7 +421,16 @@
 .trk-new-title::placeholder, .trk-new-description::placeholder, .trk-project-description::placeholder { color: var(--trk-muted); opacity: 1; }
 .trk-new-title:focus-visible, .trk-new-description:focus-visible { outline: 0; outline-offset: 0; }
 .trk-new-description-head { display: flex; align-items: center; justify-content: space-between; color: var(--trk-muted); font-size: 12px; }
-.trk-new-description { width: 100%; min-height: 84px; resize: vertical; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--trk-text); font: 400 14px/1.5 var(--ui); }
+.trk-new-description { width: 100%; min-height: 120px; resize: vertical; font: 400 14px/1.5 var(--ui); }
+/* every tracker textarea is one field on the tracker's own light surface: the app-wide rule paints textareas from the tray colours, which are dark on Evergreen's light dialogs (dark text on a dark fill) */
+.trk textarea:not(.text-editor), .trk-modal textarea:not(.text-editor) {
+  padding: 12px 14px; border: 0; border-radius: var(--radius-sm, 6px); color: var(--trk-text, var(--ink)); caret-color: var(--trk-text, var(--ink)); line-height: 1.5;
+  background-color: color-mix(in srgb, var(--trk-text, var(--ink)) 4%, var(--trk-ground, var(--paper)));
+  box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule);
+}
+.trk textarea:not(.text-editor):hover, .trk-modal textarea:not(.text-editor):hover { background-color: color-mix(in srgb, var(--trk-text, var(--ink)) 6%, var(--trk-ground, var(--paper))); }
+.trk textarea:not(.text-editor):focus, .trk-modal textarea:not(.text-editor):focus { outline: 0; box-shadow: inset 0 0 0 1px var(--trk-text, var(--ink)), 0 0 0 3px color-mix(in srgb, var(--trk-text, var(--ink)) 10%, transparent); }
+.trk textarea::placeholder, .trk-modal textarea::placeholder { color: color-mix(in srgb, var(--trk-text, var(--ink)) 72%, var(--trk-ground, var(--paper))); opacity: 1; }
 .trk-new-preview { min-height: 160px; padding: 10px; border: 1px solid var(--trk-rule); border-radius: var(--radius-sm, 8px); overflow-wrap: anywhere; }
 .trk-new-issue-back .trk-new-issue { color: var(--trk-text); }
 .trk-new-issue-back .trk-new-description-head { color: var(--trk-muted); }
@@ -428,7 +452,11 @@
 .trk-project-description { width: 100%; min-height: 32px; padding: 4px 0; border: 0; border-radius: 0; background: transparent; color: var(--trk-text); font: 400 14px/1.45 var(--ui); }
 .trk-new-issue .trk-inline-error { margin: 0; }
 
+/* placeholders in tracker fields read at 4.5:1 on the field tint in every theme */
+.trk .trk-picker-search::placeholder, .trk .trk-command-input::placeholder, .trk .trk-filter-input::placeholder { color: color-mix(in srgb, var(--trk-text) 72%, var(--trk-ground)); opacity: 1; }
 @media (max-width: 600px) {
+  /* the ticket page has its own composer: the floating + would sit over its Send arrow */
+  .trk:has(.tk-page) .trk-new-trigger, .trk-shell:has(.tk-page) .trk-new-trigger { display: none; }
   .trk-shell { position: fixed; z-index: 15000; inset: 0; width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; border: 0; padding: 0 var(--safe-right, env(safe-area-inset-right, 0px)) var(--safe-bottom, env(safe-area-inset-bottom, 0px)) var(--safe-left, env(safe-area-inset-left, 0px)); }
   .trk-fullscreen-strip { min-height: calc(44px + var(--safe-top, env(safe-area-inset-top, 0px))); }
   .trk-header { min-height: 0; border-bottom: 0; }
@@ -516,6 +544,8 @@
   .trk-fullscreen-strip { padding-inline: 12px; }
   .trk-view-bar, .trk-filter-host { padding-inline: 12px; }
   .trk-empty-state { padding: 24px 12px; }
+  .trk-frame-open, .trk-frame-expand { height: 44px; min-height: 44px; }
+  @container (max-width: 360px) { .trk-frame-expand { width: 44px; } }
 }
 @media (pointer: coarse) {
   .trk-modal .modal-head .icon-btn { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }

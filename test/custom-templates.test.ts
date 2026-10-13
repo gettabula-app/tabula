@@ -93,6 +93,14 @@ describe('toTemplateContent', () => {
     expect(validateContent(c)).toBeTruthy();
   });
 
+  it('round-trips lineHeight through template export, validation and instantiation', () => {
+    const source = box('source', 40, 60, { type: 'sticky', lineHeight: 1.15 });
+    const template = toTemplateContent([source], [], { includeSteps: false });
+    expect((template.objects[0] as BaseObj).lineHeight).toBe(1.15);
+    expect((validateContent(template).objects[0] as BaseObj).lineHeight).toBe(1.15);
+    expect((instantiate(template, { x: 100, y: 200 }, 'u1').objects[0] as BaseObj).lineHeight).toBe(1.15);
+  });
+
   it('moves the bounds to the origin and keeps relative geometry', () => {
     const { objs, outside, steps } = fixture();
     const c = toTemplateContent(objs, steps, { includeSteps: true }, lookup(outside));
@@ -297,7 +305,7 @@ describe('validateContent', () => {
 
   it('rejects more than the object limit', () => {
     const many = Array.from({ length: MAX_TEMPLATE_OBJECTS + 1 }, (_, i) => box(`n${i}`, 0, 0));
-    expect(run({ ...good(), objects: many })).toThrow(/at most 2000 objects/);
+    expect(run({ ...good(), objects: many })).toThrow(/at most 500 objects/);
     const atLimit = Array.from({ length: MAX_TEMPLATE_OBJECTS }, (_, i) => box(`n${i}`, 0, 0));
     expect(validateContent({ ...good(), objects: atLimit, steps: [] }).objects).toHaveLength(MAX_TEMPLATE_OBJECTS);
   });
@@ -369,5 +377,16 @@ describe('validateContent', () => {
     expect(body).toContain('<path d="M0 0"/>');
     expect(body).not.toMatch(/script|onclick/);
     expect(icon.body).toContain('<script>');
+  });
+});
+
+describe('templates saved before the caps existed', () => {
+  const big = (n: number) => ({ bounds: { x: 0, y: 0, w: 10, h: 10 }, objects: Array.from({ length: n }, (_, i) => box(`n${i}`, 0, 0)), steps: [] });
+  it('are still read, while saving or uploading one over the caps is refused', () => {
+    expect(() => validateContent(big(800))).toThrow(/at most 500 objects/);
+    expect(validateContent(big(800), { stored: true }).objects).toHaveLength(800);
+    const md = { bounds: { x: 0, y: 0, w: 10, h: 10 }, objects: [{ ...box('m1', 0, 0), type: 'markdown', text: 'x'.repeat(9000) }], steps: [] };
+    expect(() => validateContent(md)).toThrow(/8000/);
+    expect(validateContent(md, { stored: true }).objects).toHaveLength(1);
   });
 });

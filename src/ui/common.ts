@@ -227,13 +227,13 @@ export function swatches(colors: { name: string; value: string }[], current: str
   return row;
 }
 
-export function segmented<T extends string | number>(options: { value: T; label: string; icon?: HTMLElement }[], current: T | undefined, onPick: (v: T) => void, label: string) {
+export function segmented<T extends string | number>(options: { value: T; label: string; icon?: HTMLElement; ariaLabel?: string }[], current: T | undefined, onPick: (v: T) => void, label: string) {
   const row = h('div', { class: 'segmented', role: 'radiogroup', 'aria-label': label });
   const buttons: HTMLButtonElement[] = [];
   for (const o of options) {
     const b = h('button', {
       class: o.value === current ? 'on' : '', role: 'radio', 'aria-checked': String(o.value === current),
-      'data-tip': o.icon ? o.label : undefined, 'aria-label': o.label,
+      'data-tip': o.icon ? o.label : undefined, 'aria-label': o.ariaLabel ?? o.label,
       onclick: () => {
         for (const x of buttons) {
           x.classList.toggle('on', x === b);

@@ -106,7 +106,7 @@ Alla med konto som kan öppna tavlan kan läsa chatten; personer som har ansluti
 
 ## Aviseringar
 
-Under **Chat notifications** (Chattaviseringar) i tavlans meny (eller **Notifications** (Aviseringar) längst ned i kanallistan på chattsidan) kan du välja om du vill få ett mejl när någon nämner dig. Det är aktiverat tills du stänger av det.
+Under **Notification settings** (Aviseringsinställningar) i tavlans meny (eller **Notifications** (Aviseringar) längst ned i kanallistan på chattsidan) kan du välja om du vill få ett mejl när någon nämner dig. Det är aktiverat tills du stänger av det.
 
 Mejlet berättar vem som nämnde dig, på vilken tavla, i vilket team eller på vilken arbetsyta, och visar meddelandets första ord samt en länk. Det skickas bara om du inte har haft Tabula öppet på 10 minuter, och inte för ett meddelande som du har läst eller som har tagits bort eller ändrats så att det inte längre nämner dig. Du får högst ett mejl per samtal var tionde minut och 20 om dagen. Att redigera ett meddelande skickar aldrig mejlet igen.
 

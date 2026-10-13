@@ -39,7 +39,23 @@ export const clearMeasureCache = () => { cache.clear(); epoch++; };
 /** Changes whenever the measurements are cleared (fonts loaded): anything cached from measurements is stale after it. */
 export const measureEpoch = () => epoch;
 
-/** Greedy word wrap. Newlines are hard breaks; long words break by character. */
+/** The pieces a word wider than `max` breaks into, by character (an emoji sequence stays whole): every piece but the last fills a line. */
+function breakWord(word: string, font: string, max: number): { full: string[]; last: string } {
+  const full: string[] = [];
+  let chunk = '';
+  const parts = graphemeSegmenter
+    ? Array.from(graphemeSegmenter.segment(word), ({ segment }) => segment)
+    : Array.from(word);
+  for (const ch of parts) {
+    if (measure(chunk + ch, font) > max && chunk) {
+      full.push(chunk);
+      chunk = ch;
+    } else chunk += ch;
+  }
+  return { full, last: chunk };
+}
+
+/** Greedy word wrap. Newlines are hard breaks; a word wider than the box breaks by character, wherever on the line it starts. */
 export function wrap(text: string, font: string, maxWidth: number): string[] {
   const out: string[] = [];
   const max = Math.max(4, maxWidth);
@@ -54,22 +70,18 @@ export function wrap(text: string, font: string, maxWidth: number): string[] {
       const candidate = line + word;
       if (measure(candidate.trimEnd(), font) <= max || !line.trim()) {
         if (measure(word, font) > max && !line.trim()) {
-          // Emoji sequences can span several code points but must stay on one line.
-          let chunk = '';
-          const parts = graphemeSegmenter
-            ? Array.from(graphemeSegmenter.segment(word), ({ segment }) => segment)
-            : Array.from(word);
-          for (const ch of parts) {
-            if (measure(chunk + ch, font) > max && chunk) {
-              out.push(chunk);
-              chunk = ch;
-            } else chunk += ch;
-          }
-          line = chunk;
+          const { full, last } = breakWord(word, font, max);
+          out.push(...full);
+          line = last;
         } else line = candidate;
       } else {
         out.push(line.trimEnd());
-        line = /^\s+$/.test(word) ? '' : word;
+        if (!/^\s+$/.test(word) && measure(word, font) > max) {
+          // a word wider than a whole line does not run past the edge because it came after other words
+          const { full, last } = breakWord(word, font, max);
+          out.push(...full);
+          line = last;
+        } else line = /^\s+$/.test(word) ? '' : word;
       }
     }
     out.push(line.trimEnd());
@@ -77,8 +89,12 @@ export function wrap(text: string, font: string, maxWidth: number): string[] {
   return out;
 }
 
+// characters XML 1.0 cannot hold (they make an SVG or XML export unreadable), and a surrogate with no partner
+// oxlint-disable-next-line no-control-regex -- the control characters are the point
+const XML_ILLEGAL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
 export const escapeXml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  s.replace(XML_ILLEGAL, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 export interface TextLayout {
   lines: string[];
@@ -88,10 +104,10 @@ export interface TextLayout {
 }
 
 /** Wrap text, shrinking the font (down to `minSize`) until it fits the height. */
-export function fitText(text: string, slug: string | undefined, weight: number, size: number, w: number, h: number, minSize = 9): TextLayout {
+export function fitText(text: string, slug: string | undefined, weight: number, size: number, w: number, h: number, minSize = 9, lineHeight = 1.3): TextLayout {
   let s = size;
   for (;;) {
-    const lh = Math.round(s * 1.3 * 100) / 100;
+    const lh = Math.round(s * lineHeight * 100) / 100;
     const lines = wrap(text, fontCss(slug, s, weight), w);
     const height = lines.length * lh;
     if (height <= h || s <= minSize) return { lines, size: s, lineHeight: lh, height };

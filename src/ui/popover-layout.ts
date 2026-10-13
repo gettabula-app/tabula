@@ -23,6 +23,13 @@ export function placePopover(
   fitBelow = false,
 ): PopoverPlacement {
   const edge = 8;
+  // a panel meant to open upward flips below its anchor when the room above is too short for it and there is more room below
+  // (a selection near the top of the window), and then scrolls inside the room it has; panels placed against another box keep their side
+  if (side === 'top' && !avoidAbove) {
+    const above = anchor.top - safe.top - edge - 10;
+    const below = viewport.height - safe.bottom - edge - (anchor.bottom + 8);
+    if (panel.height > above && below > above) return placePopover(anchor, panel, viewport, safe, 'bottom', undefined, true);
+  }
   const gap = side === 'top' ? 10 : 8;
   let left = anchor.left;
   let top = anchor.bottom + gap;

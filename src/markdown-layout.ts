@@ -10,6 +10,8 @@ export interface MdStyle {
   font: string;
   size: number;
   weight: number;
+  /** Line-height ratio for the whole block; older style callers keep the original 1.45 default. */
+  lineHeight?: number;
 }
 
 export type MdTone = 'code' | 'quote' | 'rule' | 'table' | 'link' | 'strike' | 'box';
@@ -49,8 +51,8 @@ interface Piece {
 function pieces(c: Inline[], base: { bold: boolean; italic: boolean; strike: boolean; link?: Piece['link'] }, out: Piece[] = []): Piece[] {
   for (const n of c) {
     if (n.t === 'text') {
-      for (const word of n.s.split(/(\s+)/)) if (word) out.push({ s: word, bold: base.bold, italic: base.italic, mono: false, strike: base.strike, link: base.link });
-    } else if (n.t === 'code') out.push({ s: n.s, bold: base.bold, italic: base.italic, mono: true, strike: base.strike, link: base.link });
+      for (const word of n.s.split(/(\s+)/)) if (word) out.push({ s: clipToken(word), bold: base.bold, italic: base.italic, mono: false, strike: base.strike, link: base.link });
+    } else if (n.t === 'code') out.push({ s: clipToken(n.s), bold: base.bold, italic: base.italic, mono: true, strike: base.strike, link: base.link });
     else if (n.t === 'br') out.push({ s: '\n', bold: false, italic: false, mono: false, strike: false });
     else if (n.t === 'strong') pieces(n.c, { ...base, bold: true }, out);
     else if (n.t === 'em') pieces(n.c, { ...base, italic: true }, out);
@@ -67,20 +69,55 @@ interface Run {
   w: number;
 }
 
-function widthOf(p: Piece, s: string, size: number, style: MdStyle, weight: number): number {
-  return p.mono ? measure(s, monoFont(size * 0.92)) : measure(s, fontCss(style.font, size, p.bold ? Math.max(weight, 700) : weight, p.italic));
+/** The longest unbroken word or code line the layout measures; the rest of a longer one is cut off and ends in an ellipsis. */
+export const MAX_TOKEN_CHARS = 2000;
+/** How many text measurements one layout may make; past it widths are estimated (0.6 em a character), so a hostile text cannot stall the page. */
+export const MEASURE_BUDGET = 20000;
+
+const clipToken = (s: string) => (s.length > MAX_TOKEN_CHARS ? `${s.slice(0, MAX_TOKEN_CHARS - 1)}…` : s);
+
+/** The largest n in [1, s.length] whose prefix of n characters is at most `w` wide (1 if none is), by binary search: about log2(n) measurements. */
+function fitPrefix(s: string, w: number, widthOfPrefix: (n: number) => number): number {
+  let lo = 1;
+  let hi = s.length;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (widthOfPrefix(mid) > w) hi = mid - 1;
+    else lo = mid;
+  }
+  return lo;
+}
+
+/** A shared count of the measurements still allowed to one layout. */
+interface Meter {
+  left: number;
+}
+
+function measured(m: Meter, text: string, font: string, size: number): number {
+  if (m.left <= 0) return text.length * size * 0.6;
+  m.left--;
+  return measure(text, font);
+}
+
+function widthOf(m: Meter, p: Piece, s: string, size: number, style: MdStyle, weight: number): number {
+  return p.mono
+    ? measured(m, s, monoFont(size * 0.92), size * 0.92)
+    : measured(m, s, fontCss(style.font, size, p.bold ? Math.max(weight, 700) : weight, p.italic), size);
 }
 
 class Builder {
   items: MdItem[] = [];
-  constructor(readonly style: MdStyle) {}
+  constructor(
+    readonly style: MdStyle,
+    readonly meter: Meter = { left: MEASURE_BUDGET },
+  ) {}
 
   /**
    * Lays inline content out in a column starting at `x`, `w` wide, from `y` down; returns the y below the last line. `weight` and `size` are the block's
    * (a heading is bold and large). `dim` draws the text quieter (a quote).
    */
   inline(c: Inline[], x: number, y: number, w: number, size: number, weight: number, dim = false, align: Align = null): number {
-    const lh = size * LINE;
+    const lh = size * (this.style.lineHeight ?? LINE);
     const lines: Run[][] = [[]];
     let used = 0;
     const newLine = () => {
@@ -90,7 +127,7 @@ class Builder {
     for (const p of pieces(c, { bold: false, italic: false, strike: false })) {
       if (p.image) {
         const run: Run = { p, s: `[image: ${p.image.alt}]`, w: 0 };
-        run.w = widthOf({ ...p, image: undefined }, run.s, size, this.style, weight);
+        run.w = widthOf(this.meter, { ...p, image: undefined }, run.s, size, this.style, weight);
         if (used > 0) newLine();
         lines[lines.length - 1].push(run);
         newLine();
@@ -102,7 +139,7 @@ class Builder {
       }
       const isSpace = /^\s+$/.test(p.s);
       let s = isSpace ? ' ' : p.s;
-      let width = widthOf(p, s, size, this.style, weight);
+      let width = widthOf(this.meter, p, s, size, this.style, weight);
       if (isSpace) {
         if (used === 0) continue; // no space at the start of a line
         lines[lines.length - 1].push({ p, s, w: width });
@@ -116,12 +153,11 @@ class Builder {
       }
       // a word wider than the column breaks by character
       while (width > w && s.length > 1) {
-        let cut = s.length - 1;
-        while (cut > 1 && widthOf(p, s.slice(0, cut), size, this.style, weight) > w) cut--;
-        lines[lines.length - 1].push({ p, s: s.slice(0, cut), w: widthOf(p, s.slice(0, cut), size, this.style, weight) });
+        const cut = fitPrefix(s, w, (n) => widthOf(this.meter, p, s.slice(0, n), size, this.style, weight));
+        lines[lines.length - 1].push({ p, s: s.slice(0, cut), w: widthOf(this.meter, p, s.slice(0, cut), size, this.style, weight) });
         newLine();
         s = s.slice(cut);
-        width = widthOf(p, s, size, this.style, weight);
+        width = widthOf(this.meter, p, s, size, this.style, weight);
       }
       lines[lines.length - 1].push({ p, s, w: width });
       used += width;
@@ -190,11 +226,10 @@ class Builder {
           const inner = Math.max(20, w - size);
           const lines: string[] = [];
           for (const raw of b.s.split('\n')) {
-            let rest = raw;
+            let rest = clipToken(raw);
             if (!rest) lines.push('');
             while (rest) {
-              let cut = rest.length;
-              while (cut > 1 && measure(rest.slice(0, cut), monoFont(fs)) > inner) cut--;
+              const cut = fitPrefix(rest, inner, (n) => measured(this.meter, rest.slice(0, n), monoFont(fs), fs));
               lines.push(rest.slice(0, cut));
               rest = rest.slice(cut);
             }
@@ -256,7 +291,7 @@ class Builder {
     for (const r of rows) {
       let h = 0;
       for (let c = 0; c < cols; c++) {
-        const scratch = new Builder(this.style);
+        const scratch = new Builder(this.style, this.meter);
         h = Math.max(h, scratch.inline(r[c] ?? [], 0, 0, colW - pad * 2, size, r === b.head ? 700 : weight, dim));
       }
       heights.push(Math.max(h, size * LINE) + pad);

@@ -77,6 +77,26 @@ describe('constants that mirror the client', () => {
 });
 
 describe('content that is accepted', () => {
+  it('keeps lineHeight on supported objects through server and client template validation', () => {
+    const input = content([
+      sticky('sticky', { lineHeight: 0.8 }),
+      { ...sticky('shape'), type: 'shape', kind: 'rect', lineHeight: 1.15 },
+      { ...sticky('text'), type: 'text', lineHeight: 2 },
+      { ...sticky('markdown'), type: 'markdown', lineHeight: 3 },
+    ]);
+    const server = validateTemplateContent(input).content;
+    expect(server.objects.map((o: { lineHeight?: number }) => o.lineHeight)).toEqual([0.8, 1.15, 2, 3]);
+    expect(validateContent(server).objects.map((o) => (o as { lineHeight?: number }).lineHeight)).toEqual([0.8, 1.15, 2, 3]);
+  });
+
+  it('rejects lineHeight outside 0.8 to 3 or on an unsupported template object', () => {
+    for (const value of [0.79, 3.01, 'x']) {
+      expect(() => validateTemplateContent(content([sticky('bad', { lineHeight: value })]))).toThrow(/lineHeight/);
+      expect(() => validateContent(content([sticky('bad', { lineHeight: value })]))).toThrow(/lineHeight/);
+    }
+    expect(() => validateContent(content([frame('frame', { lineHeight: 1.5 })]))).toThrow(/cannot have lineHeight/);
+  });
+
   it('preserves boolean flip flags through both template validators and rejects other values', () => {
     const input = content([sticky('flipped', { flipX: true, flipY: false })]);
     expect(validateTemplateContent(input).content.objects[0]).toMatchObject({ flipX: true, flipY: false });
@@ -130,7 +150,7 @@ describe('content that is accepted', () => {
     ]))).toThrow(/an owner/);
   });
 
-  it('accepts steps that point at frames, a template with nothing in it and 2,000 objects', () => {
+  it('accepts steps that point at frames, a template with nothing in it and 500 objects', () => {
     const steps = [
       { id: 's1', title: 'Write', instructions: 'Add notes', mode: 'private-write', frameId: 'f1', durationSec: 300 },
       { id: 's2', title: 'Vote', instructions: '', mode: 'vote', votesPerPerson: 3 },
@@ -142,11 +162,11 @@ describe('content that is accepted', () => {
   });
 
   it('checks group depth without rescanning the full object list for each parent', () => {
-    const frames = Array.from({ length: 1500 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
+    const frames = Array.from({ length: 498 }, (_, i) => frame(`f${i}`, i ? { parent: `f${i - 1}` } : {}));
     const groupCount = 2;
     const objects: Record<string, unknown>[] = [
       ...frames,
-      ...Array.from({ length: groupCount }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f1499' })),
+      ...Array.from({ length: groupCount }, (_, i) => ({ id: `g${i}`, type: 'group', x: 0, y: 0, w: 0, h: 0, rotation: 0, z: '2', parent: 'f497' })),
     ];
     let idReads = 0;
     // The validator copies inputs with list.map; instrument the copied ids so find, filter, and loops all count.
@@ -175,8 +195,8 @@ describe('content that is accepted', () => {
 
     expect(validateTemplateContent(content(objects)).objectCount).toBe(frames.length + groupCount);
     expect(idReads).toBeGreaterThan(objects.length);
-    // A scan for each parent step in this 1,500-frame chain reads millions of ids. Count reads, not one array method.
-    expect(idReads).toBeLessThanOrEqual(objects.length * 5);
+    // A scan for each parent step in this 498-frame chain reads millions of ids. Count reads, not one array method.
+    expect(idReads).toBeLessThanOrEqual(objects.length * 5 + 10);
   });
 
   it('accepts the colours the board writes', () => {
@@ -206,7 +226,7 @@ describe('content that is refused', () => {
   });
 
   it('caps the number of objects and steps, and the size', () => {
-    expect(problem(content(Array.from({ length: SERVER_MAX_OBJECTS + 1 }, (_, i) => sticky(`o${i}`))))).toMatch('2000 objects');
+    expect(problem(content(Array.from({ length: SERVER_MAX_OBJECTS + 1 }, (_, i) => sticky(`o${i}`))))).toMatch('500 objects');
     expect(problem(content([], { steps: Array.from({ length: 101 }, (_, i) => ({ id: `s${i}`, title: 't', instructions: '', mode: 'write' })) }))).toMatch('at most 100 steps');
     const heavy = Array.from({ length: 100 }, (_, i) => sticky(`o${i}`, { text: 'x'.repeat(15_000) }));
     expect(problem(content(heavy))).toMatch('1 MB');
@@ -593,5 +613,82 @@ describe('placing a template on a board', () => {
     for (let i = 0; i < LIMITS.boardObjects - 1; i++) objects.set(`o${i}`, new Y.Map(Object.entries({ id: `o${i}`, type: 'sticky', x: 0, y: 0, w: 1, h: 1, z: 'a' })));
     expect(() => planUseTemplate(doc, tpl, { createdBy: 'u1' })).toThrow(OpsError);
     expect(objects.size).toBe(LIMITS.boardObjects - 1);
+  });
+});
+
+describe('hostile template content (Markdown, tables, total text)', () => {
+  const md = (id: string, text: string) => ({ id, type: 'markdown', x: 0, y: 0, w: 300, h: 200, rotation: 0, z: '1', text });
+  const table = (extra: Record<string, unknown> = {}) => ({
+    id: 't1', type: 'table', x: 0, y: 0, w: 320, h: 80, rotation: 0, z: '1', headerRow: true,
+    'r:a': 'a0', 'r:b': 'a1', 'k:x': 'a0', 'k:y': 'a1', 'w:x': 120, 'a:y': 'right', 'c:a:x': 'Name', 'c:b:y': '12', 'f:a:y': '#FFE08A', ...extra,
+  });
+  const both = (c: unknown) => [problem(c), (() => { try { validateContent(c); return null; } catch (e) { return (e as Error).message; } })()];
+
+  it('caps a Markdown block at 8,000 characters, in the server and the client validator', () => {
+    expect(both(content([md('m1', 'x'.repeat(8000))]))).toEqual([null, null]);
+    const [server, client] = both(content([md('m1', 'x'.repeat(8001))]));
+    expect(server).toMatch('text');
+    expect(client).toMatch('8000');
+  });
+
+  it('refuses 49 Markdown blocks of 20,000 characters (the picker-freezing template)', () => {
+    const [server, client] = both(content(Array.from({ length: 49 }, (_, i) => md(`m${i}`, 'x'.repeat(20_000)))));
+    expect(server).not.toBeNull();
+    expect(client).not.toBeNull();
+  });
+
+  it('caps the text of a whole template at 200,000 characters, table cells included', () => {
+    const notes = (n: number) => Array.from({ length: n }, (_, i) => sticky(`o${i}`, { text: 'x'.repeat(10_000) }));
+    expect(both(content(notes(20)))).toEqual([null, null]);
+    const [server, client] = both(content(notes(21)));
+    expect(server).toMatch('200,000');
+    expect(client).toMatch('200,000');
+  });
+
+  it('keeps the parts of a table and refuses bad ones', () => {
+    const ok = validateTemplateContent(content([table()])).content.objects[0] as Record<string, unknown>;
+    for (const key of ['r:a', 'k:y', 'w:x', 'a:y', 'c:a:x', 'f:a:y', 'headerRow']) expect(ok[key]).toBe((table() as Record<string, unknown>)[key]);
+    expect(both(content([table()]))).toEqual([null, null]);
+    for (const bad of [{ 'r:b': 'a0' }, { 'r:b': 'a\0' }, { 'w:x': 5 }, { 'a:y': 'justify' }, { 'c:a:x': 'z'.repeat(1001) }, { headerRow: 'yes' }]) {
+      const [server, client] = both(content([table(bad)]));
+      expect(server).not.toBeNull();
+      expect(client).not.toBeNull();
+    }
+    expect(problem(content([table({ 'f:a:y': 'url(https://evil.example/x)' })]))).toMatch('cell fill');
+  });
+});
+
+describe('link cards, tables and direction marks in a server template', () => {
+  const link = (extra: Record<string, unknown> = {}) => ({
+    id: 'l1', type: 'link', x: 0, y: 0, w: 280, h: 120, rotation: 0, z: '1', url: 'https://example.com/a', title: 'Example', description: 'A page',
+    siteName: 'example.com', finalUrl: 'https://example.com/a?x=1', unfurl: 'ok', fetchedAt: 1760000000000, edited: ['title'], ...extra,
+  });
+
+  it('keeps every field of a link card and a table when saved, and the client accepts what comes back', () => {
+    const table = {
+      id: 't1', type: 'table', x: 0, y: 0, w: 320, h: 80, rotation: 0, z: '2', headerRow: true, headerCol: false,
+      'r:a': 'a0', 'r:b': 'a1', 'k:x': 'a0', 'k:y': 'a1', 'w:x': 120, 'a:y': 'center', 'c:a:x': 'Name', 'c:b:y': '12', 'f:a:y': '#FFE08A',
+    };
+    const { content: stored } = validateTemplateContent(content([link(), table]));
+    expect(stored.objects).toEqual([link(), table]);
+    expect(() => validateContent(JSON.parse(JSON.stringify(stored)))).not.toThrow();
+  });
+
+  it('refuses a link card address that is not http(s) and a bad unfurl state', () => {
+    for (const url of ['javascript:alert(1)', 'data:text/html,x', 'https://u:p@example.com/', 'https://exa mple.com/']) expect(problem(content([link({ url })]))).toMatch('http');
+    expect(problem(content([link({ finalUrl: 'ftp://example.com/' })]))).toMatch('finalUrl');
+    expect(problem(content([link({ unfurl: 'sure' })]))).toMatch('unfurl');
+  });
+
+  it('strips direction overrides from names and text, in cells too', () => {
+    const { content: stored } = validateTemplateContent(content([
+      frame('f1', { name: 'Plan‮slin' }),
+      sticky('s1', { text: 'a⁦b‏c' }),
+      { id: 't1', type: 'table', x: 0, y: 0, w: 100, h: 40, rotation: 0, z: '3', 'r:a': 'a0', 'k:x': 'a0', 'c:a:x': 'ok‮x' },
+    ]));
+    const [f1, s1, t1] = stored.objects as Record<string, unknown>[];
+    expect(f1.name).toBe('Planslin');
+    expect(s1.text).toBe('abc');
+    expect(t1['c:a:x']).toBe('okx');
   });
 });

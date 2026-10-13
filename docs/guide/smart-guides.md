@@ -12,7 +12,7 @@ Smart guides show how the object you are moving or resizing lines up with the ob
 
 Guides show while you move an object and while you resize it. A multi-selection moves as one block. A selection of connectors alone shows no guides.
 
-When you resize a free edge, only the edge you are dragging snaps and the opposite edge stays where it is. From a corner with proportions locked, the nearer horizontal or vertical match wins; the other edge follows the ratio and the opposite corner stays fixed. This works for **Shift**-resized corners and for images, icons and UML actors. Resizing a rotated object shows no guides.
+When you resize a free edge, only the edge you are dragging snaps and the opposite edge stays where it is. From a corner with proportions locked, the nearer horizontal or vertical match wins; the other edge follows the ratio and the opposite corner stays fixed. This works for **Shift**-resized corners and for images, icons and UML actors. Resizing a rotated object shows no guides. A small label next to the pointer shows the size while you resize or draw, for example "320 × 180". The corner you drag out when drawing a new shape, note or frame snaps the same way.
 
 ## How close you need to be
 
@@ -23,6 +23,10 @@ Alignment and equal spacing take priority over the grid. If an alignment or spac
 ## Turn guides off for one drag
 
 Hold `Alt` while you drag. This turns off guides and grid snapping for that drag only. On Mac, hold Option.
+
+## Lock a drag to one axis
+
+Hold `Cmd` (`Ctrl` on Windows and Linux) while you drag to move along one direction only. Tabula picks the direction you move first, horizontal or vertical, after about 6 pixels, and keeps it until you let go of the key. A dashed line shows the axis and a small label follows the pointer. This works for objects, groups, selections, frames and the free end of a connector or line. Let go of the key during the drag to move freely again. Guides and grid snapping still work along the locked direction, and `Alt` still turns them off.
 
 ## The Snap to grid setting
 
