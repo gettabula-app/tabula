@@ -798,6 +798,14 @@ function containerMarkup(o: BaseObj, ctx: MarkupCtx) {
  */
 export const placeholderZoom = (zoom: number): number => (zoom > 0 && Number.isFinite(zoom) ? 2 ** (Math.floor(Math.log2(zoom) * 2) / 2) : 1);
 
+/** `text` cut to `width` with a trailing ellipsis (the whole text when it already fits). */
+function ellipsize(text: string, font: string, width: number) {
+  if (measure(text, font) <= width) return text;
+  let cut = text.length;
+  while (cut > 0 && measure(`${text.slice(0, cut).trimEnd()}…`, font) > width) cut--;
+  return cut > 0 ? `${text.slice(0, cut).trimEnd()}…` : '';
+}
+
 /** An image: its pixels through `<image>` (never as markup, so nothing in the file can run), or a placeholder that says why not. */
 function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
   const state: ImageState = ctx.imageState?.(o) ?? { kind: 'loading' };
@@ -835,6 +843,14 @@ function imageMarkup(o: BaseObj, ctx: MarkupCtx) {
         layout = side;
       }
     }
+  }
+  // At a far-out zoom the 12 px floor is wider and taller than the box: the lines would spill over their neighbours. Then the label
+  // alone stays, on one line cut with an ellipsis to the box width; a box too short even for that keeps only its title.
+  const spills = layout.height > o.h || Math.max(0, ...layout.lines.map((t) => measure(t, fontCss('satoshi', layout.size, 600)))) > o.w - 16;
+  if (spills) {
+    place = 'none';
+    layout = { ...layout, lines: [ellipsize(label, fontCss('satoshi', layout.size, 600), o.w - 16)], height: layout.lineHeight };
+    if (layout.lineHeight > o.h - 4) layout = { ...layout, lines: [] };
   }
   const ink = 'color-mix(in srgb, var(--ink, #18212B) 85%, var(--paper, #FFFFFF))';
   const textStyle = `fill:${ink};font-family:var(--ui, 'Instrument Sans', ui-sans-serif, system-ui, sans-serif);font-weight:600`;

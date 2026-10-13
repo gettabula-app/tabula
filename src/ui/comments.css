@@ -98,7 +98,7 @@
 
 @media (max-width: 860px) {
   .chrome > .side-tray {
-    left: 0; right: 0; top: auto; bottom: 0; width: 100%; max-height: 76dvh; height: min(76dvh, 720px);
+    left: var(--rail-clear); right: 0; top: auto; bottom: 0; width: auto; max-height: 76dvh; height: min(76dvh, 720px);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
   .side-tray-head { min-height: 64px; padding: 24px 8px 4px 16px; }
