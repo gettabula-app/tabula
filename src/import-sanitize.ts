@@ -13,6 +13,7 @@
 import { cleanColor } from '../shared/colors';
 import { ALIGNS, MAX_CELL_CHARS, MAX_COL_WIDTH, MAX_TABLE_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS, MIN_COL_WIDTH, isValidRank, parseTableKey, tableChars } from '../shared/tables';
 import { isSafeHttpUrl } from '../shared/containers';
+import { DEFAULT_CODE_LANG, MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs';
 import { cleanProposedBy } from './safe-obj';
 import type { Obj, Poll, PollAnswer, Vote } from './types';
 
@@ -56,8 +57,8 @@ export function cleanPlain<T>(value: T, depth = 0): T {
   return out as T;
 }
 
-/** The two types whose fields the relay knows no owner, tracker link or attribution for (server/sync-validate.mjs FIELDS: BOX only). */
-const PLAIN_BOX_TYPES = new Set(['markdown', 'table']);
+/** The types (Markdown block, table, code block) whose fields the relay knows no owner, tracker link or attribution for (server/sync-validate.mjs FIELDS: BOX only). */
+const PLAIN_BOX_TYPES = new Set(['markdown', 'table', 'code']);
 const OWNER_FIELDS = ['ownerId', 'ownerName', 'ownerKind'] as const;
 const PART_LIKE = /^[rkwacf]:/;
 
@@ -127,6 +128,19 @@ function cleanTableParts(o: Record<string, unknown>): void {
   }
 }
 
+/**
+ * The fields of a code block in place (docs/code-blocks.md): the language is one of the shared list (plain text when it is not), the
+ * code is cut at MAX_CODE_CHARS (control, zero-width and bidirectional characters are already gone: `cleanPlain`), the title is one
+ * plain line of at most MAX_CODE_TITLE characters, and `lines` and `wrap` are booleans or absent.
+ */
+function cleanCodeFields(o: Record<string, unknown>): void {
+  o.lang = normaliseCodeLang(o.lang) ?? DEFAULT_CODE_LANG;
+  if (typeof o.text === 'string' && o.text.length > MAX_CODE_CHARS) o.text = [...o.text].slice(0, MAX_CODE_CHARS).join('');
+  if (typeof o.title === 'string') o.title = [...o.title.replace(/\s+/g, ' ').trim()].slice(0, MAX_CODE_TITLE).join('');
+  else delete o.title;
+  for (const k of ['lines', 'wrap']) if (k in o && typeof o[k] !== 'boolean') delete o[k];
+}
+
 // ---------------------------------------------------------------- links
 
 /** Whether a link target may be followed: http(s) (shared/containers.mjs isSafeHttpUrl), mailto: and #obj:<id>. */
@@ -165,6 +179,7 @@ const TEMPLATE_KEYS: Record<string, ReadonlySet<string>> = {
   path: new Set([...T_COMMON, 'points']),
   link: new Set([...T_COMMON, 'url', 'title', 'description', 'siteName', 'finalUrl', 'unfurl', 'unfurlError', 'fetchedAt', 'edited']),
   table: new Set([...T_COMMON, 'headerRow', 'headerCol']),
+  code: new Set([...T_COMMON, 'lang', 'title', 'lines', 'wrap']),
   'uml-class': new Set([...T_COMMON, 'stereotype', 'attributes', 'operations']),
   group: new Set(['id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'parent', 'name']),
   connector: new Set(T_CONNECTOR),
@@ -202,6 +217,7 @@ export function sanitizeTemplateObject<T extends object>(src: T): T {
     for (const f of [...OWNER_FIELDS, ...TRACKER_CARD_FIELDS, 'createdBy', 'proposedBy', 'privateStep', 'locked', 'hidden', 'updatedAt']) delete o[f];
   }
   if (type === 'table') cleanTableParts(o);
+  if (type === 'code') cleanCodeFields(o);
   cleanLinkFields(o);
   return o as unknown as T;
 }
@@ -234,6 +250,7 @@ export function sanitizeImportedObjects<T extends Obj>(objs: readonly T[], impor
       for (const f of TRACKER_CARD_FIELDS) delete o[f];
       for (const f of TRACKER_FRAME_FIELDS) delete o[f];
       if (o.type === 'table') cleanTableParts(o);
+      if (o.type === 'code') cleanCodeFields(o);
     }
     cleanLinkFields(o);
     if (o.type === 'card' || o.type === 'container') for (const f of TRACKER_CARD_FIELDS) delete o[f];
