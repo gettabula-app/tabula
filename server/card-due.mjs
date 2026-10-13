@@ -79,7 +79,7 @@ function cardIdsFor(doc, ids) {
  * @param {any} options.directory
  * @param {{ record: Function, ping: Function }} options.notifications
  * @param {Function|number} [options.now]
- * @param {(userId: string, kind: string) => boolean} [options.shouldNotify] The per-person quiet hours and toggles hook (slice 3).
+ * @param {(userId: string, kind: string) => boolean} [options.shouldNotify] The per-member switches (notification-prefs.mjs): false marks the reminder as told without a row.
  */
 export function createCardDue({ directory, notifications, now = Date.now, shouldNotify = () => true }) {
   const db = directory?.db;
@@ -212,9 +212,11 @@ export function createCardDue({ directory, notifications, now = Date.now, should
         const mark = db.prepare(`UPDATE card_due SET ${column} = due WHERE board_id = ? AND card_id = ?`);
         for (const row of rows) {
           if (!activeUser(row.user_id) || directory.boardRole(row.board_id, row.user_id) === null) continue;
-          if (!shouldNotify(row.user_id, kind)) continue;
-          notifications.record({ userId: row.user_id, kind, boardId: row.board_id, ref: row.card_id, createdAt: at }, { notify: false });
+          // A switched-off kind is marked as told without a row, so switching it back on does not release the old reminders.
+          const send = shouldNotify(row.user_id, kind);
+          if (send) notifications.record({ userId: row.user_id, kind, boardId: row.board_id, ref: row.card_id, createdAt: at }, { notify: false });
           mark.run(row.board_id, row.card_id);
+          if (!send) continue;
           counts[kind]++;
           touched.add(row.user_id);
         }

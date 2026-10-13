@@ -341,13 +341,14 @@ function boardPresenceForRoom(user, boardId) {
 }
 
 if (config.authEnabled) {
-  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }, { createNotifications }] = await Promise.all([
+  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }, { createNotifications }, { createNotificationPrefs }] = await Promise.all([
     import('./directory.mjs'),
     import('./mailer.mjs'),
     import('./auth.mjs'),
     import('./api.mjs'),
     import('./cloud.mjs'),
     import('./notifications.mjs'),
+    import('./notification-prefs.mjs'),
   ]);
   let oauthSecret = null;
   if (config.mcp?.oauth) {
@@ -355,6 +356,8 @@ if (config.authEnabled) {
     oauthSecret = loadOAuthSecret(DATA_DIR);
   }
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier, oauthSecret });
+  // The per-member switches (docs/notifications.md, Settings): record() and the card sweep both ask them.
+  const notificationPrefs = createNotificationPrefs({ directory });
   notificationStore = createNotifications({
     directory,
     trackerEnabled: config.tracker === true,
@@ -362,6 +365,7 @@ if (config.authEnabled) {
     chatAccess: (user, kind, ref) => chat?.access?.(user, kind, ref) ?? null,
     roomAccess: { read: (name, fn) => roomAccess.read(name, fn) },
     hub: { notify: (userId, counts) => chatHub?.notify(userId, counts) },
+    prefs: notificationPrefs,
   });
   const sweepNotifications = () => {
     const prune = () => directory.transaction(() => notificationStore.prune());
@@ -374,7 +378,7 @@ if (config.authEnabled) {
   };
   sweepNotifications();
   setInterval(sweepNotifications, NOTIFICATION_SWEEP_MS).unref();
-  cardDue = createCardDue({ directory, notifications: notificationStore });
+  cardDue = createCardDue({ directory, notifications: notificationStore, shouldNotify: (userId, kind) => notificationPrefs.allows(userId, kind) });
   const runCardDue = (fn) => (snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn());
   const sweepCardDue = () => {
     try {

@@ -1,10 +1,17 @@
-// Unified per-person notification endpoints (docs/notifications.md).
+// Unified per-person notification endpoints (docs/notifications.md). The switches (notification-prefs.mjs) are for signed-in
+// accounts only: a guest session is limited to one board and has no notification list of its own.
+
+import { NotificationPrefsInputError } from './notification-prefs.mjs';
 
 export const NOTIFICATIONS_BODY_LIMIT = 8 * 1024;
 const READ_IDS_MAX = 100;
 
 export function createNotificationRoutes({ notifications, compile, errors }) {
-  const { badRequest } = errors;
+  const { badRequest, forbidden, invalidInput } = errors;
+  const prefs = notifications.prefs;
+  const accountOnly = (user) => {
+    if (!user || user.guest === true || user.role === 'guest') throw forbidden('Notification settings are for signed-in accounts');
+  };
 
   return [
     compile('GET', 'notifications', {}, ({ user, query }) => {
@@ -37,6 +44,21 @@ export function createNotificationRoutes({ notifications, compile, errors }) {
         throw badRequest(`ids must be an array of up to ${READ_IDS_MAX} notification ids, or set all to true`);
       }
       return [200, notifications.markRead({ user, ids: body.ids ?? [], all })];
+    }),
+
+    compile('GET', 'notifications/prefs', {}, ({ user }) => {
+      accountOnly(user);
+      return [200, { prefs: prefs.get(user.id) }];
+    }),
+
+    compile('PUT', 'notifications/prefs', { body: true, maxBody: NOTIFICATIONS_BODY_LIMIT, readOnlyOk: true }, ({ user, body }) => {
+      accountOnly(user);
+      try {
+        return [200, { prefs: prefs.set(user.id, body) }];
+      } catch (error) {
+        if (error instanceof NotificationPrefsInputError) throw invalidInput(error.message);
+        throw error;
+      }
     }),
   ];
 }

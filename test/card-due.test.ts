@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { MIGRATIONS } from '../server/directory.mjs';
 import { ASSIGN_WINDOW_MS, CARD_DUE_SETTING, cardDueRow, cardFirstLine, createCardDue, utcDay } from '../server/card-due.mjs';
 import { createNotifications } from '../server/notifications.mjs';
+import { createNotificationPrefs } from '../server/notification-prefs.mjs';
 
 // Card reminders (TAB-164 slice 2): the pure extraction from a board document, the store's index and sweep against an in-memory
 // directory with the real migrations 18 and 19, the assignment notice, the boot backfill, and what the list shows.
@@ -30,6 +31,7 @@ function open() {
     CREATE TABLE board_shares (board_id TEXT NOT NULL, principal_type TEXT NOT NULL, principal_id TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY (board_id, principal_type, principal_id));
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE ticket_events (id INTEGER PRIMARY KEY, ticket_id TEXT, actor_type TEXT, actor_id TEXT, details_json TEXT);
+    CREATE TABLE user_prefs (user_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (user_id, key));
   `);
   // Migration 18 (user_notifications) and 19 (card_due), exactly as the directory runs them.
   for (const index of [17, 18]) {
@@ -90,6 +92,12 @@ function open() {
     },
     setSetting(key: string, value: string) {
       db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value').run(key, value);
+    },
+    getPref(userId: string, key: string) {
+      return db.prepare('SELECT value FROM user_prefs WHERE user_id = ? AND key = ?').get(userId, key)?.value ?? null;
+    },
+    setPref(userId: string, key: string, value: string) {
+      db.prepare('INSERT INTO user_prefs (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value').run(userId, key, value);
     },
   };
   return directory;
@@ -490,3 +498,45 @@ describe('what the list shows', () => {
     expect(live.list({ user: ana })).toMatchObject({ unread: 1, items: [{ kind: 'card_due_soon', actor: null, snippet: 'Ship the thing', board: { id: board.id, title: 'Launch' } }] });
   });
 });
+
+describe('the per-member switches (docs/notifications.md, Settings)', () => {
+  it('marks a reminder told without a row while the switch is off, and does not release it when the switch goes back on', () => {
+    const { directory, notifications, ledger, clock, board, ana } = setup();
+    const prefs = createNotificationPrefs({ directory });
+    const store = createCardDue({ directory, notifications, now: () => clock.at, shouldNotify: (userId, kind) => prefs.allows(userId, kind) });
+    const doc = boardDoc();
+    setCard(doc, 'old-soon', { ownerId: 'ana', ownerKind: 'person', due: TODAY });
+    setCard(doc, 'old-late', { ownerId: 'ana', ownerKind: 'person', due: YESTERDAY });
+    store.upsertFor(board.id, doc, new Set(['old-soon', 'old-late']));
+    prefs.set(ana.id, { cards: false });
+
+    expect(store.sweep(clock.at)).toMatchObject({ card_due_soon: 0, card_overdue: 0 });
+    expect(ledger()).toEqual([]);
+    expect(directory.db.prepare('SELECT card_id, soon_for, overdue_for FROM card_due ORDER BY card_id').all())
+      .toEqual([
+        { card_id: 'old-late', soon_for: null, overdue_for: YESTERDAY },
+        { card_id: 'old-soon', soon_for: TODAY, overdue_for: null },
+      ]);
+
+    prefs.set(ana.id, { cards: true });
+    expect(store.sweep(clock.at)).toMatchObject({ card_due_soon: 0, card_overdue: 0 });
+    expect(ledger()).toEqual([]);
+
+    setCard(doc, 'fresh', { ownerId: 'ana', ownerKind: 'person', due: TODAY });
+    store.upsertFor(board.id, doc, new Set(['fresh']));
+    expect(store.sweep(clock.at)).toMatchObject({ card_due_soon: 1, card_overdue: 0 });
+    expect(ledger('card_due_soon').map((r: any) => r.ref)).toEqual(['fresh']);
+  });
+
+  it('does not write a card_assigned row while the cards switch is off', () => {
+    const { directory, notifications, ledger, board, ana, ben } = setup();
+    const prefs = createNotificationPrefs({ directory });
+    const store = createCardDue({ directory, notifications, now: () => T0, shouldNotify: (userId, kind) => prefs.allows(userId, kind) });
+    const doc = seededDoc(store, board.id);
+    prefs.set(ana.id, { cards: false });
+    setCard(doc, 'card-1', { ownerId: 'ana', ownerKind: 'person', due: TOMORROW });
+    store.upsertFor(board.id, doc, new Set(['card-1']), { actorId: ben.id });
+    expect(ledger()).toEqual([]);
+  });
+});
+

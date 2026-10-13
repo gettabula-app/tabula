@@ -108,7 +108,7 @@ function openPanel(anchor: HTMLElement, store: NotificationsStore, hold: (p: Ret
   const chipAll = chip('all', 'All');
   const chipMentions = chip('mentions', 'Mentions');
   chips.append(chipAll.b, chipMentions.b);
-  const settings = chatAvailable() ? h('button', { class: 'notif-text-btn', type: 'button', onclick: () => { pop.close(); openChatNotifications(); } }, 'Notification settings') : h('span');
+  const settings = h('button', { class: 'notif-text-btn', type: 'button', onclick: () => { pop.close(); openChatNotifications(); } }, 'Notification settings');
   foot.append(settings, h('span', { class: 'notif-note' }, 'Last 90 days'));
 
   const square = (item: NotificationItem) => {

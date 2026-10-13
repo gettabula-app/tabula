@@ -6,6 +6,7 @@ import { ticketAccess, recipientActor, boardAccessForDirectory } from './tracker
 import { notificationContent } from './tracker/inbox.mjs';
 import { snippetOf } from './chat-notify.mjs';
 import { cardFirstLine } from './card-due.mjs';
+import { createNotificationPrefs } from './notification-prefs.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PAGE_BATCH = 100;
@@ -151,6 +152,7 @@ function replySnippet(roomAccess, boardId, threadId, actorId) {
  * @param {{ notify?: Function }|null} [options.hub]
  * @param {Function} [options.now]
  * @param {Function|null} [options.boardAccess]
+ * @param {{ allows: Function }} [options.prefs] the per-member switches (notification-prefs.mjs); one is made from the directory when absent
  */
 export function createNotifications({
   directory,
@@ -161,9 +163,11 @@ export function createNotifications({
   hub = null,
   now = Date.now,
   boardAccess = boardAccessForDirectory(directory),
+  prefs = null,
 }) {
   const db = directory?.db;
   if (!db || typeof db.prepare !== 'function') throw new TypeError('Notifications need a directory database');
+  const switches = prefs ?? createNotificationPrefs({ directory });
 
   const nowValue = () => {
     const value = typeof now === 'function' ? now() : now;
@@ -296,11 +300,16 @@ export function createNotifications({
     };
   }
 
-  /** @param {Record<string, any>} fields @param {{ notify?: boolean }} [options] */
+  /**
+   * Stores one row for a person and pings their open tabs. Returns null, and records nothing, when the person has switched that
+   * kind's group off (docs/notifications.md, Settings). Every writer goes through here.
+   * @param {Record<string, any>} fields @param {{ notify?: boolean }} [options]
+   */
   function record(fields, { notify = true } = {}) {
     const userId = fields?.userId;
     if (typeof userId !== 'string' || !userId) throw new TypeError('Notification needs a recipient');
     if (!KINDS.has(fields.kind)) throw new TypeError('Unknown notification kind');
+    if (!switches.allows(userId, fields.kind)) return null;
     const ref = fields.ref == null ? null : String(fields.ref);
     if (fields.kind === 'chat_mention' && ref !== null) {
       const exists = db.prepare(
@@ -500,5 +509,5 @@ export function createNotifications({
     return { old, overflow, deleted: old + overflow };
   }
 
-  return { record, list, unread: readCounts, markRead, markChatReadThrough, prune, ping };
+  return { record, list, unread: readCounts, markRead, markChatReadThrough, prune, ping, prefs: switches };
 }

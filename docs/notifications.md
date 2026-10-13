@@ -31,8 +31,31 @@ A card with a person owner (not an agent), a `due` date and a lane that is not `
 
 A 15-minute sweep (in SQL, in UTC dates) records `card_due_soon` for a due date of today or tomorrow, and `card_overdue` for a due date before today. Each kind is recorded once per due date, tracked by `soon_for` and `overdue_for`; changing the due date or the owner re-arms them. A person who has lost the board role gets no row, and the row is kept for when they regain it. Rows whose due date is more than 30 days old are deleted.
 
-A one-time boot pass indexes every non-deleted board and sets the settings key `card_due.indexed`. Quiet hours and per-kind settings are not built yet; `shouldNotify` in `server/card-due.mjs` returns true for now.
-- Tracker rows remain in the tracker's notification table and are merged at read time.
+A one-time boot pass indexes every non-deleted board and sets the settings key `card_due.indexed`. The sweep asks the per-member switches (Settings below) through `shouldNotify` in `server/card-due.mjs`.
+
+Tracker rows remain in the tracker's notification table and are merged at read time.
+
+## Settings
+
+Notification settings (the bell's **Notification settings** link, the chat page's **Notifications** button and the **Chat notifications** menu item) holds four switches under **In your notifications**. Each is on until it is switched off, and each is saved as it is changed:
+
+- **Mentions of me in chats and comments**: `chat_mention`, `comment_mention`.
+- **Replies to my comments**: `comment_reply`.
+- **Cards that are due or assigned to me**: `card_due_soon`, `card_overdue`, `card_assigned`.
+- **Boards and teams shared with me**: `board_shared`, `team_joined`.
+
+The chat mention email is a separate switch under **Email** (docs/chat.md, Mentions). Tracker kinds (`ticket_*`) are not in any group: the tracker has its own settings, and they are never affected by these switches.
+
+The switches are stored in `user_prefs` as `notify.mentions`, `notify.replies`, `notify.cards` and `notify.shares`, with `1` or `0`; a missing key is on. The groups and the check are in `server/notification-prefs.mjs`. `GET /api/notifications/prefs` returns `{prefs: {mentions, replies, cards, shares}}`, and `PUT /api/notifications/prefs` takes any of the four as booleans and returns the same shape. An unknown field, a value that is not a boolean or an empty body returns 400 `invalid_input`. Only signed-in accounts may use them; a guest gets 403 `forbidden`. The writes are allowed in a read-only workspace, as the other personal settings are.
+
+What a switch does:
+
+- It stops new rows of its kinds. `notifications.record()` returns null for a person who has the group off, so no row is written, no count changes and no live `notify` frame is sent. The write that caused it (a share, a comment, a card edit) still succeeds.
+- A card reminder that is due while its switch is off is marked as told without a row. Turning the switch back on does not release the reminders from the time it was off; only reminders that come due afterwards are shown.
+- Rows already in the list stay listed and counted until they are read or pruned. A switch does not hide or delete them.
+- It does not change email. No notification row sends an email, and the chat mention email (docs/chat.md) keeps its own switch under **Email**.
+
+Not built: quiet hours. It would be a pause-until switch if push or per-event email ever exists.
 
 No new email is sent. When a row is created or marked read, connected `/chat` sockets for its recipient receive `{t:'notify', unread, unreadMentions}`. The frame contains counts only.
 

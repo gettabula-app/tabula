@@ -31,6 +31,7 @@ function openDirectory() {
       actor_id TEXT REFERENCES users(id) ON DELETE SET NULL, board_id TEXT REFERENCES boards(id) ON DELETE CASCADE,
       team_id TEXT REFERENCES teams(id) ON DELETE CASCADE, ref TEXT, created_at INTEGER NOT NULL, read_at INTEGER
     );
+    CREATE TABLE user_prefs (user_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (user_id, key));
   `);
   const directory: any = {
     db,
@@ -60,6 +61,12 @@ function openDirectory() {
     },
     unshareBoard(boardId: string, principalType: string, principalId: string) {
       db.prepare('DELETE FROM board_shares WHERE board_id = ? AND principal_type = ? AND principal_id = ?').run(boardId, principalType, principalId);
+    },
+    getPref(userId: string, key: string) {
+      return db.prepare('SELECT value FROM user_prefs WHERE user_id = ? AND key = ?').get(userId, key)?.value ?? null;
+    },
+    setPref(userId: string, key: string, value: string) {
+      db.prepare('INSERT INTO user_prefs (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value').run(userId, key, value);
     },
   };
   return directory;
