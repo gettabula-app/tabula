@@ -399,7 +399,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       : null;
     const note = noteOf(b);
     const noteParts = !b.readable
-      ? [badge('Unreadable', 'red'), note.slice('Unreadable'.length)]
+      ? [badge('Unreadable', 'red'), note.slice('Unreadable'.length).replace(/^:\s*/, ' ')]
       : b.protected
         ? [badge('Protected', 'blue'), note.slice('Protected'.length)]
         : [note];

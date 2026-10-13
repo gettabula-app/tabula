@@ -37,7 +37,7 @@
 
 /* Inputs sit inside the 11px label, so the field resets the label's type. */
 .signin .input {
-  height: 40px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); color: var(--ink); --placeholder: var(--ink);
+  width: 100%; box-sizing: border-box; height: 40px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); color: var(--ink); --placeholder: var(--ink);
   background: color-mix(in srgb, var(--ink) 4%, var(--paper)); box-shadow: inset 0 0 0 1px var(--page-hairline), inset 0 -1px 0 var(--field-rule);
   font-size: 14px; font-weight: 400; letter-spacing: normal; text-transform: none;
 }
