@@ -1283,6 +1283,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       setMySubtab(event.key === '[' ? 'active' : 'created');
       return;
     }
+    // Escape in the filter field with text in it clears the text first (the field's own handler); the next one leaves
+    if (event.key === 'Escape' && target instanceof HTMLInputElement && target.classList.contains('trk-filter-input') && target.value && !filterController?.suggestionsOpen()) return;
     const layers: KeyboardLayer[] = [];
     if (!fullScreen) layers.push('work');
     if (fullScreen) layers.push('fullscreen');

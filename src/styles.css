@@ -125,9 +125,11 @@ hr { border: 0; }
 
 /* Pastel status labels use theme pairs so they stay legible across light and dark themes. */
 .tag {
-  display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: fit-content; max-width: 100%; min-height: 20px; padding: 2px 9px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: fit-content; max-width: 100%; min-height: 22px; padding: 0 10px;
   border: 0; border-radius: 9999px; font: 600 10px/1.4 var(--ui); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
 }
+/* an icon in a pill is 12px, vertically centred with the label, and never shrinks */
+.tag > .ico, .tag > svg { flex: none; width: 12px; height: 12px; }
 .tag-yellow { background: var(--tag-yellow); color: var(--on-tag-yellow); }
 .tag-blue { background: var(--tag-blue); color: var(--on-tag-blue); }
 .tag-green { background: var(--tag-green); color: var(--on-tag-green); }
@@ -443,6 +445,7 @@ select.input {
 .props-fold { display: none; }
 .field { margin-top: 12px; }
 .field-label { margin-bottom: 6px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
+.line-height-custom { margin-top: 4px; color: var(--tray-muted); font-size: 12px; line-height: 1.3; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .row2 .field { margin-top: 12px; }
 .swatches { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -869,7 +872,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
     .flowbar.vote-compact > .remove-dots-toggle { width: 44px; padding: 0; gap: 0; font-size: 0; }
     .flowbar.vote-compact > .remove-dots-toggle .ico { display: inline-block; }
   }
-  .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0; gap: 0; }
+  .flowbar.vote-compact > .votes-left { order: 3; height: 44px; min-width: 44px; padding: 0; gap: 0; justify-content: center; }
   .flowbar.vote-compact > .votes-left .dot, .flowbar.vote-compact > .votes-left > span:not(.vote-compact-count) { display: none; }
   .flowbar.vote-compact > .votes-left > .ico { display: none; }
   .flowbar.vote-compact > .votes-left .vote-compact-count { display: inline-flex; margin: 0; }
@@ -1167,6 +1170,9 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 
 /* Long floating panels scroll with a thin themed scrollbar, never the platform default. */
 .chrome :is(.props, .drawer-body, .history-body, .side-tray-panel, .comment-msgs, .aireview-body) { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--tray-text) 28%, transparent) transparent; }
+
+/* Text on the board is measured by the canvas (src/text.ts), which has no tabular figures: draw and edit it with proportional digits, as the measure and the SVG exports do, so a line never comes out wider than the box it was wrapped for. */
+svg.canvas text, .text-editor { font-variant-numeric: normal; }
 
 /* the small pill that follows the pointer in a drag: the axis lock now, the size readout of a resize (docs/guides.md) */
 .drag-pill {

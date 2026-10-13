@@ -172,3 +172,6 @@
 .admin .backups-pick-row:hover,
 .admin .backups-pick-row.on { background: var(--page-hover); border-left: 0; }
 .restoring-body { border-top: 1px solid var(--page-hairline); }
+
+/* "Unreadable: the key is not available": the colon belongs to the pill, with no gap before it */
+.admin .backups-note .backups-badge { margin-right: 0; }

@@ -175,6 +175,41 @@ describe('create', () => {
     expect(zs.every((z) => z > (fresh.get('old') as any).z)).toBe(true);
   });
 
+  it('creates and updates line height on text, sticky, shape and Markdown objects', () => {
+    const d = new Y.Doc();
+    const content = 'line height estimates use wrapping '.repeat(20);
+    const res = create(d, [
+      { type: 'text', ref: 'base', text: content, x: 0, y: 0, w: 100 },
+      { type: 'text', ref: 'large', text: content, x: 0, y: 0, w: 100, lineHeight: 2 },
+      { type: 'sticky', ref: 'sticky', text: 'Note', x: 0, y: 0, lineHeight: 0.8 },
+      { type: 'shape', ref: 'shape', text: 'Shape', x: 0, y: 0, lineHeight: 3 },
+      { type: 'markdown', ref: 'markdown', text: '# Heading\n\nText', x: 0, y: 0, lineHeight: 2 },
+    ]);
+    const get = (ref: string) => new Store(d).get(res.refs[ref]) as any;
+    expect(get('sticky')).toMatchObject({ type: 'sticky', lineHeight: 0.8 });
+    expect(get('shape')).toMatchObject({ type: 'shape', lineHeight: 3 });
+    expect(get('large')).toMatchObject({ type: 'text', lineHeight: 2 });
+    expect(get('markdown')).toMatchObject({ type: 'markdown', lineHeight: 2 });
+    expect(get('large').h).toBeGreaterThan(get('base').h);
+
+    const largeHeight = get('large').h;
+    update(d, [
+      { id: res.refs.large, lineHeight: 1 },
+      { id: res.refs.markdown, lineHeight: 1 },
+      { id: res.refs.sticky, lineHeight: 1.5 },
+      { id: res.refs.shape, lineHeight: 1.15 },
+    ]);
+    expect(get('large').h).toBeLessThan(largeHeight);
+    expect(get('large').lineHeight).toBe(1);
+    expect(get('markdown').lineHeight).toBe(1);
+    expect(get('sticky').lineHeight).toBe(1.5);
+    expect(get('shape').lineHeight).toBe(1.15);
+
+    update(d, [{ id: res.refs.large, lineHeight: null }]);
+    expect(get('large')).not.toHaveProperty('lineHeight');
+    expect(get('large').h).toBe(get('base').h);
+  });
+
   it('creates and updates box flip flags as booleans and returns them from object reads', () => {
     const d = new Y.Doc();
     const made = create(d, [{ type: 'shape', x: 10, y: 20, flipX: true, flipY: false }]);
@@ -1646,4 +1681,3 @@ describe('link cards for agents (docs/link-cards.md, MCP)', () => {
     expect(failure(() => planUpdate(d, [{ id: 'lk', url: 'https://evil.test/' }])).path).toBe('updates[0].url');
   });
 });
-

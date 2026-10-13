@@ -73,7 +73,8 @@ Johan: "go with your picks". These override any RECOMMENDED or OPEN text elsewhe
 
 ### Object storage
 
-- **DECIDED — Current implementation:** BaseObj in src/types.ts has optional text:string and shared style fields including font, fontWeight, fontSize, textColor, align, and valign.
+- **DECIDED — Current implementation:** BaseObj in src/types.ts has optional text:string and shared style fields including font, fontWeight, fontSize, lineHeight, textColor, align, and valign.
+- **DECIDED — Current implementation:** Text, sticky and shape objects use lineHeight 1.3 when the key is absent; Markdown blocks use 1.45. The validator and MCP accept values from 0.8 to 3.
 - **DECIDED — Current implementation:** Align is the union left, center, right. It already controls whole-object text alignment.
 - **DECIDED — Current implementation:** ObjType includes text, sticky, shape, and card, along with frames, images, UML types, and other objects.
 - **DECIDED — Current implementation:** Store in src/store.ts stores each object as a flat Y.Map under the top-level objects Y.Map.

@@ -222,6 +222,23 @@ describe.skipIf(!available)('the Markdown block', () => {
     await page.close();
   }, budget(150_000)); // several slow waits in one test: the file's default test timeout is for one quiet-machine pass
 
+  it('keeps a selection made in the first frame after the source opens (select all is not undone by the deferred focus)', async () => {
+    const page = await open();
+    await seed(page, '# One\n\nsome text');
+    const state = await page.evaluate(async () => {
+      const app = (window as any).__board;
+      app.editor.start('md1');
+      const ta = app.editor.textarea as HTMLTextAreaElement;
+      ta.focus();
+      ta.select(); // what select-all, or a test's fill(''), does before the next frame
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      return { start: ta.selectionStart, end: ta.selectionEnd, length: ta.value.length, focused: document.activeElement === ta };
+    });
+    expect(state).toEqual({ start: 0, end: state.length, length: state.length, focused: true });
+    expect(state.length).toBeGreaterThan(0);
+    await page.close();
+  });
+
   it('is made with the rail tool: click, click on the board, type; the block takes the typed source', async () => {
     const page = await open();
     await openRailTool(page, 'Markdown block');

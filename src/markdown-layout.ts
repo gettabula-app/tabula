@@ -10,6 +10,8 @@ export interface MdStyle {
   font: string;
   size: number;
   weight: number;
+  /** Line-height ratio for the whole block; older style callers keep the original 1.45 default. */
+  lineHeight?: number;
 }
 
 export type MdTone = 'code' | 'quote' | 'rule' | 'table' | 'link' | 'strike' | 'box';
@@ -115,7 +117,7 @@ class Builder {
    * (a heading is bold and large). `dim` draws the text quieter (a quote).
    */
   inline(c: Inline[], x: number, y: number, w: number, size: number, weight: number, dim = false, align: Align = null): number {
-    const lh = size * LINE;
+    const lh = size * (this.style.lineHeight ?? LINE);
     const lines: Run[][] = [[]];
     let used = 0;
     const newLine = () => {

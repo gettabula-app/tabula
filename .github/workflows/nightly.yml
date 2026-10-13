@@ -22,6 +22,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: [24]
+        include:
+          # the oldest Node a self-hoster may run (package.json engines), on Linux; every push tests Node 24 and 26 only
+          - { os: ubuntu-latest, node: 22 }
     steps:
       - uses: actions/checkout@v7
         with:
