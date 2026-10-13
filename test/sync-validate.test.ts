@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { generateNKeysBetween } from 'fractional-indexing';
 import {
   ENFORCE_TEXT_CAPS, EXTRA_TYPES, FIELDS, LIMITS, OBJ_TYPES, UNFURL_ERRORS, SHAPE_KINDS as V_SHAPE_KINDS, HEADS as V_HEADS, ROUTES as V_ROUTES, DASHES as V_DASHES, SIDES as V_SIDES,
   RELATIONS as V_RELATIONS, TOLERATED_UNKNOWN, countCodes, scanStructure, shouldReject, syncValidateMode, validateBoardObject,
@@ -172,7 +173,7 @@ describe('tables', () => {
     expect(paths(check(table({ 'c:r1:c2': 'x'.repeat(1001) })))).toEqual(['too_long:c:r1:c2']);
     expect(paths(check(table({ 'c:r1:c2': 5 })))).toEqual(['bad_type:c:r1:c2']);
     expect(paths(check(table({ 'w:c1': 5 })))).toEqual(['out_of_range:w:c1']);
-    expect(paths(check(table({ 'r:r3': '' })))).toEqual(['too_short:r:r3']);
+    expect(paths(check(table({ 'r:r3': '' })))).toEqual(['bad_value:r:r3']);
     expect(paths(check(table({ 'c:R1:c2': 'x' })))).toEqual(['unknown_field:c:R1:c2']);
     expect(paths(check(table({ 'q:r1': 'x' })))).toEqual(['unknown_field:q:r1']);
     expect(paths(check(table({ headerRow: 'yes' })))).toEqual(['bad_type:headerRow']);
@@ -183,8 +184,16 @@ describe('tables', () => {
     expect(paths(check(table({ 'f:r1:c1': 'url(javascript:alert(1))' })))).toEqual(['bad_value:f:r1:c1']);
     expect(paths(check(table({ 'f:r1:c1': 5 })))).toEqual(['bad_type:f:r1:c1']);
   });
+  it('rejects a rank fractional indexing cannot use, and a table whose cells hold more than 150,000 characters', () => {
+    expect(paths(check(table({ 'r:r3': 'a' })))).toEqual(['bad_value:r:r3']);
+    expect(paths(check(table({ 'k:c3': '!!' })))).toEqual(['bad_value:k:c3']);
+    expect(check(table({ 'r:r3': 'a2', 'k:c3': 'Zz' }))).toEqual({ ok: true });
+    const heavy = Object.fromEntries(Array.from({ length: 151 }, (_, i) => [`c:r1:x${i}`, 'q'.repeat(1000)]));
+    expect(codes(check(table(heavy)))).toContain('table_too_big');
+    expect(codes(check(table(Object.fromEntries(Array.from({ length: 149 }, (_, i) => [`c:r1:x${i}`, 'q'.repeat(1000)])))))).not.toContain('table_too_big');
+  });
   it('limits a table to 100 rows and 30 columns however the writes arrive, and only another type is refused its keys', () => {
-    const many = (kind: string, n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`${kind}:i${i}`, `a${String(i).padStart(3, '0')}`]));
+    const many = (kind: string, n: number) => Object.fromEntries(generateNKeysBetween(null, null, n).map((rank, i) => [`${kind}:i${i}`, rank]));
     expect(codes(check(table({ ...many('r', 101) })))).toContain('too_many_rows');
     expect(codes(check(table({ ...many('k', 31) })))).toContain('too_many_columns');
     expect(check(table({ ...many('r', 98), ...many('k', 28) }))).toEqual({ ok: true });

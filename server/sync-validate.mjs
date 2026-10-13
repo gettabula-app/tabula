@@ -42,7 +42,7 @@
 import { cleanColor } from '../shared/colors.mjs';
 import { isDueDate, isSafeHttpUrl, kanbanColor, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES } from '../shared/containers.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
-import { MAX_CELL_CHARS, MAX_COL_WIDTH, MAX_TABLE_COLS, MAX_TABLE_ROWS, MIN_COL_WIDTH, parseTableKey } from '../shared/tables.mjs';
+import { MAX_CELL_CHARS, MAX_COL_WIDTH, MAX_TABLE_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS, MIN_COL_WIDTH, isValidRank, parseTableKey, tableChars } from '../shared/tables.mjs';
 import { MAX_SVG_BODY } from '../shared/svg-safety.mjs';
 
 // ---------------------------------------------------------------- limits (one table, adjust here)
@@ -329,7 +329,8 @@ const TRACKER_CARD = {
 function tablePartCheck(key) {
   const p = parseTableKey(key);
   if (!p) return null;
-  if (p.kind === 'r' || p.kind === 'k') return str(64, { min: 1 });
+  // a rank must be a key fractional-indexing accepts: any other value would make every insert and move in the table throw
+  if (p.kind === 'r' || p.kind === 'k') return (v) => (typeof v !== 'string' ? 'bad_type' : isValidRank(v) ? null : 'bad_value');
   if (p.kind === 'w') return num(MIN_COL_WIDTH, MAX_COL_WIDTH);
   if (p.kind === 'a') return oneOf(ALIGNS);
   if (p.kind === 'f') return color;
@@ -338,7 +339,10 @@ function tablePartCheck(key) {
 
 /** A table has at most MAX_TABLE_ROWS rows and MAX_TABLE_COLS columns, whatever order the writes came in. */
 function tableCountCodes(value, only) {
-  if (only && ![...only].some((k) => parseTableKey(k)?.kind === 'r' || parseTableKey(k)?.kind === 'k')) return [];
+  const out = [];
+  // all the cell text of one table stays within MAX_TABLE_CHARS, so a table is always inside the per-object byte cap
+  if ((!only || [...only].some((k) => parseTableKey(k)?.kind === 'c')) && tableChars(value) > MAX_TABLE_CHARS) out.push({ code: 'table_too_big', path: '' });
+  if (only && ![...only].some((k) => parseTableKey(k)?.kind === 'r' || parseTableKey(k)?.kind === 'k')) return out;
   let rows = 0;
   let cols = 0;
   for (const k of Object.keys(value)) {
@@ -346,7 +350,7 @@ function tableCountCodes(value, only) {
     if (p?.kind === 'r') rows++;
     else if (p?.kind === 'k') cols++;
   }
-  return [...(rows > MAX_TABLE_ROWS ? [{ code: 'too_many_rows', path: '' }] : []), ...(cols > MAX_TABLE_COLS ? [{ code: 'too_many_columns', path: '' }] : [])];
+  return [...out, ...(rows > MAX_TABLE_ROWS ? [{ code: 'too_many_rows', path: '' }] : []), ...(cols > MAX_TABLE_COLS ? [{ code: 'too_many_columns', path: '' }] : [])];
 }
 
 /** Per type: its own fields added to BOX (or, for connector and group, a list of their own). */

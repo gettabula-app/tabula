@@ -9,7 +9,7 @@ import { tableStyle } from './markup';
 import type { BaseObj } from './types';
 import { cellAt, layoutTable, type TableLayout } from './table-layout';
 import {
-  clearCellsPatch, deleteColPatch, deleteRowPatch, fillFromPatch, insertColPatch, insertRowPatch, moveColPatch, moveRowPatch,
+  MAX_TABLE_CHARS, clearCellsPatch, deleteColPatch, deleteRowPatch, fillFromPatch, insertColPatch, insertRowPatch, moveColPatch, moveRowPatch,
   setAlignPatch, setFillPatch, setWidthPatch, toMarkdownTable, toTsv, parseGrid, type TableAlign, type TablePatch,
 } from '../shared/tables';
 
@@ -359,7 +359,9 @@ export class TableController {
     const { rows, cols } = r.layout.model;
     const row = rows[this.sel.ar] ?? rows[r.r0];
     const col = cols[this.sel.ac] ?? cols[r.c0];
-    this.write(r.o.id, fillFromPatch(fieldsOf(r.o), row, col, grid, newTableId));
+    const patch = fillFromPatch(fieldsOf(r.o), row, col, grid, newTableId);
+    if (!patch) this.app.notify(`That is too much text for one table (up to ${MAX_TABLE_CHARS.toLocaleString('en-US')} characters).`);
+    else this.write(r.o.id, patch);
     return true;
   }
 }

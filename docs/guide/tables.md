@@ -20,7 +20,7 @@ Double-click a cell, or select the table, click a cell and press `Enter`, to typ
 | `Tab` / `Shift+Tab` | Go to the next or previous cell. `Tab` in the last cell adds a row. |
 | `Esc` | Finish |
 
-Cells show **bold**, *italic*, `code` and links as you write them in Markdown (`**bold**`, `*italic*`, `` `code` ``, `[text](https://example.com)`). Headings, lists and other blocks are not used inside a cell. A cell holds up to 1,000 characters and grows taller to fit its text.
+Cells show **bold**, *italic*, `code` and links as you write them in Markdown (`**bold**`, `*italic*`, `` `code` ``, `[text](https://example.com)`). Headings, lists and other blocks are not recognised inside a cell; they show as typed. A cell holds up to 1,000 characters and grows taller to fit its text.
 
 ## Select cells
 
@@ -47,7 +47,7 @@ Drag the border between two columns to change the column's width. A table has up
 
 ## Share and export
 
-PNG, SVG and print show the table drawn as it looks on the board, without the selection. A board file (`.drift`) and a JSON snapshot keep every cell. The board's Markdown summary, which agents read, includes the table as a Markdown table. An AI agent connected with an access token can create a table from rows of text and replace its cells. Tabula's built-in AI features only read tables, through the Markdown summary.
+PNG, SVG and print show the table drawn as it looks on the board, without the selection. A board file (`.drift`) and a JSON snapshot keep every cell. The board's Markdown summary, which agents read, includes the table as a Markdown table. An AI agent connected with an access token can create a table from rows of text and replace its cells. Tabula's built-in AI (Summarise, Cluster and Generate ideas) reads a table's cells like any other object's text. It never changes a table.
 
 ## Not yet
 

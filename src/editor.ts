@@ -6,7 +6,7 @@ import { LABEL_FONT, labelBox, labelPill, layoutText, markdownBoxHeight, styleOf
 import { fontFamily } from './fonts';
 import { MD_PAD } from './markdown-layout';
 import { TABLE_PAD_X, TABLE_PAD_Y, layoutTable } from './table-layout';
-import { MAX_CELL_CHARS, insertRowPatch, setCellPatch, tableModel } from '../shared/tables';
+import { MAX_CELL_CHARS, MAX_TABLE_CHARS, insertRowPatch, setCellPatch, tableModel } from '../shared/tables';
 import { newTableId } from './table-ui';
 import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
@@ -46,6 +46,8 @@ export class TextEditor {
   private id: Id | null = null;
   /** The table cell being edited (mode 'cell'): its row and column ids. */
   private cell: { rowId: string; colId: string } | null = null;
+  /** The text of the edited cell as last written to the board (a keystroke the table cannot hold is put back to it). */
+  private lastCellText = '';
   private mode: EditMode = 'text';
   private unsubCam: (() => void) | null = null;
   private original = '';
@@ -215,6 +217,7 @@ export class TextEditor {
     this.cell = { rowId, colId };
     this.mode = 'cell';
     this.original = model.cell(rowId, colId);
+    this.lastCellText = this.original;
     this.ta.value = this.original;
     this.selectionStart = this.selectionEnd = this.original.length;
     this.ta.dataset.mode = 'cell';
@@ -420,8 +423,13 @@ export class TextEditor {
       const patch = setCellPatch(o as unknown as Record<string, unknown>, this.cell.rowId, this.cell.colId, v);
       if (patch) {
         s.transact(() => s.update(o.id, patch as never));
+        this.lastCellText = v;
         this.app.fitTable(o.id);
-      } else if (this.original !== v) this.ta.value = [...v].slice(0, MAX_CELL_CHARS).join(''); // past the cell limit: the text stays at the limit
+      } else if (this.original !== v) {
+        // past the cell limit or the table's total: the text stays as it was last accepted
+        this.ta.value = this.lastCellText;
+        this.app.notify(`That is as much text as this table can hold (a cell up to ${MAX_CELL_CHARS.toLocaleString('en-US')} characters, a table up to ${MAX_TABLE_CHARS.toLocaleString('en-US')}).`);
+      }
     } else if (this.mode === 'frame') {
       // lane and kanban names have limits (docs/kanban.md, Limits: 60 and 80 characters); a frame's name has none
       const max = o.type === 'lane' ? LIMITS.laneName : o.type === 'container' ? LIMITS.containerName : Infinity;

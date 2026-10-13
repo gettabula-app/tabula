@@ -2,8 +2,9 @@
 // items (src/markdown-layout.ts, inline Markdown only), in the table's own coordinates with the top left at 0,0. Nothing here touches the DOM
 // except the text measurer, so the canvas, the SVG, PNG and print exports and the height the app fits the object to all agree.
 
+import { measureEpoch } from './text';
 import { INLINE_LINE_HEIGHT, layoutInlineText, type MdItem, type MdStyle } from './markdown-layout';
-import { MAX_CELL_CHARS, tableModel, type TableModel } from '../shared/tables';
+import { MAX_CELL_CHARS, isTableKey, tableModel, type TableModel } from '../shared/tables';
 
 export const TABLE_PAD_X = 10;
 export const TABLE_PAD_Y = 7;
@@ -42,7 +43,32 @@ export interface TableFlags {
 /** The smallest a row can be: one line of text and the padding. */
 export const minRowHeight = (size: number) => Math.ceil(size * INLINE_LINE_HEIGHT + TABLE_PAD_Y * 2);
 
+// A big table measures thousands of cells; the canvas, the size heal, hit tests and the editor all ask for the same layout of the same content, so the
+// last layouts are kept by a fingerprint of everything the layout reads (the table's own keys, its header flags and the style).
+const LAYOUTS = new Map<string, { fp: string; layout: TableLayout }>();
+const LAYOUT_CACHE = 24;
+
+function fingerprint(obj: Record<string, unknown> & TableFlags, style: MdStyle): string {
+  let fp = `${measureEpoch()}|${style.font}|${style.size}|${style.weight}|${obj.headerRow === true ? 1 : 0}${obj.headerCol === true ? 1 : 0}`;
+  for (const key of Object.keys(obj)) if (isTableKey(key)) fp += `\u0001${key}\u0002${String(obj[key])}`;
+  return fp;
+}
+
 export function layoutTable(obj: Record<string, unknown> & TableFlags, style: MdStyle): TableLayout {
+  const id = typeof obj.id === 'string' ? obj.id : '';
+  const fp = id ? fingerprint(obj, style) : '';
+  const hit = id ? LAYOUTS.get(id) : undefined;
+  if (hit && hit.fp === fp) return hit.layout;
+  const layout = computeLayout(obj, style);
+  if (id) {
+    LAYOUTS.delete(id);
+    LAYOUTS.set(id, { fp, layout });
+    if (LAYOUTS.size > LAYOUT_CACHE) LAYOUTS.delete(LAYOUTS.keys().next().value as string);
+  }
+  return layout;
+}
+
+function computeLayout(obj: Record<string, unknown> & TableFlags, style: MdStyle): TableLayout {
   const model = tableModel(obj);
   const colX = [0];
   for (const c of model.cols) colX.push(colX[colX.length - 1] + model.width(c));

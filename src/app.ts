@@ -46,7 +46,7 @@ import { watchMarkdownHeights } from './markdown-heal';
 import { watchTableSizes } from './table-heal';
 import { cellAt, layoutTable } from './table-layout';
 import { TableController, newTableId } from './table-ui';
-import { MAX_TABLE_COLS, MAX_TABLE_ROWS, DEFAULT_COL_WIDTH, newTableFields, parseGrid, tableFromGrid } from '../shared/tables';
+import { MAX_TABLE_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS, DEFAULT_COL_WIDTH, gridChars, newTableFields, parseGrid, tableFromGrid } from '../shared/tables';
 import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
@@ -2838,6 +2838,7 @@ export class BoardApp {
     if (lines.length === 0 || !lines.every((l) => l.includes('\t'))) return false;
     const grid = parseGrid(text);
     if (!grid.length || Math.max(...grid.map((r) => r.length)) < 2) return false;
+    if (gridChars(grid) > MAX_TABLE_CHARS) { this.notify(`That is too much text for one table (up to ${MAX_TABLE_CHARS.toLocaleString('en-US')} characters).`); return true; }
     const fields = tableFromGrid(grid, newTableId);
     if (!fields) return false;
     const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());

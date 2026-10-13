@@ -124,6 +124,7 @@ describe('create', () => {
     expect(bad({ rows: Array.from({ length: 101 }, () => ['x']) }).message).toMatch(/1 to 100 rows/);
     expect(bad({ rows: [['x'.repeat(1001)]] }).message).toMatch(/at most 1000 characters/);
     expect(bad({ rows: [[3]] }).message).toMatch(/Must be a string/);
+    expect(bad({ rows: Array.from({ length: 100 }, () => Array.from({ length: 2 }, () => 'y'.repeat(1000))) }).message).toMatch(/at most 150,000 characters/);
     expect(bad({ rows: [['x']], w: 300 })).toBeInstanceOf(OpsError); // the size follows the columns and rows
     const res = create(d, [{ type: 'table', ref: 't', rows: [['x']], x: 0, y: 0 }]);
     expect(failure(() => planUpdate(d, [{ id: res.refs.t, w: 500 }], who))).toBeInstanceOf(OpsError);

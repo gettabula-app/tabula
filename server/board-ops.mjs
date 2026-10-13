@@ -12,7 +12,7 @@ import {
 } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
-import { DEFAULT_COL_WIDTH, MAX_CELL_CHARS, isTableKey, MAX_TABLE_COLS, MAX_TABLE_ROWS, tableFromGrid, tableModel } from '../shared/tables.mjs';
+import { DEFAULT_COL_WIDTH, MAX_CELL_CHARS, MAX_TABLE_CHARS, gridChars, isTableKey, MAX_TABLE_COLS, MAX_TABLE_ROWS, tableFromGrid, tableModel } from '../shared/tables.mjs';
 
 export const LIMITS = Object.freeze({
   bodyBytes: 256 * 1024,
@@ -1223,10 +1223,12 @@ function textHeight(content, w, fontSize) {
 /** The rows of a new table: 1 to MAX_TABLE_ROWS rows of 1 to MAX_TABLE_COLS cell texts of at most MAX_CELL_CHARS characters each. */
 function tableGrid(v, path) {
   if (!Array.isArray(v) || v.length < 1 || v.length > MAX_TABLE_ROWS) throw invalid(path, `Must be a list of 1 to ${MAX_TABLE_ROWS} rows`);
-  return v.map((row, r) => {
+  const grid = v.map((row, r) => {
     if (!Array.isArray(row) || row.length < 1 || row.length > MAX_TABLE_COLS) throw invalid(`${path}[${r}]`, `Must be a list of 1 to ${MAX_TABLE_COLS} cell texts`);
     return row.map((cell, c) => text(cell, `${path}[${r}][${c}]`, 0, MAX_CELL_CHARS, (value) => [...value].length));
   });
+  if (gridChars(grid) > MAX_TABLE_CHARS) throw invalid(path, `All the cells of a table together can hold at most ${MAX_TABLE_CHARS.toLocaleString('en-US')} characters`);
+  return grid;
 }
 
 const CREATE_KEYS = {

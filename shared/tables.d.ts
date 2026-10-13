@@ -8,6 +8,8 @@ type Fields = Record<string, unknown>;
 export const MAX_TABLE_ROWS: number;
 export const MAX_TABLE_COLS: number;
 export const MAX_CELL_CHARS: number;
+export const MAX_TABLE_CHARS: number;
+export const MAX_PARSE_CHARS: number;
 export const MIN_COL_WIDTH: number;
 export const MAX_COL_WIDTH: number;
 export const DEFAULT_COL_WIDTH: number;
@@ -21,14 +23,18 @@ export function widthKey(colId: string): string;
 export function cellKey(rowId: string, colId: string): string;
 export function alignKey(colId: string): string;
 export function fillKey(rowId: string, colId: string): string;
+export function isValidRank(rank: unknown): boolean;
+export function tableChars(obj: Fields | undefined): number;
+export function gridChars(grid: readonly (readonly string[])[]): number;
 export function isTableKey(key: unknown): boolean;
 export function parseTableKey(key: unknown): { kind: 'r' | 'k' | 'w' | 'a'; id: string } | { kind: 'c' | 'f'; rowId: string; colId: string } | null;
 
 export interface TableModel {
   rows: string[];
   cols: string[];
-  rowRanks: Map<string, string>;
-  colRanks: Map<string, string>;
+  /** The stored rank of each row and column, or null when it is not a valid rank (that line sorts last). */
+  rowRanks: Map<string, string | null>;
+  colRanks: Map<string, string | null>;
   width(colId: string): number;
   cell(rowId: string, colId: string): string;
   align(colId: string): TableAlign;

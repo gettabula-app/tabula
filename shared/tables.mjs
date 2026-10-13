@@ -20,6 +20,10 @@ export const MAX_TABLE_ROWS = 100;
 export const MAX_TABLE_COLS = 30;
 /** Characters in one cell. */
 export const MAX_CELL_CHARS = 1000;
+/** The longest text parseGrid reads. */
+export const MAX_PARSE_CHARS = 1_000_000;
+/** Characters of cell text in one table, all cells together: keeps a table well inside the validator's per-object byte cap (256 KiB) with room for its keys. */
+export const MAX_TABLE_CHARS = 150_000;
 export const MIN_COL_WIDTH = 60;
 export const MAX_COL_WIDTH = 800;
 export const DEFAULT_COL_WIDTH = 160;
@@ -45,7 +49,19 @@ export function parseTableKey(key) {
   return m[1] ? { kind: m[1], id: m[2] } : { kind: m[3], rowId: m[4], colId: m[5] };
 }
 
-const byRank = (a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+/** Whether a stored rank is a key fractional-indexing accepts: anything else (a hostile or damaged value) would make generateKeyBetween throw. */
+export function isValidRank(rank) {
+  if (typeof rank !== 'string' || rank === '' || rank.length > 64) return false;
+  try {
+    generateKeyBetween(rank, null);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// a row or column with an invalid rank is kept (its cells still show) and sorts after every valid one, by id
+const byRank = (a, b) => (a.valid !== b.valid ? (a.valid ? -1 : 1) : a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /**
  * What a table object holds, in order. `rows` and `cols` are sorted by rank (ties by id, so every client agrees), `width(colId)`
@@ -62,8 +78,8 @@ export function tableModel(obj) {
     const p = parseTableKey(key);
     if (!p) continue;
     const value = obj[key];
-    if (p.kind === 'r' && typeof value === 'string') rows.push({ id: p.id, rank: value });
-    else if (p.kind === 'k' && typeof value === 'string') cols.push({ id: p.id, rank: value });
+    if (p.kind === 'r' && typeof value === 'string') rows.push({ id: p.id, rank: value, valid: isValidRank(value) });
+    else if (p.kind === 'k' && typeof value === 'string') cols.push({ id: p.id, rank: value, valid: isValidRank(value) });
     else if (p.kind === 'w' && typeof value === 'number' && Number.isFinite(value)) widths.set(p.id, Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, value)));
     else if (p.kind === 'c' && typeof value === 'string') cells.set(key, value);
     else if (p.kind === 'a' && ALIGNS.includes(value)) aligns.set(p.id, value);
@@ -76,8 +92,8 @@ export function tableModel(obj) {
   return {
     rows: rows.map((r) => r.id),
     cols: cols.map((c) => c.id),
-    rowRanks: new Map(rows.map((r) => [r.id, r.rank])),
-    colRanks: new Map(cols.map((c) => [c.id, c.rank])),
+    rowRanks: new Map(rows.map((r) => [r.id, r.valid ? r.rank : null])),
+    colRanks: new Map(cols.map((c) => [c.id, c.valid ? c.rank : null])),
     width: (colId) => widths.get(colId) ?? DEFAULT_COL_WIDTH,
     cell: (rowId, colId) => (rowIds.has(rowId) && colIds.has(colId) ? cells.get(cellKey(rowId, colId)) ?? '' : ''),
     align: (colId) => aligns.get(colId) ?? 'left',
@@ -97,11 +113,14 @@ export function newTableFields(rows, cols, newId) {
   return fields;
 }
 
-/** The rank for a new line placed after the one at index `at` (-1 puts it first), among the ranks in order. */
+/**
+ * The rank for a new line placed after the one at index `at` (-1 puts it first), among the ranks in order. A line whose stored rank is not valid (null here)
+ * sorts last and is skipped: the new rank goes between the valid ranks around that place, so a damaged value never stops the table from changing.
+ */
 function rankAfter(ranks, at) {
-  const before = at >= 0 ? ranks[at] ?? null : null;
-  const after = at + 1 < ranks.length ? ranks[at + 1] : null;
-  return generateKeyBetween(before, after);
+  const valid = ranks.filter((r) => r !== null);
+  const upTo = ranks.slice(0, Math.max(0, at + 1)).filter((r) => r !== null).length;
+  return generateKeyBetween(valid[upTo - 1] ?? null, valid[upTo] ?? null);
 }
 
 const orderedRanks = (map, ids) => ids.map((id) => map.get(id));
@@ -168,7 +187,23 @@ export function setCellPatch(obj, rowId, colId, text) {
   if (!m.rowRanks.has(rowId) || !m.colRanks.has(colId) || typeof text !== 'string') return null;
   const clean = text.replace(/\r\n?/g, '\n');
   if ([...clean].length > MAX_CELL_CHARS) return null;
+  // all the cells together stay within MAX_TABLE_CHARS (a cell may always be shortened)
+  if (clean.length > m.cell(rowId, colId).length && tableChars(obj) - m.cell(rowId, colId).length + clean.length > MAX_TABLE_CHARS) return null;
   return { [cellKey(rowId, colId)]: clean === '' ? undefined : clean };
+}
+
+/** The characters of cell text in a table object, counted over every cell key (also those of a row or column that is gone). */
+export function tableChars(obj) {
+  let n = 0;
+  for (const key of Object.keys(obj ?? {})) if (parseTableKey(key)?.kind === 'c' && typeof obj[key] === 'string') n += obj[key].length;
+  return n;
+}
+
+/** The characters of cell text in a grid, as `tableFromGrid` would keep them (each cell cut at MAX_CELL_CHARS). */
+export function gridChars(grid) {
+  let n = 0;
+  for (const row of grid) for (const cell of row) n += Math.min(cell.length, MAX_CELL_CHARS);
+  return n;
 }
 
 /** The patch that sets a column's width, kept within bounds. */
@@ -214,7 +249,8 @@ export function clearCellsPatch(obj, rowIds, colIds) {
  * in the first line decides TSV. Cells are trimmed of surrounding blank space; a trailing empty line is not a row.
  */
 export function parseGrid(text) {
-  const src = String(text ?? '').replace(/\r\n?/g, '\n');
+  // far more than a table can hold: stop before the work, the caller's caps then apply to what is left
+  const src = String(text ?? '').slice(0, MAX_PARSE_CHARS).replace(/\r\n?/g, '\n');
   if (!src.trim()) return [];
   const firstLine = src.split('\n', 1)[0];
   const sep = firstLine.includes('\t') ? '\t' : ',';
@@ -258,6 +294,7 @@ export function fillFromPatch(obj, rowId, colId, grid, newId) {
   let r0 = model.rows.indexOf(rowId);
   let c0 = model.cols.indexOf(colId);
   if (r0 < 0 || c0 < 0 || !grid.length) return null;
+  if (tableChars(obj) + gridChars(grid) > MAX_TABLE_CHARS) return null;
   const working = { ...obj };
   const patch = {};
   const apply = (p) => { Object.assign(patch, p); Object.assign(working, p); };

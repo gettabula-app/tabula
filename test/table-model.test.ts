@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { Store } from '../src/store';
 import {
   MAX_CELL_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS, cellKey, deleteColPatch, deleteRowPatch, fillFromPatch, insertColPatch, insertRowPatch,
-  clearCellsPatch, moveColPatch, moveRowPatch, newTableFields, parseGrid, setAlignPatch, setCellPatch, setFillPatch, setWidthPatch, tableFromGrid, tableModel, toMarkdownTable, toTsv,
+  MAX_TABLE_CHARS, gridChars, isValidRank, tableChars, clearCellsPatch, moveColPatch, moveRowPatch, newTableFields, parseGrid, setAlignPatch, setCellPatch, setFillPatch, setWidthPatch, tableFromGrid, tableModel, toMarkdownTable, toTsv,
 } from '../shared/tables';
 
 // The table model (TAB-121, docs/tables.md): one flat map whose keys are its parts, so different cells and concurrent row or
@@ -95,6 +95,65 @@ describe('table model', () => {
     apply(t, setWidthPatch(t, c, 9999));
     expect(tableModel(t).width(c)).toBe(800);
     expect(setWidthPatch(t, c, Number.NaN)).toBeNull();
+  });
+});
+
+describe('a damaged rank does not stop the table (review of TAB-121)', () => {
+  it('knows which ranks fractional indexing accepts', () => {
+    expect(['a0', 'a1', 'Zz', 'b00', 'a0V'].map(isValidRank)).toEqual([true, true, true, true, true]);
+    expect(['', 'a', '!!', '0', 'x'.repeat(65), 5, null].map(isValidRank)).toEqual([false, false, false, false, false, false, false]);
+  });
+
+  it('still inserts, moves and deletes rows and columns when stored ranks are invalid, and keeps the cells of such a line', () => {
+    const t = fresh(2, 2) as Record<string, unknown>;
+    const m0 = tableModel(t);
+    t['r:bad1'] = 'a'; // not a key fractional-indexing accepts: generateKeyBetween would throw on it
+    t['k:bad2'] = '!!';
+    t['c:bad1:bad2'] = 'kept';
+    const m = tableModel(t);
+    expect(m.rows).toEqual([...m0.rows, 'bad1']); // a damaged line sorts last
+    expect(m.cols).toEqual([...m0.cols, 'bad2']);
+    expect(m.cell('bad1', 'bad2')).toBe('kept');
+    apply(t, insertRowPatch(t, 0, 'newrow'));
+    apply(t, insertColPatch(t, -1, 'newcol'));
+    apply(t, insertRowPatch(t, 99, 'last'));
+    apply(t, moveRowPatch(t, 'bad1', 0));
+    apply(t, moveColPatch(t, 'bad2', 1));
+    expect(tableModel(t).rows[0]).toBe('bad1');
+    expect(isValidRank(t['r:bad1'] as string)).toBe(true); // moving it healed its rank
+    apply(t, deleteRowPatch(t, m0.rows[0]));
+    apply(t, deleteColPatch(t, m0.cols[0]));
+    expect(tableModel(t).rows.includes('newrow')).toBe(true);
+  });
+});
+
+describe('the table text cap', () => {
+  it('refuses a cell that would take the whole table past MAX_TABLE_CHARS, and always lets a cell shrink', () => {
+    const t = fresh(1, 3) as Record<string, unknown>;
+    const { rows, cols } = tableModel(t);
+    const big = 'x'.repeat(1000);
+    // fill most of the budget through the raw keys (as an import would)
+    t[`c:${rows[0]}:${cols[0]}`] = big;
+    for (let i = 0; i < 148; i++) t[`c:fill${i}:${cols[1]}`] = big; // orphan cells count too
+    expect(tableChars(t)).toBe(149 * 1000);
+    expect(setCellPatch(t, rows[0], cols[1], big)).not.toBeNull(); // 150,000 exactly
+    apply(t, setCellPatch(t, rows[0], cols[1], big));
+    expect(setCellPatch(t, rows[0], cols[2], 'x')).toBeNull(); // one more character is over
+    expect(setCellPatch(t, rows[0], cols[0], 'short')).not.toBeNull();
+    expect(MAX_TABLE_CHARS).toBe(150_000);
+  });
+
+  it('a paste that would pass the cap is refused by fillFromPatch, and gridChars counts what a grid would keep', () => {
+    const t = fresh(1, 1) as Record<string, unknown>;
+    const { rows, cols } = tableModel(t);
+    expect(gridChars([['a'.repeat(5000), 'bc']])).toBe(1002);
+    const grid = Array.from({ length: 100 }, () => Array.from({ length: 2 }, () => 'y'.repeat(1000)));
+    expect(fillFromPatch(t, rows[0], cols[0], grid, ids)).toBeNull(); // 200,000
+  });
+
+  it('parseGrid reads no more than 1 MB', () => {
+    const grid = parseGrid(`a\tb\n${'z'.repeat(2_000_000)}`);
+    expect(grid[1][0].length).toBeLessThan(1_000_000);
   });
 });
 

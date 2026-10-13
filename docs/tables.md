@@ -24,11 +24,15 @@ TAB-186 (typed columns, formulas, named variables) adds more per-column keys bes
 
 ## Limits
 
-100 rows, 30 columns, 1,000 characters per cell (the validator counts code points), and the validator's object size cap (256 KiB) bounds the rest. `server/sync-validate.mjs` checks every key by its pattern (`tablePartCheck`) and the counts (`tableCountCodes`).
+100 rows, 30 columns, 1,000 characters per cell (the validator counts code points), and 150,000 characters of cell text in one table (`MAX_TABLE_CHARS`, summed over every `c:` key, so it also bounds orphan cell keys). The total keeps a table inside the validator's per-object byte cap (256 KiB) with room for its keys; it is enforced in the model (`setCellPatch`, `fillFromPatch`), in a new-table paste, in MCP `rows`, and in the validator (`table_too_big`). Ranks must be keys fractional-indexing accepts (`isValidRank`): the validator refuses others, and the model tolerates a damaged rank anyway (that row or column sorts last, keeps its cells, and gets a valid rank when it is moved), so a hostile write cannot stop inserts and moves. `parseGrid` reads at most 1 MB. `server/sync-validate.mjs` checks every key by its pattern (`tablePartCheck`) and the counts (`tableCountCodes`).
 
 ## Size
 
 A table's `w` and `h` are derived: the sum of the column widths and of the row heights (a row is as tall as its tallest cell, at least one line). `src/table-layout.ts` computes them and the drawing; the app keeps the stored size equal to it after this person's edits (`app.fitTable`), and `src/table-heal.ts` repairs it after remote edits, agent writes and on load, with the rules of the card and Markdown heals (an untracked origin, another editor's size-only write adopted, never re-measured). The object has no resize or rotate handles.
+
+## Cost
+
+A full-size table (100 rows x 30 columns of 40-character cells) measures in about 46 ms cold (3,000 cells) in Chromium; `layoutTable` keeps the last 24 layouts by a fingerprint of the table's keys, its header flags, the style and the text-measure epoch (cleared when fonts load), so asking again costs about 1 ms. The canvas redraws an object only when it changed, not on pan or zoom. That table's SVG is about 6 MB (every word is a text element), so very large tables are slow to redraw after a change; the 150,000-character cap is the bound.
 
 ## Drawing
 
@@ -40,7 +44,11 @@ A table's `w` and `h` are derived: the sum of the column widths and of the row h
 
 ## MCP
 
-`create_objects` takes `{ type: 'table', rows: string[][], headerRow?, headerCol?, fontSize?, x, y, parent? }`; `update_objects` takes `rows` (replaces every cell), `headerRow`, `headerCol`, `fontSize`, position. Reads return `rows` (cleaned text, cut at 20,000 characters in total). `server/board-export.mjs` writes the Markdown summary as a quoted Markdown table.
+`create_objects` takes `{ type: 'table', rows: string[][], headerRow?, headerCol?, fontSize?, x, y, parent? }`; `update_objects` takes `rows` (replaces every cell: new row and column ids, so widths, alignment and fills are dropped; TAB-186's stable ids will need a cell-level update instead), `headerRow`, `headerCol`, `fontSize`, position. Reads return `rows` (cleaned text, cut at 20,000 characters in total). `server/board-export.mjs` writes the Markdown summary as a quoted Markdown table.
+
+## Clipboard text
+
+Copying cells writes plain tab-separated text. A cell that starts with `=`, `+`, `-` or `@` can be read as a formula by a program that opens pasted text; nothing is added or removed on copy. If a CSV export is added, prefix such cells with an apostrophe there.
 
 ## Not in v1
 
