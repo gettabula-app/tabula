@@ -5,7 +5,7 @@ import { DEFAULT_MODEL, MODELS } from './anthropic.mjs';
 import { checkBaseUrl, checkModelId } from './base-url.mjs';
 import { PROVIDERS } from './providers.mjs';
 
-export const FEATURES = ['generate', 'summarise', 'cluster'];
+export const FEATURES = ['generate', 'summarise', 'cluster', 'visualise'];
 export const DEFAULT_LIMITS = Object.freeze({ perPersonHour: 20, perWorkspaceHour: 200 });
 export const LIMIT_CAPS = Object.freeze({ perPersonHour: 1000, perWorkspaceHour: 10_000 });
 export const API_KEY_MIN = 8;

@@ -5,9 +5,12 @@ import { fileURLToPath } from 'node:url';
 import type { BoardApp } from '../src/app';
 import type { AiConfig, UserRole } from '../src/api';
 import { aiBarFor, aiBarShown, mountAiBar } from '../src/ui/ai-bar';
+import { showVisualization } from '../src/ui/ai-visualization';
 import { openAiConfig } from '../server/ai/routes.mjs';
 import { aiCreditsAvailable } from '../server/ai/settings.mjs';
-import { FakeElement, installFakeBrowser, type FakeBrowser } from './fake-dom';
+import { FakeElement, FakeEvent, installFakeBrowser, need, type FakeBrowser } from './fake-dom';
+
+vi.mock('../src/ui/ai-visualization', () => ({ showVisualization: vi.fn<typeof showVisualization>() }));
 
 const auth = vi.hoisted(() => ({ mode: 'signed-in' as 'signed-in' | 'open', role: 'member' as UserRole, listeners: new Set<() => void>() }));
 vi.mock('../src/auth', () => ({
@@ -24,6 +27,8 @@ beforeEach(() => {
   auth.mode = 'signed-in';
   auth.role = 'member';
   auth.listeners.clear();
+  vi.mocked(showVisualization).mockReset();
+  vi.mocked(showVisualization).mockImplementation((_value, options) => ({ close: vi.fn<() => void>(() => options.onClose?.()) }));
   vi.stubGlobal('requestAnimationFrame', () => 1);
   vi.stubGlobal('cancelAnimationFrame', () => undefined);
   vi.stubGlobal('Element', FakeElement);
@@ -65,6 +70,7 @@ function mount(role: UserRole, answer: AiConfig, mode: 'signed-in' | 'open' = 's
   const app = {
     r, store, selection: [], flow: { isHidden: () => false }, user: { id: 'u1', name: 'Johan', color: '#2F6FED' },
     readOnly: false,
+    conn: { id: 'board1' },
     on: () => () => undefined,
     onDestroy: (fn: () => void) => destroyers.push(fn),
   } as unknown as BoardApp;
@@ -148,6 +154,55 @@ describe('AI bar availability', () => {
     await waitForConfig(t.fetchMock);
     expect(t.chrome.querySelector('.aibar')).toBeNull();
     expectNoBar(t);
+  });
+});
+
+describe('visualisation from the AI bar', () => {
+  const visual = { title: 'A counter', description: 'Change the number.', initialHeight: 320, css: '', html: '<output>0</output>', jsFunctions: '', jsExpressions: [] };
+  const result = () => new Response(`event: result\ndata: ${JSON.stringify({ visualization: visual, cut: true })}\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+
+  async function start() {
+    const answer = config(true, 'workspace', { features: ['generate', 'visualise'] });
+    const t = mount('member', answer);
+    await vi.waitFor(() => expect(t.chrome.querySelector('.aibar')).not.toBeNull());
+    t.fetchMock.mockImplementation(async (input) => String(input) === '/api/ai/run' ? result() : new Response(JSON.stringify(answer)));
+    aiBarFor(t.app)!.open({ arm: 'visualise', context: 'none' });
+    const prompt = need(t.chrome, '.aibar-input');
+    prompt.value = 'Make a counter';
+    prompt.dispatchEvent(new FakeEvent('input'));
+    t.chrome.querySelectorAll('button').find((b) => b.textContent === 'Run')!.click();
+    await vi.waitFor(() => expect(showVisualization).toHaveBeenCalledTimes(1));
+    return { ...t, answer };
+  }
+
+  it('opens the visual result without a board preview, and Retry repeats the same request', async () => {
+    const t = await start();
+    expect(t.chrome.querySelector('.aibar')!.getAttribute('data-ui')).toBe('idle');
+    expect(t.chrome.querySelectorAll('button').some((b) => b.textContent === 'Add to board')).toBe(false);
+    expect(showVisualization).toHaveBeenCalledWith(visual, expect.objectContaining({ cut: true }));
+    vi.mocked(showVisualization).mock.calls[0][1].onRetry();
+    await vi.waitFor(() => expect(showVisualization).toHaveBeenCalledTimes(2));
+    const runs = t.fetchMock.mock.calls.filter(([input]) => String(input) === '/api/ai/run');
+    expect(runs).toHaveLength(2);
+    expect(runs[0][1]?.body).toBe(runs[1][1]?.body);
+    expect(JSON.parse(String(runs[0][1]?.body))).toMatchObject({ feature: 'visualise', input: { prompt: 'Make a counter' } });
+  });
+
+  it('closes an open visual when the admin disables the feature', async () => {
+    const t = await start();
+    const handle = vi.mocked(showVisualization).mock.results[0].value;
+    t.answer.features = ['generate'];
+    for (const listener of auth.listeners) listener();
+    await vi.waitFor(() => expect(handle.close).toHaveBeenCalledTimes(1));
+    expect(t.chrome.querySelector('.aibar')).not.toBeNull();
+  });
+
+  it('closes an open visual when the board is destroyed', async () => {
+    await start();
+    const handle = vi.mocked(showVisualization).mock.results[0].value;
+    destroyers.forEach((destroy) => destroy());
+    expect(handle.close).toHaveBeenCalledTimes(1);
+    destroyers = [];
   });
 });
 

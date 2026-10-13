@@ -1,6 +1,7 @@
 import type { AiConfig, AiFeature } from './api';
 import type { AiProposal } from './ai-apply';
 import { PROVIDER_LABEL } from './ui/ai-logic';
+import { isVisualization, type Visualization } from '../shared/ai-visualization';
 
 // The pure rules and text of the AI bar (docs/ai-toolbar.md, docs/ai.md): no DOM, so they can be unit tested. src/ui/ai-bar.ts
 // reads the board, draws the bar and calls the relay; everything it can decide without either lives here.
@@ -81,15 +82,16 @@ export function contextMenu(facts: Facts): ContextItem[] {
 
 // ---------------------------------------------------------------- chips and arming
 
-export const FEATURE_LABEL: Record<AiFeature, string> = { summarise: 'Summarise', cluster: 'Cluster', generate: 'Generate ideas' };
+export const FEATURE_LABEL: Record<AiFeature, string> = { summarise: 'Summarise', cluster: 'Cluster', generate: 'Generate ideas', visualise: 'Visualise' };
 /** What Run says it starts. */
-export const RUN_LABEL: Record<AiFeature, string> = { summarise: 'Summarise', cluster: 'Cluster', generate: 'Generate sticky notes' };
+export const RUN_LABEL: Record<AiFeature, string> = { summarise: 'Summarise', cluster: 'Cluster', generate: 'Generate sticky notes', visualise: 'Create a visualisation' };
 
 /** The chip row, in order. A feature adds a chip by adding an entry here. */
 export const CHIPS: { id: AiFeature; label: string }[] = [
   { id: 'summarise', label: FEATURE_LABEL.summarise },
   { id: 'cluster', label: FEATURE_LABEL.cluster },
   { id: 'generate', label: FEATURE_LABEL.generate },
+  { id: 'visualise', label: FEATURE_LABEL.visualise },
 ];
 
 export const TURNED_OFF = 'Turned off for this workspace';
@@ -132,6 +134,7 @@ export function toggleArmed(armed: AiFeature | null, id: AiFeature, ctx: AiConte
 
 /** What Run or Enter starts: the armed action, else Generate when a prompt is typed. Null when nothing would run. */
 export function runTarget(armed: AiFeature | null, prompt: string, ctx: AiContext, facts: Facts, allowed: readonly AiFeature[]): AiFeature | null {
+  if (armed === 'visualise' && !prompt.trim()) return null;
   const feature = armed && armed !== 'generate' ? armed : prompt.trim() ? 'generate' : null;
   return feature && chipState(feature, ctx, facts, allowed).enabled ? feature : null;
 }
@@ -146,6 +149,7 @@ export const PLACEHOLDER_OPTIONAL = 'Optional instruction…';
 export const PLACEHOLDER_CLUSTER = 'Groups the selected stickies by theme';
 
 export function placeholderFor(armed: AiFeature | null): string {
+  if (armed === 'visualise') return 'Describe a diagram, calculator or interactive example…';
   if (armed === 'summarise') return PLACEHOLDER_OPTIONAL;
   if (armed === 'cluster') return PLACEHOLDER_CLUSTER;
   return PLACEHOLDER;
@@ -156,6 +160,7 @@ export const promptSent = (feature: AiFeature | null): boolean => feature !== 'c
 
 /** The words of a running bar: "Summarising 42 stickies…". */
 export function runningText(feature: AiFeature, ctx: AiContext, facts: Facts): string {
+  if (feature === 'visualise') return 'Creating a visualisation…';
   if (feature === 'generate') return 'Generating ideas…';
   const verb = feature === 'summarise' ? 'Summarising' : 'Clustering';
   const n = ctx === 'selection' ? facts.selected : ctx === 'view' ? facts.inView : ctx === 'board' ? facts.onBoard : 0;
@@ -176,7 +181,7 @@ export const modelShort = (id: string): string => {
 };
 
 /** The reply cap per feature (server/ai/features.mjs). */
-export const OUTPUT_CAP: Record<AiFeature, number> = { generate: 4000, summarise: 8000, cluster: 8000 };
+export const OUTPUT_CAP: Record<AiFeature, number> = { generate: 4000, summarise: 8000, cluster: 8000, visualise: 16000 };
 
 /** Input tokens of a run, guessed in the browser: about 1,000 for the system prompt, 100 per sticky, a quarter of the prompt's characters. */
 export function estimateTokens(stickies: number, promptChars: number): number {
@@ -219,6 +224,7 @@ export const CHOSEN_BY_ADMIN = 'Chosen by your workspace admin.';
 export const VISIBILITY_OFF = 'Others on this board see that you are asking AI, and see your preview.';
 export const VISIBILITY_ON = 'Nobody else on this board sees the run or the preview until you add it.';
 export const NOT_PRIVATE = "Runs on the workspace key can't be private: the workspace pays for them.";
+export const VISUAL_VISIBILITY = 'The visualisation opens only for you. It closes when you leave the board.';
 
 export function thisRunText(tokens: number, cap: number): string {
   return `About ${formatExact(tokens)} tokens go in; the reply is capped at ${thousands(cap)}. An estimate, not a bill.`;
@@ -263,6 +269,7 @@ export const PREVIEW_NOTE = 'Nothing is on the board until you add it';
 export const previewKeys = (kind: AiProposal['kind']): string => (kind === 'group' ? 'Enter moves them, Esc discards' : 'Enter adds, Esc discards');
 
 export interface DisclosureInput {
+  feature?: AiFeature | null;
   ui: BarUi;
   ctx: AiContext;
   facts: Facts;
@@ -281,7 +288,7 @@ export function disclosure(o: DisclosureInput): [string, string] {
   if (o.ui === 'preview') return [PREVIEW_NOTE, previewKeys(o.proposalKind ?? 'create')];
   const sends = sendsText(o.ctx, o.facts, o.prompt, o.withPrompt);
   if (o.ui === 'running') return [sends, priv ? 'Private run · Esc stops' : 'Esc stops'];
-  return [sends, keyText(o.keySource, priv, o.credits)];
+  return [sends, `${keyText(o.keySource, priv, o.credits)}${o.feature === 'visualise' ? ' · Preview on this device' : ''}`];
 }
 
 // ---------------------------------------------------------------- the request
@@ -323,7 +330,7 @@ export function buildRunBody(o: BodyInput): RunBody {
   const ids = contextIds(o);
   const prompt = o.prompt.trim().slice(0, PROMPT_MAX).trim();
   const input: Record<string, unknown> = {};
-  if (o.feature === 'generate') input.prompt = prompt;
+  if (o.feature === 'generate' || o.feature === 'visualise') input.prompt = prompt;
   if (o.feature === 'summarise' && prompt) input.prompt = prompt;
   if (ids.length) input.selection = ids;
 
@@ -406,6 +413,7 @@ export function createSseParser(onMessage: (m: SseMessage) => void): { push(chun
 export type AiStreamEvent =
   | { type: 'progress'; n: number; runId: string | null }
   | { type: 'result'; runId: string | null; proposal: AiProposal; cut: boolean }
+  | { type: 'visualization'; visualization: Visualization; cut: boolean }
   | { type: 'error'; code: string; message: string | null };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -429,7 +437,10 @@ export function parseAiEvent(m: SseMessage): AiStreamEvent | null {
   if (!isRecord(data)) return null;
   const runId = typeof data.runId === 'string' ? data.runId : null;
   if (m.event === 'progress') return { type: 'progress', n: typeof data.n === 'number' ? data.n : 0, runId };
-  if (m.event === 'result') return isProposal(data.proposal) ? { type: 'result', runId, proposal: data.proposal, cut: data.cut === true } : null;
+  if (m.event === 'result') {
+    if (isVisualization(data.visualization)) return { type: 'visualization', visualization: data.visualization, cut: data.cut === true };
+    return isProposal(data.proposal) ? { type: 'result', runId, proposal: data.proposal, cut: data.cut === true } : null;
+  }
   if (m.event === 'error') return { type: 'error', code: typeof data.error === 'string' ? data.error : 'internal', message: typeof data.message === 'string' ? data.message : null };
   return null;
 }
@@ -443,7 +454,10 @@ export interface AiFailure {
   retryAfter: number | null;
 }
 
-export type AiOutcome = { ok: true; runId: string | null; proposal: AiProposal; cut: boolean } | { ok: false; failure: AiFailure };
+export type AiOutcome =
+  | { ok: true; runId: string | null; proposal: AiProposal; cut: boolean }
+  | { ok: true; visualization: Visualization; cut: boolean }
+  | { ok: false; failure: AiFailure };
 
 const failed = (code: string, status = 0, message: string | null = null, retryAfter: number | null = null): AiOutcome => ({ ok: false, failure: { code, status, message, retryAfter } });
 
@@ -502,6 +516,7 @@ export async function runAi(fetchFn: typeof fetch, body: RunBody, opts: { signal
         onRunId?.(ev.runId);
       }
     } else if (ev.type === 'result') seen.outcome = { ok: true, runId: ev.runId ?? seen.runId, proposal: ev.proposal, cut: ev.cut };
+    else if (ev.type === 'visualization') seen.outcome = { ok: true, visualization: ev.visualization, cut: ev.cut };
     else seen.outcome = failed(ev.code, 200, ev.message);
   });
   try {

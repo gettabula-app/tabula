@@ -95,7 +95,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'updates.auto',
   'telemetry.enabled', 'telemetry.disabled', 'telemetry.settings',
   'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.key.test',
-  'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
+  'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.visualise', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
   'linkPreviews.enabled', 'linkPreviews.disabled',
   'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
@@ -353,8 +353,9 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     }
     case 'ai.generate':
     case 'ai.summarise':
-    case 'ai.cluster': {
-      const what = { 'ai.generate': 'generated stickies on', 'ai.summarise': 'summarised', 'ai.cluster': 'grouped stickies on' }[entry.action];
+    case 'ai.cluster':
+    case 'ai.visualise': {
+      const what = { 'ai.generate': 'generated stickies on', 'ai.summarise': 'summarised', 'ai.cluster': 'grouped stickies on', 'ai.visualise': 'created a visualisation from' }[entry.action];
       const outcome = text(d.outcome);
       const notes: Record<string, string> = { ai_aborted: ' (cancelled)', ai_timeout: ' (timed out)', ai_refused: ' (declined by the AI)' };
       return `${who} ${what} ${boardLabel}${!outcome || outcome === 'ok' ? '' : (notes[outcome] ?? ' (failed)')}`;

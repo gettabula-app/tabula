@@ -1,5 +1,5 @@
 // POST /api/ai/run (docs/ai.md, "Running a feature"): checks, key, limits, board read, the provider call streamed as
-// server-sent events, validation of the proposal and one audit row. The core (createRunner) is the same in both modes; the
+// server-sent events, validation of a proposal or session visualization and one audit row. The core (createRunner) is the same in both modes; the
 // accounts route and the open-mode handler below only decide who the caller is and which key pays.
 //
 // Whatever fails before the stream starts is an ordinary HTTP error with a status code. Once the stream has started, a
@@ -10,7 +10,7 @@ import { readAll, stripInvisible } from '../board-ops.mjs';
 import { csrfOk } from '../auth.mjs';
 import { TOKEN_BOARD_ID_RE } from '../tokens.mjs';
 import { AiError, describeError } from './errors.mjs';
-import { FEATURE_SPECS, InputError, InvalidProposal, buildContent, parseInput, proposalCount, validateProposal } from './features.mjs';
+import { FEATURE_SPECS, InputError, InvalidProposal, buildContent, parseInput, proposalCount, validateProposal, validateVisualization } from './features.mjs';
 import { fenceRead, readForAi } from './board.mjs';
 import { createRunGate, createWindowCounter } from './limits.mjs';
 import { createLiveRuns } from './live.mjs';
@@ -242,8 +242,8 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       res.writeHead(200, SSE_HEADERS);
       res.flushHeaders();
       headersStarted = true;
-      // The first event names the run, so the runner's app can tell its own run among the board's live runs.
-      emit('progress', { n: progress, runId });
+      // Board proposals name their live run; session visualizations have no shared board presence.
+      emit('progress', runId ? { n: progress, runId } : { n: progress });
     };
     let progress = 0;
     let outcome = 'ok';
@@ -251,6 +251,7 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
     let beforeStreamError = null;
     let headersStarted = false;
     let proposal = null;
+    let visualization = null;
     let usage = null;
     try {
       if (creds.proxyErrors !== true) startStream();
@@ -285,9 +286,13 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       if (final.type === 'refused') throw new AiError('ai_refused');
       usage = usageSummary(final.usage, model);
       call.stillAllowed();
-      const types = spec.kind === 'group' ? readRoom(call.boardId, (doc) => new Map(readAll(doc).boxes.map((o) => [o.id, o.type]))) : new Map();
-      const can = (_action, type) => V1_TYPES.has(type) && canWriteRoom(call.role ?? 'owner', 'board');
-      proposal = validateProposal(call.feature, final.value, { input: call.input, can, coverage: prep.coverage, types });
+      if (spec.kind === 'visual') {
+        visualization = validateVisualization(final.value);
+      } else {
+        const types = spec.kind === 'group' ? readRoom(call.boardId, (doc) => new Map(readAll(doc).boxes.map((o) => [o.id, o.type]))) : new Map();
+        const can = (_action, type) => V1_TYPES.has(type) && canWriteRoom(call.role ?? 'owner', 'board');
+        proposal = validateProposal(call.feature, final.value, { input: call.input, can, coverage: prep.coverage, types });
+      }
     } catch (err) {
       // the reason a run was stopped wins over whatever the provider threw when it was
       const why = controller.signal.aborted && controller.signal.reason instanceof AiError ? controller.signal.reason : err;
@@ -316,9 +321,11 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       log('ai: could not write an audit row:', describeError(err));
     }
     if (failure) {
-      live.fail(runId, failure.error);
+      if (runId) live.fail(runId, failure.error);
       if (!headersStarted) throw beforeStreamError;
       emit('error', failure);
+    } else if (visualization) {
+      emit('result', { visualization, cut: prep.read.cut, usage });
     } else {
       live.ready(runId, { proposal, cut: prep.read.cut });
       emit('result', { runId, proposal, cut: prep.read.cut, usage });
@@ -348,7 +355,9 @@ export function createRunner({ HttpError, readRoom, canWriteRoom, createProvider
       const prep = prepare(call);
       const creds = call.openKey();
       started = true;
-      runId = live.start(call.boardId, { by: call.by, feature: call.feature, prompt: call.input.prompt, target: call.target, private: call.private });
+      if (FEATURE_SPECS[call.feature].kind !== 'visual') {
+        runId = live.start(call.boardId, { by: call.by, feature: call.feature, prompt: call.input.prompt, target: call.target, private: call.private });
+      }
       await stream(call, prep, creds, res, runId);
     } catch (err) {
       // a run that never reached the provider does not use up the person's hour

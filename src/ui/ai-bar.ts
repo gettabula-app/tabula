@@ -4,7 +4,7 @@ import { applyProposal, type AiProposal } from '../ai-apply';
 import { leftOutNote, nothingToAdd, settledNotice } from '../ai-live-logic';
 import type { SettledRun } from '../ai-runs';
 import {
-  CHIPS, CHOSEN_BY_ADMIN, MODEL_CHIP_TIP, NARROW_DOCK, NOT_PRIVATE, NO_FACTS, OUTPUT_CAP, PHONE_DOCK, PROMPT_MAX, VISIBILITY_OFF, VISIBILITY_ON,
+  CHIPS, CHOSEN_BY_ADMIN, MODEL_CHIP_TIP, NARROW_DOCK, NOT_PRIVATE, NO_FACTS, OUTPUT_CAP, PHONE_DOCK, PROMPT_MAX, VISIBILITY_OFF, VISIBILITY_ON, VISUAL_VISIBILITY,
   addedMessage, aiAvailable, aiTop, armedAfter, arrowPos, buildRunBody, canWalkHistory, chipState, clampPos, contextAfterSelection, contextLabel, contextMenu,
   disclosure, dockBottom, dragPos, errorView, estimateFor, formatPos, formatWait, isAdminRole, modelChipLabel, modelChipText,
   nearestIds, parseHistory, parsePos, placeholderFor, previewLine, promptSent, pushHistory, rateSpoken, rateText, resolveAiRun, runAi, runTarget,
@@ -21,6 +21,7 @@ import { avoidForRun, barMoved, dropRun, linkBar, openReview, proposedByFor, set
 import { toast } from './common';
 import { ICONS, h, icon } from './dom';
 import { safeInsets, type Insets } from './safe-area';
+import { showVisualization } from './ai-visualization';
 
 // The AI bar (docs/ai-toolbar.md): a tray docked at the bottom of the board where the person asks the AI to summarise, cluster or
 // generate. This file reads the board, draws the bar and calls the relay; the rules and the text are in src/ai-bar-logic.ts.
@@ -229,6 +230,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
   let runSeq = 0;
   let selKey = '';
   let gathered: Gathered | null = null;
+  let visualization: { close(): void } | null = null;
 
   const st = {
     ui: 'idle' as BarUi,
@@ -453,7 +455,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     const feature = idle ? st.armed : st.req?.feature ?? null;
     const [first, second] = disclosure({
       ui: st.ui, ctx: snap.ctx, facts: snap.facts, prompt: snap.prompt, withPrompt: promptSent(feature), keySource: config.keySource,
-      credits: config.credits, privateRun: st.privateRun, proposalKind: st.preview?.proposal.kind ?? null,
+      credits: config.credits, privateRun: st.privateRun, proposalKind: st.preview?.proposal.kind ?? null, feature,
     });
     if (sends.textContent !== first) sends.textContent = first;
     if (pays.textContent !== second) pays.textContent = second;
@@ -617,6 +619,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
   }
 
   async function begin(req: Req) {
+    visualization?.close();
     st.req = req;
     st.error = null;
     st.preview = null;
@@ -629,7 +632,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     paint();
     focusPrimary();
     // the live layer draws this run's ghosts from the relay's patches; it needs to know which run is the bar's own
-    setStarting(app, { name: app.user.name, color: app.user.color });
+    if (req.feature !== 'visualise') setStarting(app, { name: app.user.name, color: app.user.color });
     const onRunId = (id: string) => {
       if (destroyed || st.run?.token !== token) return;
       setOwnRun(app, id);
@@ -643,6 +646,21 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       if (out.failure.code !== 'aborted') fail(out.failure.code, out.failure);
       return;
     }
+    if ('visualization' in out) {
+      if (req.feature !== 'visualise') return fail('internal');
+      st.ui = 'idle';
+      paint();
+      focusPrompt();
+      visualization = showVisualization(out.visualization, {
+        cut: out.cut,
+        onClose: () => { visualization = null; },
+        onRetry: () => {
+          if (!destroyed && !app.readOnly && config.features.includes('visualise')) void begin(req);
+        },
+      });
+      return;
+    }
+    if (req.feature === 'visualise') return fail('internal');
     if (!out.runId) return fail('internal');
     setOwnRun(app, out.runId);
     st.preview = { runId: out.runId, proposal: out.proposal };
@@ -872,7 +890,9 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     const description = h('span');
     const paintDescription = () => description.replaceChildren(h('b', null, 'Private run'), h('br'), st.privateRun ? VISIBILITY_ON : VISIBILITY_OFF);
     let visibility: HTMLElement;
-    if (config.keySource === 'user') {
+    if (feature === 'visualise') {
+      visibility = h('div', { class: 'aibar-note' }, VISUAL_VISIBILITY);
+    } else if (config.keySource === 'user') {
       paintDescription();
       visibility = h('label', { class: 'aibar-switch' },
         h('input', {
@@ -1189,11 +1209,13 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
   return {
     setConfig(c) {
       config = c;
+      if (!c.features.includes('visualise')) visualization?.close();
       paint();
     },
     destroy(cancel) {
       if (destroyed) return;
       destroyed = true;
+      visualization?.close();
       st.run?.ctl.abort();
       // a preview nobody settles stays for the others to add or discard; losing the right to edit takes it with us
       if (cancel && st.preview) {
