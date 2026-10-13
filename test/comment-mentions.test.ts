@@ -89,7 +89,7 @@ function world() {
     db.prepare('SELECT kind, actor_id, board_id, ref FROM user_notifications WHERE user_id = ? ORDER BY kind, ref').all(userId);
   const inbox = (userId: string) => notifications.list({ user: { id: userId } });
 
-  // The relay's hooks, as server/relay.mjs wires them for a comments room.
+  // The relay's hooks, as the relay wires them for a comments room.
   const guard = createCommentGuard(server, {
     isAccount: (id: string) => directory.getUser(id) !== null,
     onReplyAdded: ({ threadId, threadAuthorId, replyId, replyAuthorId }) => {
