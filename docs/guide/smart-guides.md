@@ -12,7 +12,7 @@ Smart guides show how the object you are moving or resizing lines up with the ob
 
 Guides show while you move an object and while you resize it. A multi-selection moves as one block. A selection of connectors alone shows no guides.
 
-When you resize a free edge, only the edge you are dragging snaps and the opposite edge stays where it is. From a corner with proportions locked, the nearer horizontal or vertical match wins; the other edge follows the ratio and the opposite corner stays fixed. This works for **Shift**-resized corners and for images, icons and UML actors. Resizing a rotated object shows no guides.
+When you resize a free edge, only the edge you are dragging snaps and the opposite edge stays where it is. From a corner with proportions locked, the nearer horizontal or vertical match wins; the other edge follows the ratio and the opposite corner stays fixed. This works for **Shift**-resized corners and for images, icons and UML actors. Resizing a rotated object shows no guides. A small label next to the pointer shows the size while you resize or draw, for example "320 × 180". The corner you drag out when drawing a new shape, note or frame snaps the same way.
 
 ## How close you need to be
 

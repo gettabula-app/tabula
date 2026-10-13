@@ -99,7 +99,7 @@ type Drag =
   | { mode: 'resize'; id: Id; handle: HandleId; o0: BaseObj; guides?: GuideSession }
   | { mode: 'rotate'; id: Id; c: Point; a0: number; r0: number }
   | { mode: 'marquee'; start: Point; base: Id[]; moved: boolean }
-  | { mode: 'create'; start: Point; tool: Tool }
+  | { mode: 'create'; start: Point; tool: Tool; guides?: GuideSession }
   | { mode: 'connect'; from: End; relation?: UmlRelation; moved: boolean }
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to'; lock?: AxisLock; last?: Point; fix?: Point }
   | { mode: 'pen'; pts: Point[] }
@@ -1832,11 +1832,12 @@ export class BoardApp {
         return;
       }
       case 'create': {
-        const q = this.snapPoint(p, e);
+        const { q, guides } = this.createCorner(d, p, e);
         const rect = rectOfPoints([d.start, q]);
         if (rect.w < 4 && rect.h < 4) return;
         const preview = this.previewObj(d.tool, rect, e.shiftKey);
-        this.r.setOverlay({ preview: preview ? objectMarkup(preview, this.r.ctx) : '' });
+        this.showSize(rect.w, rect.h, e);
+        this.r.setOverlay({ preview: preview ? objectMarkup(preview, this.r.ctx) : '', guides });
         return;
       }
       case 'connect': {
@@ -1985,7 +1986,7 @@ export class BoardApp {
   }
 
   /** The axis line, the pill and the cursor of a locked drag; nothing while the key is up (docs/guides.md, Axis lock). */
-  private axisPill: HTMLElement | null = null;
+  private dragPill: HTMLElement | null = null;
   private axisShown: LockAxis | null = null;
   private showAxisLock(lock: AxisLock, bounds: Rect, start: Point, e: PointerEvent) {
     if (!lock.axis || !lock.from) {
@@ -1997,40 +1998,55 @@ export class BoardApp {
     this.r.setOverlay({ axisLock: { axis, at } });
     this.r.svg.style.cursor = axis === 'x' ? 'ew-resize' : 'ns-resize';
     const label = axis === 'x' ? 'Locked horizontal' : 'Locked vertical';
-    if (!this.axisPill) {
-      this.axisPill = h('div', { class: 'drag-pill', 'aria-hidden': 'true' });
-      document.body.append(this.axisPill);
-    }
-    this.axisPill.textContent = label;
-    this.axisPill.style.left = `${e.clientX + 16}px`;
-    this.axisPill.style.top = `${e.clientY + 16}px`;
+    this.showPill(label, e);
     if (this.axisShown !== axis) this.announce(label);
     this.axisShown = axis;
     void start;
   }
 
   private clearAxisLock() {
-    if (this.axisShown === null && !this.axisPill) return;
+    if (this.axisShown === null) return;
     this.axisShown = null;
-    this.axisPill?.remove();
-    this.axisPill = null;
     this.r.setOverlay({ axisLock: null });
+    this.hidePill();
+  }
+
+  /** The small pill that follows the pointer in a drag: the axis lock label or the size of what is being resized. */
+  private showPill(text: string, e: { clientX: number; clientY: number }) {
+    if (!this.dragPill) {
+      this.dragPill = h('div', { class: 'drag-pill', 'aria-hidden': 'true' });
+      document.body.append(this.dragPill);
+    }
+    this.dragPill.textContent = text;
+    this.dragPill.style.left = `${e.clientX + 16}px`;
+    this.dragPill.style.top = `${e.clientY + 16}px`;
+  }
+
+  private hidePill() {
+    this.dragPill?.remove();
+    this.dragPill = null;
+  }
+
+  /** The size readout of a resize or a drawing drag: whole numbers, "320 × 180". */
+  private showSize(w: number, hgt: number, e: { clientX: number; clientY: number }) {
+    this.showPill(`${Math.round(w)} × ${Math.round(hgt)}`, e);
   }
 
   /** A corner of a text: scales its type and its width together, the opposite corner staying where it is (src/text-resize.ts). */
-  private doTextScale(d: Extract<Drag, { mode: 'resize' }>, p: Point) {
+  private doTextScale(d: Extract<Drag, { mode: 'resize' }>, p: Point, e: PointerEvent) {
     const o0 = d.o0;
     const corner = d.handle as Corner;
     const { fontSize, w } = scaledText(o0, cornerFactor(o0, corner, toLocal(o0, p)));
     const h = textHeight({ ...o0, fontSize, w });
     const box = cornerBox(o0, corner, w, h);
+    this.showSize(w, h, e);
     const c = rotate({ x: o0.x + (box.l + box.r) / 2, y: o0.y + (box.t + box.b) / 2 }, center(o0), o0.rotation || 0);
     this.r.setOverlay({ guides: [] });
     this.queue(() => this.store.transact(() => this.store.update(d.id, { x: c.x - w / 2, y: c.y - h / 2, w, h, fontSize })));
   }
 
   private doResize(d: Extract<Drag, { mode: 'resize' }>, p: Point, e: PointerEvent) {
-    if (d.o0.type === 'text' && isCorner(d.handle)) return this.doTextScale(d, p);
+    if (d.o0.type === 'text' && isCorner(d.handle)) return this.doTextScale(d, p, e);
     const o0 = d.o0;
     const lp = toLocal(o0, p);
     let l = 0, t = 0, r = o0.w, b = o0.h;
@@ -2095,6 +2111,7 @@ export class BoardApp {
       else b = t + minH;
     }
     const w = r - l, hh = b - t;
+    this.showSize(w, o0.type === 'text' ? textHeight({ ...o0, w }) : o0.type === 'markdown' ? markdownBoxHeight({ ...o0, w }) : hh, e);
     const c0 = center(o0);
     const cLocal = { x: o0.x + (l + r) / 2, y: o0.y + (t + b) / 2 };
     const c = rotate(cLocal, c0, o0.rotation || 0);
@@ -2125,6 +2142,7 @@ export class BoardApp {
     this.drag = null;
     this.r.root.classList.remove('panning');
     this.clearAxisLock();
+    this.hidePill();
     if (!d) return;
     this.flushQueue();
     this.emit('drag');
@@ -2278,8 +2296,30 @@ export class BoardApp {
     }
   }
 
+  /**
+   * The corner a drawing drag has reached: the pointer's two moving edges snap to the guides of the other objects (alignment, equal gaps, equal sizes), the
+   * same query as a resize from that corner, and an axis with no guide match falls back to the grid, as a move does. Alt skips guides and grid, Shift (a
+   * square) and a kanban skip the guides. The preview and the drop both use it, so the object lands exactly where the preview showed.
+   */
+  private createCorner(d: Extract<Drag, { mode: 'create' }>, p: Point, e: { altKey: boolean; shiftKey: boolean }): { q: Point; guides: Guide[] } {
+    const grid = this.snapPoint(p, e);
+    if (e.altKey || e.shiftKey || d.tool.kind === 'kanban') return { q: grid, guides: [] };
+    const proposed = rectOfPoints([d.start, p]);
+    if (proposed.w * this.zoom < 8 && proposed.h * this.zoom < 8) return { q: grid, guides: [] };
+    const vp = this.r.viewport();
+    if (!d.guides || !guidesCover(d.guides, vp)) {
+      d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set<Id>(), (o) => this.flow.isHidden(o), (o) => this.store.geometry(o)), [], vp);
+    }
+    const handle = `${p.y < d.start.y ? 'n' : 's'}${p.x < d.start.x ? 'w' : 'e'}`;
+    const sn = snapResize(d.guides, proposed, handle, this.zoom);
+    return {
+      q: { x: sn.dx !== null ? p.x + sn.dx : grid.x, y: sn.dy !== null ? p.y + sn.dy : grid.y },
+      guides: [...sn.guides, ...sn.gaps, ...sn.sizes],
+    };
+  }
+
   private finishCreate(d: Extract<Drag, { mode: 'create' }>, p: Point, e: PointerEvent) {
-    const q = this.snapPoint(p, e);
+    const q = this.createCorner(d, p, e).q;
     let rect = rectOfPoints([d.start, q]);
     const dragged = rect.w * this.zoom > 8 || rect.h * this.zoom > 8;
     if (d.tool.kind === 'kanban') {
@@ -2512,7 +2552,7 @@ export class BoardApp {
         if (action === 'drag') {
           this.cancelLongPress();
           this.cancelCardDrag();
-          if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
+          if (this.drag) { this.drag = null; this.clearAxisLock(); this.hidePill(); this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
           e.preventDefault();
           e.stopImmediatePropagation();
           return;
@@ -2583,7 +2623,7 @@ export class BoardApp {
       if (k === 'escape') {
         this.cancelLongPress();
         this.cancelCardDrag();
-        if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
+        if (this.drag) { this.drag = null; this.clearAxisLock(); this.hidePill(); this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
         if (this.scope) this.leaveGroup();
         else this.setSelection([]);
         this.closeThread();
