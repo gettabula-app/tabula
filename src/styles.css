@@ -376,11 +376,6 @@ select.input {
 /* Stickers: Swiss rules on the tray. Hairlines and 2px rules, xs tiles, sm controls, no shadows, labels 11px uppercase, 8px grid. */
 .stickers-label { margin: 16px 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--tray-muted); }
 .stickers .input { height: 40px; padding: 0 8px; }
-.sticker-sets .segmented { gap: 0; padding: 0; border-radius: var(--radius-sm); background: transparent; border-top: 1px solid var(--field-edge-strong); border-bottom: 1px solid var(--field-edge-strong); }
-.sticker-sets .segmented button { height: 32px; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
-.sticker-sets .segmented button + button { border-left: 1px solid var(--field-edge-strong); }
-.sticker-sets .segmented button:hover { background: var(--tray-hover); color: var(--tray-text); }
-.sticker-sets .segmented button.on { background: var(--signal); color: var(--on-signal); }
 .sticker-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; min-height: 120px; align-content: start; min-width: 0; contain: layout; }
 .sticker-grid.loading { opacity: 0.5; }
 .sticker-tile { aspect-ratio: 1; display: grid; place-items: center; padding: 0; border: 1px solid var(--tray-line); border-radius: var(--radius-xs); background: transparent; }
@@ -437,7 +432,8 @@ select.input {
 }
 .swatch.none { background: linear-gradient(135deg, transparent 45%, var(--danger) 45% 55%, transparent 55%), color-mix(in srgb, var(--tray-text) 8%, transparent); }
 .swatch.on { box-shadow: 0 0 0 2px var(--tray-2), 0 0 0 4px var(--signal); }
-.segmented { display: flex; gap: 4px; padding: 4px; background: color-mix(in srgb, var(--tray-text) 5%, var(--tray)); border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule); }
+/* one anatomy everywhere: a soft container with a single edge, borderless buttons, and the selected one raised as a thumb; the thumb's radius is the container's minus its padding, so the corners are concentric */
+.segmented { display: flex; gap: 4px; padding: 4px; background: color-mix(in srgb, var(--tray-text) 5%, var(--tray)); border-radius: calc(var(--radius-sm) + 2px); box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule); }
 .segmented button { flex: 1; min-width: 0; height: 32px; display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; box-shadow: none; font-size: 12.5px; font-weight: 500; }
 .segmented button:hover { background: var(--tray-hover); }
 .segmented button.on { background: var(--tray); color: var(--tray-text); box-shadow: inset 0 0 0 1px var(--field-edge-strong), 0 1px 2px color-mix(in srgb, var(--shade) 5%, transparent); }
