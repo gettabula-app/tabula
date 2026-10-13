@@ -66,14 +66,19 @@ describe('tracker frame snapshots', () => {
     expect(renderTrackerSnapshot(frame('frame-never-published'))).toContain('>Sign in to a workspace to see tickets.</text>');
   });
 
-  it('does not ask a signed-in member to sign in when a frame has no snapshot yet', () => {
+  it('does not ask a signed-in member to sign in when a frame has no snapshot yet: zoom or select on the desktop, open on a phone', () => {
+    const had = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
     setTrackerMember(true);
     try {
-      const svg = renderTrackerSnapshot(frame('frame-over-cap'));
-      expect(svg).toContain('>Zoom in or select this tracker to load its tickets.</text>');
-      expect(svg).not.toContain('Sign in to a workspace');
+      for (const [phone, line] of [[false, 'Zoom in or select this tracker to see its tickets.'], [true, 'Open this tracker to see its tickets.']] as const) {
+        Object.defineProperty(globalThis, 'matchMedia', { configurable: true, value: () => ({ matches: phone }) });
+        const svg = renderTrackerSnapshot(frame('frame-over-cap'));
+        expect(svg).toContain(`>${line}</text>`);
+        expect(svg).not.toContain('Sign in to a workspace');
+      }
     } finally {
       setTrackerMember(false);
+      if (had) Object.defineProperty(globalThis, 'matchMedia', had); else delete (globalThis as { matchMedia?: unknown }).matchMedia;
     }
   });
 

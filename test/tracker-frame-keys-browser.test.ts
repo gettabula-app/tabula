@@ -326,6 +326,54 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     await page.close();
   });
 
+  it('Delete still deletes a selected tracker frame when the canvas has the focus (Ctrl+A, or a marquee)', async () => {
+    const page = await open();
+    const id = await frameId(page);
+    await page.evaluate((i) => { (window as any).__board.zoomTo(0.3); (window as any).__board.setSelection([i]); }, id);
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('Delete');
+    expect(await frameExists(page, id)).toBe(false);
+    await page.close();
+  });
+
+  it('Ctrl+A then Delete deletes the tracker frame when the canvas has the focus', async () => {
+    const page = await open();
+    const id = await frameId(page);
+    await page.evaluate(() => (window as any).__board.zoomTo(0.3));
+    await page.mouse.click(5, 400); // empty canvas
+    await page.keyboard.press('Control+a');
+    expect(await page.evaluate((i) => (window as any).__board.selection.includes(i), id)).toBe(true);
+    await page.keyboard.press('Delete');
+    expect(await frameExists(page, id)).toBe(false);
+    await page.close();
+  });
+
+  it('with a tracker frame selected and the canvas focused, Ctrl+Z still reaches the undo of the board (the new sticky goes)', async () => {
+    const page = await open();
+    const id = await frameId(page);
+    await page.evaluate(() => {
+      const board = (window as any).__board;
+      board.store.transact(() => board.store.create({ id: 'sticky-z', type: 'sticky', x: 5000, y: 5000, w: 200, h: 200, rotation: 0, z: board.store.topZ(), text: 'x', color: '#FFE066' }));
+    });
+    await page.waitForTimeout(700); // past the undo manager's merge window
+    await page.evaluate((i) => { (window as any).__board.zoomTo(0.3); (window as any).__board.setSelection([i]); (document.activeElement as HTMLElement | null)?.blur(); }, id);
+    await page.keyboard.press('Control+z');
+    expect(await page.evaluate(() => (window as any).__board.store.get('sticky-z') === undefined)).toBe(true);
+    await page.close();
+  });
+
+  it('Backspace on an opened ticket archives that ticket with a count of 1, never "0 issues archived"', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    await page.locator('.trk-frame-wrap.is-work .trk-list-row').first().click();
+    await page.waitForFunction(() => document.activeElement?.closest('.trk') !== null, null, { timeout: budget(10_000) });
+    await page.keyboard.press('Backspace');
+    expect(await frameExists(page, id)).toBe(true);
+    const toasts = await page.locator('.toast').allTextContents();
+    expect(toasts.join('|')).not.toMatch(/\b0 issues/);
+    await page.close();
+  });
+
   it('a key typed inside the tracker is not a canvas shortcut (Space does not pan, a tool key does not switch the tool)', async () => {
     const page = await open();
     await enterWork(page);
