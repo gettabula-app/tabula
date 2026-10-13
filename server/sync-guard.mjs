@@ -1,7 +1,7 @@
 // The relay side of the sync validator (server/sync-validate.mjs): wraps the application of one client sync message,
 // finds the keys that message changed, validates them and, in enforce mode, reverts the whole message.
 //
-// Modes (TABULA_SYNC_VALIDATE, read once at startup by syncValidateMode):
+// Modes (TABULA_SYNC_VALIDATE, read once at startup by syncValidateMode; unset is `report`):
 //   off      nothing runs.
 //   report   NEVER rejects, never changes data, never throws into the sync path. It counts violations by code and kind
 //            in memory and logs one summary line a minute (counts and codes only: no board ids, user ids or content).
