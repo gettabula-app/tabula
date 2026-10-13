@@ -961,7 +961,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     setChatPrefs: (patch: { emailMentions: boolean }) => call<{ emailMentions: boolean }>('PUT', '/api/me/prefs', patch),
     notificationPrefs: () => call<{ prefs: NotificationPrefs }>('GET', '/api/notifications/prefs'),
     setNotificationPrefs: (patch: Partial<NotificationPrefs>) => call<{ prefs: NotificationPrefs }>('PUT', '/api/notifications/prefs', patch),
-    notificationDigest: () => call<{ digest: NotificationDigest }>('GET', '/api/notifications/digest'),
+    /** `digest: null` when this instance sends no email. */
+    notificationDigest: () => call<{ digest: NotificationDigest | null }>('GET', '/api/notifications/digest'),
     setNotificationDigest: (patch: Partial<NotificationDigest>) => call<{ digest: NotificationDigest }>('PUT', '/api/notifications/digest', patch),
     chatChannels: () => call<{ channels: ChatChannelEntry[] }>('GET', '/api/chat/channels'),
     adminChat: () => call<ChatSettings>('GET', '/api/admin/chat'),

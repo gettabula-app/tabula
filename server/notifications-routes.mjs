@@ -65,11 +65,12 @@ export function createNotificationRoutes({ notifications, digest = null, compile
     }),
 
     // The email digest (docs/notifications.md, Digest): off until switched on, one mail a day at the chosen hour.
+    // GET always answers: `digest: null` tells the dialog this instance sends no email, so it hides the section.
+    compile('GET', 'notifications/digest', {}, ({ user }) => {
+      accountOnly(user);
+      return [200, { digest: digest ? digest.get(user.id) : null }];
+    }),
     ...(digest ? [
-      compile('GET', 'notifications/digest', {}, ({ user }) => {
-        accountOnly(user);
-        return [200, { digest: digest.get(user.id) }];
-      }),
 
       compile('PUT', 'notifications/digest', { body: true, maxBody: NOTIFICATIONS_BODY_LIMIT, readOnlyOk: true }, ({ user, body }) => {
         accountOnly(user);

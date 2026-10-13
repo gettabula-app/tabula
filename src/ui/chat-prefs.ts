@@ -98,7 +98,7 @@ export function openChatNotifications(): void {
     h('label', { class: 'chat-prefs-switch', 'aria-describedby': 'chat-digest-note' }, h('span', null, 'Email me a daily summary'), switchControlOf(digestBox)),
     digestHourRow,
     h('p', { class: 'muted small', id: 'chat-digest-note' },
-      'One email a day with a list of what is new in your notifications: who and where, never what was written. Off by default.'),
+      'One email a day with a list of what is new in your notifications: who and where, never what was written. Sent at the hour you choose, in your time zone. Off by default.'),
     digestStatus);
 
   const box = h('input', { type: 'checkbox', role: 'switch', disabled: true, 'aria-label': 'Email me when I am mentioned in chat', 'aria-describedby': 'chat-prefs-note' });
@@ -146,13 +146,15 @@ export function openChatNotifications(): void {
   });
 
   api.notificationDigest().then(({ digest }) => {
+    if (!digest) { digestSection.hidden = true; return; } // this instance sends no email: nothing to switch on
     digestHourValue = digest.hour;
     digestHour.value = String(digest.hour);
     setDigestOn(digest.on);
     digestBox.disabled = false;
     digestHour.disabled = false;
     digestStatus.textContent = '';
-  }, () => {
+  }, (error: unknown) => {
+    if ((error as { status?: number } | null)?.status === 404) { digestSection.hidden = true; return; } // an older server without the digest
     digestStatus.textContent = 'Could not load your digest settings. Check your connection.';
   });
 

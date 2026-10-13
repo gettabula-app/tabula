@@ -316,6 +316,17 @@ describe('the digest routes', () => {
   const ana = { id: 'ana', role: 'member' };
   const guest = { id: 'gus', role: 'guest', guest: true };
 
+  it('answers digest: null, and has no PUT, when the instance sends no email', () => {
+    const table = createNotificationRoutes({
+      notifications: { prefs: { get: () => ({}), set: () => ({}) }, list: () => ({}), unread: () => ({}), markRead: () => ({}) },
+      digest: null,
+      compile: (method: string, path: string, _opts: unknown, handler: (ctx: any) => unknown) => ({ key: `${method} ${path}`, handler }),
+      errors: { badRequest: Error, forbidden: Error, invalidInput: Error },
+    }) as Array<{ key: string; handler: (ctx: any) => [number, unknown] }>;
+    expect(table.find((r) => r.key === 'GET notifications/digest')!.handler({ user: { id: 'ana', role: 'member' } })).toEqual([200, { digest: null }]);
+    expect(table.some((r) => r.key === 'PUT notifications/digest')).toBe(false);
+  });
+
   it('answers the shape, and round-trips a valid PUT', () => {
     const { call } = routes();
     expect(call('GET notifications/digest', { user: ana })).toEqual([200, { digest: { on: false, hour: 8, tz: 'UTC' } }]);

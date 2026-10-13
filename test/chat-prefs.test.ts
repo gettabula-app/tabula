@@ -189,6 +189,11 @@ describe('email digest section', () => {
   const digestBox = () => switchFor('Email me a daily summary');
   const sendAt = () => dialogEl().querySelector('select') as unknown as HTMLSelectElement;
   /** The row that holds the time select: the label with the text "Send at". */
+  /** The Email digest section is the stack that holds the helper note. */
+  const digestSectionHidden = () => {
+    const note = dialogEl().querySelector('#chat-digest-note') as unknown as { parentNode?: { hidden?: boolean } } | null;
+    return note?.parentNode?.hidden === true;
+  };
   const sendAtRow = () => [...dialogEl().querySelectorAll('label')].find((l) => textOf(l).includes('Send at')) as unknown as { hidden: boolean };
   const browserZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -199,7 +204,7 @@ describe('email digest section', () => {
     expect(headings).toEqual(['In your notifications', 'Email digest', 'Email']);
     expect(digestBox().checked).toBe(false);
     expect(digestBox().disabled).toBe(false);
-    expect(textOf(dialogEl())).toContain('One email a day with a list of what is new in your notifications: who and where, never what was written. Off by default.');
+    expect(textOf(dialogEl())).toContain('One email a day with a list of what is new in your notifications: who and where, never what was written. Sent at the hour you choose, in your time zone. Off by default.');
     expect(sendAtRow().hidden).toBe(true);
   });
 
@@ -245,6 +250,22 @@ describe('email digest section', () => {
     expect(sendAtRow().hidden).toBe(true);
     expect(digestBox().disabled).toBe(false);
     expect(textOf(browser.document.body)).toContain('Could not save that. Check your connection and try again.');
+  });
+
+  it('hides the Email digest section when this instance sends no email (the answer is null) or has no digest at all (404)', async () => {
+    vi.mocked(api.notificationDigest).mockResolvedValue({ digest: null });
+    openChatNotifications();
+    await flush();
+    expect(textOf(dialogEl())).not.toContain('Could not load your digest settings');
+    expect(digestSectionHidden()).toBe(true);
+  });
+
+  it('also hides it on a server that answers 404 for the digest', async () => {
+    vi.mocked(api.notificationDigest).mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }));
+    openChatNotifications();
+    await flush();
+    expect(textOf(dialogEl())).not.toContain('Could not load your digest settings');
+    expect(digestSectionHidden()).toBe(true);
   });
 
   it('says so when the digest could not be loaded', async () => {
