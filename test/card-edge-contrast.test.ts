@@ -26,3 +26,10 @@ describe('template and board cards', () => {
     expect(css).toMatch(/\.tpl-card \.tpl-thumb \{ width: 100%; margin: 0 0 8px; border: 1px solid var\(--page-hairline\)/);
   });
 });
+
+describe('the empty Boards state', () => {
+  it('sets its heading in the page ink, not a colour it inherits (it read 1.9:1 in Evergreen)', () => {
+    const css = readFileSync(new URL('../src/ui/home.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.home-empty-state h2 \{[^}]*color: var\(--ink\)/);
+  });
+});
