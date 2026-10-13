@@ -565,7 +565,8 @@ const SHOTS = {
 
   // the Chat page (docs/chat.md, Interface): the channel list and the open board conversation, at a width where both show
   async 'chat-page'({ browser, chat, chatPeople }) {
-    const W = 1200, H = 720;
+    // tall enough that the four messages show whole from the first one, with nothing to scroll
+    const W = 1200, H = 1000;
     const { context, page } = await newPage(browser, { base: chat.base, width: W, height: H, session: chatPeople.owner });
     // The list shows boards with recent chat by the relay's real clock, and the demo messages carry the fixed 15 Jan date: only the
     // list response gets the board's row added (as the backups shot stubs only its list).
@@ -577,7 +578,12 @@ const SHOTS = {
       }
       await route.fulfill({ response: res, json: body });
     });
-    await page.goto(`${chat.base}/#/chat/board/docs-chat`);
+    // the board's own objects, so the message chips read "Launch plan" and "Final checklist" as in the docked chat shot
+    await openBoard(page, chat.base, 'docs-chat');
+    await page.evaluate(`(${seeds.chat.toString()})(window.__board)`);
+    await page.waitForTimeout(600);
+    // client-side, so the page keeps the board's object names it just learned (a reload would show "An object on the board")
+    await page.evaluate(() => { location.hash = '#/chat/board/docs-chat'; });
     await page.locator('.chat-conv.open').waitFor({ timeout: 15_000 });
     await page.waitForFunction(() => document.querySelectorAll('.chat-conv.open .chat-msg').length === 4);
     await page.locator('.chat-conv.open .chat-reaction').waitFor();
