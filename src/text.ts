@@ -39,7 +39,23 @@ export const clearMeasureCache = () => { cache.clear(); epoch++; };
 /** Changes whenever the measurements are cleared (fonts loaded): anything cached from measurements is stale after it. */
 export const measureEpoch = () => epoch;
 
-/** Greedy word wrap. Newlines are hard breaks; long words break by character. */
+/** The pieces a word wider than `max` breaks into, by character (an emoji sequence stays whole): every piece but the last fills a line. */
+function breakWord(word: string, font: string, max: number): { full: string[]; last: string } {
+  const full: string[] = [];
+  let chunk = '';
+  const parts = graphemeSegmenter
+    ? Array.from(graphemeSegmenter.segment(word), ({ segment }) => segment)
+    : Array.from(word);
+  for (const ch of parts) {
+    if (measure(chunk + ch, font) > max && chunk) {
+      full.push(chunk);
+      chunk = ch;
+    } else chunk += ch;
+  }
+  return { full, last: chunk };
+}
+
+/** Greedy word wrap. Newlines are hard breaks; a word wider than the box breaks by character, wherever on the line it starts. */
 export function wrap(text: string, font: string, maxWidth: number): string[] {
   const out: string[] = [];
   const max = Math.max(4, maxWidth);
@@ -54,22 +70,18 @@ export function wrap(text: string, font: string, maxWidth: number): string[] {
       const candidate = line + word;
       if (measure(candidate.trimEnd(), font) <= max || !line.trim()) {
         if (measure(word, font) > max && !line.trim()) {
-          // Emoji sequences can span several code points but must stay on one line.
-          let chunk = '';
-          const parts = graphemeSegmenter
-            ? Array.from(graphemeSegmenter.segment(word), ({ segment }) => segment)
-            : Array.from(word);
-          for (const ch of parts) {
-            if (measure(chunk + ch, font) > max && chunk) {
-              out.push(chunk);
-              chunk = ch;
-            } else chunk += ch;
-          }
-          line = chunk;
+          const { full, last } = breakWord(word, font, max);
+          out.push(...full);
+          line = last;
         } else line = candidate;
       } else {
         out.push(line.trimEnd());
-        line = /^\s+$/.test(word) ? '' : word;
+        if (!/^\s+$/.test(word) && measure(word, font) > max) {
+          // a word wider than a whole line does not run past the edge because it came after other words
+          const { full, last } = breakWord(word, font, max);
+          out.push(...full);
+          line = last;
+        } else line = /^\s+$/.test(word) ? '' : word;
       }
     }
     out.push(line.trimEnd());
