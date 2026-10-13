@@ -105,7 +105,7 @@ describe('redrawing a kanban', () => {
     r.setKanbanState({ dragging: new Set([ids[0]]), dropLane: lanes[1] });
     draw();
     expect(writes.get(ids[0])!.at(-1)).toContain('stroke-dasharray');
-    expect(writes.get(lanes[1])!.at(-1)).toContain('DROP HERE');
+    expect(writes.get(lanes[1])!.at(-1)).toContain('>Drop here</text>');
     expect([ids[1], ids[2], lanes[2]].map(count)).toEqual(others);
     r.setKanbanState({ dragging: new Set(), dropLane: null });
     draw();

@@ -12,6 +12,8 @@ import { customStickyColors } from './palette';
 export const LOCAL = 'local';
 /** Origin of the board's starting content (a seed, a template that starts a board): written, but never an undo step. */
 export const SEED = 'seed';
+/** Origin of the write that puts back an object's position when its x or y vanished (docs/geometry-heal.md): written, never an undo step. */
+export const GEOMETRY_HEAL = 'geometry-heal';
 
 export type ChangeListener = (changed: Set<Id>, origin?: unknown, fields?: ReadonlyMap<Id, ReadonlySet<string>>) => void;
 
@@ -192,6 +194,7 @@ export class Store {
         }
         edits.push([prev, next]);
       }
+      this.noteLostGeometry(edits, transaction.origin);
       for (const [before, after] of edits) {
         this.invalidateGroupAncestors(before, changed);
         this.invalidateGroupAncestors(after, changed);
@@ -315,6 +318,44 @@ export class Store {
     return () => {
       this.readOnlyListeners.delete(fn);
     };
+  }
+
+  /**
+   * An object's x and y are never legitimately removed (a move sets them, nothing unsets them). A board file in the field had objects whose x, y and updatedAt
+   * keys were all deleted without a replacement, which draws them at the origin, so after a reload they sat somewhere other than where a person had put them.
+   * Whatever deletes them (an undo that cannot restore what a garbage-collected predecessor held, a remote write, an import), the position the object had a
+   * moment ago is written back, outside undo, so the loss does not stand and does not sync. Objects that never had a position (connectors, groups) are left.
+   */
+  private noteLostGeometry(edits: [Obj | undefined, Obj | undefined][], origin: unknown) {
+    if (origin === GEOMETRY_HEAL) return;
+    const lost: { id: Id; x: number; y: number }[] = [];
+    for (const [before, after] of edits) {
+      if (!before || !after || before.id !== after.id || isConnector(before) || isConnector(after) || before.type === 'group') continue;
+      const had = before as { x?: unknown; y?: unknown };
+      const has = after as { x?: unknown; y?: unknown };
+      const missing = !Number.isFinite(has.x) || !Number.isFinite(has.y);
+      if (missing && Number.isFinite(had.x) && Number.isFinite(had.y)) lost.push({ id: after.id, x: Number.isFinite(has.x) ? (has.x as number) : (had.x as number), y: Number.isFinite(has.y) ? (has.y as number) : (had.y as number) });
+    }
+    if (!lost.length) return;
+    // a trace for whoever finds out what removes positions (docs/geometry-heal.md): which object, and what wrote the loss
+    console.warn('Tabula: an object lost its position and it was put back', { ids: lost.map((l) => l.id), origin: origin === this.undo ? 'undo' : typeof origin === 'string' ? origin : typeof origin });
+    // not inside the observer: the write happens once the transaction that lost the position has finished
+    queueMicrotask(() => {
+      if (this._readOnly) return;
+      const still = lost.filter(({ id }) => {
+        const m = this.objects.get(id);
+        return !!m && !(Number.isFinite(m.get('x')) && Number.isFinite(m.get('y')));
+      });
+      if (!still.length) return;
+      this.doc.transact(() => {
+        for (const { id, x, y } of still) {
+          const m = this.objects.get(id);
+          if (!m) continue;
+          if (!Number.isFinite(m.get('x'))) m.set('x', x);
+          if (!Number.isFinite(m.get('y'))) m.set('y', y);
+        }
+      }, GEOMETRY_HEAL);
+    });
   }
 
   /** Every local write goes through transact or transactAs, so a read-only store cannot write. */

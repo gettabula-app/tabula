@@ -93,8 +93,9 @@ describe('M token review findings', () => {
 
   it('uses the tray-muted modal label token without mixing it toward the tray', () => {
     const styles = read('src/styles.css');
-    expect(styles).toMatch(/\.modal \.list-label, \.modal \.field-label, \.modal \.tray-label\s*\{[^}]*color:\s*var\(--tray-muted\)/);
-    expect(styles).not.toMatch(/\.modal \.list-label, \.modal \.field-label, \.modal \.tray-label\s*\{[^}]*color-mix/);
+    // Slice 2 widened the selector list (ai/tokens/backups labels); the pin is on the colour: modal labels use --tray-muted unmixed.
+    expect(styles).toMatch(/\.modal :is\([^)]*\.field-label[^)]*\)[^{]*\{[^}]*color:\s*var\(--tray-muted\)/);
+    expect(styles).not.toMatch(/\.modal :is\([^)]*\.field-label[^)]*\)[^{]*\{[^}]*color-mix/);
     for (const theme of THEMES) {
       expect(contrast(theme.vars['--tray-muted'], theme.vars['--tray'])).toBeGreaterThanOrEqual(4.5);
     }
@@ -110,10 +111,13 @@ describe('M token review findings', () => {
   it('uses the scrim token for overlays and keeps elevation shadows off surface and text colors', () => {
     const rules = parseRules(allCss());
     const shadowRules = rules.flatMap((rule) => [...rule.body.matchAll(/box-shadow\s*:\s*([^;]+);/g)].map(([, value]) => ({ ...rule, value })));
-    // The shared input focus ring is a keyboard indicator. It keeps its high-contrast color; elevation shadows use --shade.
-    const nonFocusShadows = shadowRules.filter(({ selectors }) => !selectors.includes('.input:focus, select:focus, textarea:not(.text-editor):focus'));
+    // Focus indicators (:focus, :focus-within, :focus-visible) are keyboard indicators, not elevation. It keeps its high-contrast color; elevation shadows use --shade.
+    const nonFocusShadows = shadowRules.filter(({ selectors }) => !/:focus(?:-within|-visible)?\b/.test(selectors));
     const rawSurfaceColor = /var\(\s*--(?:tray|ink|tray-text)(?:\s|,|\))/;
-    expect(nonFocusShadows.filter(({ value }) => rawSurfaceColor.test(value))).toEqual([]);
+    // a ring (offset 0, blur 0, a spread: the selected-swatch and live-avatar separators) casts no shade, so it may use a surface color; blur or offset may not
+    const isRing = (layer: string) => /^\s*0(?:px)?\s+0(?:px)?\s+0(?:px)?\s+\d+(?:\.\d+)?px\s+var\(/.test(layer);
+    const castsFromSurface = ({ value }: { value: string }) => value.split(/,(?![^(]*\))/).some((layer) => rawSurfaceColor.test(layer) && !isRing(layer));
+    expect(nonFocusShadows.filter(castsFromSurface)).toEqual([]);
 
     for (const selector of ['.modal-back', '.trk-modal.modal-back', '.chat-dock-scrim', '.ks-scrim']) {
       const relatedRules = rules.filter((candidate) => candidate.selectors.split(',').map((value) => value.trim()).includes(selector));

@@ -2,11 +2,22 @@
    tokens by role (8px controls, 12px bubbles and pills), hairlines, 11px uppercase labels, an 8px grid. --signal marks Send, the
    New messages line, a message that mentions you, your own bubbles and the reactions you gave. */
 
+.chat-prefs-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; color: var(--tray-text); font-weight: 600; line-height: 1.4; cursor: pointer; }
+.chat-switch-control { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none; width: 48px; height: 44px; }
+.chat-switch-control input { position: absolute; inset: 0; z-index: 1; width: 48px; height: 44px; margin: 0; opacity: 0; cursor: pointer; }
+.chat-switch-track { position: relative; display: block; width: 40px; height: 24px; border: 1px solid var(--field-edge-strong); border-radius: 999px; background: var(--tray-2); }
+.chat-switch-thumb { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--tray-muted); }
+.chat-switch-control input:checked ~ .chat-switch-track { border-color: var(--ink); background: var(--ink); }
+.chat-switch-control input:checked ~ .chat-switch-track .chat-switch-thumb { background: var(--paper); transform: translateX(16px); }
+.chat-switch-control input:focus-visible ~ .chat-switch-track { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .chat-switch-thumb { transition: transform 120ms ease-out; } }
+@media (prefers-reduced-motion: reduce) { .chat-switch-thumb { transition: none; } }
+
 /* the Chat button and its unread badge (a red outline when someone mentions you) */
 .chat-toggle { position: relative; }
 .chat-count {
   display: none; position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
-  border-radius: var(--radius-xs); background: var(--tray-text); color: var(--tray); font-size: 10px; font-weight: 700; line-height: 16px;
+  border-radius: var(--radius-xs); background: var(--signal); color: var(--on-signal); font-size: 10px; font-weight: 700; line-height: 16px;
   text-align: center; pointer-events: none;
 }
 .chat-count.show { display: block; }
@@ -34,13 +45,13 @@
 .chat-older.chat-welcome { flex: 1 1 auto; display: grid; align-content: center; justify-items: center; gap: 4px; padding: 32px 24px; color: var(--tray-muted); font-size: 13px; line-height: 18px; text-align: center; }
 .chat-welcome-title { color: var(--tray-text); font-size: 16px; font-weight: 700; line-height: 22px; }
 .chat-empty-people { display: flex; margin-bottom: 8px; }
-.chat-empty-people .chat-avatar { width: 32px; height: 32px; margin: 0 0 0 -4px; font-size: 11px; box-shadow: 0 0 0 2px var(--tray-2); }
+.chat-empty-people .chat-avatar { width: 32px; height: 32px; margin: 0 0 0 -4px; font-size: 13px; box-shadow: 0 0 0 2px var(--tray-2); }
 .chat-empty-people .chat-avatar:first-child { margin-left: 0; }
 
 /* the day line: a label between two rules; the New messages line: the label in the signal colour, then a signal rule */
 .chat-day, .chat-new {
   display: flex; align-items: center; gap: 10px; margin: 16px 16px 8px; color: var(--tray-muted);
-  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 16px;
+  font-size: 11px; font-weight: 600; line-height: 16px;
 }
 .chat-day::before, .chat-day::after, .chat-new::after { content: ''; flex: 1; height: 1px; background: var(--tray-line); }
 .chat-new { color: var(--signal); }
@@ -56,7 +67,7 @@
 .chat-gutter { width: 28px; }
 .chat-avatar {
   width: 28px; height: 28px; margin-top: 0; border-radius: 50%; background: var(--c, var(--tray-2)); color: #fff;
-  display: grid; place-items: center; font: 700 11px/1 var(--ui); letter-spacing: 0.02em;
+  display: grid; place-items: center; font: 600 12px/1 var(--ui);
 }
 .chat-main { min-width: 0; }
 .chat-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; min-width: 0; }
@@ -127,7 +138,7 @@
 .chat-jump {
   position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); height: 32px; padding: 0 16px; border-radius: var(--radius-sm);
   border: 1px solid var(--tray-text); background: var(--tray); color: var(--tray-text);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 13px; font-weight: 600;
 }
 .chat-jump:hover { background: var(--tray-2); }
 .chat-jump[hidden] { display: none; }

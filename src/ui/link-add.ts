@@ -4,7 +4,7 @@ import { h } from './dom';
 import { popover } from './common';
 
 /**
- * The rail's Link button (proto/designer-preview/link-cards/SPEC.md): a small popover with an address field. Enter adds, Esc cancels and
+ * The Link choice in the Text/Markdown/Link rail group: a small popover with an address field. Enter adds, Esc cancels and
  * returns focus to the button. A refused address says why under the field; the card lands at the view centre, selected.
  */
 export function openLinkPopover(app: BoardApp, anchor: HTMLElement): void {

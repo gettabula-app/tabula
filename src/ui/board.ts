@@ -57,6 +57,8 @@ import { CANVAS_INK, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
 import { formatShortcutLabel, SHORTCUTS } from '../shortcuts';
 import { themeRadioGroup } from './theme-menu';
+import { getStoredTheme, onThemeChange, THEMES } from '../themes';
+import { kbdHint } from './kbd';
 import { openProfileDialog } from './profile-dialog';
 import { trackerEnabled as trackerAllowed } from '../tracker-gate';
 import { navigateTrackerPath } from '../route';
@@ -74,6 +76,7 @@ import { guestMark } from './guest-mark';
 import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate } from './share-logic';
 import { trackPanelTop } from './panel-top';
 import { mountRailScrollCue, trackMoreY } from './scroll-cue';
+import { choiceForToolKind, rememberToolChoice, restoreToolChoice, type RailToolChoice } from './rail-tool-group-state';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
 
@@ -158,7 +161,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
         ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
         : 'The server refused this connection. Your changes are still saved on this device.';
     }
-    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', { class: 'sync-status-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-status-label' }, label));
+    status.replaceChildren(h('span', { class: 'sync-status-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-status-label' }, s === 'live' ? 'Live' : label));
     status.setAttribute('aria-label', label);
     if (window.innerWidth <= 480) {
       status.dataset.tip = label;
@@ -232,7 +235,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       h('span', { class: 'phone-people-avatars', 'aria-hidden': 'true' }, ...ps.slice(0, 2).map((p, index) => h('span', {
         class: `avatar phone-avatar${index === 0 ? ' first' : ''}`, style: `--c:${p.user.color}`,
       }, initials(p.user.name)))),
-      ...(ps.length > 2 ? [h('span', { class: 'phone-people-count', 'aria-hidden': 'true' }, String(ps.length))] : []),
+      ...(ps.length > 2 ? [h('span', { class: 'phone-people-count', 'aria-hidden': 'true' }, `+${ps.length - 2}`)] : []),
     );
   };
   phonePeople.addEventListener('click', () => {
@@ -288,9 +291,145 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     b.dataset.tool = tool.kind;
     return b;
   };
-  // no single-key shortcut: M is the chat's and the rest are taken
-  const markdownBtn = h('button', { class: 'rail-btn', 'aria-label': 'Markdown block', 'data-tip': 'Markdown block', onclick: () => app.setTool({ kind: 'markdown' }) }, icon('markdown', 22));
-  markdownBtn.dataset.tool = 'markdown';
+  const railGroupChoices = [
+    { id: 'text', label: 'Text', icon: 'text' as IconName, key: 'T', tool: { kind: 'text' } as Tool },
+    { id: 'table', label: 'Table', icon: 'table' as IconName, key: 'G', tool: { kind: 'table' } as Tool },
+    { id: 'markdown', label: 'Markdown block', icon: 'markdown' as IconName, key: '', tool: { kind: 'markdown' } as Tool },
+    // Link cards open an address popover instead of arming a tool, and are not offered in the demo
+    ...(demo ? [] : [{ id: 'link', label: 'Link', icon: 'link' as IconName, key: '', tool: null as Tool | null }]),
+  ];
+  const railGroupState: RailToolChoice[] = railGroupChoices.map(({ id, tool }) => ({ id, toolKind: tool?.kind }));
+  const railGroupStorageKey = 'driftboard:rail-tool-group:text-markdown-link';
+  const loadRailGroupChoice = () => {
+    try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(railGroupStorageKey); } catch { return null; }
+  };
+  const saveRailGroupChoice = (choice: string) => {
+    try { localStorage.setItem(railGroupStorageKey, choice); } catch { /* grouped tool memory is a convenience */ }
+  };
+  let lastRailGroupChoice = restoreToolChoice(loadRailGroupChoice(), app.tool.kind, railGroupState, 'text');
+  let railGroupButton: HTMLButtonElement;
+  let closeRailGroup: () => void = () => {};
+  let longPressTimer = 0;
+  let suppressGroupClickTimer = 0;
+  let suppressGroupClick = false;
+  const clearGroupClickSuppression = () => {
+    window.clearTimeout(suppressGroupClickTimer);
+    suppressGroupClickTimer = 0;
+    suppressGroupClick = false;
+  };
+  const deferClearGroupClickSuppression = () => {
+    window.clearTimeout(suppressGroupClickTimer);
+    if (!suppressGroupClick) return;
+    suppressGroupClickTimer = window.setTimeout(() => {
+      suppressGroupClick = false;
+      suppressGroupClickTimer = 0;
+    }, 50);
+  };
+  const currentRailGroupChoice = () => railGroupChoices.find((choice) => choice.id === lastRailGroupChoice) ?? railGroupChoices[0];
+  const paintRailGroupButton = () => {
+    const choice = currentRailGroupChoice();
+    if (choice.tool) railGroupButton.dataset.tool = choice.tool.kind;
+    else delete railGroupButton.dataset.tool;
+    const active = !!choice.tool && app.tool.kind === choice.tool.kind;
+    railGroupButton.classList.toggle('on', active);
+    railGroupButton.setAttribute('aria-pressed', String(active));
+    railGroupButton.setAttribute('aria-label', choice.label);
+    if (choice.key) { railGroupButton.setAttribute('aria-keyshortcuts', choice.key); railGroupButton.dataset.tipKey = choice.key.toLowerCase(); } else { railGroupButton.removeAttribute('aria-keyshortcuts'); delete railGroupButton.dataset.tipKey; }
+    railGroupButton.replaceChildren(icon(choice.icon, 20), h('span', { class: 'rail-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 10)));
+  };
+  const selectRailGroupChoice = (id: string) => {
+    const choice = railGroupChoices.find((item) => item.id === id);
+    if (!choice) return;
+    closeRailGroup();
+    lastRailGroupChoice = choice.id;
+    saveRailGroupChoice(choice.id);
+    paintRailGroupButton();
+    if (choice.tool) app.setTool(choice.tool);
+    else if (app.readOnly) toast("You can't add links to a board you can only view.");
+    else openLinkPopover(app, railGroupButton);
+  };
+  const openRailGroup = () => {
+    if (document.querySelector('.rail-tool-pop')) return;
+    const options = railGroupChoices.map((choice) => h('button', {
+      class: 'menu-item rail-tool-option', type: 'button', role: 'menuitem', 'aria-label': choice.label,
+      ...(choice.key ? { 'aria-keyshortcuts': choice.key } : {}), onclick: () => selectRailGroupChoice(choice.id),
+    }, icon(choice.icon, 20), h('span', null, choice.label), ...(choice.key ? [h('kbd', null, choice.key)] : [])));
+    const list = h('div', { class: 'rail-tool-list', role: 'presentation' }, ...options);
+    list.addEventListener('keydown', (event: KeyboardEvent) => {
+      const buttons = [...list.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+      const active = buttons.indexOf(event.target as HTMLButtonElement);
+      if (active < 0) return;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        event.stopPropagation();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+          : (active + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length;
+        buttons[next]?.focus();
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        buttons[active]?.click();
+      }
+    });
+    const opened = popover(railGroupButton, list, {
+      side: 'right', className: 'rail-tool-pop', label: 'Text and content tools', role: 'menu',
+      onClose: () => {
+        railGroupButton.setAttribute('aria-expanded', 'false');
+        closeRailGroup = () => {};
+      },
+    });
+    railGroupButton.setAttribute('aria-expanded', 'true');
+    closeRailGroup = opened.close;
+  };
+  railGroupButton = h('button', {
+    class: 'rail-btn rail-tool-group', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+  });
+  paintRailGroupButton();
+  railGroupButton.addEventListener('click', (event) => {
+    if (suppressGroupClick) {
+      clearGroupClickSuppression();
+      event.preventDefault();
+      return;
+    }
+    if ((event.target as HTMLElement).closest('.rail-group-chevron')) openRailGroup();
+    else selectRailGroupChoice(lastRailGroupChoice);
+  });
+  railGroupButton.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    event.stopPropagation();
+    openRailGroup();
+  });
+  railGroupButton.addEventListener('pointerdown', (event) => {
+    clearGroupClickSuppression();
+    window.clearTimeout(longPressTimer);
+    if (event.button !== 0) return;
+    longPressTimer = window.setTimeout(() => {
+      suppressGroupClick = true;
+      openRailGroup();
+    }, 500);
+  });
+  const cancelRailGroupPress = () => window.clearTimeout(longPressTimer);
+  const releaseRailGroupPress = () => {
+    cancelRailGroupPress();
+    deferClearGroupClickSuppression();
+  };
+  railGroupButton.addEventListener('pointerup', releaseRailGroupPress);
+  railGroupButton.addEventListener('pointerleave', releaseRailGroupPress);
+  railGroupButton.addEventListener('pointercancel', () => {
+    cancelRailGroupPress();
+    clearGroupClickSuppression();
+  });
+  railGroupButton.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    cancelRailGroupPress();
+    openRailGroup();
+  });
+  app.lifetime.signal.addEventListener('abort', () => {
+    window.clearTimeout(longPressTimer);
+    window.clearTimeout(suppressGroupClickTimer);
+    closeRailGroup();
+  }, { once: true });
   const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates' | 'layers') => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
@@ -300,20 +439,17 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   layersBtn.setAttribute('aria-keyshortcuts', 'Alt+L');
   layersBtn.dataset.tipKey = 'alt+l';
   const templatesBtn = drawerBtn('Templates and team exercises', 'templates', 'templates');
+  templatesBtn.setAttribute('aria-haspopup', 'dialog');
+  templatesBtn.setAttribute('aria-expanded', 'false');
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
   const shapesBtn = h('button', { class: 'rail-btn', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
+  const connectorBtn = toolBtn('Connector', 'connector', { kind: 'connector' }, 'L');
   const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
   // Images (docs/images.md): hidden when the server says it keeps none
   const imageBtn = h('button', { class: 'rail-btn', 'aria-label': 'Image', 'data-tip': 'Add an image', onclick: () => pickImages(app) }, icon('image', 22));
   imageBtn.hidden = demo || !imagesAvailable();
   if (!demo) app.lifetime.signal.addEventListener('abort', onAuth(() => (imageBtn.hidden = !imagesAvailable())), { once: true });
   app.onImageFiles = demo ? null : (files) => void addImages(app, files);
-  // Link cards (docs/link-cards.md): an address in a small popover; the card appears at once and its preview fills in
-  const linkBtn = h('button', { class: 'rail-btn', 'aria-label': 'Link', 'data-tip': 'Link', 'aria-haspopup': 'dialog', onclick: () => {
-    if (app.readOnly) toast("You can't add links to a board you can only view.");
-    else openLinkPopover(app, linkBtn);
-  } }, icon('link', 22));
-  linkBtn.hidden = demo;
   app.openObjectMenu = (x, y) => openContextMenu(app, x, y);
   // the card dialog and the Labels dialog (docs/kanban.md, slice 3)
   app.openCard = (id, focus) => void openCardDialog(app, id, focus);
@@ -366,15 +502,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       toolBtn('Hand', 'hand', { kind: 'hand' }, 'H'),
       h('hr'),
       stickyBtn,
-      toolBtn('Text', 'text', { kind: 'text' }, 'T'),
-      markdownBtn,
+      railGroupButton,
       shapesBtn,
-      toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
+      connectorBtn,
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
       toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
       trackerCommand,
       imageBtn,
-      linkBtn,
       commentBtn,
       h('hr'),
       drawerBtn('UML', 'uml', 'uml'),
@@ -394,7 +528,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   );
   // The phone demo keeps six tools (see .demo-board in styles.css).
   for (const b of [stickyBtn, shapesBtn]) b.classList.add('demo-keep');
-  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="text"], [data-tool="connector"]')) b.classList.add('demo-keep');
+  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="connector"]')) b.classList.add('demo-keep');
+  railGroupButton.classList.add('demo-keep');
+  rail.querySelector<HTMLElement>('[data-tool="pen"]')?.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
   const railTools = rail.querySelector<HTMLElement>('.rail-tools');
   if (railTools) {
@@ -408,6 +544,14 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     mountRailScrollCue(rail, railTools, chevron, track, thumb);
   }
   const syncRail = () => {
+    if (choiceForToolKind(app.tool.kind, railGroupState)) {
+      const groupChoice = rememberToolChoice(lastRailGroupChoice, app.tool.kind, railGroupState);
+      if (groupChoice !== lastRailGroupChoice) {
+        lastRailGroupChoice = groupChoice;
+        saveRailGroupChoice(groupChoice);
+      }
+    }
+    paintRailGroupButton();
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
       const t = app.tool;
       const on = b.dataset.tool === t.kind;
@@ -605,7 +749,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     liveRunsFor(app)?.onChange(renderPeople);
   }
   if (!scratch && !demo) mountAiBar(app, chrome);
-  if (!scratch && !demo) firstRunHint(app, chrome);
+  if (!scratch && !demo) firstRunHint(app, chrome, () => library.open('templates'));
 
   // View-only boards keep Select and Hand; the rest of the editing chrome is disabled.
   const syncReadOnly = () => {
@@ -723,7 +867,9 @@ async function importInto(app: BoardApp, file: File) {
 
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
-export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
+export function firstRunHint(app: BoardApp, chrome: HTMLElement, openTemplates: () => void = () => {
+  document.querySelector<HTMLElement>('[data-drawer="templates"]')?.click();
+}) {
   if (app.store.cache.size || app.readOnly) return;
   // opens the AI bar with Generate armed and only the prompt to send; it runs nothing. Shown while the bar is on the board.
   const generate = h('button', {
@@ -733,7 +879,12 @@ export function firstRunHint(app: BoardApp, chrome: HTMLElement) {
     h('p', { class: 'hint-title' }, 'An empty board'),
     h('p', null, 'Press N for a sticky note, R for a rectangle, or double-click to write. Hold Space and drag to move around.'),
     h('div', { class: 'btn-row' },
-      h('button', { class: 'btn primary', onclick: () => (document.querySelector('[data-drawer="templates"]') as HTMLElement)?.click() }, 'Start from a template'),
+      h('button', {
+        class: 'btn primary',
+        'aria-haspopup': 'dialog',
+        'aria-expanded': 'false',
+        onclick: openTemplates,
+      }, 'Start from a template'),
       h('button', { class: 'btn', onclick: () => openMermaidImport(app) }, 'Import Mermaid'),
       generate,
     ),
@@ -825,13 +976,32 @@ function minimap(app: BoardApp) {
 // ---------------------------------------------------------------- menus & dialogs
 
 function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) | null, scratch: boolean, demo: boolean, openLayers: () => void) {
-  const item = (ic: IconName, label: string, fn: () => void, hint?: string) =>
-    h('button', { class: 'menu-item', onclick: () => { pop.close(); fn(); } }, icon(ic, 18), h('span', null, label), hint ? h('span', { class: 'menu-hint' }, hint) : null);
-  // Items that change the board are disabled while it is view only.
-  const writeItem = (ic: IconName, label: string, fn: () => void) => {
-    const b = item(ic, label, fn);
-    b.disabled = app.readOnly;
-    return b;
+  let pop: ReturnType<typeof popover>;
+  let activeSubmenu: 'export' | 'theme' | null = null;
+  let stopTheme: () => void = () => {};
+
+  const isPhone = () => typeof window.matchMedia === 'function'
+    ? window.matchMedia('(max-width: 500px)').matches
+    : window.innerWidth <= 500;
+  const isShortcutHint = (value: string) => /^(?:(?:Alt|Ctrl|Cmd|Shift|Ctrl\/Cmd)\+|[⌘⌥⇧⌃])/.test(value);
+  const actionItem = (leading: HTMLElement, label: string, fn: () => unknown, hint?: string, cls = '') => {
+    const trailing = hint
+      ? h('span', { class: 'menu-hint' }, isShortcutHint(hint) ? kbdHint(hint) : hint)
+      : null;
+    const row = h('button', {
+      class: 'menu-item' + (cls ? ' ' + cls : ''),
+      type: 'button',
+      onclick: () => { pop.close(); void fn(); },
+    }, leading, h('span', { class: 'board-menu-label' }, label), trailing);
+    row.dataset.menuLabel = label;
+    return row;
+  };
+  const item = (ic: IconName, label: string, fn: () => unknown, hint?: string, cls = '') =>
+    actionItem(icon(ic, 16), label, fn, hint, cls);
+  const writeItem = (ic: IconName, label: string, fn: () => unknown) => {
+    const row = item(ic, label, fn);
+    row.disabled = app.readOnly;
+    return row;
   };
   const name = () => safeName(app.store.getMeta().name);
   const fileInput = h('input', { type: 'file', accept: '.drift,.json,application/json', hidden: true });
@@ -842,10 +1012,9 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   const sel = app.selection.length ? app.selection : undefined;
   const auth = authState();
   const account = auth.mode === 'signed-in' ? [
-    h('div', { class: 'list-label' }, 'Account'),
-    h('div', { style: 'display:flex;align-items:center;gap:10px;padding:8px 10px' },
-      icon('user', 18),
-      h('div', { style: 'min-width:0;overflow-wrap:anywhere' },
+    h('div', { class: 'board-menu-account' },
+      icon('user', 16),
+      h('div', { class: 'board-menu-account-text' },
         h('div', null, auth.me.user.name),
         h('div', { class: 'muted small' }, auth.me.user.email))),
     item('user', 'Sign out', async () => {
@@ -869,55 +1038,43 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     auth.me.chat ? item('chat', 'Chat notifications', () => openChatNotifications()) : null,
     auth.me.ai?.personalKeys ? item('lock', 'Your AI key', () => openAiKeyDialog()) : null,
   ] : [];
-  const themeGroup = themeRadioGroup();
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
-  if (app.commentsVisible) showComments.append(icon('check', 16));
-  // First in the menu: it is not a board action, and the person who is lost looks at the top. A quiet accent (the icon and a heavier label) in styles.css marks it.
-  const guide = !DEMO && !demo
-    ? h('button', { class: 'menu-item guide-item', onclick: () => { pop.close(); window.open('/docs/', '_blank', 'noopener'); } },
-      icon('link', 18), h('span', null, 'User guide'), h('span', { class: 'menu-hint' }, 'Opens in a new tab'))
+  if (app.commentsVisible) showComments.append(h('span', { class: 'menu-hint' }, icon('check', 14)));
+  const chatNarrow = app.toggleChat
+    ? item('chat', 'Chat', () => app.toggleChat?.(), undefined, 'menu-chat-narrow')
     : null;
-  // Below 380px the Chat button leaves the top bar (styles.css) so the board name keeps room; the menu carries it, and a dot on the menu button shows unread
-  const chatNarrow = app.toggleChat ? h('button', { class: 'menu-item menu-chat-narrow', onclick: () => { pop.close(); app.toggleChat?.(); } }, icon('chat', 18), h('span', null, 'Chat')) : null;
-  // The tracker is a workspace screen: not for the demo, a scratch board or a guest, and only when /api/me says the workspace has it.
   const tracker = !DEMO && !demo && !scratch && trackerAllowed(auth)
     ? item('layers', 'Tracker', () => { navigateTrackerPath({ kind: 'view', view: 'all' }); })
     : null;
-  const pop = popover(anchor, h('div', { class: 'menu' },
-    guide,
+
+  const boardRows = [
     tracker,
-    tracker ? h('hr', { class: 'menu-sep' }) : null,
     chatNarrow,
-    account,
-    h('div', { class: 'list-label' }, 'Board'),
+    ...account,
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
-    // The demo opens as a plain board; voting is something the visitor starts.
     demo ? writeItem('vote', 'Try dot voting', () => startVote(app, { kind: 'stickies' })) : null,
     scratch || demo || !canSaveTemplate(auth.mode) ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
-    demo ? [
-      h('div', { class: 'list-label' }, 'Workspace features'),
-      demoWorkspaceItems(),
-    ] : openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
+    demo
+      ? demoWorkspaceItems()
+      : openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     // what agents did on this board, with a revert for editors (TAB-158); kept for boards in a workspace with accounts
     !scratch && !demo && authState().mode === 'signed-in' ? item('history', 'Agent activity', () => openAgentActivity(app)) : null,
     item('layers', 'Layers', openLayers, 'Alt+L'),
     demo || !canChangeProfile(auth.mode) ? null : item('user', 'Your name and colour', () => openProfile(app)),
-    mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,
+    mutedCount(app) ? item('user', 'Muted people (' + mutedCount(app) + ')', () => openMuted(app)) : null,
     scratch ? null : showComments,
+    aiBarFor(app) ? actionItem(glyph('spark', 16), 'Summarise', () => aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }), 'The whole board') : null,
+    item('menu', 'Keyboard shortcuts', () => openShortcuts(app.toggleChat !== null)),
+  ];
+  const importRows = [
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
     writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
-    aiBarFor(app) ? [
-      h('div', { class: 'list-label' }, 'AI'),
-      h('button', { class: 'menu-item', onclick: () => { pop.close(); aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }); } },
-        glyph('spark', 18), h('span', null, 'Summarise'), h('span', { class: 'menu-hint' }, 'The whole board')),
-    ] : null,
-    h('div', { class: 'list-label' }, 'Appearance'),
-    themeGroup,
-    h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
+  ];
+  const exportRows = [
     item('download', 'PNG image', async () => {
       toast('Preparing image…');
       try {
-        download(await exportPng(app, sel, 2), `${name()}.png`);
+        download(await exportPng(app, sel, 2), name() + '.png');
       } catch (e) {
         toast((e as Error).message);
       }
@@ -930,14 +1087,239 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     // cards of the selected kanbans, or of every kanban (docs/kanban.md, Export and import)
     csvKanbans(app).length ? item('download', 'Cards as CSV', () => downloadCardsCsv(app), 'One row per card, for spreadsheets') : null,
     item('mermaid', 'Copy as Mermaid', () => {
-      // never the words of a note private writing hides from this person
       const objs = leaveOutWithheld(sel ? [...app.store.cache.values()].filter((o) => sel.includes(o.id) || o.type === 'connector') : [...app.store.cache.values()], app.flow);
       navigator.clipboard.writeText(toMermaid(objs)).then(() => toast('Mermaid copied to the clipboard'), () => toast('Clipboard is not available'));
     }),
-    h('div', { class: 'list-label' }, 'Help'),
-    item('menu', 'Keyboard shortcuts', () => openShortcuts(app.toggleChat !== null)),
-    fileInput,
-  ), { side: 'bottom' });
+  ];
+
+  const themeCurrent = h('span', { class: 'board-theme-name' }, '');
+  const updateThemeName = () => {
+    themeCurrent.textContent = THEMES.find((t) => t.id === getStoredTheme())?.name ?? THEMES[0].name;
+  };
+  updateThemeName();
+  const themeOptions = themeRadioGroup();
+  themeOptions.classList.add('board-theme-options');
+  for (const row of themeOptions.querySelectorAll<HTMLButtonElement>('.theme-item')) {
+    row.dataset.menuLabel = row.textContent?.trim() ?? '';
+  }
+
+  const exportPanel = h('div', { class: 'menu board-menu-submenu board-export-submenu', hidden: true }, ...exportRows);
+  const themePanel = h('div', { class: 'menu board-menu-submenu board-theme-submenu', hidden: true }, themeOptions);
+  const exportTrigger = h('button', {
+    class: 'menu-item board-menu-sub-trigger',
+    type: 'button',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    onclick: () => toggleSubmenu('export', true),
+  }, icon('download', 16), h('span', { class: 'board-menu-label' }, sel ? 'Export selection' : 'Export'), icon('chevron', 14));
+  exportTrigger.dataset.menuLabel = sel ? 'Export selection' : 'Export';
+  const themeTrigger = h('button', {
+    class: 'menu-item board-menu-sub-trigger',
+    type: 'button',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    onclick: () => toggleSubmenu('theme', true),
+  }, glyph('spark', 16), h('span', { class: 'board-theme-label' }, 'Theme'), themeCurrent, icon('chevron', 14));
+  themeTrigger.dataset.menuLabel = 'Theme';
+
+  type MenuChild = HTMLElement | null | MenuChild[];
+  const section = (className: string, ...children: MenuChild[]) =>
+    h('section', { class: 'board-menu-group ' + className }, children);
+  const boardGroup = section('board-menu-board', boardRows);
+  const importGroup = section('board-menu-import', ...importRows);
+  const exportGroup = section('board-menu-export', exportTrigger, exportPanel);
+  const themeGroup = section('board-menu-appearance', themeTrigger, themePanel);
+
+  const search = h('input', {
+    class: 'input board-menu-search-input',
+    type: 'search',
+    placeholder: 'Search actions',
+    'aria-label': 'Search actions',
+    oninput: () => filterMenu(),
+  });
+  const searchField = h('label', { class: 'board-menu-search' }, icon('search', 16), search, kbdHint('/', 'board-menu-slash'));
+  const guide = !DEMO && !demo
+    ? item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab', 'guide-item')
+    : null;
+  const footer = h('div', { class: 'board-menu-footer' }, guide, fileInput);
+  const menu = h('div', { class: 'menu board-menu' }, searchField,
+    h('div', { class: 'board-menu-groups' }, boardGroup, importGroup, exportGroup, themeGroup),
+    footer);
+  const panels = { export: exportPanel, theme: themePanel };
+  const triggers = { export: exportTrigger, theme: themeTrigger };
+
+  function setSubmenu(key: 'export' | 'theme' | null, moveFocus: boolean): void {
+    const previous = activeSubmenu;
+    activeSubmenu = key;
+    for (const submenu of ['export', 'theme'] as const) {
+      const active = submenu === key;
+      panels[submenu].hidden = !active;
+      triggers[submenu].setAttribute('aria-expanded', String(active));
+      if (!active) {
+        panels[submenu].style.removeProperty('left');
+        panels[submenu].style.removeProperty('top');
+        panels[submenu].style.removeProperty('position');
+        panels[submenu].style.removeProperty('z-index');
+      }
+    }
+    if (!key) {
+      if (moveFocus) triggers[previous ?? 'export'].focus();
+      return;
+    }
+    const panel = panels[key];
+    if (isPhone()) {
+      panel.style.removeProperty('left');
+      panel.style.removeProperty('top');
+      panel.style.removeProperty('position');
+      panel.style.removeProperty('z-index');
+      if (moveFocus) {
+        const selected = panel.querySelector<HTMLElement>('[aria-checked="true"]');
+        (selected ?? panel.querySelector<HTMLElement>('.menu-item:not(:disabled)'))?.focus();
+      }
+      return;
+    }
+    panel.style.position = 'fixed';
+    panel.style.zIndex = '51';
+    // attached to the menu's edge, level with the row that opened it; it flips to the left only when the right has no room
+    const anchorRect = triggers[key].getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const panelWidth = panelRect.width || 280;
+    const panelHeight = panelRect.height || 240;
+    const fitsRight = menuRect.right + panelWidth + 8 <= window.innerWidth;
+    const left = fitsRight ? menuRect.right + 2 : Math.max(8, menuRect.left - panelWidth - 2);
+    const top = Math.max(8, Math.min(anchorRect.top - 5, window.innerHeight - panelHeight - 8));
+    panel.style.left = Math.round(left) + 'px';
+    panel.style.top = Math.round(top) + 'px';
+    if (moveFocus) {
+      const selected = panel.querySelector<HTMLElement>('[aria-checked="true"]');
+      (selected ?? panel.querySelector<HTMLElement>('.menu-item:not(:disabled)'))?.focus();
+    }
+  }
+
+  function toggleSubmenu(key: 'export' | 'theme', moveFocus: boolean): void {
+    setSubmenu(activeSubmenu === key ? null : key, moveFocus);
+  }
+
+  function filterMenu(): void {
+    const query = search.value.trim().toLocaleLowerCase();
+    const optionRows = (panel: HTMLElement) => Array.from(panel.querySelectorAll<HTMLButtonElement>('.menu-item[data-menu-label]'));
+    const childMatches = (panel: HTMLElement) => optionRows(panel).some((row) => row.dataset.menuLabel?.toLocaleLowerCase().includes(query));
+    const exportMatches = query !== '' && childMatches(exportPanel);
+    const themeMatches = query !== '' && childMatches(themePanel);
+    if (query) {
+      if (exportTrigger.dataset.menuLabel?.toLocaleLowerCase().includes(query) || exportMatches) setSubmenu('export', false);
+      else if (themeTrigger.dataset.menuLabel?.toLocaleLowerCase().includes(query) || themeMatches) setSubmenu('theme', false);
+      else if (activeSubmenu) setSubmenu(null, false);
+    }
+    const rows = Array.from(menu.querySelectorAll<HTMLButtonElement>('.menu-item[data-menu-label]'));
+    for (const row of rows) {
+      const label = row.dataset.menuLabel?.toLocaleLowerCase() ?? '';
+      const panel = row.closest<HTMLElement>('.board-menu-submenu');
+      const parentMatches = panel?.classList.contains('board-export-submenu')
+        ? exportTrigger.dataset.menuLabel?.toLocaleLowerCase().includes(query) === true
+        : panel?.classList.contains('board-theme-submenu')
+          ? themeTrigger.dataset.menuLabel?.toLocaleLowerCase().includes(query) === true
+          : false;
+      const childMatch = row === exportTrigger ? exportMatches
+        : row === themeTrigger ? themeMatches
+          : false;
+      row.hidden = query !== '' && !label.includes(query) && !parentMatches && !childMatch;
+    }
+    for (const group of [boardGroup, importGroup, exportGroup, themeGroup]) {
+      group.hidden = query !== '' && !group.querySelector('.menu-item:not([hidden])');
+    }
+    footer.hidden = query !== '' && !footer.querySelector('.menu-item:not([hidden])');
+  }
+
+  function menuKeyDown(event: KeyboardEvent): boolean {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (event.key === '/' && target !== search && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      search.focus();
+      return true;
+    }
+    if (event.key === 'Escape') {
+      if (search.value.trim()) {
+        search.value = '';
+        filterMenu();
+        if (activeSubmenu) setSubmenu(null, false);
+        search.focus();
+        return true;
+      }
+      // the Export list opens by itself with the menu: Esc closes the menu unless focus is inside an open list
+      if (activeSubmenu && target && panels[activeSubmenu].contains(target)) {
+        toggleSubmenu(activeSubmenu, true);
+        return true;
+      }
+      return false;
+    }
+    if (event.key === 'ArrowLeft' && activeSubmenu) {
+      const submenu = activeSubmenu;
+      setSubmenu(null, false);
+      triggers[submenu].focus();
+      return true;
+    }
+    if (event.key === 'ArrowRight' && target === exportTrigger) {
+      setSubmenu('export', true);
+      return true;
+    }
+    if (event.key === 'Enter' && target === exportTrigger) {
+      setSubmenu('export', true);
+      return true;
+    }
+    if (event.key === 'ArrowRight' && target === themeTrigger) {
+      setSubmenu('theme', true);
+      return true;
+    }
+    if (event.key === 'Enter' && target === themeTrigger) {
+      setSubmenu('theme', true);
+      return true;
+    }
+    if (activeSubmenu === 'theme' && target?.closest('.board-theme-options') && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) return false;
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return false;
+
+    const activePanel = target?.closest<HTMLElement>('.board-menu-submenu');
+    const rows = Array.from((activePanel ?? menu).querySelectorAll<HTMLButtonElement>('.menu-item[data-menu-label]:not(:disabled):not([hidden])'))
+      .filter((row) => !row.closest('[hidden]') && (!!activePanel || row.closest('.board-menu-submenu') === null));
+    if (!rows.length) return false;
+    const current = rows.indexOf(target as HTMLButtonElement);
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? rows.length - 1
+        : current < 0 ? (event.key === 'ArrowDown' ? 0 : rows.length - 1)
+          : (current + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
+    rows[next].focus();
+    return true;
+  }
+
+  pop = popover(anchor, menu, {
+    side: 'bottom',
+    className: 'board-menu-pop',
+    label: 'Board actions',
+    onKeyDown: menuKeyDown,
+    onClose: () => stopTheme(),
+  });
+  // a mouse opens a list after a short rest on its row and closes it when the pointer rests on another row; never on open
+  let hoverTimer = 0;
+  menu.addEventListener('pointerover', (event: PointerEvent) => {
+    if (event.pointerType !== 'mouse' || isPhone()) return;
+    const row = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('.menu-item') : null;
+    if (!row) return;
+    window.clearTimeout(hoverTimer);
+    if (row.closest('.board-menu-submenu')) return;
+    const key = row === exportTrigger ? 'export' : row === themeTrigger ? 'theme' : null;
+    if (key === activeSubmenu) return;
+    if (key === null && activeSubmenu === null) return;
+    hoverTimer = window.setTimeout(() => { if (menu.isConnected) setSubmenu(key, false); }, key ? 150 : 250);
+  });
+  menu.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (activeSubmenu !== 'theme' || event.key !== 'ArrowLeft' || !(event.target instanceof HTMLElement) || !event.target.closest('.board-theme-options')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSubmenu(null, false);
+    themeTrigger.focus();
+  }, true);
+  stopTheme = onThemeChange(updateThemeName);
+  setSubmenu(null, false);
 }
 
 function openShare(app: BoardApp) {

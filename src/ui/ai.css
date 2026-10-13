@@ -11,8 +11,9 @@
 .ai-field { display: grid; gap: 8px; min-width: 0; }
 .ai-field .input, .ai-limit .input { width: 100%; }
 
-/* Label style: 11px uppercase meta. */
-.ai-label { display: block; margin-bottom: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+/* on the admin page the label sits on the page ground (graphite); in the dialog it sits on the tray */
+.ai-label { display: block; margin-bottom: 8px; color: var(--graphite); font-size: 12px; font-weight: 600; }
+.ai-dialog .ai-label { color: var(--tray-muted); }
 /* the OpenAI-compatible fields, a group inside a key form (TAB-222): spaced the same in both screens, and gone when empty */
 .ai-fields { display: grid; gap: 16px; min-width: 0; margin: 8px 0; }
 .ai-fields:empty { display: none; }
@@ -45,14 +46,13 @@
 
 /* The "Your AI key" dialog. */
 .ai-dialog {
-  width: min(560px, 100%); border-radius: var(--radius-lg); box-shadow: none;
-  border: 1px solid var(--tray-line); border-top: 1px solid var(--tray-line);
+  width: min(560px, 100%); border-radius: var(--radius-lg);
 }
 .ai-dialog .icon-btn { border-radius: var(--radius-sm); }
 .ai-dialog .modal-body { padding: 8px 24px 24px; }
 .ai-dialog .ai-intro, .ai-dialog .ai-state, .ai-dialog .ai-meta { color: var(--tray-muted); }
 .ai-dialog .ai-key { border-top-color: var(--tray-text); border-bottom-color: var(--tray-line); }
-.ai-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); border: 0; }
+.ai-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); }
 .ai-dialog :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .ai-dialog .input:focus-visible { outline: none; }
 .ai-dialog .btn-row { gap: 8px; }
@@ -60,8 +60,6 @@
   height: 32px; padding: 0 12px; font-size: 13px;
 }
 .ai-dialog .btn:disabled { opacity: 0.5; }
-.ai-dialog .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
-.ai-dialog .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--tray-text)); color: var(--on-signal); }
 
 /* The admin tab: the definition list of the overview, with the controls in the value column. */
 .ai-admin { min-width: 0; }

@@ -1,5 +1,6 @@
 import './tracker.css';
 import { h } from '../../ui/dom';
+import { kbdHint } from '../../ui/kbd';
 import { popover } from '../../ui/common';
 import { parseTicketKey } from './keys-util';
 import { renderSnippet } from './snippet';
@@ -97,7 +98,10 @@ export function openCommandBox(anchor: HTMLElement, options: CommandBoxOptions):
     placeholder: 'Search tickets, views, or actions', autocomplete: 'off', spellcheck: 'false',
   });
   const list = h('ul', { class: 'trk-command-results', id: `${id}-results`, role: 'listbox', 'aria-label': 'Command results' });
-  const content = h('div', { class: 'trk trk-command-box' }, input, list);
+  const foot = h('div', { class: 'trk-command-foot' },
+    kbdHint('↑'), kbdHint('↓'), 'Move', kbdHint('Enter'), 'Open', kbdHint('Esc'), 'Close',
+  );
+  const content = h('div', { class: 'trk trk-command-box' }, input, list, foot);
   let results = [...options.items];
   let active = -1;
   let timer = 0;

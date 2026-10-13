@@ -55,7 +55,7 @@ const resolveSignal = (): AbortSignal | undefined => (typeof AbortSignal !== 'un
 // ---------------------------------------------------------------- glyphs the shared icon set does not have
 
 const LOCAL_ICONS = {
-  spark: '<path d="M11.5 5c.6 4.4 2.3 6.1 6.5 6.5-4.2.4-5.9 2.1-6.5 6.5-.6-4.4-2.3-6.1-6.5-6.5 4.2-.4 5.9-2.1 6.5-6.5z"/><path d="M19 2.5v3M17.5 4h3" stroke-width="1.5"/>',
+  spark: '<path d="M11.5 5c.6 4.4 2.3 6.1 6.5 6.5-4.2.4-5.9 2.1-6.5 6.5-.6-4.4-2.3-6.1-6.5-6.5 4.2-.4 5.9-2.1 6.5-6.5z"/><path d="M19 2.5v3M17.5 4h3"/>',
   grip: '<g fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></g>',
   alert: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5.5"/><circle cx="12" cy="16.2" r=".9" fill="currentColor"/>',
   wifiOff: '<path d="M3 3l18 18"/><path d="M2.5 9a14 14 0 015-2.9M10 5.2a14 14 0 0111.5 3.8M5.5 12.5a9.5 9.5 0 014.2-2.4M14 10.1a9.5 9.5 0 014.5 2.4M8.6 15.8a5 5 0 013.6-1.2"/><circle cx="12" cy="19" r=".9" fill="currentColor"/>',
@@ -66,7 +66,7 @@ export function glyph(name: keyof typeof LOCAL_ICONS | keyof typeof ICONS, size 
   const s = document.createElement('span');
   s.className = 'ico';
   s.setAttribute('aria-hidden', 'true');
-  s.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${LOCAL_ICONS[name as keyof typeof LOCAL_ICONS]}</svg>`;
+  s.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${LOCAL_ICONS[name as keyof typeof LOCAL_ICONS]}</svg>`;
   return s;
 }
 

@@ -37,6 +37,17 @@ export const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && !isSticker(
 /** Font size steps by 1, or 10 with Shift. */
 const FONT_SIZE_STEPS = { min: 6, max: 400, step: 1, big: 10 };
 const WEIGHT_NAMES: Record<number, string> = { 100: 'Thin', 200: 'Extralight', 300: 'Light', 400: 'Regular', 500: 'Medium', 600: 'Semibold', 700: 'Bold', 800: 'Extrabold', 900: 'Black' };
+const COLLAPSED_SECTIONS_KEY = 'driftboard:props-sections-collapsed';
+
+function loadCollapsedSections(): Set<string> {
+  try {
+    const raw = typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(COLLAPSED_SECTIONS_KEY);
+    const value: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(value) ? value.filter((item): item is string => ['Appearance', 'Text', 'Arrange'].includes(item)) : []);
+  } catch { return new Set(); }
+}
+
+const collapsedSections = loadCollapsedSections();
 
 export function mountProps(app: BoardApp, parent: HTMLElement) {
   const panel = h('aside', { class: 'props tray', 'aria-label': 'Selection properties' });
@@ -103,12 +114,14 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       const vals = styleSel.filter(filter).map(read);
       return vals.length && vals.every((v) => v === vals[0]) ? vals[0] : null;
     };
-    const blocks: (HTMLElement | null)[] = [];
+    const appearance: (HTMLElement | null)[] = [];
+    const text: (HTMLElement | null)[] = [];
+    const arrange: (HTMLElement | null)[] = [];
 
     // ---- type-specific
     if (styleSame && styleFirst.type === 'sticky') {
       const isSticky = (o: Obj) => o.type === 'sticky';
-      blocks.push(field('Colour', stickyColorField(app, (styleFirst as BaseObj).fill ?? DEFAULTS.sticky.fill, (v) => {
+      appearance.push(field('Colour', stickyColorField(app, (styleFirst as BaseObj).fill ?? DEFAULTS.sticky.fill, (v) => {
         app.stickyColor = v;
         upLeaves({ fill: v }, isSticky);
       }, {
@@ -118,7 +131,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }
     if (same && first.type === 'shape') {
       const kinds = SHAPE_GROUPS.flatMap(([group, label]) => SHAPE_KINDS.filter((k) => k.group === group).map((k) => ({ value: k.kind, label: k.label, group: label })));
-      blocks.push(field('Shape', combo<ShapeKind>({
+      appearance.push(field('Shape', combo<ShapeKind>({
         label: 'Shape', options: kinds, value: shared((o) => (o as BaseObj).kind ?? 'rect'),
         ...live((v) => ({ kind: v }), (o) => o.type === 'shape'),
       })));
@@ -126,25 +139,25 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     if (same && first.type === 'frame' && sel.length === 1) {
       const name = h('input', { class: 'input', value: (first as BaseObj).name ?? '', 'aria-label': 'Frame name' });
       name.addEventListener('change', () => up({ name: name.value }));
-      blocks.push(field('Name', name));
-      blocks.push(frameSizeFields(app, first as BaseObj));
+      appearance.push(field('Name', name));
+      arrange.push(frameSizeFields(app, first as BaseObj));
     }
     if (same && first.type === 'uml-class') {
       const kinds = [['', 'Class'], ['interface', 'Interface'], ['abstract', 'Abstract'], ['enumeration', 'Enumeration'], ['entity', 'Entity'], ['service', 'Service']]
         .map(([value, label]) => ({ value, label }));
-      blocks.push(field('Kind', combo<string>({
+      appearance.push(field('Kind', combo<string>({
         label: 'Stereotype', options: kinds, value: shared((o) => (o as BaseObj).stereotype ?? ''),
         ...live((v) => ({ stereotype: v || undefined }), (o) => o.type === 'uml-class'),
       })));
-      if (sel.length === 1) blocks.push(h('button', { class: 'btn wide', onclick: () => app.editor.start(first.id) }, 'Edit name and members'));
+      if (sel.length === 1) appearance.push(h('button', { class: 'btn wide', onclick: () => app.editor.start(first.id) }, 'Edit name and members'));
     }
 
-    if (sel.every(isConnector)) blocks.push(...connectorFields(app, sel as ConnectorObj[]));
-    blocks.push(...kanbanFields(app, sel));
+    if (sel.every(isConnector)) appearance.push(...connectorFields(app, sel as ConnectorObj[]));
+    appearance.push(...kanbanFields(app, sel));
 
     // ---- fill & stroke
     if (styleSel.some(HAS_FILL)) {
-      blocks.push(field('Fill', swatches(FILLS, s.fill, (v) => upLeaves({ fill: v }, HAS_FILL), { label: 'Fill colour' })));
+      appearance.push(field('Fill', swatches(FILLS, s.fill, (v) => upLeaves({ fill: v }, HAS_FILL), { label: 'Fill colour' })));
     }
     if (styleSel.some(HAS_STROKE)) {
       const isIcon = styleSame && styleFirst.type === 'icon';
@@ -155,15 +168,15 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         app.store.transact(() => styleSel.filter(HAS_STROKE).forEach((o) => app.store.update(o.id, o.type === 'icon' ? { textColor: v } : { stroke: v })));
         app.store.undo.stopCapturing();
       };
-      blocks.push(field(isIcon ? 'Colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), lineValue, (v) => {
+      appearance.push(field(isIcon ? 'Colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), lineValue, (v) => {
         setLine(v);
       }, { label: 'Line colour' })));
       if (!isIcon) {
-        blocks.push(h('div', { class: 'row2' },
+        appearance.push(h('div', { class: 'row2' },
           field('Width', segmented([1, 2, 3, 4, 6].map((w) => ({ value: w, label: `${w}px`, icon: h('span', { class: 'line-sample', style: `--w:${w}px` }) })), (styleFirst as BaseObj).strokeWidth ?? s.strokeWidth, (v) => upLeaves({ strokeWidth: v }, HAS_STROKE), 'Line width')),
         ));
         if (!styleSel.every((o) => o.type === 'path')) {
-          blocks.push(field('Style', segmented([
+          appearance.push(field('Style', segmented([
             { value: 'solid', label: 'Solid', icon: h('span', { class: 'dash-sample solid' }) },
             { value: 'dashed', label: 'Dashed', icon: h('span', { class: 'dash-sample dashed' }) },
             { value: 'dotted', label: 'Dotted', icon: h('span', { class: 'dash-sample dotted' }) },
@@ -184,7 +197,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
           onRevert: () => edit.revert(),
         });
       });
-      blocks.push(field('Font', fb));
+      text.push(field('Font', fb));
       const entry = getCatalogue().find((f) => f.slug === s.font);
       const weights = entry?.weights ?? [400, 500, 700];
       const size = numberField({
@@ -196,27 +209,27 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         options: weights.map((w) => ({ value: w, label: WEIGHT_NAMES[w] ?? String(w), style: `font-family:"${fontName(s.font)}", system-ui;font-weight:${w}` })),
         ...live((v) => ({ fontWeight: v }), HAS_TEXT),
       });
-      blocks.push(h('div', { class: 'row2' }, field('Size', size), field('Weight', weight)));
+      text.push(h('div', { class: 'row2' }, field('Size', size), field('Weight', weight)));
       // a Markdown block always reads from the left: its alignment is not a choice
       if (styleSel.some((o) => o.type !== 'markdown')) {
-        blocks.push(field('Align', segmented([
+        text.push(field('Align', segmented([
           { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },
           { value: 'center', label: 'Align centre', icon: icon('alignCenterH', 16) },
           { value: 'right', label: 'Align right', icon: icon('alignRight', 16) },
         ], s.align, (v) => upLeaves({ align: v }, (o) => HAS_TEXT(o) && o.type !== 'markdown'), 'Text alignment')));
       }
       if (styleSel.some((o) => o.type === 'shape' || o.type === 'sticky')) {
-        blocks.push(field('Vertical', segmented<VAlign>([
+        text.push(field('Vertical', segmented<VAlign>([
           { value: 'top', label: 'Align top', icon: icon('alignTop', 16) },
           { value: 'middle', label: 'Align middle', icon: icon('alignMiddleV', 16) },
           { value: 'bottom', label: 'Align bottom', icon: icon('alignBottom', 16) },
         ], s.valign, (v) => upLeaves({ valign: v }, (o) => o.type === 'shape' || o.type === 'sticky'), 'Vertical alignment')));
       }
-      blocks.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: colorName(c), value: c })), s.textColor, (v) => upLeaves({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
+      text.push(field('Text colour', swatches(TEXT_COLORS.map((c) => ({ name: colorName(c), value: c })), s.textColor, (v) => upLeaves({ textColor: v }, HAS_TEXT), { label: 'Text colour' })));
     }
 
     // ---- opacity
-    if (styleSel.length) blocks.push(field('Opacity', numberField({
+    if (styleSel.length) appearance.push(field('Opacity', numberField({
       label: 'Opacity', unit: '%', min: 10, max: 100, step: 1, big: 10,
       value: sharedLeaves((o) => Math.round((o.opacity ?? 1) * 100)),
       ...live((v: number) => ({ opacity: v >= 100 ? undefined : v / 100 })),
@@ -225,7 +238,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     // ---- arrange
     const boxes = sel.filter(isBox).length;
     if (boxes >= 2) {
-      blocks.push(field('Align', h('div', { class: 'btn-row' },
+      arrange.push(field('Align', h('div', { class: 'btn-row' },
         btn('alignLeft', 'Align left edges', () => app.align('left')),
         btn('alignCenterH', 'Align centres horizontally', () => app.align('centerH')),
         btn('alignRight', 'Align right edges', () => app.align('right')),
@@ -239,7 +252,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     const locked = sel.every((o) => o.locked);
     const groupReason = app.groupReason();
     const canUngroup = app.canUngroupSelection();
-    blocks.push(h('div', { class: 'btn-row arrange' },
+    arrange.push(h('div', { class: 'btn-row arrange' },
       h('button', {
         class: 'icon-btn', 'aria-label': 'Group', 'data-tip': groupReason ?? 'Group', 'data-tip-key': 'mod+g', disabled: groupReason !== null,
         onclick: () => app.groupSelection(),
@@ -278,10 +291,32 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }, icon('chevron', 18));
     // where an object an AI run proposed came from (TAB-160): stored data, cleaned, and set as text
     const origin = sel.length === 1 ? proposedLine(cleanProposedBy((first as BaseObj).proposedBy)) : null;
-    if (origin) blocks.push(h('p', { class: 'props-origin' }, origin));
+    if (origin) appearance.push(h('p', { class: 'props-origin' }, origin));
     // an agent's draft: a person accepts it as it is, or edits it (which also ends the draft)
-    if (sel.length >= 1 && app.hasDrafts() && !app.readOnly) blocks.push(h('button', { class: 'btn', onclick: () => app.acceptDrafts() }, sel.length === 1 ? 'Accept draft' : 'Accept drafts'));
-    panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title), h('div', null, fold, h('button', { class: 'icon-btn', 'data-tip': 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18)))), ...blocks.filter(Boolean) as HTMLElement[]);
+    if (sel.length >= 1 && app.hasDrafts() && !app.readOnly) appearance.push(h('button', { class: 'btn', onclick: () => app.acceptDrafts() }, sel.length === 1 ? 'Accept draft' : 'Accept drafts'));
+    const section = (label: 'Appearance' | 'Text' | 'Arrange', controls: (HTMLElement | null)[]) => {
+      const contents = controls.filter(Boolean) as HTMLElement[];
+      if (!contents.length) return null;
+      const closed = collapsedSections.has(label);
+      const body = h('div', { class: 'props-section-body', hidden: closed }, ...contents);
+      const head = h('button', {
+        class: 'props-section-toggle', type: 'button', 'aria-expanded': String(!closed),
+        onclick: () => {
+          if (collapsedSections.has(label)) collapsedSections.delete(label);
+          else collapsedSections.add(label);
+          try { sessionStorage.setItem(COLLAPSED_SECTIONS_KEY, JSON.stringify([...collapsedSections])); } catch { /* collapse state is a convenience */ }
+          const expanded = !collapsedSections.has(label);
+          head.setAttribute('aria-expanded', String(expanded));
+          body.hidden = !expanded;
+        },
+      }, h('span', null, label), icon('chevron', 14));
+      return h('section', { class: 'props-section', 'aria-label': `${label} properties` }, head, body);
+    };
+    const sections = [section('Appearance', appearance), section('Text', text), section('Arrange', arrange)].filter((item): item is HTMLElement => item !== null);
+    panel.replaceChildren(
+      h('div', { class: 'props-head' }, h('span', { class: 'panel-grabber', 'aria-hidden': 'true' }), h('h2', null, title), h('div', null, fold, h('button', { class: 'icon-btn', 'data-tip': 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18)))),
+      ...sections,
+    );
     panel.classList.toggle('folded', folded);
     // keep keyboard focus on the same control across the rebuild that follows each change
     if (focused) panel.querySelector<HTMLElement>(`[aria-label="${CSS.escape(focused)}"]`)?.focus();

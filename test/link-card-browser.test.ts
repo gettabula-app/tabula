@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
+import { openRailTool } from './rail-tool-helper';
 import { budget } from './wait-budget';
 
 // Link cards in the real app (docs/link-cards.md, proto/designer-preview/link-cards/SPEC.md): the board runs from the dev server with
@@ -63,7 +64,7 @@ async function open(over: Partial<Stub> = {}, width = 1280): Promise<{ page: Pag
   await page.route('**/api/boards/*/assets/**', (route) => route.fulfill({ contentType: 'image/png', body: GREY_PNG }));
   await page.goto(`${base}?debug#/b/link-${Math.random().toString(36).slice(2, 8)}`);
   await page.waitForFunction(() => (window as any).__board, null, { timeout: budget(20_000) });
-  await page.waitForFunction(() => document.querySelector('.rail-btn[aria-label="Link"]'));
+  await page.waitForFunction(() => document.querySelector('.rail-tool-group'));
   return { page, stub };
 }
 
@@ -216,8 +217,8 @@ describe.skipIf(!available)('opening a card', () => {
 describe.skipIf(!available)('the Link button', () => {
   it('opens a popover on the right, adds on Enter at the view centre, selected, and Esc returns focus to the button', async () => {
     const { page } = await open();
+    await openRailTool(page, 'Link');
     const rail = page.locator('.rail-btn[aria-label="Link"]');
-    await rail.click();
     const field = page.getByRole('textbox', { name: 'Web address' });
     await field.waitFor();
     expect(await rail.evaluate((e) => e.classList.contains('on'))).toBe(true);
@@ -235,7 +236,7 @@ describe.skipIf(!available)('the Link button', () => {
 
   it('says why an address is refused, under the field, and adds nothing', async () => {
     const { page } = await open();
-    await page.locator('.rail-btn[aria-label="Link"]').click();
+    await openRailTool(page, 'Link');
     const field = page.getByRole('textbox', { name: 'Web address' });
     for (const [text, message] of [['example.org', 'Enter a web address that starts with http:// or https://.'], ['https://user:pw@example.org/', 'Addresses that contain a user name or password cannot be added.'], ['javascript:alert(1)', 'Enter a web address that starts with http:// or https://.']]) {
       await field.fill(text);
@@ -249,7 +250,7 @@ describe.skipIf(!available)('the Link button', () => {
 
   it('says previews are off in the hint when they are', async () => {
     const { page } = await open({ previews: false });
-    await page.locator('.rail-btn[aria-label="Link"]').click();
+    await openRailTool(page, 'Link');
     expect(await page.locator('.link-hint').textContent()).toBe('Previews are off. The card shows the address only.');
     await page.close();
   });

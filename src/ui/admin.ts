@@ -38,6 +38,9 @@ const TAB_LABELS: Record<AdminTab, string> = {
 };
 
 const ROLE_NAMES: Record<UserRole, string> = { owner: 'Owner', admin: 'Admin', member: 'Member', guest: 'Guest' };
+const ROLE_TAG: Record<UserRole, 'yellow' | 'blue' | 'green' | 'red'> = {
+  owner: 'yellow', admin: 'yellow', member: 'blue', guest: 'green',
+};
 
 /** Action filters: a prefix of the audit action, or the exact sign-in action. */
 const AUDIT_FILTERS: { label: string; prefix: string }[] = [
@@ -64,7 +67,6 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
 const GENERIC = 'Something went wrong. Try again.';
 
-const pad2 = (n: number) => String(n).padStart(2, '0');
 const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const fmtDateTime = (t: number) =>
   new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -390,7 +392,7 @@ function membersPanel(me: Me): HTMLElement {
     const self = m.id === actor.id;
     const lock = roleLock(actor, m, owners);
     const select = h('select', {
-      class: 'input', 'aria-label': `Role of ${m.name || m.email}`, disabled: !lock.allowed, title: lock.reason, 'data-focus': `${m.id}:role`,
+      class: `input admin-role-select tag tag-${ROLE_TAG[m.role]}`, 'aria-label': `Role of ${m.name || m.email}`, disabled: !lock.allowed, title: lock.reason, 'data-focus': `${m.id}:role`,
       onchange: async (e: Event) => {
         const el = e.currentTarget as HTMLSelectElement;
         const next = el.value as UserRole;
@@ -421,7 +423,7 @@ function membersPanel(me: Me): HTMLElement {
         h('div', { title: m.name || m.email },
           h('span', { class: 'admin-name' }, m.name || m.email),
           self ? h('span', { class: 'muted' }, ' · You') : null,
-          m.disabled ? h('span', { class: 'admin-badge' }, 'Disabled') : null),
+          m.disabled ? h('span', { class: 'admin-badge tag tag-red' }, 'Disabled') : null),
         h('div', { class: 'muted small', title: m.email }, m.email),
         h('div', { class: 'muted small', title: teamNames || undefined }, teamNames || 'No teams')),
       h('div', { class: 'admin-cell' }, h('div', { class: 'admin-select' }, select, icon('chevron', 16))),
@@ -479,7 +481,7 @@ function teamsPanel(): HTMLElement {
 
   const teamRow = (t: Team): HTMLElement => h('div', { class: 'admin-row' },
     h('div', { class: 'admin-who' },
-      h('div', null, h('span', { class: 'admin-name' }, t.name), t.archived ? h('span', { class: 'admin-badge' }, 'Archived') : null)),
+      h('div', null, h('span', { class: 'admin-name' }, t.name), t.archived ? h('span', { class: 'admin-badge tag tag-yellow' }, 'Archived') : null)),
     h('div', { class: 'admin-cell muted small' }, countLabel(t.memberCount, 'member', 'members')),
     h('div', { class: 'btn-row admin-actions' }, t.archived
       ? slotButton('Unarchive', () => setArchived(t, false), { focus: `${t.id}:archive`, reserve: ARCHIVE_LABELS })
@@ -538,7 +540,7 @@ function boardsPanel(): HTMLElement {
       h('div', { class: 'admin-who' },
         h('div', { title: b.title || 'Untitled board' },
           h('span', { class: 'admin-name' }, b.title || 'Untitled board'),
-          gone ? h('span', { class: 'admin-badge' }, 'Deleted') : null),
+          gone ? h('span', { class: 'admin-badge tag tag-red' }, 'Deleted') : null),
         h('div', { class: 'muted small', title: `Owner ${b.ownerName ?? 'removed member'}` }, `Owner ${b.ownerName ?? 'removed member'}`)),
       h('div', { class: 'admin-cell muted small' },
         h('div', null, b.teamName ?? 'Personal'),
@@ -598,7 +600,7 @@ function sessionsPanel(): HTMLElement {
     h('div', { class: 'admin-who' },
       h('div', { title: s.userName || s.email },
         h('span', { class: 'admin-name' }, s.userName || s.email),
-        s.current ? h('span', { class: 'admin-badge' }, 'This session') : null),
+        s.current ? h('span', { class: 'admin-badge tag tag-green' }, 'This session') : null),
       h('div', { class: 'muted small', title: s.email }, s.email),
       h('div', { class: 'muted small', title: s.userAgent ?? undefined }, deviceLabel(s.userAgent))),
     h('div', { class: 'admin-cell muted small' }, cellLabel('Signed in'), fmtDateTime(s.createdAt)),
@@ -727,13 +729,12 @@ export function renderAdmin(root: HTMLElement, requested: AdminTab, me: Me): voi
       h('span', { class: 'muted small admin-me' }, me.user.name || me.user.email)),
     h('div', { class: 'admin-body' },
       h('nav', { class: 'admin-tabs', 'aria-label': 'Admin sections' },
-        tabs.map((t, i) => h('a', {
+        tabs.map((t) => h('a', {
           class: t === tab ? 'admin-tab on' : 'admin-tab',
           href: `#/admin/${t}`,
           'aria-current': t === tab ? 'page' : undefined,
-        }, h('span', { class: 'admin-tab-num', 'aria-hidden': 'true' }, pad2(i + 1)), TAB_LABELS[t]))),
+        }, TAB_LABELS[t]))),
       h('section', { class: 'admin-panel', 'aria-label': TAB_LABELS[tab] },
-        h('p', { class: 'admin-kicker', 'aria-hidden': 'true' }, `${pad2(tabs.indexOf(tab) + 1)} / ${pad2(tabs.length)}`),
         h('h2', { class: 'admin-heading' }, TAB_LABELS[tab]),
         PANELS[tab](me)))));
   // TAB-245: on a phone the row of sections scrolls; the current one is brought to the middle and the edge with more behind it fades

@@ -32,7 +32,7 @@ To start with a ready-made layout instead, choose **Start from a template**. See
 From top to bottom:
 
 - **Select** (`V`) and **Hand** (`H`).
-- **Sticky note** (`N`), **Text** (`T`), **Markdown block** (for longer notes with headings, lists and tick boxes, see [Markdown blocks](markdown-blocks.md)), **Table** (`G`, see [Tables](tables.md)), **Shapes**, **Connector** (`L`), **Pen** (`P`), **Frame** (`F`) and **Comment** (`C`). **Shapes** opens a panel with a search field. Click a shape to draw it, or drag it onto the board.
+- **Sticky note** (`N`), the **Text**, **Table**, **Markdown block** and **Link** group (Text uses `T`; Table uses `G`, see [Tables](tables.md); Markdown block is for longer notes with headings, lists and tick boxes, see [Markdown blocks](markdown-blocks.md), and has no single-key shortcut; Link opens an address field), **Shapes**, **Connector** (`L`), **Pen** (`P`), **Frame** (`F`) and **Comment** (`C`). **Shapes** opens a panel with a search field. Click a shape to draw it, or drag it onto the board.
 - Drawers for **UML**, **Icons**, **Stickers**, and **Templates and team exercises**.
 - A dot vote button and a quick poll button.
 - **Undo** and **Redo**.

@@ -834,7 +834,10 @@ export class Renderer {
       }
     } else {
       // a dragged card's slot is its dashed placeholder, with no selection outline over it
-      for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += this.outline(o, px(1.5), 1);
+      for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) {
+        const kanbanCard = o.type === 'card';
+        out += this.outline(o, px(kanbanCard ? 1 : 1.5), 1, kanbanCard ? 'var(--ink)' : undefined);
+      }
       if (sel.length > 1) {
         const b = this.contentBounds(ov.selection);
         if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${SELECTION_WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
@@ -1041,6 +1044,7 @@ export class Renderer {
       const r = boxBounds(b);
       return `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}"/>`;
     }
-    return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}"/>`;
+    const radius = b.type === 'card' ? ' rx="8"' : '';
+    return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}"${radius} transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}"/>`;
   }
 }

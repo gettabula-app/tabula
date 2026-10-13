@@ -1136,13 +1136,8 @@ async function assertTrackerLayout(page) {
         failures.push(`phone target ${Math.round(box.width)}×${Math.round(box.height)}px: ${small.getAttribute('aria-label') || small.textContent.trim()}`);
       }
     }
-    const color = (value) => {
-      const match = value.match(/rgba?\(([^)]+)\)/i);
-      if (!match) return null;
-      const values = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-      if (values.length < 3 || values.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
-      return [values[0], values[1], values[2], values.length > 3 && Number.isFinite(values[3]) ? values[3] : 1];
-    };
+    const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+    const color = (value) => toRgba(value);
     const luminance = ([r, g, b]) => {
       const linear = (n) => { const x = n / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
@@ -1182,20 +1177,81 @@ async function assertTicketPageLayout(page, name) {
       }
     }
     if (innerWidth <= 600) {
+      // The M reference (designer, approved by the tech lead, 2026-10-13): one column of rows. Every property row has its name on the left and its value on the right, no two rows side by
+      // side, the names are visible text with the accessible name kept as "State: To do", the title is the serif title, and nothing overflows (390 and 360).
       const primary = root.querySelector('.tk-primary-properties');
-      const columns = primary ? getComputedStyle(primary).gridTemplateColumns.trim().split(/\s+/u).length : 0;
-      if (columns !== 2) failures.push(`phone properties use ${columns} columns instead of two`);
+      const rows = primary ? [...primary.querySelectorAll('.tk-property-row')].filter((row) => row.getClientRects().length) : [];
+      if (rows.length !== 4) failures.push(`phone primary properties show ${rows.length} rows, expected the four (State, Assignee, Priority, Due) before More`);
+      const near = (a, b) => Math.abs(a - b) <= 1.5;
+      let previous = null;
+      for (const row of rows) {
+        const dt = row.querySelector('dt'), dd = row.querySelector('dd');
+        if (!dt || !dd) { failures.push('a property row has no name or no value'); continue; }
+        const label = dt.getBoundingClientRect(), value = dd.getBoundingClientRect(), box = row.getBoundingClientRect();
+        const name = dt.textContent.trim();
+        // the M reference (designer, 2026-10-13): inside a row the name is on the left and the value on the right, on the same line
+        if (!(label.right <= value.left + 1.5)) failures.push(`${name}: the name is not to the left of its value (name right ${Math.round(label.right)}, value left ${Math.round(value.left)})`);
+        if (Math.abs((label.top + label.bottom) / 2 - (value.top + value.bottom) / 2) > Math.max(label.height, value.height)) failures.push(`${name}: the name and the value are not on the same line`);
+        if (previous && !(box.top >= previous.bottom - 1.5 && near(box.left, previous.left))) failures.push(`${name}: the row sits beside another row instead of below it`);
+        previous = box;
+        // visible text, not sr-only: a real box with real text and no clipping
+        const style = getComputedStyle(dt);
+        const clipped = style.clip !== 'auto' || (style.clipPath && style.clipPath !== 'none') || (style.position === 'absolute' && label.width <= 1 && label.height <= 1);
+        if (!name || label.width < 8 || label.height < 8 || clipped || style.visibility === 'hidden' || style.opacity === '0') failures.push(`${name || 'a property name'} is not visible text`);
+        const control = dd.querySelector('button, input');
+        const accessible = control ? (control.getAttribute('aria-label') ?? '') : '';
+        if (control && control.tagName === 'BUTTON' && !new RegExp(`^${name}: .+`).test(accessible)) failures.push(`${name}: the control's accessible name is "${accessible}", expected "${name}: <value>"`);
+      }
       for (const name of ['state', 'assignee', 'priority', 'due']) {
         const property = root.querySelector(`[data-property="property-${name}"]`);
         if (!property || !property.getClientRects().length) failures.push(`${name} is missing from the phone property block`);
       }
-      const more = root.querySelector('.tk-properties-more');
-      if (more && getComputedStyle(more).display !== 'none' && more.dataset.expanded !== 'true') failures.push('phone secondary properties are not behind More');
+      const columns = primary ? getComputedStyle(primary).gridTemplateColumns.trim().split(/\s+/u).length : 0;
+      if (columns !== 1) failures.push(`phone properties use ${columns} columns instead of one`);
+      const title = root.querySelector('.tk-title');
+      if (!title) failures.push('the ticket title is missing');
+      else {
+        const family = getComputedStyle(title).fontFamily;
+        const body = getComputedStyle(document.body).fontFamily;
+        if (!/serif|newsreader/i.test(family) || family === body) failures.push(`the title is not set in the serif face (${family})`);
+      }
+      const overflow = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth;
+      if (overflow > 0) failures.push(`horizontal overflow ${overflow}px`);
     }
     return failures;
   });
-  if (result.length) throw new Error(`${name}: ${result.join('; ')}`);
+  // every phone check runs and is reported together, so one broken property does not hide the next
+  const more = (await page.evaluate(() => innerWidth <= 600)) ? await phoneMoreProperties(page) : [];
+  if (result.length || more.length) throw new Error(`${name}: ${[...result, ...more].join('; ')}`);
   await assertTrackerLayout(page);
+}
+
+/** "More properties" on a phone (the M reference): collapsed at first with aria-expanded false and nothing in it focusable, it expands and collapses and reports both. */
+async function phoneMoreProperties(page) {
+  const toggle = page.getByRole('button', { name: 'More properties', exact: true });
+  const probe = () => page.evaluate(() => {
+    const more = document.querySelector('.tk-page .tk-properties-more');
+    const button = document.querySelector('.tk-page .tk-properties-more-toggle');
+    const focusable = [...(more?.querySelectorAll('button, input, select, textarea, a[href], [tabindex]') ?? [])];
+    let reachable = 0;
+    for (const el of focusable) { el.focus({ preventScroll: true }); if (document.activeElement === el) reachable++; }
+    button?.focus({ preventScroll: true });
+    return { expanded: button?.getAttribute('aria-expanded') ?? null, shown: !!more && getComputedStyle(more).display !== 'none', focusable: focusable.length, reachable };
+  });
+  const failures = [];
+  const collapsed = await probe();
+  if (collapsed.expanded !== 'false') failures.push(`More properties starts with aria-expanded=${collapsed.expanded}, expected false`);
+  if (collapsed.shown) failures.push('the secondary properties are visible before More is pressed');
+  if (collapsed.reachable) failures.push(`${collapsed.reachable} control(s) in the collapsed secondary properties can take focus`);
+  await toggle.click();
+  const open = await probe();
+  if (open.expanded !== 'true') failures.push(`More properties reports aria-expanded=${open.expanded} after expanding, expected true`);
+  if (!open.shown) failures.push('the secondary properties do not show after More is pressed');
+  await toggle.click();
+  const closed = await probe();
+  if (closed.expanded !== 'false' || closed.shown) failures.push(`More properties does not collapse again (aria-expanded=${closed.expanded}, shown=${closed.shown})`);
+  if (closed.reachable) failures.push(`${closed.reachable} control(s) in the re-collapsed secondary properties can take focus`);
+  return failures;
 }
 
 async function addTrackerContrastProbe(page, kind) {
@@ -1253,13 +1309,8 @@ async function addTrackerContrastProbe(page, kind) {
 
 async function assertComputedTextContrast(page, name, selectors) {
   const result = await page.evaluate((requested) => {
-    const parseColor = (value) => {
-      const match = value.match(/rgba?\(([^)]+)\)/i);
-      if (!match) return null;
-      const values = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-      if (values.length < 3 || values.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
-      return [values[0], values[1], values[2], values.length > 3 && Number.isFinite(values[3]) ? values[3] : 1];
-    };
+    const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+    const parseColor = (value) => toRgba(value);
     const luminance = ([r, g, b]) => {
       const linear = (channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
@@ -1687,12 +1738,8 @@ const STATES = {
     const audit = await page.evaluate((viewportWidth) => {
       const failures = [];
       const contrast = (foreground, background) => {
-        const rgb = (value) => {
-          const match = value.match(/rgba?\(([^)]+)\)/i);
-          if (!match) return null;
-          const parts = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-          return parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite) ? parts.slice(0, 3) : null;
-        };
+        const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+        const rgb = (value) => { const c = toRgba(value); return c ? c.slice(0, 3) : null; };
         const fg = rgb(foreground), bg = rgb(background);
         if (!fg || !bg) return 0;
         const luminance = ([r, g, b]) => {
@@ -1714,7 +1761,8 @@ const STATES = {
         const ratio = contrast(getComputedStyle(element).color, background(element));
         if (ratio < 4.5) failures.push(`text contrast ${ratio.toFixed(2)}:1 on .${element.className}`);
       }
-      const nonText = [...document.querySelectorAll('.trk .trk-glyph, .trk .trk-label-chip, .trk .trk-count-badge, .trk .trk-actor-badge, .trk .trk-due-chip, .trk .trk-filter-chip')];
+      // `.trk-count-badge` is not in this list on purpose (designer's decision, 2026-10-13): the count is information in text, which is checked at 4.5:1 above, so WCAG 1.4.11 does not ask for a 3:1 outline on the soft-tinted pill of the M style.
+      const nonText = [...document.querySelectorAll('.trk .trk-glyph, .trk .trk-label-chip, .trk .trk-actor-badge, .trk .trk-due-chip, .trk .trk-filter-chip')];
       for (const element of nonText) {
         const style = getComputedStyle(element);
         const foreground = element.matches('svg') ? style.color : style.borderTopColor;
@@ -1869,12 +1917,8 @@ const STATES = {
       await row.click();
       await page.waitForFunction((id) => document.documentElement.dataset.theme === id, theme.id);
       const result = await page.evaluate(() => {
-        const parse = (value) => {
-          const m = /^rgba?\(([^)]+)\)$/.exec(value);
-          if (!m) return null;
-          const parts = m[1].split(',').map((v) => Number.parseFloat(v.trim()));
-          return [parts[0], parts[1], parts[2], parts.length > 3 ? parts[3] : 1];
-        };
+        const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+        const parse = (value) => toRgba(value);
         const blend = (front, back) => {
           const a = front[3] + back[3] * (1 - front[3]);
           if (!a) return [0, 0, 0, 0];
@@ -2897,10 +2941,13 @@ const STATES = {
     await env.page.locator('.comment-msg').first().waitFor();
   },
   // TAB-124: the empty-board hint lies under every overlay
+  async 'empty-hint'(env) {
+    await openEmptyBoard(env);
+  },
   async 'empty-templates'(env) {
     await openEmptyBoard(env);
     await env.page.getByRole('button', { name: 'Start from a template' }).click();
-    await env.page.locator('.drawer.show').waitFor();
+    await env.page.locator('.template-picker').waitFor();
   },
   async 'empty-share'(env) {
     await openEmptyBoard(env);
@@ -3067,7 +3114,9 @@ const STATES = {
   async 'chat-react'(env) {
     await openSeedChat(env);
     await env.page.locator('.chat-reaction').first().waitFor();
-    await env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) }).locator('.chat-more').click();
+    const targetMessage = env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) });
+    await targetMessage.locator('.chat-text').hover();
+    await targetMessage.locator('.chat-more').click();
     await env.page.getByRole('menuitem', { name: 'React' }).click();
     await env.page.locator('.chat-picker').waitFor();
   },
@@ -3405,12 +3454,8 @@ const STATES = {
       const rail = document.querySelector('.rail');
       if (!people || !topRight || !topLeft || !rail) return { failures: ['people, top bars, or tool rail are missing'] };
       const box = (element) => element.getBoundingClientRect();
-      const rgb = (value) => {
-        const match = value.match(/rgba?\(([^)]+)\)/i);
-        if (!match) return null;
-        const channels = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-        return channels.length >= 3 && channels.slice(0, 3).every(Number.isFinite) ? channels.slice(0, 3) : null;
-      };
+      const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+      const rgb = (value) => { const c = toRgba(value); return c ? c.slice(0, 3) : null; };
       const luminance = ([r, g, b]) => {
         const linear = (channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
         return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
@@ -3588,6 +3633,12 @@ const STATES = {
       app.zoomBy(2.4);
     });
     await settle(env.page);
+  },
+  // typing in the search: the results stay in view, with a header named Emoji
+  async 'emoji-search'(env) {
+    await openEmojiPickerForNote(env, { clearPoll: true });
+    await env.page.getByLabel('Search emoji').fill(env.query ?? 'smile');
+    await env.page.waitForTimeout(250);
   },
   async 'emoji-picker'(env) {
     const page = env.page;
@@ -4098,8 +4149,9 @@ const STATES = {
   },
   async 'chat-notifications'(env) {
     await env.page.goto(`${env.base}/#/chat`);
-    await env.page.getByRole('button', { name: 'Notifications' }).click();
-    await env.page.getByRole('checkbox', { name: 'Email me when I am mentioned in chat' }).waitFor();
+    await env.page.getByRole('navigation', { name: 'Chat channels' })
+      .getByRole('button', { name: 'Notification settings', exact: true }).click();
+    await env.page.getByRole('switch', { name: 'Email me when I am mentioned in chat' }).waitFor();
     await env.page.waitForFunction(() => !document.querySelector('.modal input')?.disabled);
   },
   async 'chat-home'(env) {
@@ -4280,11 +4332,11 @@ const STATES = {
     await openSeedBoard(env);
     const button = env.page.getByRole('button', { name: 'Templates and team exercises' });
     await button.click();
-    await env.page.locator('.drawer.show').waitFor();
+    await env.page.locator('.template-picker').waitFor();
     await env.page.keyboard.press('Escape');
-    await env.page.locator('.drawer.show').waitFor({ state: 'hidden' });
+    await env.page.locator('.template-picker').waitFor({ state: 'detached' });
     const result = await env.page.evaluate(() => ({
-      open: !!document.querySelector('.drawer.show'),
+      open: !!document.querySelector('.template-picker'),
       focusReturned: document.activeElement === document.querySelector('[data-drawer="templates"]'),
     }));
     if (result.open || !result.focusReturned) throw new Error(`templates-esc: ${JSON.stringify(result)}`);

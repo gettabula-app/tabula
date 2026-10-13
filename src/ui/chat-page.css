@@ -93,3 +93,82 @@
   .chat-row.on { outline: 2px solid Highlight; outline-offset: -2px; }
   .chat-row-badge { border: 1px solid CanvasText; }
 }
+
+/* M page chat: paper panels, quiet channel rows and a shared field composer. */
+.chat-page {
+  --page-hairline: color-mix(in srgb, var(--ink) 8%, var(--paper));
+  --page-hover: color-mix(in srgb, var(--ink) 5%, var(--paper));
+  --placeholder: var(--graphite);
+  --tray: var(--paper);
+  --tray-2: color-mix(in srgb, var(--ink) 4%, var(--paper));
+  --tray-line: var(--page-hairline);
+  --tray-text: var(--ink);
+  --tray-muted: var(--graphite);
+  --tray-hover: var(--page-hover);
+  grid-template-rows: auto minmax(0, 1fr);
+  row-gap: 16px;
+  padding-top: 32px;
+}
+.chat-page-heading { grid-column: 1 / -1; min-width: 0; }
+.chat-page-title { margin: 0; font: 400 40px/1.1 var(--font-serif); letter-spacing: -0.02em; }
+.chat-page-lede { margin: 8px 0 0; color: var(--graphite); font-size: 14px; }
+.chat-list,
+.chat-conv { border: 1px solid var(--page-hairline); border-radius: var(--radius-md); background: var(--paper); color: var(--ink); }
+.chat-page :focus-visible { outline-color: var(--ink); }
+.chat-list-body { padding: 4px 8px 0; }
+.chat-section-title {
+  padding: 12px 8px 8px; color: var(--graphite); font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none;
+}
+.chat-section-title::before,
+.chat-section-title::after { display: none; }
+.chat-row { min-height: 48px; border-radius: var(--radius-sm); }
+.chat-row:hover,
+.chat-row.on { background: var(--page-hover); }
+.chat-row-name { font-size: 14px; font-weight: 500; }
+.chat-row-meta { font-size: 12px; }
+.chat-row-badge { min-width: 20px; border-radius: 9999px; background: var(--ink); color: var(--paper); }
+.chat-row-badge.mention { outline: 0; }
+.chat-row-mention { color: var(--danger); }
+.chat-list-status { color: var(--graphite); }
+.chat-list-foot { border-top-color: var(--page-hairline); }
+.chat-prefs { min-height: 44px; color: var(--graphite); font-size: 13px; font-weight: 500; letter-spacing: normal; text-transform: none; }
+.chat-prefs:hover { color: var(--ink); background: var(--page-hover); }
+.chat-conv-head { border-bottom-color: var(--page-hairline); }
+.chat-conv-title { font: 500 17px/1.3 var(--ui); }
+.chat-conv-sub { color: var(--graphite); }
+.chat-open-board.btn { border-color: var(--page-hairline); background: transparent; color: var(--ink); }
+.chat-open-board.btn:hover { background: var(--page-hover); }
+.chat-conv-empty { color: var(--ink); }
+.chat-page .chat-composer { border-top-color: var(--page-hairline); }
+.chat-page .chat-input { background: color-mix(in srgb, var(--ink) 5%, var(--paper)); color: var(--ink); }
+.chat-page .chat-input:focus { border-color: var(--field-edge-strong); box-shadow: inset 0 0 0 1px var(--field-edge-strong); }
+.chat-page .chat-note { color: var(--graphite); }
+.chat-page .chat-send.btn { border: 0; background: var(--ink); color: var(--paper); }
+.chat-page .chat-send.btn:hover { background: color-mix(in srgb, var(--ink) 88%, var(--paper)); }
+.chat-page .chat-send.btn:disabled { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); color: var(--graphite); }
+.chat-page .chat-msg.own .chat-text { border: 1px solid var(--page-hairline); background: color-mix(in srgb, var(--ink) 5%, var(--paper)); }
+.chat-page .chat-msg:hover,
+.chat-page .chat-msg:focus-within { background: var(--page-hover); }
+.chat-page .chat-msg.mention { background: color-mix(in srgb, var(--danger) 8%, var(--paper)); box-shadow: inset 2px 0 0 var(--danger); }
+.chat-page .chat-mention { background: color-mix(in srgb, var(--signal) 12%, var(--paper)); color: var(--ink); }
+.chat-page .chat-mention.me { background: color-mix(in srgb, var(--signal) 18%, var(--paper)); }
+.chat-page .chat-day,
+.chat-page .chat-new { letter-spacing: normal; text-transform: none; }
+.chat-page .chat-new { color: var(--ink); }
+.chat-page .chat-new::after { background: var(--page-hairline); }
+
+@media (max-width: 860px) {
+  .chat-page { row-gap: 12px; padding: 24px 16px 16px; }
+  .chat-page-title { font-size: 32px; }
+  .chat-list,
+  .chat-conv { border-radius: var(--radius-md); }
+}
+
+@media (pointer: coarse) {
+  .chat-row { min-height: 48px; }
+  .chat-prefs,
+  .chat-open-board.btn,
+  .chat-back { min-height: 44px; }
+  .chat-page .chat-input { min-height: 44px; }
+  .chat-page .chat-hover .icon-btn { width: 44px; height: 44px; }
+}
