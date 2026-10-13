@@ -45,6 +45,7 @@ import { watchCardHeights } from './card-height-heal';
 import { watchMarkdownHeights } from './markdown-heal';
 import { watchTableSizes } from './table-heal';
 import { cellAt, layoutTable } from './table-layout';
+import { TableController, newTableId } from './table-ui';
 import { MAX_TABLE_COLS, MAX_TABLE_ROWS, DEFAULT_COL_WIDTH, newTableFields, parseGrid, tableFromGrid } from '../shared/tables';
 import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
@@ -134,6 +135,11 @@ export class BoardApp {
   readonly r: Renderer;
   readonly flow: Flow;
   readonly editor: TextEditor;
+  /** The cells of a table: selecting them, the row and column operations, the clipboard (src/table-ui.ts). */
+  private tablesController: TableController | null = null;
+  get tables(): TableController {
+    return (this.tablesController ??= new TableController(this));
+  }
   /** The inline "+ Add card" input (docs/kanban.md, Cards). */
   readonly cardInput: CardInput;
   /** The card a keyboard move is on: it shows the ring and the "Moving" tag until the selection changes. */
@@ -381,6 +387,7 @@ export class BoardApp {
   private emitSelection() {
     if (this.kbMoving && (this.selection.length !== 1 || this.selection[0] !== this.kbMoving)) this.clearMoving();
     this.r.setOverlay({ selection: this.selection, enteredGroup: this.scope });
+    this.tables.selectionChanged();
     this.conn.awareness.setLocalStateField('sel', this.selection);
     this.emit('selection');
   }
@@ -916,6 +923,8 @@ export class BoardApp {
       this.mdDown = { owner: mdOwner, at };
       if (!second && (this.selection.includes(mdOwner) || e.ctrlKey || e.metaKey)) return;
     } else this.mdDown = null;
+    // cells of a selected table: a press selects the cell under it (Shift extends the range), and one on a column border resizes the column
+    if (e.button === 0 && this.tool.kind === 'select' && !this.readOnly && this.tables.pointerDown(e, (this.hit(this.worldOf(e)) ?? null))) return;
     // another pointer going down (a pinch, a second device) gives up a lane drag, overlay and all
     if (this.drag?.mode === 'lane') this.cancelCardDrag();
     this.cancelLongPress();
@@ -1890,6 +1899,7 @@ export class BoardApp {
     else if (t === 'select' && top?.type === 'container' && this.kanbanControlAt(top.id, p)) cursor = 'pointer';
     else if (t === 'select' && top?.type === 'lane' && !this.readOnly && this.laneRegion(top.id, p) === 'menu') cursor = 'pointer';
     else if (live?.type === 'lane' && t === 'select' && !this.readOnly && this.laneRegion(live.id, p) === 'add') cursor = 'pointer';
+    else if (t === 'select' && !this.readOnly && live?.type === 'table' && this.tables.overBorder(p, live)) cursor = 'col-resize';
     else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
     else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
     this.r.svg.style.cursor = cursor;
@@ -2190,7 +2200,7 @@ export class BoardApp {
         // a dragged box asks for as many columns and rows as fit it; a click makes 3 x 3
         const cols = Math.min(MAX_TABLE_COLS, Math.max(1, Math.round(rect.w / DEFAULT_COL_WIDTH)));
         const rows = Math.min(MAX_TABLE_ROWS, Math.max(1, Math.round(rect.h / 40)));
-        const o = this.makeObj('table', { x: rect.x, y: rect.y, w: cols * DEFAULT_COL_WIDTH, h: rows * 40 }, newTableFields(rows, cols, () => Math.random().toString(36).slice(2, 8).padEnd(6, '0')) as Partial<BaseObj>);
+        const o = this.makeObj('table', { x: rect.x, y: rect.y, w: cols * DEFAULT_COL_WIDTH, h: rows * 40 }, newTableFields(rows, cols, newTableId) as Partial<BaseObj>);
         return { ...o, ...tableBoxSize(o) };
       }
       case 'frame': return this.makeObj('frame', rect, { name: 'Frame' });
@@ -2460,6 +2470,8 @@ export class BoardApp {
         return;
       }
       if (typing) return;
+      // cells selected on a table: Enter edits, the arrows and Tab move, Delete empties, Esc lets go of them
+      if (this.tables.key(e, k)) { e.preventDefault(); return; }
       const mod = e.metaKey || e.ctrlKey;
       const ro = this.readOnly;
       if (e.shiftKey && !e.altKey && !mod && (k === 'h' || k === 'v')) {
@@ -2491,7 +2503,7 @@ export class BoardApp {
       if (mod && k === ']') { e.preventDefault(); if (!ro) this.bringForward(); return; }
       if (mod && k === '[') { e.preventDefault(); if (!ro) this.sendBackward(); return; }
       if (mod && k === 'd') { e.preventDefault(); if (!ro) this.duplicate(); return; }
-      if (mod && k === 'c') { this.copy(); return; }
+      if (mod && k === 'c') { if (!this.tables.copy()) this.copy(); return; }
       if (mod && k === 'x') { if (!ro) { this.copy(); this.deleteSelection(); } return; }
       if (mod && (k === '=' || k === '+')) { e.preventDefault(); this.zoomBy(1.25); return; }
       if (mod && k === '-') { e.preventDefault(); this.zoomBy(0.8); return; }
@@ -2826,7 +2838,7 @@ export class BoardApp {
     if (lines.length === 0 || !lines.every((l) => l.includes('\t'))) return false;
     const grid = parseGrid(text);
     if (!grid.length || Math.max(...grid.map((r) => r.length)) < 2) return false;
-    const fields = tableFromGrid(grid, () => Math.random().toString(36).slice(2, 8).padEnd(6, '0'));
+    const fields = tableFromGrid(grid, newTableId);
     if (!fields) return false;
     const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());
     const probe = this.makeObj('table', { x: at.x, y: at.y, w: 100, h: 100 }, fields as Partial<BaseObj>);
@@ -2851,8 +2863,8 @@ export class BoardApp {
       }
     } catch { /* not JSON */ }
     if (this.clipboard.length && text === JSON.stringify({ driftboard: 1, objects: this.clipboard })) return;
-    // a copy from a spreadsheet (every line has a tab) becomes a table (docs/tables.md)
-    if (this.pasteTable(text)) return;
+    // tab separated text with cells selected fills them; with none selected it makes a table (docs/tables.md)
+    if (this.tables.paste(text) || this.pasteTable(text)) return;
     // Preserve the clipboard's line breaks, removing only empty lines at either end.
     const lines = text.replace(/\r\n?/g, '\n').split('\n');
     while (lines.length && !lines[0].trim()) lines.shift();
@@ -2895,6 +2907,8 @@ export class BoardApp {
     const hit = this.hit(this.r.clientToWorld(e.clientX, e.clientY));
     if (!hit) return;
     if (!this.selection.includes(hit.id)) this.setSelection([hit.id]);
+    // a right click on a table's cell selects it, unless it is inside the cells already selected: the menu then acts on that cell or range
+    if (hit.type === 'table') this.tables.selectUnderPointer(hit, e);
     if (this.drag?.mode === 'pan') {
       this.drag = null;
       this.r.root.classList.remove('panning');

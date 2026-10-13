@@ -331,6 +331,8 @@ function tablePartCheck(key) {
   if (!p) return null;
   if (p.kind === 'r' || p.kind === 'k') return str(64, { min: 1 });
   if (p.kind === 'w') return num(MIN_COL_WIDTH, MAX_COL_WIDTH);
+  if (p.kind === 'a') return oneOf(ALIGNS);
+  if (p.kind === 'f') return color;
   return str(MAX_CELL_CHARS, { cp: true });
 }
 

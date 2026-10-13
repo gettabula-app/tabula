@@ -7,6 +7,7 @@ import { fontFamily } from './fonts';
 import { MD_PAD } from './markdown-layout';
 import { TABLE_PAD_X, TABLE_PAD_Y, layoutTable } from './table-layout';
 import { MAX_CELL_CHARS, insertRowPatch, setCellPatch, tableModel } from '../shared/tables';
+import { newTableId } from './table-ui';
 import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
 import { KANBAN, LIMITS } from '../shared/containers';
@@ -255,7 +256,7 @@ export class TextEditor {
     this.commit();
     if (at < 0) return;
     if (at >= model.rows.length * model.cols.length) {
-      const rowId = this.newTableId();
+      const rowId = newTableId();
       const patch = insertRowPatch(obj, model.rows.length - 1, rowId);
       if (!patch) return;
       this.app.store.transact(() => this.app.store.update(here.id, patch as never));
@@ -264,10 +265,6 @@ export class TextEditor {
       return;
     }
     this.startCell(here.id, model.rows[Math.floor(at / model.cols.length)], model.cols[at % model.cols.length]);
-  }
-
-  private newTableId(): string {
-    return Math.random().toString(36).slice(2, 8).padEnd(6, '0');
   }
 
   /** Fits the table object to its columns and rows after a change. */

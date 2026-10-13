@@ -3,7 +3,7 @@ import * as Y from 'yjs';
 import { Store } from '../src/store';
 import {
   MAX_CELL_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS, cellKey, deleteColPatch, deleteRowPatch, fillFromPatch, insertColPatch, insertRowPatch,
-  moveColPatch, moveRowPatch, newTableFields, parseGrid, setCellPatch, setWidthPatch, tableFromGrid, tableModel, toMarkdownTable, toTsv,
+  clearCellsPatch, moveColPatch, moveRowPatch, newTableFields, parseGrid, setAlignPatch, setCellPatch, setFillPatch, setWidthPatch, tableFromGrid, tableModel, toMarkdownTable, toTsv,
 } from '../shared/tables';
 
 // The table model (TAB-121, docs/tables.md): one flat map whose keys are its parts, so different cells and concurrent row or
@@ -95,6 +95,34 @@ describe('table model', () => {
     apply(t, setWidthPatch(t, c, 9999));
     expect(tableModel(t).width(c)).toBe(800);
     expect(setWidthPatch(t, c, Number.NaN)).toBeNull();
+  });
+});
+
+describe('table styling', () => {
+  it('aligns a column and fills cells; both go with their column or row when it is removed', () => {
+    const t = fresh(2, 2);
+    const { rows, cols } = tableModel(t);
+    apply(t, setAlignPatch(t, cols[1], 'right'));
+    apply(t, setFillPatch(t, [rows[0], rows[1]], [cols[0]], '#FFE16B'));
+    const m = tableModel(t);
+    expect([m.align(cols[0]), m.align(cols[1]), m.fill(rows[1], cols[0]), m.fill(rows[0], cols[1])]).toEqual(['left', 'right', '#FFE16B', null]);
+    apply(t, setAlignPatch(t, cols[1], 'left'));
+    expect(`a:${cols[1]}` in t).toBe(false); // left is the default: no key
+    apply(t, setFillPatch(t, [rows[0]], [cols[0]], null));
+    expect(tableModel(t).fill(rows[0], cols[0])).toBeNull();
+    apply(t, deleteRowPatch(t, rows[1]));
+    expect(Object.keys(t).filter((k) => k.startsWith('f:'))).toEqual([]);
+    expect(setAlignPatch(t, cols[0], 'justify')).toBeNull();
+    expect(setAlignPatch(t, 'gone', 'right')).toBeNull();
+    expect(setFillPatch(t, ['gone'], [cols[0]], '#fff')).toBeNull();
+  });
+
+  it('empties the cells of a range and leaves the others', () => {
+    const t = tableFromGrid([['a', 'b'], ['c', 'd']], ids)!;
+    const { rows, cols } = tableModel(t);
+    apply(t, clearCellsPatch(t, [rows[0]], [cols[0], cols[1]]));
+    expect(toTsv(t)).toBe('\t\nc\td');
+    expect(clearCellsPatch(t, [rows[0]], [cols[0]])).toBeNull(); // nothing left to clear
   });
 });
 

@@ -177,6 +177,12 @@ describe('tables', () => {
     expect(paths(check(table({ 'q:r1': 'x' })))).toEqual(['unknown_field:q:r1']);
     expect(paths(check(table({ headerRow: 'yes' })))).toEqual(['bad_type:headerRow']);
   });
+  it('accepts a column alignment and a cell fill, and rejects a value the board cannot use', () => {
+    expect(check(table({ 'a:c1': 'right', 'f:r1:c1': '#FFE16B' }))).toEqual({ ok: true });
+    expect(paths(check(table({ 'a:c1': 'justify' })))).toEqual(['bad_value:a:c1']);
+    expect(paths(check(table({ 'f:r1:c1': 'url(javascript:alert(1))' })))).toEqual(['bad_value:f:r1:c1']);
+    expect(paths(check(table({ 'f:r1:c1': 5 })))).toEqual(['bad_type:f:r1:c1']);
+  });
   it('limits a table to 100 rows and 30 columns however the writes arrive, and only another type is refused its keys', () => {
     const many = (kind: string, n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`${kind}:i${i}`, `a${String(i).padStart(3, '0')}`]));
     expect(codes(check(table({ ...many('r', 101) })))).toContain('too_many_rows');

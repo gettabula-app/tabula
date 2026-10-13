@@ -52,7 +52,9 @@ const seedTable = (page: Page, cells: string[][]) => page.evaluate(`(async () =>
   const fields = tableFromGrid(${JSON.stringify(cells)}, () => 't' + (++i));
   app.store.transactAs(() => app.store.create({ id: 'tb1', type: 'table', x: 100, y: 100, w: 100, h: 100, rotation: 0, z: app.store.topZ(), font: 'satoshi', ...fields }), 'seed');
   app.zoomToFit();
-})()`).then(() => page.waitForFunction(() => { const o = (window as any).__board.store.get('tb1'); return o && o.w > 150 && document.querySelectorAll('svg.canvas line').length > 4; }));
+})()`).then(() => page.waitForFunction(() => { const o = (window as any).__board.store.get('tb1'); return o && o.w > 150 && document.querySelectorAll('svg.canvas line').length > 4; }))
+  .then(() => page.evaluate(() => (window as any).__board.zoomToFit())) // the table has its real size now: fit the view to it
+  .then(() => page.waitForTimeout(600)); // the camera glides there
 const cellBox = (page: Page, row: number, col: number) => page.evaluate(`(async () => {
   const { layoutTable } = await import('/src/table-layout.ts');
   const { tableStyle } = await import('/src/markup.ts');
@@ -191,6 +193,160 @@ describe.skipIf(!available)('the table', () => {
     expect(svg).toContain('>Name<');
     expect(svg).toContain('>hello<');
     expect(svg).not.toContain('foreignObject');
+    await page.close();
+  });
+
+  // ---------------------------------------------------------------- cells: selecting, rows and columns, style (slice 2)
+
+  const select = (page: Page) => page.evaluate(() => (window as any).__board.setSelection(['tb1']));
+  const range = (page: Page) => page.evaluate(() => { const s = (window as any).__board.tables.sel; return s && [s.r0, s.c0, s.r1, s.c1]; });
+  const click = async (page: Page, row: number, col: number, shift = false) => {
+    const at = await cellBox(page, row, col);
+    if (shift) await page.keyboard.down('Shift');
+    await page.mouse.click(at.x, at.y);
+    if (shift) await page.keyboard.up('Shift');
+    await page.waitForTimeout(500); // a second press right after the first counts as a double click, which edits (a minimum gap, not a wait for state)
+  };
+
+  it('a click on a selected table selects the cell under it, Shift extends the range, the arrows and Tab move, Esc lets go', async () => {
+    const page = await open();
+    await seedTable(page, [['a', 'b', 'c'], ['d', 'e', 'f'], ['g', 'h', 'i']]);
+    await click(page, 1, 1); // not selected yet: this click selects the table and nothing else
+    expect(await range(page)).toBeNull();
+    await page.waitForTimeout(500); // a second press right after the first counts as a double click, which edits
+    await click(page, 1, 1);
+    expect(await range(page)).toEqual([1, 1, 1, 1]);
+    await click(page, 2, 2, true);
+    expect(await range(page)).toEqual([1, 1, 2, 2]);
+    await page.keyboard.press('Escape');
+    expect(await range(page)).toBeNull();
+    await click(page, 0, 0);
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowDown');
+    expect(await range(page)).toEqual([1, 1, 1, 1]);
+    await page.keyboard.press('Shift+ArrowRight');
+    expect(await range(page)).toEqual([1, 1, 1, 2]);
+    await page.keyboard.press('Tab'); // from the active cell (the anchor), not from the end of the range
+    expect(await range(page)).toEqual([1, 2, 1, 2]);
+    await page.keyboard.press('Tab');
+    expect(await range(page)).toEqual([2, 0, 2, 0]);
+    await page.keyboard.press('Shift+Tab');
+    expect(await range(page)).toEqual([1, 2, 1, 2]);
+    await page.close();
+  });
+
+  it('Enter edits the active cell and Delete empties the selected cells, one undo step', async () => {
+    const page = await open();
+    await seedTable(page, [['a', 'b'], ['c', 'd']]);
+    await select(page);
+    await page.waitForTimeout(500);
+    await click(page, 0, 1);
+    await page.keyboard.press('Enter');
+    const ta = page.locator('textarea.text-editor');
+    await ta.waitFor({ state: 'visible' });
+    expect(await ta.inputValue()).toBe('b');
+    await page.keyboard.press('Escape');
+    await ta.waitFor({ state: 'hidden' });
+    await page.keyboard.press('Escape'); // leaves the cell editor; the selection of cells is gone with it or stays: either way select again
+    await select(page);
+    await click(page, 0, 0);
+    await click(page, 1, 1, true);
+    await page.keyboard.press('Delete');
+    expect(await grid(page)).toEqual([['', ''], ['', '']]);
+    await page.evaluate(() => (window as any).__board.store.undo.undo());
+    expect(await grid(page)).toEqual([['a', 'b'], ['c', 'd']]);
+    await page.close();
+  });
+
+  it('the right-click menu inserts, moves and deletes rows and columns, and sets headers, alignment and fill', async () => {
+    const page = await open();
+    await seedTable(page, [['a', 'b'], ['c', 'd']]);
+    await select(page);
+    const menu = async (row: number, col: number, name: string) => {
+      const at = await cellBox(page, row, col);
+      await page.mouse.click(at.x, at.y, { button: 'right' });
+      await page.locator('.ctx-menu button').filter({ hasText: new RegExp(`^${name}$`) }).click();
+    };
+    await menu(0, 0, 'Insert row below');
+    expect(await grid(page)).toEqual([['a', 'b'], ['', ''], ['c', 'd']]);
+    await menu(0, 1, 'Insert column left');
+    expect(await grid(page)).toEqual([['a', '', 'b'], ['', '', ''], ['c', '', 'd']]);
+    await menu(2, 2, 'Move row up');
+    expect(await grid(page)).toEqual([['a', '', 'b'], ['c', '', 'd'], ['', '', '']]);
+    await menu(2, 1, 'Delete row');
+    await menu(0, 1, 'Delete column');
+    expect(await grid(page)).toEqual([['a', 'b'], ['c', 'd']]);
+    await menu(0, 0, 'Turn on header row');
+    await menu(0, 1, 'Align right');
+    await page.locator('.ctx-menu button.table-swatch').first(); // placeholder
+    {
+      const at = await cellBox(page, 1, 0);
+      await page.mouse.click(at.x, at.y, { button: 'right' });
+      await page.locator('.ctx-menu button[aria-label="Fill Blue"]').click();
+    }
+    const info = await page.evaluate(`(async () => {
+      const { tableModel } = await import('/shared/tables.mjs');
+      const o = window.__board.store.get('tb1');
+      const m = tableModel(o);
+      return { header: o.headerRow, align: m.cols.map((c) => m.align(c)), fill: m.rows.map((r) => m.cols.map((c) => m.fill(r, c))), fitted: Math.abs(o.h - window.__board.store.getPlaced('tb1').h) < 1 };
+    })()`) as { header: boolean; align: string[]; fill: (string | null)[][] };
+    expect(info.header).toBe(true);
+    expect(info.align).toEqual(['left', 'right']);
+    expect(info.fill).toEqual([[null, null], ['#A3D2FF', null]]);
+    // the fill is drawn, and the text on it in the ink that reads on it
+    const drawn = await page.evaluate(() => [...document.querySelectorAll('svg.canvas rect')].some((r) => r.getAttribute('fill') === '#A3D2FF'));
+    expect(drawn).toBe(true);
+    await page.close();
+  });
+
+  it('dragging a column border resizes that column, as one undo step, and the table follows', async () => {
+    const page = await open();
+    await seedTable(page, [['a', 'b'], ['c', 'd']]);
+    await select(page);
+    const before = await page.evaluate(() => (window as any).__board.store.get('tb1').w);
+    const geom = await page.evaluate(`(async () => {
+      const { layoutTable } = await import('/src/table-layout.ts');
+      const { tableStyle } = await import('/src/markup.ts');
+      const app = window.__board;
+      const o = app.store.get('tb1');
+      const l = layoutTable(o, tableStyle(o));
+      const p = app.r.toScreen({ x: o.x + l.colX[1], y: o.y + l.h / 2 });
+      const r = app.r.root.getBoundingClientRect();
+      return { x: r.left + p.x, y: r.top + p.y, zoom: app.r.cam.zoom };
+    })()`) as { x: number; y: number; zoom: number };
+    await page.mouse.move(geom.x, geom.y);
+    expect(await page.evaluate(() => (window as any).__board.r.svg.style.cursor)).toBe('col-resize');
+    await page.mouse.down();
+    await page.mouse.move(geom.x + 60 * geom.zoom, geom.y, { steps: 5 });
+    await page.mouse.up();
+    const after = await page.evaluate(() => (window as any).__board.store.get('tb1').w);
+    expect(after).toBeGreaterThan(before + 40);
+    await page.evaluate(() => (window as any).__board.store.undo.undo());
+    expect(await page.evaluate(() => (window as any).__board.store.get('tb1').w)).toBe(before);
+    await page.close();
+  });
+
+  it('copies the selected cells as tab separated text and pastes tab separated text into the selected cell', async () => {
+    const page = await open();
+    await seedTable(page, [['a', 'b'], ['c', 'd']]);
+    await select(page);
+    await page.waitForTimeout(500);
+    await click(page, 0, 0);
+    await click(page, 1, 1, true);
+    const copied = await page.evaluate(() => {
+      let text = '';
+      (navigator as any).clipboard.writeText = async (t: string) => { text = t; };
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true }));
+      return text;
+    });
+    expect(copied).toBe('a\tb\nc\td');
+    await click(page, 1, 0);
+    await page.evaluate(() => {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', 'x\ty\tz');
+      window.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    expect(await grid(page)).toEqual([['a', 'b', ''], ['x', 'y', 'z']]);
     await page.close();
   });
 });

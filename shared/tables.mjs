@@ -7,6 +7,8 @@
 //   k:<colId>            the column's rank
 //   w:<colId>            the column's width in world units (optional; the default applies without it)
 //   c:<rowId>:<colId>    the cell's text (inline Markdown), absent when the cell is empty
+//   a:<colId>            the column's text alignment: 'left' (the default), 'center' or 'right'
+//   f:<rowId>:<colId>    the cell's fill colour (a colour the board can draw), absent for none
 //
 // Ids are stable and never positions, so inserting a row moves no cell key. A cell whose row or column is gone (a delete that
 // raced with an edit) is simply not read. A new column or row is a new key, so a concurrent insert is never lost. TAB-186
@@ -23,21 +25,24 @@ export const MAX_COL_WIDTH = 800;
 export const DEFAULT_COL_WIDTH = 160;
 
 export const ID_RE = /^[a-z0-9]{1,12}$/;
-const KEY_RE = /^(?:([rkw]):([a-z0-9]{1,12})|c:([a-z0-9]{1,12}):([a-z0-9]{1,12}))$/;
+const KEY_RE = /^(?:([rkwa]):([a-z0-9]{1,12})|([cf]):([a-z0-9]{1,12}):([a-z0-9]{1,12}))$/;
+export const ALIGNS = Object.freeze(['left', 'center', 'right']);
 
 export const rowKey = (rowId) => `r:${rowId}`;
 export const colKey = (colId) => `k:${colId}`;
 export const widthKey = (colId) => `w:${colId}`;
+export const alignKey = (colId) => `a:${colId}`;
+export const fillKey = (rowId, colId) => `f:${rowId}:${colId}`;
 export const cellKey = (rowId, colId) => `c:${rowId}:${colId}`;
 
 /** True for the key of a table part (row, column, width or cell). */
 export const isTableKey = (key) => typeof key === 'string' && KEY_RE.test(key);
 
-/** The kind of a table key: 'r', 'k', 'w' or 'c', with its ids; null for any other key. */
+/** The kind of a table key: 'r', 'k', 'w' or 'a' with an id, or 'c' or 'f' with a row and a column id; null for any other key. */
 export function parseTableKey(key) {
   const m = typeof key === 'string' ? KEY_RE.exec(key) : null;
   if (!m) return null;
-  return m[1] ? { kind: m[1], id: m[2] } : { kind: 'c', rowId: m[3], colId: m[4] };
+  return m[1] ? { kind: m[1], id: m[2] } : { kind: m[3], rowId: m[4], colId: m[5] };
 }
 
 const byRank = (a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -51,6 +56,8 @@ export function tableModel(obj) {
   const cols = [];
   const widths = new Map();
   const cells = new Map();
+  const aligns = new Map();
+  const fills = new Map();
   for (const key of Object.keys(obj ?? {})) {
     const p = parseTableKey(key);
     if (!p) continue;
@@ -59,6 +66,8 @@ export function tableModel(obj) {
     else if (p.kind === 'k' && typeof value === 'string') cols.push({ id: p.id, rank: value });
     else if (p.kind === 'w' && typeof value === 'number' && Number.isFinite(value)) widths.set(p.id, Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, value)));
     else if (p.kind === 'c' && typeof value === 'string') cells.set(key, value);
+    else if (p.kind === 'a' && ALIGNS.includes(value)) aligns.set(p.id, value);
+    else if (p.kind === 'f' && typeof value === 'string' && value) fills.set(key, value);
   }
   rows.sort(byRank);
   cols.sort(byRank);
@@ -71,6 +80,8 @@ export function tableModel(obj) {
     colRanks: new Map(cols.map((c) => [c.id, c.rank])),
     width: (colId) => widths.get(colId) ?? DEFAULT_COL_WIDTH,
     cell: (rowId, colId) => (rowIds.has(rowId) && colIds.has(colId) ? cells.get(cellKey(rowId, colId)) ?? '' : ''),
+    align: (colId) => aligns.get(colId) ?? 'left',
+    fill: (rowId, colId) => (rowIds.has(rowId) && colIds.has(colId) ? fills.get(fillKey(rowId, colId)) ?? null : null),
   };
 }
 
@@ -116,7 +127,7 @@ export function deleteRowPatch(obj, rowId) {
   const patch = { [rowKey(rowId)]: undefined };
   for (const key of Object.keys(obj)) {
     const p = parseTableKey(key);
-    if (p?.kind === 'c' && p.rowId === rowId) patch[key] = undefined;
+    if ((p?.kind === 'c' || p?.kind === 'f') && p.rowId === rowId) patch[key] = undefined;
   }
   return patch;
 }
@@ -125,10 +136,10 @@ export function deleteRowPatch(obj, rowId) {
 export function deleteColPatch(obj, colId) {
   const m = tableModel(obj);
   if (m.cols.length <= 1 || !m.colRanks.has(colId)) return null;
-  const patch = { [colKey(colId)]: undefined, [widthKey(colId)]: undefined };
+  const patch = { [colKey(colId)]: undefined, [widthKey(colId)]: undefined, [alignKey(colId)]: undefined };
   for (const key of Object.keys(obj)) {
     const p = parseTableKey(key);
-    if (p?.kind === 'c' && p.colId === colId) patch[key] = undefined;
+    if ((p?.kind === 'c' || p?.kind === 'f') && p.colId === colId) patch[key] = undefined;
   }
   return patch;
 }
@@ -165,6 +176,37 @@ export function setWidthPatch(obj, colId, width) {
   const m = tableModel(obj);
   if (!m.colRanks.has(colId) || !Number.isFinite(width)) return null;
   return { [widthKey(colId)]: Math.round(Math.min(MAX_COL_WIDTH, Math.max(MIN_COL_WIDTH, width))) };
+}
+
+/** The patch that aligns a column's text: 'left' is the default and removes the key. */
+export function setAlignPatch(obj, colId, align) {
+  const m = tableModel(obj);
+  if (!m.colRanks.has(colId) || !ALIGNS.includes(align)) return null;
+  return { [alignKey(colId)]: align === 'left' ? undefined : align };
+}
+
+/** The patch that fills the cells `rowIds` x `colIds` with a colour; null or '' clears them. The colour is checked by the caller (the validator and the board's colour grammar). */
+export function setFillPatch(obj, rowIds, colIds, color) {
+  const m = tableModel(obj);
+  const patch = {};
+  for (const r of rowIds) {
+    for (const c of colIds) {
+      if (m.rowRanks.has(r) && m.colRanks.has(c)) patch[fillKey(r, c)] = color || undefined;
+    }
+  }
+  return Object.keys(patch).length ? patch : null;
+}
+
+/** The patch that empties the text of the cells `rowIds` x `colIds`. */
+export function clearCellsPatch(obj, rowIds, colIds) {
+  const m = tableModel(obj);
+  const patch = {};
+  for (const r of rowIds) {
+    for (const c of colIds) {
+      if (m.cell(r, c) !== '') patch[cellKey(r, c)] = undefined;
+    }
+  }
+  return Object.keys(patch).length ? patch : null;
 }
 
 /**

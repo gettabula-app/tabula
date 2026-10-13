@@ -30,6 +30,8 @@ export interface TableLayout {
   cells: TableCell[];
   /** The drawing items: header tint, cell text, grid lines. */
   items: MdItem[];
+  /** Cell fills (a colour as stored: the caller checks it before it is drawn), under everything else. */
+  fills: { x: number; y: number; w: number; h: number; color: string; /** The cell's text, drawn in whichever ink reads on that colour. */ items: MdItem[] }[];
 }
 
 export interface TableFlags {
@@ -47,27 +49,31 @@ export function layoutTable(obj: Record<string, unknown> & TableFlags, style: Md
   const header = (r: number, c: number) => (obj.headerRow === true && r === 0) || (obj.headerCol === true && c === 0);
   const laid = model.rows.map((rowId, r) => model.cols.map((colId, c) => {
     const text = [...model.cell(rowId, colId)].slice(0, MAX_CELL_CHARS).join('');
-    return layoutInlineText(text, model.width(colId) - TABLE_PAD_X * 2, style, { weight: header(r, c) ? 700 : style.weight });
+    return layoutInlineText(text, model.width(colId) - TABLE_PAD_X * 2, style, { weight: header(r, c) ? 700 : style.weight, align: model.align(colId) });
   }));
   const rowY = [0];
   laid.forEach((row) => rowY.push(rowY[rowY.length - 1] + Math.max(minRowHeight(style.size), Math.ceil(Math.max(...row.map((l) => l.height)) + TABLE_PAD_Y * 2))));
   const w = colX[colX.length - 1];
   const h = rowY[rowY.length - 1];
   const items: MdItem[] = [];
+  const fills: TableLayout['fills'] = [];
   const cells: TableCell[] = [];
   model.rows.forEach((rowId, r) => model.cols.forEach((colId, c) => {
     const x = colX[c];
     const y = rowY[r];
     cells.push({ row: r, col: c, rowId, colId, x, y, w: colX[c + 1] - x, h: rowY[r + 1] - y });
+    const fill = model.fill(rowId, colId);
+    if (fill) fills.push({ x, y, w: colX[c + 1] - x, h: rowY[r + 1] - y, color: fill, items: [] });
     // a header cell is tinted in the text colour at low opacity, so every theme gets a matching quiet tone
     if (header(r, c)) items.push({ k: 'rect', x, y, w: colX[c + 1] - x, h: rowY[r + 1] - y, tone: 'code' });
   }));
-  model.rows.forEach((_, r) => model.cols.forEach((__, c) => {
-    for (const it of laid[r][c].items) items.push(shift(it, colX[c] + TABLE_PAD_X, rowY[r] + TABLE_PAD_Y));
+  model.rows.forEach((rowId, r) => model.cols.forEach((colId, c) => {
+    const filled = model.fill(rowId, colId) ? fills.find((f) => f.x === colX[c] && f.y === rowY[r]) : undefined;
+    for (const it of laid[r][c].items) (filled ? filled.items : items).push(shift(it, colX[c] + TABLE_PAD_X, rowY[r] + TABLE_PAD_Y));
   }));
   for (let r = 0; r <= model.rows.length; r++) items.push({ k: 'line', x1: 0, y1: rowY[r], x2: w, y2: rowY[r], tone: r === 1 && obj.headerRow === true ? 'rule' : 'table' });
   for (let c = 0; c <= model.cols.length; c++) items.push({ k: 'line', x1: colX[c], y1: 0, x2: colX[c], y2: h, tone: c === 1 && obj.headerCol === true ? 'rule' : 'table' });
-  return { model, w, h, colX, rowY, cells, items };
+  return { model, w, h, colX, rowY, cells, items, fills };
 }
 
 function shift(it: MdItem, dx: number, dy: number): MdItem {

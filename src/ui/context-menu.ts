@@ -3,6 +3,7 @@
 import type { BoardApp } from '../app';
 import { h, icon } from './dom';
 import { popover } from './common';
+import { tableMenuChildren } from './table-menu';
 
 export type ContextAction = 'front' | 'forward' | 'backward' | 'back' | 'group' | 'ungroup' | 'flipHorizontal' | 'flipVertical' | 'duplicate' | 'lock' | 'delete';
 
@@ -76,6 +77,7 @@ export function openContextMenu(app: BoardApp, x: number, y: number, touch = fal
   const openedAt = Date.now();
   document.body.appendChild(anchor);
   const menu = h('div', { class: 'menu ctx-menu', role: 'menu', 'aria-label': 'Object actions' },
+    ...tableMenuChildren(app, () => pop.close()),
     ...items.flatMap((item) => [
       item.separatorBefore ? h('hr', { class: 'menu-sep', role: 'separator' }) : null,
       h('button', {
