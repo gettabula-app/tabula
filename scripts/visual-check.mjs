@@ -3067,7 +3067,9 @@ const STATES = {
   async 'chat-react'(env) {
     await openSeedChat(env);
     await env.page.locator('.chat-reaction').first().waitFor();
-    await env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) }).locator('.chat-more').click();
+    const targetMessage = env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) });
+    await targetMessage.locator('.chat-text').hover();
+    await targetMessage.locator('.chat-more').click();
     await env.page.getByRole('menuitem', { name: 'React' }).click();
     await env.page.locator('.chat-picker').waitFor();
   },

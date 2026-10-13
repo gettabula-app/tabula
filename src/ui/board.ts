@@ -75,6 +75,7 @@ import { guestMark } from './guest-mark';
 import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate } from './share-logic';
 import { trackPanelTop } from './panel-top';
 import { mountRailScrollCue, trackMoreY } from './scroll-cue';
+import { choiceForToolKind, rememberToolChoice, restoreToolChoice, type RailToolChoice } from './rail-tool-group-state';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
 
@@ -159,7 +160,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
         ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
         : 'The server refused this connection. Your changes are still saved on this device.';
     }
-    status.replaceChildren(icon(s === 'live' ? 'wifi' : 'cloudOff', 16), h('span', { class: 'sync-status-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-status-label' }, label));
+    status.replaceChildren(h('span', { class: 'sync-status-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-status-label' }, s === 'live' ? 'Live' : label));
     status.setAttribute('aria-label', label);
     if (window.innerWidth <= 480) {
       status.dataset.tip = label;
@@ -222,7 +223,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       h('span', { class: 'phone-people-avatars', 'aria-hidden': 'true' }, ...ps.slice(0, 2).map((p, index) => h('span', {
         class: `avatar phone-avatar${index === 0 ? ' first' : ''}`, style: `--c:${p.user.color}`,
       }, initials(p.user.name)))),
-      ...(ps.length > 2 ? [h('span', { class: 'phone-people-count', 'aria-hidden': 'true' }, String(ps.length))] : []),
+      ...(ps.length > 2 ? [h('span', { class: 'phone-people-count', 'aria-hidden': 'true' }, `+${ps.length - 2}`)] : []),
     );
   };
   phonePeople.addEventListener('click', () => {
@@ -278,9 +279,111 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     b.dataset.tool = tool.kind;
     return b;
   };
-  // no single-key shortcut: M is the chat's and the rest are taken
-  const markdownBtn = h('button', { class: 'rail-btn', 'aria-label': 'Markdown block', 'data-tip': 'Markdown block', onclick: () => app.setTool({ kind: 'markdown' }) }, icon('markdown', 22));
-  markdownBtn.dataset.tool = 'markdown';
+  const railGroupChoices = [
+    { id: 'text', kind: 'text', label: 'Text', icon: 'text' as IconName, key: 'T', tool: { kind: 'text' } as Tool },
+    { id: 'markdown', kind: 'markdown', label: 'Markdown block', icon: 'markdown' as IconName, key: '', tool: { kind: 'markdown' } as Tool },
+    // Link cards open an address popover instead of arming a tool, and are not offered in the demo
+    ...(demo ? [] : [{ id: 'link', kind: 'link', label: 'Link', icon: 'link' as IconName, key: '', tool: null as Tool | null }]),
+  ];
+  const railGroupState: RailToolChoice[] = railGroupChoices.map(({ id, kind }) => ({ id, kind }));
+  const railGroupStorageKey = 'driftboard:rail-tool-group:text-markdown-link';
+  const loadRailGroupChoice = () => {
+    try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(railGroupStorageKey); } catch { return null; }
+  };
+  const saveRailGroupChoice = (choice: string) => {
+    try { localStorage.setItem(railGroupStorageKey, choice); } catch { /* grouped tool memory is a convenience */ }
+  };
+  let lastRailGroupChoice = restoreToolChoice(loadRailGroupChoice(), app.tool.kind, railGroupState, 'text');
+  let railGroupButton: HTMLButtonElement;
+  let closeRailGroup: () => void = () => {};
+  let longPressTimer = 0;
+  let suppressGroupClick = false;
+  const currentRailGroupChoice = () => railGroupChoices.find((choice) => choice.id === lastRailGroupChoice) ?? railGroupChoices[0];
+  const paintRailGroupButton = () => {
+    const choice = currentRailGroupChoice();
+    railGroupButton.dataset.tool = choice.kind;
+    railGroupButton.setAttribute('aria-label', choice.label);
+    if (choice.key) { railGroupButton.setAttribute('aria-keyshortcuts', choice.key); railGroupButton.dataset.tipKey = choice.key.toLowerCase(); } else { railGroupButton.removeAttribute('aria-keyshortcuts'); delete railGroupButton.dataset.tipKey; }
+    railGroupButton.replaceChildren(icon(choice.icon, 20), h('span', { class: 'rail-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 10)));
+  };
+  const selectRailGroupChoice = (id: string) => {
+    const choice = railGroupChoices.find((item) => item.id === id);
+    if (!choice) return;
+    closeRailGroup();
+    lastRailGroupChoice = choice.id;
+    saveRailGroupChoice(choice.id);
+    paintRailGroupButton();
+    if (choice.tool) app.setTool(choice.tool);
+    else if (app.readOnly) toast("You can't add links to a board you can only view.");
+    else openLinkPopover(app, railGroupButton);
+  };
+  const openRailGroup = () => {
+    if (document.querySelector('.rail-tool-pop')) return;
+    const options = railGroupChoices.map((choice) => h('button', {
+      class: 'menu-item rail-tool-option', type: 'button', role: 'menuitem', 'aria-label': choice.label,
+      ...(choice.key ? { 'aria-keyshortcuts': choice.key } : {}), onclick: () => selectRailGroupChoice(choice.id),
+    }, icon(choice.icon, 20), h('span', null, choice.label), ...(choice.key ? [h('kbd', null, choice.key)] : [])));
+    const list = h('div', { class: 'rail-tool-list', role: 'menu', 'aria-label': 'Text, Markdown and link tools' }, ...options);
+    list.addEventListener('keydown', (event: KeyboardEvent) => {
+      const buttons = [...list.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+      const active = buttons.indexOf(event.target as HTMLButtonElement);
+      if (active < 0) return;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        event.stopPropagation();
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+          : (active + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length;
+        buttons[next]?.focus();
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        buttons[active]?.click();
+      }
+    });
+    const opened = popover(railGroupButton, list, {
+      side: 'right', className: 'rail-tool-pop', label: 'Text, Markdown and link tools',
+      onClose: () => { closeRailGroup = () => {}; },
+    });
+    closeRailGroup = opened.close;
+  };
+  railGroupButton = h('button', {
+    class: 'rail-btn rail-tool-group', type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+  });
+  paintRailGroupButton();
+  railGroupButton.addEventListener('click', (event) => {
+    if (suppressGroupClick) {
+      suppressGroupClick = false;
+      event.preventDefault();
+      return;
+    }
+    if ((event.target as HTMLElement).closest('.rail-group-chevron')) openRailGroup();
+    else selectRailGroupChoice(lastRailGroupChoice);
+  });
+  railGroupButton.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    event.stopPropagation();
+    openRailGroup();
+  });
+  railGroupButton.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    window.clearTimeout(longPressTimer);
+    longPressTimer = window.setTimeout(() => {
+      suppressGroupClick = true;
+      openRailGroup();
+    }, 500);
+  });
+  const cancelRailGroupPress = () => window.clearTimeout(longPressTimer);
+  railGroupButton.addEventListener('pointerup', cancelRailGroupPress);
+  railGroupButton.addEventListener('pointerleave', cancelRailGroupPress);
+  railGroupButton.addEventListener('pointercancel', () => {
+    cancelRailGroupPress();
+    suppressGroupClick = false;
+  });
+  app.lifetime.signal.addEventListener('abort', () => {
+    window.clearTimeout(longPressTimer);
+    closeRailGroup();
+  }, { once: true });
   const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates' | 'layers') => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
@@ -298,12 +401,6 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   imageBtn.hidden = demo || !imagesAvailable();
   if (!demo) app.lifetime.signal.addEventListener('abort', onAuth(() => (imageBtn.hidden = !imagesAvailable())), { once: true });
   app.onImageFiles = demo ? null : (files) => void addImages(app, files);
-  // Link cards (docs/link-cards.md): an address in a small popover; the card appears at once and its preview fills in
-  const linkBtn = h('button', { class: 'rail-btn', 'aria-label': 'Link', 'data-tip': 'Link', 'aria-haspopup': 'dialog', onclick: () => {
-    if (app.readOnly) toast("You can't add links to a board you can only view.");
-    else openLinkPopover(app, linkBtn);
-  } }, icon('link', 22));
-  linkBtn.hidden = demo;
   app.openObjectMenu = (x, y) => openContextMenu(app, x, y);
   // the card dialog and the Labels dialog (docs/kanban.md, slice 3)
   app.openCard = (id, focus) => void openCardDialog(app, id, focus);
@@ -356,15 +453,12 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       toolBtn('Hand', 'hand', { kind: 'hand' }, 'H'),
       h('hr'),
       stickyBtn,
-      toolBtn('Text', 'text', { kind: 'text' }, 'T'),
-      markdownBtn,
+      railGroupButton,
       shapesBtn,
-      toolBtn('Connector', 'connector', { kind: 'connector' }, 'L'),
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
       toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
       trackerCommand,
       imageBtn,
-      linkBtn,
       commentBtn,
       h('hr'),
       drawerBtn('UML', 'uml', 'uml'),
@@ -384,7 +478,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   );
   // The phone demo keeps six tools (see .demo-board in styles.css).
   for (const b of [stickyBtn, shapesBtn]) b.classList.add('demo-keep');
-  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="text"], [data-tool="connector"]')) b.classList.add('demo-keep');
+  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"]')) b.classList.add('demo-keep');
+  railGroupButton.classList.add('demo-keep');
+  rail.querySelector<HTMLElement>('[data-tool="pen"]')?.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
   const railTools = rail.querySelector<HTMLElement>('.rail-tools');
   if (railTools) {
@@ -398,6 +494,14 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     mountRailScrollCue(rail, railTools, chevron, track, thumb);
   }
   const syncRail = () => {
+    if (choiceForToolKind(app.tool.kind, railGroupState)) {
+      const groupChoice = rememberToolChoice(lastRailGroupChoice, app.tool.kind, railGroupState);
+      if (groupChoice !== lastRailGroupChoice) {
+        lastRailGroupChoice = groupChoice;
+        saveRailGroupChoice(groupChoice);
+      }
+    }
+    paintRailGroupButton();
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
       const t = app.tool;
       const on = b.dataset.tool === t.kind;

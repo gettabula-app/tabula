@@ -217,12 +217,12 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
         paintPanel();
       },
     }, label);
-    const head = h('div', { class: 'history-head' }, h('h2', null, 'Version history'), closeBtn);
+    const head = h('div', { class: 'history-head' }, h('span', { class: 'panel-grabber', 'aria-hidden': 'true' }), h('h2', null, 'Version history'), closeBtn);
     const bar = h('div', { class: 'history-bar' }, h('div', { class: 'history-tabs', role: 'tablist', 'aria-label': 'Filter versions' }, tab('all', 'All'), tab('named', 'Named')), save);
     const current = h('div', { class: 'history-item' },
       h('button', { class: `history-row current${selected === null ? ' on' : ''}`, 'data-key': 'current', 'aria-current': selected === null ? 'true' : null, onclick: () => closePreview() },
         h('span', { class: 'history-time' }, 'Now'),
-        h('span', { class: 'history-main' }, h('span', { class: 'history-title' }, 'Current board'), h('span', { class: 'history-meta' }, 'Live, as everyone sees it'))));
+        h('span', { class: 'history-main' }, h('span', { class: 'history-title' }, 'Current board', h('span', { class: 'history-current-pill' }, 'Current')), h('span', { class: 'history-meta' }, 'Live, as everyone sees it'))));
     const body = h('div', { class: 'history-body' }, current);
     const state = stateLine();
     if (state) {

@@ -31,7 +31,7 @@ export function icon(name: keyof typeof ICONS, size = 20): HTMLSpanElement {
   const s = document.createElement('span');
   s.className = 'ico';
   s.setAttribute('aria-hidden', 'true');
-  const strokeWidth = name === 'group' || name === 'ungroup' ? 2 : 1.75;
+  const strokeWidth = 1.8;
   s.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
   return s;
 }
@@ -56,7 +56,7 @@ export const ICONS = {
   image: '<rect x="3.5" y="4.5" width="17" height="15" style="rx:var(--radius-xs)"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17.5l5-4.5 3.5 3 3-2.5 4.5 4"/>',
   shapes: '<rect x="3.5" y="10" width="10" height="10" style="rx:var(--radius-xs)"/><circle cx="16" cy="8" r="5"/>',
   uml: '<rect x="4" y="3.5" width="16" height="17" style="rx:var(--radius-xs)"/><path d="M4 8.5h16M4 14h16M7 11.2h6M7 16.8h8"/>',
-  icons: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4 4 0 007 0"/><path d="M9 9.5h.01M15 9.5h.01" stroke-width="2.5"/>',
+  icons: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14a4 4 0 007 0"/><path d="M9 9.5h.01M15 9.5h.01"/>',
   react: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 14.2c.9 1.4 2 2.1 3.5 2.1s2.6-.7 3.5-2.1"/><path d="M9.4 9.6h.01M14.6 9.6h.01"/>',
   stickers: '<path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 17l-5.3 2.6 1-5.8-4.2-4.1 5.9-.9z"/>',
   templates: '<rect x="3.5" y="4" width="17" height="16" style="rx:var(--radius-xs)"/><path d="M3.5 9h17M9.5 9v11"/>',
