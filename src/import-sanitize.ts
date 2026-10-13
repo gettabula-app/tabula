@@ -136,7 +136,7 @@ function cleanTableParts(o: Record<string, unknown>): void {
 function cleanCodeFields(o: Record<string, unknown>): void {
   o.lang = normaliseCodeLang(o.lang) ?? DEFAULT_CODE_LANG;
   if (typeof o.text === 'string' && o.text.length > MAX_CODE_CHARS) o.text = [...o.text].slice(0, MAX_CODE_CHARS).join('');
-  if (typeof o.title === 'string') o.title = [...o.title.replace(/\s+/g, ' ').trim()].slice(0, MAX_CODE_TITLE).join('');
+  if (typeof o.title === 'string') Object.assign(o, { title: [...o.title.replace(/\s+/g, ' ').trim()].slice(0, MAX_CODE_TITLE).join('') }); // a data field, not an element's tooltip
   else delete o.title;
   for (const k of ['lines', 'wrap']) if (k in o && typeof o[k] !== 'boolean') delete o[k];
 }
