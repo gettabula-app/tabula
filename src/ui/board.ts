@@ -969,6 +969,8 @@ function minimap(app: BoardApp) {
 function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) | null, scratch: boolean, demo: boolean, openLayers: () => void) {
   let pop: ReturnType<typeof popover>;
   let activeSubmenu: 'export' | 'theme' | null = null;
+  /** The list a resting mouse pointer opened: the first click on its row keeps it open (and moves focus in) instead of toggling it shut. */
+  let hoverOpened: 'export' | 'theme' | null = null;
   let stopTheme: () => void = () => {};
 
   const isPhone = () => typeof window.matchMedia === 'function'
@@ -1140,6 +1142,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   function setSubmenu(key: 'export' | 'theme' | null, moveFocus: boolean): void {
     const previous = activeSubmenu;
     activeSubmenu = key;
+    hoverOpened = null;
     for (const submenu of ['export', 'theme'] as const) {
       const active = submenu === key;
       panels[submenu].hidden = !active;
@@ -1187,7 +1190,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   }
 
   function toggleSubmenu(key: 'export' | 'theme', moveFocus: boolean): void {
-    setSubmenu(activeSubmenu === key ? null : key, moveFocus);
+    setSubmenu(activeSubmenu === key && hoverOpened !== key ? null : key, moveFocus);
   }
 
   function filterMenu(): void {
@@ -1298,7 +1301,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     const key = row === exportTrigger ? 'export' : row === themeTrigger ? 'theme' : null;
     if (key === activeSubmenu) return;
     if (key === null && activeSubmenu === null) return;
-    hoverTimer = window.setTimeout(() => { if (menu.isConnected) setSubmenu(key, false); }, key ? 150 : 250);
+    hoverTimer = window.setTimeout(() => { if (!menu.isConnected) return; setSubmenu(key, false); hoverOpened = key; }, key ? 150 : 250);
   });
   menu.addEventListener('keydown', (event: KeyboardEvent) => {
     if (activeSubmenu !== 'theme' || event.key !== 'ArrowLeft' || !(event.target instanceof HTMLElement) || !event.target.closest('.board-theme-options')) return;
