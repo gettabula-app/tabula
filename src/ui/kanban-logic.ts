@@ -21,7 +21,7 @@ export const CARD = {
   titleLine: 18,
   titleLines: 3,
   rowGap: 8,
-  labelRow: 16,
+  labelRow: 20,
   metaRow: 24,
 } as const;
 

@@ -11,7 +11,7 @@ function svg(kind: GlyphKind, label: string): SVGSVGElement {
   el.setAttribute('height', '16');
   el.setAttribute('fill', 'none');
   el.setAttribute('stroke', 'currentColor');
-  el.setAttribute('stroke-width', '1.5');
+  el.setAttribute('stroke-width', '1.8');
   el.setAttribute('stroke-linecap', 'square');
   el.setAttribute('stroke-linejoin', 'miter');
   el.setAttribute('aria-hidden', 'true');
@@ -102,7 +102,7 @@ export function priorityGlyph(priority: Priority): SVGSVGElement {
   // Bars grow from the baseline (5, 8 and 11 px high), two px wide, so Low is still a readable bar.
   for (let i = 0; i < level; i++) {
     const x = 3 + i * 4;
-    part(el, 'path', { d: `M${x} 13v${-(5 + i * 3)}`, 'stroke-width': '2' });
+    part(el, 'path', { d: `M${x} 13v${-(5 + i * 3)}`, 'stroke-width': '1.8' });
   }
   return el;
 }
