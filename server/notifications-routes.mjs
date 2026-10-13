@@ -6,7 +6,10 @@ import { NotificationPrefsInputError } from './notification-prefs.mjs';
 export const NOTIFICATIONS_BODY_LIMIT = 8 * 1024;
 const READ_IDS_MAX = 100;
 
-export function createNotificationRoutes({ notifications, compile, errors }) {
+/**
+ * @param {{ notifications: any, digest?: { get: (userId: string) => unknown, set: (userId: string, patch: unknown) => unknown } | null, compile: Function, errors: any }} options
+ */
+export function createNotificationRoutes({ notifications, digest = null, compile, errors }) {
   const { badRequest, forbidden, invalidInput } = errors;
   const prefs = notifications.prefs;
   const accountOnly = (user) => {
@@ -60,5 +63,24 @@ export function createNotificationRoutes({ notifications, compile, errors }) {
         throw error;
       }
     }),
+
+    // The email digest (docs/notifications.md, Digest): off until switched on, one mail a day at the chosen hour.
+    // GET always answers: `digest: null` tells the dialog this instance sends no email, so it hides the section.
+    compile('GET', 'notifications/digest', {}, ({ user }) => {
+      accountOnly(user);
+      return [200, { digest: digest ? digest.get(user.id) : null }];
+    }),
+    ...(digest ? [
+
+      compile('PUT', 'notifications/digest', { body: true, maxBody: NOTIFICATIONS_BODY_LIMIT, readOnlyOk: true }, ({ user, body }) => {
+        accountOnly(user);
+        try {
+          return [200, { digest: digest.set(user.id, body) }];
+        } catch (error) {
+          if (error instanceof NotificationPrefsInputError) throw invalidInput(error.message);
+          throw error;
+        }
+      }),
+    ] : []),
   ];
 }

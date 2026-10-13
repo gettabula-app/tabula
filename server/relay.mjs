@@ -110,6 +110,8 @@ const AI_SWEEP_MS = 30_000;
 const NOTIFICATION_SWEEP_MS = 60 * 60 * 1000;
 // Card reminders (docs/notifications.md): due-soon and overdue sweep every 15 minutes; the test override can only shorten it.
 const CARD_DUE_SWEEP_MS = Number(process.env.TABULA_TEST_CARD_DUE_SWEEP_MS) > 0 ? Number(process.env.TABULA_TEST_CARD_DUE_SWEEP_MS) : 15 * 60 * 1000;
+// The email digest (docs/notifications.md, Digest): every 15 minutes; the test override is honoured only under NODE_ENV=test.
+const DIGEST_SWEEP_MS = process.env.NODE_ENV === 'test' && Number(process.env.TABULA_TEST_DIGEST_SWEEP_MS) > 0 ? Number(process.env.TABULA_TEST_DIGEST_SWEEP_MS) : 15 * 60 * 1000;
 const trackerSocketBudget = createTrackerSocketBudget();
 
 const CLOSE_UNAUTHENTICATED = 4401;
@@ -307,6 +309,7 @@ let cloud = null;
 let keyFloorReporter = null;
 let buildApi = null;
 let notificationStore = null;
+let notificationDigest = null;
 let cardDue = null;
 // Team chat (docs/chat.md), accounts mode, on unless TABULA_CHAT=off. chat.sqlite is opened on first use.
 let chat = null;
@@ -414,6 +417,22 @@ if (config.authEnabled) {
     directory.setKeyFloorListener(() => events.emit(KEY_FLOOR_CHANGED_EVENT));
   }
   mailer = createMailer(config);
+  // The daily digest uses the same mailer as every other email; without one there is nothing to send with.
+  if (mailer && notificationStore) {
+    const { createDigest } = await import('./notification-digest.mjs');
+    const runDigest = (fn) => (snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn());
+    // only the database writes go through the snapshot barrier; the mail is sent outside it
+    notificationDigest = createDigest({ directory, notifications: notificationStore, mailer, baseUrl: config.baseUrl, log, write: runDigest });
+    let digestSweeping = false; // a slow mail relay must not let two sweeps run at once (they could both mail the same person)
+    const sweepDigest = () => {
+      if (digestSweeping) return;
+      digestSweeping = true;
+      Promise.resolve().then(() => notificationDigest.sweep())
+        .catch((err) => log('digest: sweep failed', err?.name ?? 'error'))
+        .finally(() => { digestSweeping = false; });
+    };
+    setInterval(sweepDigest, DIGEST_SWEEP_MS).unref();
+  }
   auth = createAuth({ directory, config, mailer, seatsAvailable: cloud?.seatsAvailable, notifications: notificationStore, log });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
@@ -577,7 +596,7 @@ const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpe
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, notificationDigest, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
