@@ -130,7 +130,10 @@ describe.skipIf(!available)('the emoji picker search', { timeout: 200_000 }, () 
     }
     await search.fill('zzzzqq');
     await pop.getByText('No emoji found').waitFor();
-    const look = await search.evaluate((el) => ({ outline: getComputedStyle(el).outlineStyle }));
+    await search.focus();
+    const look = await search.evaluate((el) => ({ outline: getComputedStyle(el).outlineStyle, shadow: getComputedStyle(el).boxShadow }));
+    // one ring: the shared field focus, and no second outline on top of it
     expect(look.outline).toBe('none');
+    expect(look.shadow).not.toBe('none');
   });
 });
