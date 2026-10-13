@@ -12,16 +12,17 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      full-matrix:
-        description: 'Run the full matrix (Linux, macOS and Windows on every Node version) instead of Linux only'
+      with-node22:
+        description: 'Also test on Node 22, the oldest Node a self-hoster may run (package.json engines)'
         type: boolean
         default: false
   # release.yml (a v* tag, or by hand) runs these gates before it builds and pushes the image. A tag no longer starts CI by itself:
   # the release workflow calls it, so the gates run once per tag, and the Docker job below still publishes the semver tags to ghcr.
-  # The release passes full-matrix: true, so the SHA that is released has always run on all three systems.
+  # The release passes with-node22: true, so the SHA that is released has also passed on Node 22, the floor for self-hosters. CI is Linux only
+  # everywhere (macOS, Windows and desktop are frozen, Johan 2026-10-13).
   workflow_call:
     inputs:
-      full-matrix:
+      with-node22:
         type: boolean
         default: false
 
@@ -81,18 +82,17 @@ jobs:
             echo "No usable range to compare, so everything runs"
             printf 'code=true\nguide=true\n' | tee -a "$GITHUB_OUTPUT"
           fi
-      # Every push and pull request tests on Linux only (Node 24, which also runs the browser tests, and Node 26, the Node the Docker image ships).
-      # The full matrix (Linux with Node 22, 24 and 26, macOS, and Windows in two shards) runs for a release, on request (workflow_dispatch with
-      # full-matrix) and in nightly.yml. Windows and macOS path and timing differences therefore show up at the latest on the release SHA.
+      # CI is Linux only, everywhere (macOS, Windows and desktop are frozen). Every push and pull request tests on Node 24 (which also runs the browser
+      # tests) and Node 26 (the Node the Docker image ships). A release (release.yml) and a manual run with with-node22 also test Node 22, the oldest
+      # Node a self-hoster may run, because package.json promises it (engines >=22.13) and nothing else would notice a use of a newer API.
       - id: matrix
         shell: bash
         env:
-          FULL: ${{ inputs.full-matrix }}
+          WITH_NODE22: ${{ inputs.with-node22 }}
         run: |
-          if [ "$FULL" = true ]; then
-            matrix='{"include":[{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"ubuntu-latest","node":26},{"os":"macos-latest","node":22},{"os":"macos-latest","node":24},{"os":"macos-latest","node":26},{"os":"windows-latest","node":22,"shard":"1/2"},{"os":"windows-latest","node":22,"shard":"2/2"},{"os":"windows-latest","node":24,"shard":"1/2"},{"os":"windows-latest","node":24,"shard":"2/2"},{"os":"windows-latest","node":26,"shard":"1/2"},{"os":"windows-latest","node":26,"shard":"2/2"}]}'
-          else
-            matrix='{"include":[{"os":"ubuntu-latest","node":24},{"os":"ubuntu-latest","node":26}]}'
+          matrix='{"include":[{"os":"ubuntu-latest","node":24},{"os":"ubuntu-latest","node":26}]}'
+          if [ "$WITH_NODE22" = true ]; then
+            matrix='{"include":[{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"ubuntu-latest","node":26}]}'
           fi
           echo "matrix=$matrix" | tee -a "$GITHUB_OUTPUT"
 
