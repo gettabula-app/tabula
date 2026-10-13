@@ -408,7 +408,7 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
         h('div', null, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.personColumn}: `), h('span', { class: 'admin-name' }, person.userName || person.email)),
         h('div', { class: 'muted small' }, person.email)),
       h('div', { class: 'admin-who' },
-        h('div', null, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.typeColumn}: `), h('span', { class: 'admin-badge' }, access.typeLabel)),
+        h('div', null, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.typeColumn}: `), h('span', { class: 'admin-badge tag tag-blue' }, access.typeLabel)),
         h('div', { class: 'muted small admin-wrap' }, name),
         h('div', { class: 'muted small admin-wrap' }, client ? client.redirectHost : `…${token!.hint}`)),
       h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.accessColumn}: `), accessLabel),
