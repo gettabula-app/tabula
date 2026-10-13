@@ -10,22 +10,23 @@ Välj **Line** (Linje) i gruppen **Connectors and lines** (Kopplingslinjer och l
 - Dra från där linjen ska börja till där den ska sluta.
 - Klicka en gång för start och en gång till för slut.
 
-Verktyget växlar tillbaka till **Select** (Markera) när linjen är ritad. Håll ner `Shift` medan du ritar för att linjen ska snäppa till steg om 15 grader. Håll ner `Ctrl` (eller `Cmd` på Mac) för att låsa den vågrät eller lodrät.
+Verktyget växlar tillbaka till **Select** (Markera) när linjen är ritad. Håll ner `Shift` medan du ritar för att linjen ska snäppa till steg om 15 grader. Håll ner `Cmd` (`Ctrl` på Windows och Linux) för att låsa den vågrät eller lodrät.
 
 <!-- screenshot: verktyget Line valt i verktygsraden, en linje som dras över tavlan med ena änden snäppad till 15 grader -->
 
 ## Flytta eller forma om en linje
 
-Markera en linje och dra i den ände du vill flytta. Den andra änden står kvar. En linje behåller sina fria ändar tills du fäster en av dem vid en form med en kopplingslinje.
+Markera en linje och dra i den ände du vill flytta. Den andra änden står kvar. En linjes ändar förblir fria: om du drar en ände över en form fästs den inte. Vill du ha en linje som sitter fast ritar du en kopplingslinje.
 
 ## Ändra utseende
 
-Markera en linje och öppna **More properties** (Fler egenskaper) eller använd snabbåtgärdsfältet:
+Markera en linje och öppna **More properties** (Fler egenskaper); snabbåtgärdsfältet har bara färgen:
 
-- Färg för **Stroke** (Linjefärg)
+- **Stroke colour** (Linjefärg)
 - **Width** (Bredd)
-- **Line style** (Linjestil): heldragen, streckad eller punktad
+- **Style** (Linjestil): heldragen, streckad eller punktad
 - **Start** och **End** (Slut) för pilspetsar, från samma lista som kopplingslinjer använder. Nya linjer har inga pilspetsar.
+- **Opacity** (Genomskinlighet)
 
 ## Linjer och kopplingslinjer
 
@@ -33,8 +34,6 @@ En linje och en kopplingslinje ser likadana ut men beter sig olika:
 
 - En **linje** är fri. Den har två punkter på tavlan och följer ingen form.
 - En **kopplingslinje** är fäst vid former, lappar eller andra objekt i en eller båda ändar och följer med dem.
-
-Om du fäster en ände av en linje vid en form, eller ändrar dess dragning till Elbow (Vinkel) eller Curved (Böjd), blir den en kopplingslinje. Vill du ha en vanlig linje igen ritar du en ny.
 
 ## Relaterat
 
