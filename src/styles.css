@@ -283,6 +283,8 @@ select.input {
 .rail-more[hidden], .rail-track[hidden] { display: none; }
 .rail-more[data-dir='up'] svg { transform: rotate(180deg); }
 .rail-track { position: absolute; right: 2px; width: 2px; border-radius: 1px; background: var(--tray-line); pointer-events: none; }
+/* The rail scrolls by wheel, touch and keyboard and shows the fading edge and the chevron when more tools are out of view; the 2px track is kept in the layout for the scroll cue's measurements but is not drawn: people read it as a scrollbar (Johan, 13 Oct 2026). */
+.rail-track { opacity: 0; }
 .rail-track-thumb { display: block; width: 100%; border-radius: 1px; background: color-mix(in srgb, var(--tray-text) 40%, transparent); }
 .rail-tools { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { .rail-tools { scroll-behavior: auto; } }
@@ -1133,3 +1135,6 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .chrome > .quickbar .icon-btn.on,
   .chrome > .top-right .comment-toggle.on { border: 1px solid Highlight; }
 }
+
+/* Long floating panels scroll with a thin themed scrollbar, never the platform default. */
+.chrome :is(.props, .drawer-body, .history-body, .side-tray-panel, .comment-msgs, .aireview-body) { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--tray-text) 28%, transparent) transparent; }
