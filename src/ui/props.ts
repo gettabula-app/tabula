@@ -279,6 +279,8 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     // where an object an AI run proposed came from (TAB-160): stored data, cleaned, and set as text
     const origin = sel.length === 1 ? proposedLine(cleanProposedBy((first as BaseObj).proposedBy)) : null;
     if (origin) blocks.push(h('p', { class: 'props-origin' }, origin));
+    // an agent's draft: a person accepts it as it is, or edits it (which also ends the draft)
+    if (sel.length >= 1 && app.hasDrafts() && !app.readOnly) blocks.push(h('button', { class: 'btn', onclick: () => app.acceptDrafts() }, sel.length === 1 ? 'Accept draft' : 'Accept drafts'));
     panel.replaceChildren(h('div', { class: 'props-head' }, h('h2', null, title), h('div', null, fold, h('button', { class: 'icon-btn', 'data-tip': 'Close', 'aria-label': 'Close properties', onclick: () => toggle() }, icon('close', 18)))), ...blocks.filter(Boolean) as HTMLElement[]);
     panel.classList.toggle('folded', folded);
     // keep keyboard focus on the same control across the rebuild that follows each change

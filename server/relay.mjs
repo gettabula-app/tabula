@@ -95,7 +95,7 @@ const ROLE_RECHECK_MS = 5_000;
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
 /** How long an agent shows as at work on a board after its last change (TAB-158), and how many are shown at once. */
-const AGENT_PRESENCE_MS = 30_000;
+const AGENT_PRESENCE_MS = Number(process.env.TABULA_TEST_AGENT_PRESENCE_MS) > 0 ? Number(process.env.TABULA_TEST_AGENT_PRESENCE_MS) : 30_000; // the env knob is for tests
 const MAX_AGENTS_SHOWN = 6;
 // Not a y-websocket type (it uses 0 sync, 1 awareness, 2 auth, 3 query awareness). Relay to client only: a hosted
 // workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.

@@ -67,6 +67,7 @@ export interface Overlay {
   dropTarget: Id | null;        // frame highlighted while dragging into it
   ai: string;                   // world-space markup of the AI previews on the board (ghosts), above the objects and below selections
   kanban: KanbanOverlay | null; // card drag and keyboard move marks (docs/kanban.md)
+  drafts: Id[];                 // objects an agent drafted and nobody has edited or accepted yet: a small "Agent draft" mark (TAB-158)
 }
 
 /** What a kanban card drag or keyboard move draws over the board, in world coordinates. */
@@ -93,7 +94,7 @@ export interface KanbanDrawState {
 
 export const emptyOverlay = (): Overlay => ({
   selection: [], enteredGroup: null, hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
-  guides: [], preview: '', remote: [], votes: new Map(), votable: new Set(), dropTarget: null, ai: '', kanban: null,
+  guides: [], preview: '', remote: [], votes: new Map(), votable: new Set(), dropTarget: null, ai: '', kanban: null, drafts: [],
 });
 
 /**
@@ -772,6 +773,19 @@ export class Renderer {
         const o = get(id);
         const b = o && this.bounds(o);
         if (b) out += `<rect x="${b.x - px(3)}" y="${b.y - px(3)}" width="${b.w + px(6)}" height="${b.h + px(6)}" fill="none" stroke="${safeColor(r.color, USER_COLORS[0])}" stroke-width="${px(1.5)}" stroke-dasharray="${px(4)} ${px(3)}" rx="${px(3)}"/>`;
+      }
+    }
+
+    // objects an agent drafted: a dashed outline and a small mark above the top left, in screen size, while they are big enough on screen to carry it
+    if (ov.drafts.length && this.cam.zoom >= 0.35) {
+      for (const id of ov.drafts) {
+        const o = get(id);
+        const b = o && this.bounds(o);
+        if (!b) continue;
+        const mark = `<g pointer-events="none" data-agent-draft="${escapeXml(id)}"><rect x="${b.x - px(2)}" y="${b.y - px(2)}" width="${b.w + px(4)}" height="${b.h + px(4)}" fill="none" stroke="var(--wire, #2F6FED)" stroke-width="${px(1)}" stroke-dasharray="${px(4)} ${px(3)}"/>`
+          + `<rect x="${b.x - px(2)}" y="${b.y - px(20)}" width="${px(78)}" height="${px(17)}" fill="var(--wire, #2F6FED)"/>`
+          + `<text x="${b.x + px(4)}" y="${b.y - px(7.5)}" fill="#FFFFFF" font-family="var(--ui, system-ui, sans-serif)" font-size="${px(11)}" font-weight="600">Agent draft</text></g>`;
+        out += mark;
       }
     }
 

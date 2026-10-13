@@ -1683,7 +1683,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         const boardId = boardArgs(args, ['clientRequestId', 'objects']);
         const objects = check.required(args, 'objects', '');
         const plan = makeCtx(actor, boardId).writeBoard((doc) => {
-          const planned = planCreate(doc, objects, { createdBy: actor.createdBy, now: now() });
+          const planned = planCreate(doc, objects, { createdBy: actor.createdBy, now: now(), proposedBy: { id: actor.createdBy, name: agentParts({ tokenName: actor.tokenName, userName: actor.userName }).member } });
           applyPlan(doc, planned);
           return planned;
         });

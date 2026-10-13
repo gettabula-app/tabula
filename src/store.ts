@@ -538,6 +538,8 @@ export class Store {
       }
       if (m.get('rotation') !== 0) { m.set('rotation', 0); wroteField = true; }
     }
+    // an object an agent drafted (TAB-158) stops being a draft when a person edits it: this is that edit
+    if (wroteField && !('proposedBy' in (patch as Record<string, unknown>)) && (m.get('proposedBy') as { feature?: unknown } | undefined)?.feature === 'agent') m.delete('proposedBy');
     if (m.size && (!group || wroteField)) m.set('updatedAt', Date.now());
     const type = (patch as Record<string, unknown>).type;
     if (typeof type === 'string' && isContainerType(type)) this.needFeature(FEATURES.containers);

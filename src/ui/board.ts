@@ -5,7 +5,7 @@ import { openKanbanMenu } from './kanban-menus';
 import { closeContainerSheet, openContainerSheet } from './container-sheet';
 import { addImages, pickImages } from './image-add';
 import { openLinkPopover } from './link-add';
-import type { BoardApp, Tool } from '../app';
+import { agentName, type BoardApp, type Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
 import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
@@ -187,6 +187,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const phonePeople = h('button', { class: 'phone-people', type: 'button', 'aria-label': 'People on this board', 'aria-haspopup': 'dialog' });
   let fitSixAvatars = false;
   let knownPeople: Map<number, string> | null = null;
+  let knownAgents = new Map<string, string>();
   const renderPeople = () => {
     const ps = app.participants().sort((a, b) => Number(b.isMe) - Number(a.isMe));
     const limit = window.innerWidth < 380 ? 1 : window.innerWidth < 480 ? 2 : fitSixAvatars ? 6 : 3;
@@ -200,6 +201,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     }
     knownPeople = now;
     const runs = liveRunsFor(app)?.list() ?? [];
+    const agents = app.agents();
+    const agentNow = new Map(agents.map((a) => [a.id, `${agentName(a)} “${a.token}”`]));
+    for (const [id, who] of agentNow) if (!knownAgents.has(id)) announce(`${who} is working on the board`, { key: 'presence', delay: 700, merge: true });
+    for (const id of knownAgents.keys()) if (!agentNow.has(id)) announce(`${knownAgents.get(id)} finished`, { key: 'presence', delay: 700, merge: true });
+    knownAgents = agentNow;
     people.replaceChildren(...ps.slice(0, limit).map((p) => {
       // someone with an AI run or preview on the board: the spark, and what they are doing as their name
       const busy = p.isMe ? null : badgeRun(p.user, runs);
@@ -211,7 +217,12 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       const props = { class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': `${tip}, initials ${avatarText}` };
       if (p.isMe && !canEditProfile) return h('span', { ...props, role: 'img' }, ...children);
       return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
-    }), ...(remaining > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': `${remaining} more people here`, 'data-tip': `${remaining} more people here` }, `+${remaining}`)] : []));
+    }), ...(remaining > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': `${remaining} more people here`, 'data-tip': `${remaining} more people here` }, `+${remaining}`)] : []),
+    // agents at work (TAB-158): after the people, with the spark; the token's own name quoted, never taking the place of who it works for
+    ...agents.slice(0, 3).map((a) => {
+      const tip = `${agentName(a)} “${a.token}” is working on this board${a.x !== null ? '. Go there' : ''}`;
+      return h('button', { class: 'avatar ai-busy agent-avatar', style: '--c:var(--wire)', 'data-tip': tip, 'aria-label': tip, onclick: () => app.followAgent(a.id) }, glyph('spark', 14));
+    }));
     const peopleLabel = ps.length === 1 ? 'People on this board: 1 person' : `People on this board: ${ps.length} people`;
     phonePeople.hidden = ps.length < 2; // alone, the chip only repeats your own avatar; the menu still has your name and colour
     phonePeople.setAttribute('aria-label', peopleLabel);

@@ -212,7 +212,8 @@ export type Obj = BaseObj | Group | ConnectorObj;
 
 /** The AI run behind an added object (TAB-160): stored data, so hostile until cleanProposedBy (src/safe-obj.ts) has read it. */
 export interface ProposedBy {
-  feature: 'generate' | 'summarise' | 'cluster';
+  /** An AI run (TAB-160), or `agent`: made by an agent through MCP and kept as a draft until a person edits or accepts it (TAB-158). */
+  feature: 'generate' | 'summarise' | 'cluster' | 'agent';
   by: { id: string | null; name: string | null };
 }
 

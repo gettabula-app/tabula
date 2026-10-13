@@ -244,8 +244,11 @@ export function applyInverse(doc, inverse, { now }) {
   return { applied, skipped };
 }
 
+/** @type {(id: string) => string | null} */
+const noName = () => null;
+
 /** The entry as clients see it: no revert data, no member id, who as two separate fields. */
-export const publicEntry = (e, nameOf = () => null) => ({
+export const publicEntry = (e, nameOf = noName) => ({
   id: e.id, at: e.at, agent: e.agent, tool: e.tool, summary: e.summary, counts: e.counts, ids: e.ids, revertible: e.revertible,
   ...(e.reason ? { reason: e.reason } : {}),
   // who reverted it is stored as an id and named when listed, so removing that person leaves no name behind
@@ -399,7 +402,7 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
     },
 
     /** Newest first, as clients see them. */
-    list(boardId, limit = 100, nameOf = () => null) {
+    list(boardId, limit = 100, nameOf = noName) {
       if (!BOARD_ID.test(boardId)) return [];
       return prune(boardId).slice(-limit).reverse().map((e) => publicEntry(e, nameOf));
     },
@@ -459,7 +462,7 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
     },
 
     /** The accounts API routes: reading the log (anyone who can see the board) and reverting a call (editors and owners). */
-    routes({ compile, boardFor, audit, errors, write, nameOf = () => null }) {
+    routes({ compile, boardFor, audit, errors, write, nameOf = noName }) {
       const { HttpError, forbidden } = errors;
       const must = (user, boardId, edit) => {
         const { role } = boardFor(user, boardId); // throws for a person with no access to the board
