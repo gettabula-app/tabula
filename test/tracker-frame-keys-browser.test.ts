@@ -70,6 +70,31 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     await page.close();
   });
 
+  it('shows the Open chip on a desktop frame that is not live (selected or hovered) and never on a live one', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    const chipHidden = () => page.evaluate(() => (document.querySelector('.trk-frame-open') as HTMLButtonElement).hidden);
+    // live: selected and hovered, and still no chip
+    await page.locator('.trk-frame-wrap.is-work').hover();
+    expect(await chipHidden()).toBe(true);
+    // zoomed out below 40 %: a snapshot, selected, so the chip is the way in
+    await page.evaluate(() => (window as any).__board.zoomTo(0.3));
+    await page.waitForFunction(() => document.querySelectorAll('.trk-frame-wrap.is-work').length === 0, null, { timeout: budget(10_000) });
+    await page.waitForFunction(() => !(document.querySelector('.trk-frame-open') as HTMLButtonElement).hidden, null, { timeout: budget(10_000) });
+    // deselected and not hovered: hidden again
+    await page.evaluate(() => (window as any).__board.setSelection([]));
+    await page.mouse.move(2, 2);
+    await page.waitForFunction(() => (document.querySelector('.trk-frame-open') as HTMLButtonElement).hidden, null, { timeout: budget(10_000) });
+    // hovered alone brings it back
+    await page.evaluate((i) => {
+      const wrap = document.querySelector('.trk-frame-wrap') as HTMLElement;
+      wrap.dispatchEvent(new PointerEvent('pointerenter'));
+      return i;
+    }, id);
+    await page.waitForFunction(() => !(document.querySelector('.trk-frame-open') as HTMLButtonElement).hidden, null, { timeout: budget(10_000) });
+    await page.close();
+  });
+
   it('keeps three frames live and renders a fourth as a snapshot', async () => {
     const page = await open();
     await liveRows(page);
