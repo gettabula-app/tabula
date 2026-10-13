@@ -1122,6 +1122,10 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   }
   .chrome > .top-right .share-label { display: inline; }
 }
+/* at phone width the title keeps its room: the status shows its dot, and its name stays on the button for screen readers */
+@media (max-width: 400px) {
+  .chrome > .top-left > .sync-status[data-state='live'] .sync-status-label { display: none; }
+}
 @media (pointer: coarse) {
   .chrome button, .chrome [role='button'], .chrome [role='tab'], .chrome [role='menuitem'],
   .chrome input, .chrome select, .chrome textarea { min-width: 44px; min-height: 44px; }

@@ -1221,7 +1221,8 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
         search.focus();
         return true;
       }
-      if (activeSubmenu) {
+      // the Export list opens by itself with the menu: Esc closes the menu unless focus is inside an open list
+      if (activeSubmenu && target && panels[activeSubmenu].contains(target)) {
         toggleSubmenu(activeSubmenu, true);
         return true;
       }
