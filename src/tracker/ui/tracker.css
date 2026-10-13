@@ -680,7 +680,7 @@
 .trk.trk-element .trk-skeleton-row i:nth-child(2) { width: 48px; }
 .trk.trk-element .trk-skeleton-row i:nth-child(3) { width: 72%; }
 .trk.trk-element .trk-skeleton-row i:nth-child(4) { width: 20px; height: 20px; border-radius: 50%; }
-.trk.trk-element .trk-list-error { display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-size: 13px; }
+.trk.trk-element .trk-list-error { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--tray-line); font-size: 13px; }
 .trk.trk-element .trk-list-error[hidden] { display: none; }
 .trk.trk-element .trk-list-error > span { color: var(--danger); }
 .trk.trk-element .trk-list-error .trk-small-button { height: 30px; min-height: 30px; padding: 0 8px; border: 0; background: transparent; color: var(--graphite); }

@@ -340,7 +340,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const active = () => !destroyed && (options.active?.() ?? (root === document.activeElement || root.contains(document.activeElement) || fullScreen));
   const updateActions = () => {
     readOnly = options.readOnly === true || options.store.snapshot().readOnly || meta?.me.canWrite === false;
-    newButton.hidden = readOnly || (elementMode && elementDenied);
+    newButton.hidden = readOnly || (elementMode && (elementDenied || elementEmpty));
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
     offlineLine.hidden = !offline;
     newButton.disabled = offline;
@@ -425,7 +425,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     elementBack.hidden = !ticketOpen;
     newButton.textContent = width >= 420 ? '+ New ticket' : '+';
     newButton.setAttribute('aria-label', 'New ticket');
-    newButton.hidden = readOnly || elementDenied;
+    // one primary per view: while the element is empty the body's '+ New ticket' is the only one
+    newButton.hidden = readOnly || elementDenied || elementEmpty;
   };
 
   const copyElementLink = () => {
@@ -733,7 +734,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     state.anchorKey = listModel.anchorKey;
     skeletonHost.hidden = !(cache.loading && cache.tickets.length === 0);
     const filterActive = state.filter.length > 0 || Boolean(state.queryText.trim());
+    const wasEmpty = elementEmpty;
     elementEmpty = elementMode && !cache.loading && tickets.length === 0 && state.tab === 'all' && !filterActive;
+    if (elementMode && wasEmpty !== elementEmpty) updateActions(); // the header's New ticket comes and goes with the empty state
     const columns: Column[] = elementMode ? elementColumns(layoutWidth) : visibleColumns(layoutWidth, state.columns);
     if (elementMode && !cache.loading && tickets.length === 0) {
       listRenderHost.replaceChildren(h('div', { class: 'trk-element-empty' },

@@ -51,7 +51,12 @@ describe.skipIf(!available)('tracker element states', { timeout: 200_000 }, () =
     expect(await empty.locator('h2').textContent()).toBe('No tickets yet');
     expect(await empty.locator('p').textContent()).toBe('Create the first ticket to track work here.');
     expect(await empty.locator('.trk-element-create').textContent()).toBe('+ New ticket');
+    // one primary per view: the header's button is hidden while the element is empty, the body's stays
+    expect(await page.evaluate(() => document.querySelector<HTMLElement>('.trk-frame-wrap.is-work .trk-element-header .trk-new-trigger')?.hidden)).toBe(true);
     await shot(page, 'empty');
+    // the first ticket brings the header button and the view switch back
+    await page.evaluate(() => (window as any).__trackerStore.createTicket({ title: 'First ticket', idempotencyKey: 'first-ticket-1' }));
+    await page.waitForFunction(() => document.querySelector<HTMLElement>('.trk-frame-wrap.is-work .trk-element-header .trk-new-trigger')?.hidden === false, null, { timeout: budget(15_000) });
     await page.close();
   });
 
