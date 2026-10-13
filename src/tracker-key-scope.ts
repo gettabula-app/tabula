@@ -4,8 +4,9 @@
  * `closest` finds no tracker above it. The path is fixed when the event is dispatched, so it still names the tracker.
  */
 export function keyInTracker(event: Event): boolean {
-  const isTracker = (node: EventTarget | null) => node instanceof Element && node.classList.contains('trk');
-  if (event.composedPath().some(isTracker)) return true;
+  const isTracker = (node: EventTarget | null) => typeof Element !== 'undefined' && node instanceof Element && node.classList.contains('trk');
+  // (a synthetic event in a unit test may be a plain object without composedPath)
+  if (typeof event.composedPath === 'function' && event.composedPath().some(isTracker)) return true;
   const target = event.target;
-  return target instanceof Element && target.closest('.trk') !== null;
+  return typeof Element !== 'undefined' && target instanceof Element && target.closest('.trk') !== null;
 }
