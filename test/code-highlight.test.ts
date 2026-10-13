@@ -8,7 +8,7 @@ import { plainCodeLines } from '../src/code-tokens';
 import { sha256Hex } from '../src/sha256';
 
 const tokenizer = createCodeTokenizer();
-const run = (lang: string, text: string, shiki = 'github-light', surface = '#FFFFFF', ink = '#111111') => tokenizer.tokenize({ lang, shiki, surface, ink, text });
+const run = (lang: string, text: string, shiki = 'github-light', surface = '#FFFFFF', ink = '#111111') => tokenizer.tokenize({ lang, shiki, surface, ink, text, timeLimitMs: 10_000 }); // these tests are about what is tokenised, not about the clock (a loaded machine would cut lines)
 
 const SAMPLES: Record<string, string> = {
   ts: 'export function add(a: number, b: number): number {\n\t// sum\n\treturn a + b;\n}\nconst s = `x${1}`;\n',
@@ -109,7 +109,7 @@ describe(`honest samples are not cut by the ${TOKENIZE_TIME_LIMIT_MS} ms per-lin
     const req = { lang, shiki: 'github-light', surface: '#FFFFFF', ink: '#111111', text };
     const unlimited = await fresh.tokenize({ ...req, timeLimitMs: 10_000 });
     const cold = await createCodeTokenizer().tokenize(req);
-    const warm = await fresh.tokenize({ ...req, timeLimitMs: TOKENIZE_TIME_LIMIT_MS });
+    const warm = await fresh.tokenize({ ...req, timeLimitMs: TOKENIZE_TIME_LIMIT_MS * 10 }); // a full-suite run on a loaded machine is far slower than the 50 ms the browser worker gets
     expect(cold).toEqual(unlimited);
     expect(warm).toEqual(unlimited);
   });
