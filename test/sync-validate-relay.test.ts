@@ -119,8 +119,36 @@ describe('sync validator on a relay: enforce mode', () => {
   });
 });
 
-describe('sync validator: off, which is also the default', () => {
+describe('sync validator: unset means report', () => {
   const h = harness(undefined);
+  beforeAll(async () => { await h.start(); });
+  afterAll(h.stop);
+
+  it('counts what it would flag, never rejects, never reverts and never closes a socket', async () => {
+    const a = h.client('sv-default');
+    const b = h.client('sv-default');
+    await until(() => a.provider.wsconnected && b.provider.wsconnected);
+    // hard-looking violations too: an unknown field, a wrong type, a forbidden key name, a value that is not a number
+    a.objects.set('bad1', sticky({ id: 'bad1', x: 'no', evil: 'field' }));
+    a.objects.set('bad2', sticky({ id: 'bad2', w: Number.NaN, fill: 'red;filter:url(//evil/x)' }));
+    await until(() => b.objects.has('bad1') && b.objects.has('bad2'));
+    await until(async () => ((await h.health()).syncValidate?.violations ?? 0) >= 2);
+    const stats = (await h.health()).syncValidate!;
+    expect(stats.mode).toBe('report');
+    expect(stats.rejected).toBe(0);
+    expect((stats as { closed?: number }).closed ?? 0).toBe(0);
+    expect(b.objects.get('bad1')!.get('x')).toBe('no');
+    expect(a.provider.wsconnected && b.provider.wsconnected).toBe(true);
+    // 25 violations in quick succession (enforce would close the socket at 20): the socket stays open
+    for (let i = 0; i < 25; i++) a.objects.set(`flood${i}`, sticky({ id: `flood${i}`, x: 'no' }));
+    await until(() => b.objects.has('flood24'));
+    expect(a.provider.wsconnected).toBe(true);
+    expect((await h.health()).syncValidate!.rejected).toBe(0);
+  });
+});
+
+describe('sync validator: off is the explicit switch', () => {
+  const h = harness('off');
   beforeAll(async () => { await h.start(); });
   afterAll(h.stop);
 

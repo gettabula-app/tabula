@@ -11,6 +11,7 @@ import { TEMPLATE_STRIPPED, checkTemplateKanbanLimits, isContainerType, splitRan
 import { STICKY_COLORS } from './palette';
 import { parseTableKey, tablePartsProblem } from '../shared/tables';
 import { OBJ_ENUMS, cleanProposedBy } from './safe-obj';
+import { cleanPlain, sanitizeTemplateObject } from './import-sanitize';
 import { GROUP_MAX_DEPTH, GROUP_MAX_MEMBERS, GROUP_MAX_PER_BOARD, GROUP_NAME_MAX } from './groups';
 
 export const MAX_TEMPLATE_OBJECTS = 500;
@@ -222,7 +223,8 @@ export function toTemplateContent(
 export function instantiate(content: TemplateContent, origin: Point, userId: string): { objects: Obj[]; steps: Step[] } {
   const idMap = new Map<Id, Id>();
   for (const o of content.objects) idMap.set(o.id, newId());
-  const objects = remapObjects(content.objects, idMap, origin, () => null);
+  // content from a file or the server is sanitised on the way in; once more here, so no path to a board skips it
+  const objects = remapObjects(content.objects.map((o) => sanitizeTemplateObject(o)), idMap, origin, () => null);
   for (const o of objects) {
     o.createdBy = userId;
     // template content can come from a file: a stored proposedBy is never carried onto a new board (TAB-160)
@@ -421,11 +423,12 @@ export function validateContent(c: unknown, opts: { stored?: boolean } = {}): Te
     fail('Template fonts must name a heading and a body font.');
   }
 
+  // the one allow-list (src/import-sanitize.ts): only a type's own keys, no people or flags, safe addresses, no control characters
   return {
-    objects: objects as unknown as Obj[],
-    steps: steps as unknown as Step[],
+    objects: objects.map((o: Record<string, unknown>) => sanitizeTemplateObject(o)) as unknown as Obj[],
+    steps: cleanPlain(steps) as unknown as Step[],
     bounds: { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
-    ...(isRecord(fonts) ? { fonts: { heading: fonts.heading as string, body: fonts.body as string } } : {}),
-    ...(labels.length ? { labels } : {}),
+    ...(isRecord(fonts) ? { fonts: { heading: cleanPlain(fonts.heading as string), body: cleanPlain(fonts.body as string) } } : {}),
+    ...(labels.length ? { labels: cleanPlain(labels) } : {}),
   };
 }
