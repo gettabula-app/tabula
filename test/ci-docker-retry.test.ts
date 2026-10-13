@@ -25,9 +25,18 @@ function withBlock(step: string) {
   return block.join('\n');
 }
 
+/** One job of ci.yml: from its `  name:` line to the next job or the end of the file. */
+function job(name: string) {
+  const start = ci.indexOf(`\n  ${name}:\n`);
+  expect(start).toBeGreaterThan(-1);
+  const next = ci.slice(start + 1).search(/\n(?:  # |  [a-z-]+:\n)/);
+  return ci.slice(start, next === -1 ? undefined : start + 1 + next);
+}
+
 describe('Docker image build retries', () => {
   it.each([
-    ['ci.yml', ci],
+    ['ci.yml docker (build only)', job('docker')],
+    ['ci.yml docker-publish', job('docker-publish')],
     ['release.yml', release],
   ])('%s retries once after the first build fails', (_name, text) => {
     const [first, retry] = dockerBuildSteps(text);
