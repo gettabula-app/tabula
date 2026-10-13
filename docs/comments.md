@@ -75,4 +75,4 @@ In open mode there is no identity to check, so the same rules are only what the 
 
 ## Not in this slice
 
-Mentions and notifications, emoji reactions, attachments and comment search.
+Emoji reactions, attachments and comment search.

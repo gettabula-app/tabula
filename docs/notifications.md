@@ -19,7 +19,8 @@ Targets use the current app routes: chat channel hashes, board hashes, the home 
 ## Writers and read state
 
 - Chat mentions create one row for each mentioned person other than the author. When that person's `chat_reads` cursor passes the message id, the row becomes read.
-- A reply to an existing comment thread creates a row for the thread author when another account writes it. The relay's comment guard observes accepted Yjs replies; the MCP comment writer reports its reply through the same room write path. Comment `@mentions` are not supported.
+- A reply to an existing comment thread creates a row for the thread author when another account writes it. The relay's comment guard observes accepted Yjs replies; the MCP comment writer reports its reply through the same room write path. 
+- A new comment or reply that names someone with `@{userId}` (the picker writes this token) creates a `comment_mention` row for each named person, up to 10, other than the author, who can open the board. A reply that names the thread author creates the mention row instead of a `comment_reply` row. Edits, imported comments and comments from before accounts do not notify. Rows hold ids only; the snippet is read when the list is built.
 - A direct user share creates a row for the shared person. Team shares and link shares do not.
 - A newly accepted team invite creates a row for the inviter. The joining person is the actor.
 - Tracker rows remain in the tracker's notification table and are merged at read time.

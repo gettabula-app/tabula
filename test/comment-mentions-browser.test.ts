@@ -63,4 +63,60 @@ describe.skipIf(!available)('mentions in a comment', { timeout: 200_000 }, () =>
     expect(await page.locator('.comment-card .comment-mention').first().textContent()).toBe('@Ben');
     await page.close();
   });
+
+  it('names someone in a reply and stores the token on the reply', async () => {
+    const page = await open();
+    await page.evaluate(() => {
+      const w = window as unknown as { __app: { onOpenComment: (t: unknown) => void }; __comments: { list: () => { id: string }[] } };
+      w.__app.onOpenComment({ threadId: w.__comments.list()[0].id, screen: { x: 300, y: 300 } });
+    });
+    const field = page.getByRole('combobox', { name: 'Reply' });
+    await field.click();
+    await field.pressSequentially('@B');
+    await page.getByRole('listbox', { name: 'People' }).waitFor();
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('thanks');
+    expect(await field.inputValue()).toBe('@Ben thanks');
+    await page.getByRole('button', { name: 'Reply', exact: true }).click();
+    await page.waitForFunction(() => (window as unknown as { __comments: { list: () => { replies: unknown[] }[] } }).__comments.list()[0].replies.length === 1);
+    const texts = await page.evaluate(() => (window as unknown as { __comments: { list: () => { replies: { text: string }[] }[] } }).__comments.list()[0].replies.map((r) => r.text));
+    expect(texts).toEqual(['@{u-ben} thanks']);
+    await page.close();
+  });
+
+  it('closes the list with Escape (the card stays) and with Tab (focus leaves the field), without picking', async () => {
+    const page = await open();
+    await page.evaluate(() => (window as unknown as { __app: { onOpenComment: (t: unknown) => void } }).__app.onOpenComment({ anchor: { x: 200, y: 200 }, screen: { x: 300, y: 300 } }));
+    const field = page.getByRole('combobox', { name: 'Add a comment' });
+    await field.click();
+    await field.pressSequentially('hi @');
+    const list = page.getByRole('listbox', { name: 'People' });
+    await list.waitFor();
+    await page.keyboard.press('Escape');
+    await list.waitFor({ state: 'hidden' });
+    expect(await page.locator('.comment-card').count()).toBe(1);
+    expect(await field.inputValue()).toBe('hi @');
+    await field.pressSequentially('B');
+    await list.waitFor();
+    await page.keyboard.press('Tab');
+    await list.waitFor({ state: 'hidden' });
+    expect(await field.inputValue()).toBe('hi @B');
+    expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))).not.toBe('Add a comment');
+    await page.close();
+  });
+
+  it('keeps the comment card inside the window while the list is open', async () => {
+    const page = await open();
+    await page.setViewportSize({ width: 900, height: 420 });
+    await page.evaluate(() => (window as unknown as { __app: { onOpenComment: (t: unknown) => void } }).__app.onOpenComment({ anchor: { x: 200, y: 200 }, screen: { x: 300, y: 330 } }));
+    const field = page.getByRole('combobox', { name: 'Add a comment' });
+    await field.click();
+    await field.pressSequentially('@');
+    await page.getByRole('listbox', { name: 'People' }).waitFor();
+    const box = await page.locator('.comment-card').boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(420 + 1);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    await page.close();
+  });
 });
