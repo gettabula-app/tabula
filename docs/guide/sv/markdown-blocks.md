@@ -53,4 +53,4 @@ Tavlans översikt listar ett Markdown-block som ”Markdown block” tillsammans
 
 ## Gränser
 
-Ett block rymmer upp till 20 000 tecken. En agent som skriver med en åtkomsttoken kan skriva upp till 4 000 tecken i taget. Bilder från tavlans eget bibliotek kan nämnas i ett block, men ett block visar dem som en märkt ruta tills vidare.
+Ett block rymmer upp till 8 000 tecken, och ett enskilt ord eller en kodrad kapas vid 2 000 tecken. En agent som skriver med en åtkomsttoken kan skriva upp till 4 000 tecken i taget. Bilder från tavlans eget bibliotek kan nämnas i ett block, men ett block visar dem som en märkt ruta tills vidare.
