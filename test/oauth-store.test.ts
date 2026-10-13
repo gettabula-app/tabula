@@ -79,9 +79,9 @@ describe('OAuth grants bound to boards', () => {
 describe('OAuth store migration and persistence', () => {
   it('applies migration 16 with cascading user foreign keys and unique token digests', () => {
     const d = directory();
-    expect(MIGRATIONS).toHaveLength(18);
+    expect(MIGRATIONS).toHaveLength(19);
     expect(MIGRATIONS[15]).toMatchObject({ sql: OAUTH_MIGRATION, minReader: 11 });
-    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 18 });
+    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 19 });
 
     const fixture = grant(d);
     const pair = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });

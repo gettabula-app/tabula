@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyRead, badgeText, bellLabel, countOf, markLabel, parseCounts, parseItem, parsePage, rowLabel, rowText, safeTarget, shortAgo, spokenAgo,
+  applyRead, badgeText, bellLabel, countOf, isMention, markLabel, matchesFilter, parseCounts, parseItem, parsePage, rowLabel, rowText, safeTarget, sentence, shortAgo, spokenAgo,
   type NotificationItem, type NotificationKind,
 } from '../src/ui/notifications-logic';
 
@@ -31,9 +31,33 @@ describe('what a row says', () => {
     expect(rowText(item('ticket_assigned', { snippet: 'TAB-12 Fix export margins' }))).toMatchObject({ verb: 'assigned you', where: 'TAB-12 Fix export margins', context: 'Tracker', excerpt: null });
   });
 
+  it('words the card reminders as sentences about a card on a board', () => {
+    const board = { id: 'b1', title: 'Spring campaign board' };
+    expect(rowText(item('card_assigned', { board, snippet: 'Write the report' }))).toEqual({ who: 'Maja', verb: 'assigned you a card on', where: 'Spring campaign board', after: '', context: 'Spring campaign board · Card', excerpt: 'Write the report' });
+    expect(rowText(item('card_due_soon', { actor: null, board, snippet: 'Write the report' }))).toEqual({ who: 'A card', verb: 'is due soon on', where: 'Spring campaign board', after: '', context: 'Spring campaign board · Card', excerpt: 'Write the report' });
+    expect(rowText(item('card_overdue', { actor: null, board: null, snippet: null }))).toEqual({ who: 'A card', verb: 'is overdue on', where: 'a board', after: '', context: 'Card', excerpt: null });
+  });
+
+  it('never says Someone for a reminder that has no actor, and reads the sentence without a gap', () => {
+    const board = { id: 'b1', title: 'Retro team' };
+    expect(sentence(rowText(item('card_due_soon', { actor: null, board })))).toBe('A card is due soon on Retro team');
+    expect(rowLabel(item('card_overdue', { actor: null, board }), NOW)).toBe('A card is overdue on Retro team, unread. Retro team · Card. 2 minutes ago');
+    expect(rowLabel(item('card_assigned', { board, read: true }), NOW)).toBe('Maja assigned you a card on Retro team. Retro team · Card. 2 minutes ago');
+    expect(markLabel(item('card_due_soon', { actor: null, board }))).toBe('Mark as read: A card is due soon on Retro team');
+  });
+
+  it('counts card reminders as unread but not as mentions', () => {
+    const rows = [item('card_assigned'), item('card_due_soon', { actor: null }), item('card_overdue', { actor: null })];
+    expect(countOf(rows)).toEqual({ unread: 3, unreadMentions: 0 });
+    expect(rows.map((row) => matchesFilter(row, 'mentions'))).toEqual([false, false, false]);
+    expect(parseItem({ id: 'n_1', kind: 'card_overdue', at: 1, read: false, actor: null, board: { id: 'b', title: 'B' }, team: null, snippet: 'Due', target: '#/b/b' })).toMatchObject({ kind: 'card_overdue', snippet: 'Due' });
+  });
+
   it('tolerates a missing excerpt, a missing actor and a missing place', () => {
     expect(rowText(item('chat_mention', { actor: null, snippet: null }))).toMatchObject({ who: 'Someone', excerpt: null });
     expect(rowText(item('comment_reply')).where).toBe('a board');
+    expect(rowText(item('comment_mention', { board: { id: 'b1', title: 'Spring campaign board' }, snippet: 'Ask @Ana' }))).toEqual({ who: 'Maja', verb: 'mentioned you in a comment on', where: 'Spring campaign board', after: '', context: 'Spring campaign board · Comment', excerpt: 'Ask @Ana' });
+    expect(rowText(item('comment_mention'))).toMatchObject({ verb: 'mentioned you in a comment on', where: 'a board', context: 'Comment', excerpt: null });
     expect(rowText(item('ticket_status', { snippet: null })).where).toBe('a ticket');
   });
 
@@ -107,3 +131,18 @@ describe('what the server sends', () => {
     expect(parseCounts({ unread: -1, unreadMentions: 'x' })).toEqual({ unread: 0, unreadMentions: 0 });
   });
 });
+
+describe('comment mentions in the Mentions chip', () => {
+  it('counts a comment that names you with the chat mentions, and the chip shows only mentions', () => {
+    const rows = [item('comment_mention', { id: 'c1' }), item('comment_reply', { id: 'r1' }), item('chat_mention', { id: 'm1', read: true })];
+    expect(rows.map(isMention)).toEqual([true, false, true]);
+    expect(countOf(rows)).toEqual({ unread: 2, unreadMentions: 1 });
+    expect(rows.filter((r) => matchesFilter(r, 'mentions')).map((r) => r.id)).toEqual(['c1', 'm1']);
+  });
+
+  it('parses a comment_mention row from the server', () => {
+    expect(parseItem({ id: 'n_9', kind: 'comment_mention', at: 7, read: false, actor: { id: 'u', name: 'Ana' }, board: { id: 'b', title: 'T' }, team: null, snippet: 'hi @Ben', target: '#/b/b' }))
+      .toMatchObject({ id: 'n_9', kind: 'comment_mention', snippet: 'hi @Ben' });
+  });
+});
+
