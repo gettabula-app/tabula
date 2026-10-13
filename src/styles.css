@@ -1148,3 +1148,6 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 
 /* Long floating panels scroll with a thin themed scrollbar, never the platform default. */
 .chrome :is(.props, .drawer-body, .history-body, .side-tray-panel, .comment-msgs, .aireview-body) { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--tray-text) 28%, transparent) transparent; }
+
+/* Text on the board is measured by the canvas (src/text.ts), which has no tabular figures: draw and edit it with proportional digits, as the measure and the SVG exports do, so a line never comes out wider than the box it was wrapped for. */
+svg.canvas text, .text-editor { font-variant-numeric: normal; }
