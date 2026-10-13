@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
+import { createSocket } from 'node:dgram';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
 import { handleVisualizationFrame, VISUALIZATION_FRAME_PATH } from '../server/ai/visual-frame.mjs';
@@ -13,6 +14,7 @@ let server: ViteDevServer | undefined;
 let browser: Browser | undefined;
 let base = '';
 const resourceRequests: string[] = [];
+const navigationProbes: { cookie: string | null; site: string | null }[] = [];
 
 beforeAll(async () => {
   if (!available) return;
@@ -53,6 +55,12 @@ beforeAll(async () => {
           const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
           if (pathname.startsWith('/__blocked-')) resourceRequests.push(pathname);
           if (handleVisualizationFrame(req, res, pathname)) return;
+          if (pathname === '/__navigation-probe') {
+            navigationProbes.push({ cookie: req.headers.cookie ?? null, site: (req.headers['sec-fetch-site'] as string | undefined) ?? null });
+            res.writeHead(200, { 'content-type': 'text/plain' });
+            res.end('navigated');
+            return;
+          }
           if (pathname !== '/__visualization-test') return next();
           res.writeHead(200, { 'content-type': 'text/html', 'content-security-policy': APP_CSP });
           res.end('<!doctype html><html><head><meta charset="utf-8"></head><body><button id="opener">Visualize</button><div id="host-secret">Board stays here</div><script type="module" src="/__visualization-entry.ts"></script></body></html>');
@@ -189,6 +197,44 @@ describe.skipIf(!available)('completed AI visualizations under the production CS
       await page.getByRole('alert').waitFor();
       expect(await page.locator('.ai-visualization iframe').count()).toBe(0);
       expect(page.url()).toBe(`${base}/__visualization-test`);
+      await page.close();
+    }
+  });
+
+  it('sends same-origin navigation from the frame as cross-site, without the person\'s cookies', async () => {
+    navigationProbes.length = 0;
+    const page = await openPage({
+      ...tool, html: '<button id="navigate">Navigate</button>', jsFunctions: '',
+      jsExpressions: [`document.getElementById('navigate').addEventListener('click', function () { location.href = '${base}/__navigation-probe'; });`],
+    });
+    await page.context().addCookies([{ name: 'session', value: 'signed-in', url: base, httpOnly: true, sameSite: 'Lax' }]);
+    const frame = await readyFrame(page);
+    await frame.getByRole('button', { name: 'Navigate' }).click();
+    await expect.poll(() => navigationProbes.length).toBe(1);
+    expect(navigationProbes).toEqual([{ cookie: null, site: 'cross-site' }]);
+    // The second document in the frame is treated as a failure: the renderer removes the frame and offers Retry.
+    await page.getByRole('alert').waitFor();
+    await page.close();
+  });
+
+  // A documented limit, not a protection (docs/ai-visualizations.md): Content Security Policy does not govern WebRTC, so
+  // generated code can reach a STUN server of its choosing. If a browser starts blocking this, narrow the documentation.
+  it('does not stop WebRTC from reaching a host outside the frame policy', async () => {
+    const socket = createSocket('udp4');
+    let stunRequests = 0;
+    socket.on('message', () => { stunRequests++; });
+    await new Promise<void>((resolve) => socket.bind(0, '127.0.0.1', resolve));
+    const page = await openPage({
+      ...tool, html: '<output id="peer">starting</output>', jsFunctions: '',
+      jsExpressions: [`const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:127.0.0.1:${socket.address().port}' }] });
+        peer.createDataChannel('probe');
+        peer.createOffer().then(function (offer) { return peer.setLocalDescription(offer); });`],
+    });
+    try {
+      await readyFrame(page);
+      await expect.poll(() => stunRequests, { timeout: 10_000 }).toBeGreaterThan(0);
+    } finally {
+      socket.close();
       await page.close();
     }
   });

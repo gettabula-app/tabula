@@ -44,12 +44,26 @@ describe('bounded visualization data', () => {
   });
 
   it.each([
+    ['blank title', visual({ title: '  ' }), { title: 'Visualisation' }],
+    ['oversized title', visual({ title: 'x'.repeat(VISUALIZATION_LIMITS.title + 1) }), { title: `${'x'.repeat(VISUALIZATION_LIMITS.title - 1)}…` }],
+    ['title cut inside a surrogate pair', visual({ title: `${'x'.repeat(VISUALIZATION_LIMITS.title - 2)}😀yy` }), { title: `${'x'.repeat(VISUALIZATION_LIMITS.title - 2)}…` }],
+    ['oversized description', visual({ description: 'x'.repeat(VISUALIZATION_LIMITS.description + 1) }), { description: `${'x'.repeat(VISUALIZATION_LIMITS.description - 1)}…` }],
+    ['fractional height', visual({ initialHeight: 400.5 }), { initialHeight: 401 }],
+    ['numeric text height', visual({ initialHeight: '480' }), { initialHeight: 480 }],
+    ['height below minimum', visual({ initialHeight: VISUALIZATION_LIMITS.heightMin - 1 }), { initialHeight: VISUALIZATION_LIMITS.heightMin }],
+    ['height above maximum', visual({ initialHeight: VISUALIZATION_LIMITS.heightMax + 1 }), { initialHeight: VISUALIZATION_LIMITS.heightMax }],
+  ])('repairs %s on the relay instead of discarding the run', (_label, value, repaired) => {
+    // The renderer's contract stays exact; only the relay repairs plain text and the height before checking it.
+    expect(isVisualization(value)).toBe(false);
+    const out = validateVisualization(value);
+    expect(out).toEqual({ ...value, ...repaired });
+    expect(isVisualization(out)).toBe(true);
+  });
+
+  it.each([
     ['null', null], ['an array', []], ['unknown fields', visual({ kind: 'visual' })],
-    ['blank title', visual({ title: '  ' })], ['oversized title', visual({ title: 'x'.repeat(VISUALIZATION_LIMITS.title + 1) })],
-    ['oversized description', visual({ description: 'x'.repeat(VISUALIZATION_LIMITS.description + 1) })],
-    ['fractional height', visual({ initialHeight: 400.5 })], ['nonfinite height', visual({ initialHeight: Infinity })],
-    ['height below minimum', visual({ initialHeight: VISUALIZATION_LIMITS.heightMin - 1 })],
-    ['height above maximum', visual({ initialHeight: VISUALIZATION_LIMITS.heightMax + 1 })],
+    ['title of the wrong type', visual({ title: 7 })], ['description of the wrong type', visual({ description: null })],
+    ['nonfinite height', visual({ initialHeight: Infinity })], ['height with a unit', visual({ initialHeight: '480px' })],
     ['blank HTML', visual({ html: ' \n ' })], ['oversized HTML', visual({ html: 'x'.repeat(VISUALIZATION_LIMITS.html + 1) })],
     ['oversized CSS', visual({ css: 'x'.repeat(VISUALIZATION_LIMITS.css + 1) })],
     ['JS functions of the wrong type', visual({ jsFunctions: [] })], ['JS expressions of the wrong type', visual({ jsExpressions: '' })],
@@ -146,6 +160,16 @@ describe('visualization runs through the existing relay', () => {
     expect(JSON.stringify([res.text, w.audits(), w.logged])).not.toContain(secret);
     expect(w.audits()[0].detail).toMatchObject({ outcome: 'ai_invalid_proposal', counts: { proposed: 0 } });
     expect(start).not.toHaveBeenCalled();
+  });
+
+  it('returns a repaired artifact when only the title or height misses its bounds', async () => {
+    const { w, owner, boardId } = await ready();
+    w.state.answer = visual({ title: 'x'.repeat(VISUALIZATION_LIMITS.title + 20), initialHeight: 1200.4 });
+    const res = await w.run(owner, request(boardId));
+    expect(res.events.at(-1)?.data.visualization).toEqual(visual({
+      title: `${'x'.repeat(VISUALIZATION_LIMITS.title - 1)}…`, initialHeight: VISUALIZATION_LIMITS.heightMax,
+    }));
+    expect(w.audits()[0].detail.outcome).toBe('ok');
   });
 
   it('rechecks permissions before returning an artifact after a provider call', async () => {

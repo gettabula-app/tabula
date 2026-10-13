@@ -251,17 +251,43 @@ export class InvalidProposal extends AiError {
   }
 }
 
+const VISUAL_FALLBACK_TITLE = 'Visualisation';
+
+function shorten(text, max) {
+  const trimmed = text.trim();
+  if (trimmed.length <= max) return trimmed;
+  let cut = trimmed.slice(0, max - 1);
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1); // never leave half a surrogate pair
+  return `${cut.trimEnd()}…`;
+}
+
+// A near miss in the plain-text fields or the height would otherwise discard a whole 16,000-token run: a title or
+// description over its limit is shortened, a blank title replaced, and a numeric height rounded into range. Code is
+// never rewritten: CSS, HTML or JavaScript over its limit is still refused.
+function repairNearMisses(raw) {
+  if (!isRecord(raw)) return raw;
+  const out = { ...raw };
+  if (typeof out.title === 'string') out.title = shorten(out.title, VISUALIZATION_LIMITS.title) || VISUAL_FALLBACK_TITLE;
+  if (typeof out.description === 'string') out.description = shorten(out.description, VISUALIZATION_LIMITS.description);
+  const height = typeof out.initialHeight === 'string' && out.initialHeight.trim() ? Number(out.initialHeight) : out.initialHeight;
+  if (typeof height === 'number' && Number.isFinite(height)) {
+    out.initialHeight = Math.min(VISUALIZATION_LIMITS.heightMax, Math.max(VISUALIZATION_LIMITS.heightMin, Math.round(height)));
+  }
+  return out;
+}
+
 /** Bounded renderer data only; the sandbox is responsible for isolating the generated code. */
 export function validateVisualization(raw) {
-  if (!isVisualization(raw)) throw new InvalidProposal('visual_shape');
+  const value = repairNearMisses(raw);
+  if (!isVisualization(value)) throw new InvalidProposal('visual_shape');
   return {
-    title: raw.title,
-    description: raw.description,
-    initialHeight: raw.initialHeight,
-    css: raw.css,
-    html: raw.html,
-    jsFunctions: raw.jsFunctions,
-    jsExpressions: [...raw.jsExpressions],
+    title: value.title,
+    description: value.description,
+    initialHeight: value.initialHeight,
+    css: value.css,
+    html: value.html,
+    jsFunctions: value.jsFunctions,
+    jsExpressions: [...value.jsExpressions],
   };
 }
 
