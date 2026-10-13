@@ -15,7 +15,7 @@
 .comment-guest { background: var(--signal); color: var(--on-signal); }
 .comment-avatar {
   width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--c, var(--tray-2)); color: #fff;
-  display: grid; place-items: center; font: 700 11px var(--ui);
+  display: grid; place-items: center; font: 600 10px/1 var(--ui);
 }
 .comment-msgs { display: flex; flex-direction: column; gap: 12px; max-height: min(50vh, 420px); overflow-y: auto; scrollbar-width: thin; }
 .comment-msg { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-bottom: 10px; border-bottom: 1px solid var(--tray-line); }

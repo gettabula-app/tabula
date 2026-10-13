@@ -1,6 +1,6 @@
 // The layers panel's decisions as pure functions (TAB-198): what a click selects, what a key does, where a drag may drop,
 // what the controls are called. The panel (src/ui/layers.ts) draws the rows and carries these out.
-import { TYPE_LABEL, cleanName, isFrameClass, type LayerNode } from './layers';
+import { TYPE_LABEL, UNTITLED_FRAME, cleanName, isFrameClass, type LayerNode } from './layers';
 import type { Id } from './types';
 import type { ICONS } from './ui/dom';
 
@@ -35,7 +35,7 @@ export const hiddenText = (n: number): string | null => (n > 0 ? `${n} hidden` :
 /** The type's name and the row's label, as "Sticky note: Ideas"; just "Frame" when the label is the type's own name. */
 export function subject(node: Pick<LayerNode, 'type' | 'label'>): string {
   const type = TYPE_LABEL[node.type] ?? 'Object';
-  return node.label === type ? type : `${type}: ${node.label}`;
+  return node.label === type || node.label === UNTITLED_FRAME ? node.label : `${type}: ${node.label}`;
 }
 
 /** What a screen reader says for the row: the subject and its state. */

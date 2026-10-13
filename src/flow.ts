@@ -491,7 +491,7 @@ export class Flow {
       const kids = [...s.cache.values()].filter((o): o is BaseObj => isBox(o) && s.frameOf(o)?.id === fr.id &&
         (Boolean(o.text || o.type === 'image' || (o.type === 'link' && markdownLink(o, mdText))) && !this.isHidden(o) && s.isShown(o)));
       if (!kids.length) continue;
-      lines.push(`## ${mdText(fr.name) || 'Frame'}`, '');
+      lines.push(`## ${mdText(fr.name) || (typeof fr.name === 'string' ? 'Untitled frame' : 'Frame')}`, '');
       kids.sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0) || a.y - b.y || a.x - b.x);
       for (const k of kids) {
         const n = totals.get(k.id);

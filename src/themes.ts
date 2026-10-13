@@ -1,4 +1,4 @@
-export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--canvas-signal','--on-canvas-signal','--wire','--selection-handle-fill','--selection-handle-stroke','--danger','--on-danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide','--shade','--scrim'] as const;
+export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--canvas-signal','--on-canvas-signal','--wire','--category-green','--selection-handle-fill','--selection-handle-stroke','--danger','--on-danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide','--shade','--scrim'] as const;
 export type ThemeVar = (typeof THEME_VARS)[number];
 
 export interface Theme {
@@ -33,6 +33,7 @@ export const THEMES: Theme[] = [
       '--canvas-signal': '#FFD23F',
       '--on-canvas-signal': '#18212B',
       '--wire': '#2A64D6',
+      '--category-green': '#278449',
       '--selection-handle-fill': '#FFFFFF',
       '--selection-handle-stroke': '#2A64D6',
       '--danger': '#D41E24',
@@ -69,6 +70,7 @@ export const THEMES: Theme[] = [
       '--canvas-signal': '#FFCC66',
       '--on-canvas-signal': '#1F2430',
       '--wire': '#73D0FF',
+      '--category-green': '#7FD962',
       '--selection-handle-fill': '#272D38',
       '--selection-handle-stroke': '#73D0FF',
       '--danger': '#F28779',
@@ -105,6 +107,7 @@ export const THEMES: Theme[] = [
       '--canvas-signal': '#E6C384',
       '--on-canvas-signal': '#1F1F28',
       '--wire': '#7E9CD8',
+      '--category-green': '#98BB6C',
       '--selection-handle-fill': '#2A2A37',
       '--selection-handle-stroke': '#7E9CD8',
       '--danger': '#E56E7B',
@@ -141,6 +144,7 @@ export const THEMES: Theme[] = [
       '--canvas-signal': '#00FF41',
       '--on-canvas-signal': '#021004',
       '--wire': '#22D3EE',
+      '--category-green': '#00FF41',
       '--selection-handle-fill': '#0B140C',
       '--selection-handle-stroke': '#22D3EE',
       '--danger': '#FF4D4D',
@@ -177,6 +181,7 @@ export const THEMES: Theme[] = [
       '--canvas-signal': '#E0B040',
       '--on-canvas-signal': '#14301F',
       '--wire': '#1E6FD9',
+      '--category-green': '#5C8F69',
       '--selection-handle-fill': '#FFFFFF',
       '--selection-handle-stroke': '#1E6FD9',
       '--danger': '#C14036',
