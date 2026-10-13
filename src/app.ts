@@ -2020,8 +2020,29 @@ export class BoardApp {
     }
     if (!this.dragPill) return;
     this.dragPill.textContent = text;
-    this.dragPill.style.left = `${e.clientX + 16}px`;
-    this.dragPill.style.top = `${e.clientY + 16}px`;
+    // 16 px below and right of the pointer; to its left when that would run past the visible area or cover a corner handle of the selection
+    const w = this.dragPill.offsetWidth, hgt = this.dragPill.offsetHeight;
+    const view = this.r.root.getBoundingClientRect();
+    let x = e.clientX + 16;
+    const y = e.clientY + 16;
+    const handles = this.selectionHandleRects();
+    const over = (px: number) => handles.some((r) => px < r.x + r.w && px + w > r.x && y < r.y + r.h && y + hgt > r.y);
+    if (x + w > view.right - 8 || over(x)) x = Math.max(view.left + 8, e.clientX - 16 - w);
+    this.dragPill.style.left = `${x}px`;
+    this.dragPill.style.top = `${y}px`;
+  }
+
+  /** The four corner handles of the current selection as screen rectangles (about 20 px squares), for keeping a pill off them. */
+  private selectionHandleRects(): Rect[] {
+    const b = this.selection.length ? this.r.contentBounds(this.selection) : null;
+    if (!b) return [];
+    const v = this.r.root.getBoundingClientRect();
+    const out: Rect[] = [];
+    for (const [wx, wy] of [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]) {
+      const p = this.r.toScreen({ x: wx, y: wy });
+      out.push({ x: v.left + p.x - 10, y: v.top + p.y - 10, w: 20, h: 20 });
+    }
+    return out;
   }
 
   private hidePill() {

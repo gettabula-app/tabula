@@ -118,6 +118,28 @@ describe.skipIf(!available)('guides while resizing and drawing', () => {
     }
   });
 
+  it('keeps the pill inside the view and off the selection handle near the right edge', async () => {
+    const page = await open();
+    await seed(page, 1);
+    const handle = await screenOf(page, 260, 180);
+    await page.mouse.move(handle.x, handle.y);
+    await page.mouse.down();
+    await page.mouse.move(1270, handle.y, { steps: 10 });
+    await page.waitForFunction(() => document.querySelector('.drag-pill'));
+    const box = await page.evaluate(() => { const r = document.querySelector('.drag-pill')!.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom }; });
+    expect(box.r).toBeLessThanOrEqual(1280);
+    const near = await page.evaluate(() => {
+      const app = (window as any).__board;
+      const o = app.store.get('a');
+      const p = app.r.toScreen({ x: o.x + o.w, y: o.y + o.h / 2 });
+      const v = app.r.root.getBoundingClientRect();
+      return { x: v.left + p.x, y: v.top + p.y };
+    });
+    expect(box.l > near.x + 10 || box.r < near.x - 10 || box.t > near.y + 10 || box.b < near.y - 10).toBe(true); // not over the east handle
+    await page.mouse.up();
+    await page.close();
+  });
+
   it('Alt turns the resize guides off', async () => {
     const page = await open();
     await seed(page, 1);
