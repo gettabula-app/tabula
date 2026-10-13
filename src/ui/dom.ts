@@ -41,6 +41,7 @@ export const ICONS = {
   hand: '<g transform="translate(1.6 0.75)"><path d="M8 11V5.5a1.5 1.5 0 013 0V10m0-.5V4a1.5 1.5 0 013 0v6m0-4.5a1.5 1.5 0 013 0V13a7 7 0 01-7 7h-.6a6 6 0 01-4.9-2.6L4 14.2a1.6 1.6 0 012.4-2L8 14"/></g>',
   sticky: '<path d="M5 4h14v10l-5 6H5z"/><path d="M14 20v-6h5"/>',
   text: '<path d="M5 6V4.5h14V6M12 4.5v15M9 19.5h6"/>',
+  markdown: '<path d="M3 17V7l4 5 4-5v10M17 7v8m-3-3 3 3 3-3"/>',
   rect: '<rect x="4" y="5" width="16" height="14" style="rx:var(--radius-xs)"/>',
   ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="7"/>',
   diamond: '<path d="M12 3.5l8.5 8.5-8.5 8.5L3.5 12z"/>',

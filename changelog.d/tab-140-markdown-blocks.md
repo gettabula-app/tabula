@@ -1,0 +1,3 @@
+section: Added
+
+- Markdown blocks: a new object for longer notes written in Markdown (headings, lists, tick boxes, tables, code, links), drawn formatted on the board and in PNG and SVG exports. Choose **Markdown block** in the left toolbar, or double-click a block to edit its text. Tick boxes tick on a selected block (one undo step), links open only on a selected block, links to other items on the board jump to them, and **Copy as Markdown** copies what you wrote. Agents can read and write Markdown blocks. Two people typing into the same block at the same moment overwrite each other (the later change wins); different blocks can be edited at once.

@@ -2,6 +2,7 @@ import type { BaseObj, ConnectorObj, Obj } from './types';
 import { isConnector } from './types';
 import { TYPE_LABEL } from './layers';
 import { STICKY_COLORS } from './palette';
+import { markdownReading, markdownTitle } from './markdown';
 
 /**
  * What a screen reader is told about an object in the canvas outline (docs/canvas-keyboard.md): a name built in a fixed order,
@@ -80,6 +81,14 @@ export function describeObject(o: Obj, ctx: DescribeContext): Description {
         name: `Image, ${alt ? `"${cut(alt)}"` : 'no description'}${suffix}`,
         description: [...rest, ...(alt ? [] : ['No description yet.'])].join(' '),
       };
+    }
+    case 'markdown': {
+      // the first heading or line names it; the whole text and the state of its tasks are the description
+      const source = String((o as { text?: unknown }).text ?? '');
+      const title = markdownTitle(source, NAME_TEXT_MAX);
+      const reading = markdownReading(source);
+      const tasks = reading.tasks ? [`${plural(reading.tasks, 'task')}, ${reading.done} done.`] : [];
+      return { name: `Markdown block${title ? `, "${title}"` : ''}${suffix}`, description: [...rest.filter((r) => r !== oneLine(source)), reading.text, ...tasks].filter(Boolean).join(' ') };
     }
     case 'path':
       return { name: `Drawing${suffix}`, description: rest.join(' ') };

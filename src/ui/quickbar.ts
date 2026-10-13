@@ -1,4 +1,5 @@
 import type { BoardApp } from '../app';
+import { copyMarkdownSource } from './markdown-actions';
 import type { Align, BaseObj, ConnectorObj, Obj, Route, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
 import { h, icon } from './dom';
@@ -402,11 +403,14 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     if (styleSel.some(HAS_TEXT)) {
       text.push(menu('text', 'Text style', () => {
         const s = styleOf(app.selectedLeaves()[0]);
-        const parts: HTMLElement[] = [field('Align', segmented<Align>([
-          { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },
-          { value: 'center', label: 'Align centre', icon: icon('alignCenterH', 16) },
-          { value: 'right', label: 'Align right', icon: icon('alignRight', 16) },
-        ], s.align, (v) => app.updateSelectedLeaves({ align: v }, HAS_TEXT), 'Text alignment'))];
+        const parts: HTMLElement[] = [];
+        if (app.selectedLeaves().some((o) => o.type !== 'markdown')) {
+          parts.push(field('Align', segmented<Align>([
+            { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },
+            { value: 'center', label: 'Align centre', icon: icon('alignCenterH', 16) },
+            { value: 'right', label: 'Align right', icon: icon('alignRight', 16) },
+          ], s.align, (v) => app.updateSelectedLeaves({ align: v }, (o) => HAS_TEXT(o) && o.type !== 'markdown'), 'Text alignment')));
+        }
         if (app.selectedLeaves().some(isVAligned)) {
           parts.push(field('Vertical', segmented<VAlign>([
             { value: 'top', label: 'Align top', icon: icon('alignTop', 16) },
@@ -469,6 +473,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     more = h('button', { class: 'icon-btn', 'aria-label': 'More properties', onclick: () => props.toggle() }, icon('properties', 18));
     groups.push([
       lock,
+      ...(sel.length === 1 && sel[0].type === 'markdown' ? [action('copy', 'Copy as Markdown', () => copyMarkdownSource((sel[0] as BaseObj).text ?? ''))] : []),
       action('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
       ...(opts.demo || !canSaveTemplate(authState().mode) ? [] : [action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection]))]),
       action('trash', 'Delete', () => app.deleteSelection(), 'danger', 'delete'),

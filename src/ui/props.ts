@@ -1,4 +1,5 @@
 import type { BoardApp } from '../app';
+import { copyMarkdownSource } from './markdown-actions';
 import { leaveOutWithheld } from '../private-select';
 import type { BaseObj, ConnectorObj, Head, Obj, Route, ShapeKind, UmlRelation, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
@@ -24,13 +25,13 @@ import { proposedLine } from '../ai-review';
 import { kanbanSwatch } from '../markup';
 
 const TYPE_LABEL: Record<string, string> = {
-  shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', group: 'Group', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
+  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', frame: 'Frame', group: 'Group', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
   'uml-class': 'Class', 'uml-actor': 'Actor', 'uml-usecase': 'Use case', 'uml-lifeline': 'Lifeline', 'uml-note': 'Note',
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',
 };
 
-export const HAS_TEXT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component'].includes(o.type);
-export const HAS_FILL = (o: Obj) => isBox(o) && ['shape', 'frame', 'uml-class', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-final'].includes(o.type);
+export const HAS_TEXT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'markdown', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component'].includes(o.type);
+export const HAS_FILL = (o: Obj) => isBox(o) && ['shape', 'markdown', 'frame', 'uml-class', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-final'].includes(o.type);
 export const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && !isSticker(o) && ['shape', 'path', 'icon', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-initial', 'uml-final'].includes(o.type));
 
 /** Font size steps by 1, or 10 with Shift. */
@@ -196,11 +197,14 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         ...live((v) => ({ fontWeight: v }), HAS_TEXT),
       });
       blocks.push(h('div', { class: 'row2' }, field('Size', size), field('Weight', weight)));
-      blocks.push(field('Align', segmented([
-        { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },
-        { value: 'center', label: 'Align centre', icon: icon('alignCenterH', 16) },
-        { value: 'right', label: 'Align right', icon: icon('alignRight', 16) },
-      ], s.align, (v) => upLeaves({ align: v }, HAS_TEXT), 'Text alignment')));
+      // a Markdown block always reads from the left: its alignment is not a choice
+      if (styleSel.some((o) => o.type !== 'markdown')) {
+        blocks.push(field('Align', segmented([
+          { value: 'left', label: 'Align left', icon: icon('alignLeft', 16) },
+          { value: 'center', label: 'Align centre', icon: icon('alignCenterH', 16) },
+          { value: 'right', label: 'Align right', icon: icon('alignRight', 16) },
+        ], s.align, (v) => upLeaves({ align: v }, (o) => HAS_TEXT(o) && o.type !== 'markdown'), 'Text alignment')));
+      }
       if (styleSel.some((o) => o.type === 'shape' || o.type === 'sticky')) {
         blocks.push(field('Vertical', segmented<VAlign>([
           { value: 'top', label: 'Align top', icon: icon('alignTop', 16) },
@@ -248,6 +252,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       btn('forward', 'Bring forward', () => void app.bringForward(), '', 'mod+]'),
       btn('backward', 'Send backward', () => void app.sendBackward(), '', 'mod+['),
       btn('back', 'Send to back', () => app.sendToBack(), '', '['),
+      sel.length === 1 && sel[0].type === 'markdown' ? btn('copy', 'Copy as Markdown', () => copyMarkdownSource((sel[0] as BaseObj).text ?? '')) : null,
       btn('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
       btn(locked ? 'unlock' : 'lock', locked ? 'Unlock' : 'Lock', () => app.toggleLock()),
       sel.some((o) => o.type === 'uml-class' || o.type === 'shape') ? btn('mermaid', 'Copy as Mermaid', () => {

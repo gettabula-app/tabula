@@ -2,8 +2,9 @@ import type { BoardApp } from './app';
 import type { BaseObj, ConnectorObj, Id, Obj } from './types';
 import { isBox, isConnector } from './types';
 import { center, connectorGeom, rotate } from './geometry';
-import { LABEL_FONT, labelBox, labelPill, layoutText, styleOf, textHeight } from './markup';
+import { LABEL_FONT, labelBox, labelPill, layoutText, markdownBoxHeight, styleOf, textHeight } from './markup';
 import { fontFamily } from './fonts';
+import { MD_PAD } from './markdown-layout';
 import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
 import { KANBAN, LIMITS } from '../shared/containers';
@@ -69,7 +70,11 @@ export class TextEditor {
         e.preventDefault();
         this.commit();
       }
-      if (e.key === 'Tab') {
+      if (e.key === 'Tab' && this.isMarkdown()) {
+        // in Markdown a Tab indents (nested lists); Esc or Ctrl/Cmd+Enter leaves
+        e.preventDefault();
+        this.insertAtCursor('  ');
+      } else if (e.key === 'Tab') {
         e.preventDefault();
         this.commit();
       }
@@ -86,6 +91,10 @@ export class TextEditor {
     return this.id !== null;
   }
 
+  private isMarkdown(): boolean {
+    return this.active && this.app.store.get(this.id ?? undefined)?.type === 'markdown';
+  }
+
   get textMode(): boolean {
     return this.active && this.mode === 'text';
   }
@@ -98,6 +107,11 @@ export class TextEditor {
   objectScreenRect(): { left: number; right: number; top: number; bottom: number; width: number; height: number } | null {
     const o = this.app.store.getPlaced(this.id ?? undefined) as BaseObj | undefined;
     if (!o || isConnector(o) || (o.rotation ?? 0) !== 0) return null;
+    if (o.type === 'markdown') {
+      // the source box can be taller than the drawn block: the corner button belongs to the box that is being typed in
+      const r = this.ta.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
+    }
     const a = this.app.r.toScreen({ x: o.x, y: o.y });
     const b = this.app.r.toScreen({ x: o.x + o.w, y: o.y + o.h });
     const root = this.app.r.root.getBoundingClientRect();
@@ -160,8 +174,12 @@ export class TextEditor {
       this.original = o.text ?? '';
     }
     this.ta.value = this.original;
-    this.selectionStart = this.selectionEnd = 0;
+    const markdown = o.type === 'markdown';
+    // a Markdown block opens with the caret at the end of its source (select-all would let one keystroke replace it)
+    this.selectionStart = this.selectionEnd = markdown ? this.original.length : 0;
     this.ta.dataset.mode = this.mode;
+    this.ta.dataset.kind = o.type;
+    this.ta.placeholder = markdown ? 'Write Markdown: # heading, **bold**, - [ ] task, | table |' : '';
     this.ta.style.display = 'block';
     this.app.r.setEditing(id);
     this.app.store.undo.stopCapturing();
@@ -169,7 +187,8 @@ export class TextEditor {
     this.unsubCam = this.app.r.onCamera(() => this.reposition());
     requestAnimationFrame(() => {
       this.ta.focus();
-      this.ta.select();
+      if (markdown) this.ta.setSelectionRange(this.original.length, this.original.length);
+      else this.ta.select();
       this.rememberSelection();
     });
     this.app.emit('editing');
@@ -207,6 +226,24 @@ export class TextEditor {
       return;
     }
     const b = o as BaseObj;
+    if (b.type === 'markdown') {
+      // the source in a monospace face over the block, as tall as it needs (the rendered block keeps its own height under it)
+      ta.style.fontFamily = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+      ta.style.fontWeight = '400';
+      ta.style.textAlign = 'left';
+      ta.style.color = 'var(--ink)';
+      ta.style.background = 'var(--canvas, #fff)';
+      const scale = this.setEditorFont(st.fontSize * 0.92);
+      ta.style.lineHeight = '1.45';
+      ta.style.padding = `${MD_PAD / scale}px`;
+      ta.style.paddingBottom = `${(MD_PAD + this.bottomInset / (z * scale)) / scale}px`;
+      ta.style.height = 'auto';
+      const need = ta.scrollHeight * scale;
+      const c = center(b);
+      const tl = rotate({ x: b.x, y: b.y }, c, b.rotation || 0);
+      this.place(tl.x, tl.y, b.w, Math.max(b.h, need), b.rotation || 0, z, scale);
+      return;
+    }
     const centred = b.type === 'shape' || b.type === 'sticky';
     let box = { x: 0, y: 0, w: b.w, h: b.h };
     let fontSize = st.fontSize;
@@ -279,6 +316,7 @@ export class TextEditor {
       s.transact(() => {
         s.update(o.id, { text: v });
         if (o.type === 'text') s.update(o.id, { h: textHeight({ ...(o as BaseObj), text: v }) });
+        if (o.type === 'markdown') s.update(o.id, { h: markdownBoxHeight({ ...(o as BaseObj), text: v }) });
       });
     } else if (this.mode === 'frame') {
       // lane and kanban names have limits (docs/kanban.md, Limits: 60 and 80 characters); a frame's name has none
@@ -290,7 +328,7 @@ export class TextEditor {
       s.transact(() => s.update(o.id, { label: v || undefined }));
       this.reposition(); // the pill grows and wraps with the text
     }
-    if (o.type === 'text') this.reposition();
+    if (o.type === 'text' || o.type === 'markdown') this.reposition();
     else if (this.mode === 'text') {
       // re-centre vertically as lines are added
       requestAnimationFrame(() => this.reposition());
@@ -317,7 +355,7 @@ export class TextEditor {
       });
     }
     // An empty text object is removed when editing ends.
-    if (o && o.type === 'text' && !v.trim()) this.app.store.transact(() => this.app.store.remove([o.id]));
+    if (o && (o.type === 'text' || o.type === 'markdown') && !v.trim()) this.app.store.transact(() => this.app.store.remove([o.id]));
     this.app.r.setEditing(null);
     this.app.store.undo.stopCapturing();
     this.app.emit('editing');

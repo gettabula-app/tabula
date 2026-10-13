@@ -753,6 +753,23 @@ async function linkCards(page, cards) {
   await page.evaluate((ids) => { const b = window.__board.r.contentBounds(ids); if (b) window.__board.r.fit(b, 60, 1); }, cards.map((o) => o.id));
   await page.waitForTimeout(400);
 }
+const MD_SAMPLE = '# Sprint review\n\nNotes for **Thursday**: the *short* version, with `code`, a ~~dropped~~ item and a [link](https://example.com/notes).\n\n- [x] Demo prepared\n- [ ] Send the summary\n  - [ ] to the whole team\n\n> Keep it to ten minutes.\n\n| Owner | Item | Due |\n|:--|:-:|--:|\n| Ana | Release notes | Mon |\n| Sam | A longer item that wraps inside its cell | Tue |\n\n```\nnpm run build\n```\n\n---\n';
+async function mdBlock(env, { selected }) {
+  await env.page.evaluate((src) => {
+    const app = window.__board;
+    const s = app.store;
+    const all = app.r.contentBounds();
+    s.transactAs(() => s.create({ id: 'visual-md', type: 'markdown', x: all ? all.x + all.w + 120 : 0, y: all ? all.y : 0, w: 380, h: 120, rotation: 0, z: s.topZ(), text: src, font: 'satoshi' }), 'visual');
+  }, MD_SAMPLE);
+  await env.page.waitForTimeout(700);
+  await env.page.evaluate((sel) => {
+    const app = window.__board;
+    app.r.fit(app.r.contentBounds(['visual-md']), 80, 1.3);
+    if (sel) app.setSelection(['visual-md']);
+  }, selected);
+  await settle(env.page);
+}
+
 const LINK_OK = { url: 'https://www.example.com/articles/a-page-about-things', title: 'A page about things worth reading closely', description: 'A short description of what the page says, long enough to run onto a second line in the larger layouts.', siteName: 'Example', unfurl: 'ok', fetchedAt: 1 };
 
 async function openAiKeyDialogWith({ page, base }, testReply) {
@@ -4790,6 +4807,22 @@ const STATES = {
   },
   async 'ai-admin-anthropic-saved'(env) {
     await openAdminAi(env, { workspace: { provider: 'anthropic', hint: '4f2a' } });
+  },
+  // TAB-140: a Markdown block (docs/markdown-blocks.md): drawn, selected (side handles only), being edited as its source, and with a long table that wraps
+  async 'markdown-block'(env) {
+    await openSeedBoard(env);
+    await mdBlock(env, { selected: false });
+  },
+  async 'markdown-selected'(env) {
+    await openSeedBoard(env);
+    await mdBlock(env, { selected: true });
+  },
+  async 'markdown-editing'(env) {
+    await openSeedBoard(env);
+    await mdBlock(env, { selected: true });
+    await env.page.evaluate(() => window.__board.editor.start('visual-md'));
+    await settle(env.page);
+    return { keepFocus: true };
   },
   async 'text-handles'(env) {
     // TAB-233: a selected text shows handles on its sides (wrap width) and corners (type size)
