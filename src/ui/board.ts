@@ -280,12 +280,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     return b;
   };
   const railGroupChoices = [
-    { id: 'text', kind: 'text', label: 'Text', icon: 'text' as IconName, key: 'T', tool: { kind: 'text' } as Tool },
-    { id: 'markdown', kind: 'markdown', label: 'Markdown block', icon: 'markdown' as IconName, key: '', tool: { kind: 'markdown' } as Tool },
+    { id: 'text', label: 'Text', icon: 'text' as IconName, key: 'T', tool: { kind: 'text' } as Tool },
+    { id: 'table', label: 'Table', icon: 'table' as IconName, key: 'G', tool: { kind: 'table' } as Tool },
+    { id: 'markdown', label: 'Markdown block', icon: 'markdown' as IconName, key: '', tool: { kind: 'markdown' } as Tool },
     // Link cards open an address popover instead of arming a tool, and are not offered in the demo
-    ...(demo ? [] : [{ id: 'link', kind: 'link', label: 'Link', icon: 'link' as IconName, key: '', tool: null as Tool | null }]),
+    ...(demo ? [] : [{ id: 'link', label: 'Link', icon: 'link' as IconName, key: '', tool: null as Tool | null }]),
   ];
-  const railGroupState: RailToolChoice[] = railGroupChoices.map(({ id, kind }) => ({ id, kind }));
+  const railGroupState: RailToolChoice[] = railGroupChoices.map(({ id, tool }) => ({ id, toolKind: tool?.kind }));
   const railGroupStorageKey = 'driftboard:rail-tool-group:text-markdown-link';
   const loadRailGroupChoice = () => {
     try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(railGroupStorageKey); } catch { return null; }
@@ -315,7 +316,11 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const currentRailGroupChoice = () => railGroupChoices.find((choice) => choice.id === lastRailGroupChoice) ?? railGroupChoices[0];
   const paintRailGroupButton = () => {
     const choice = currentRailGroupChoice();
-    railGroupButton.dataset.tool = choice.kind;
+    if (choice.tool) railGroupButton.dataset.tool = choice.tool.kind;
+    else delete railGroupButton.dataset.tool;
+    const active = !!choice.tool && app.tool.kind === choice.tool.kind;
+    railGroupButton.classList.toggle('on', active);
+    railGroupButton.setAttribute('aria-pressed', String(active));
     railGroupButton.setAttribute('aria-label', choice.label);
     if (choice.key) { railGroupButton.setAttribute('aria-keyshortcuts', choice.key); railGroupButton.dataset.tipKey = choice.key.toLowerCase(); } else { railGroupButton.removeAttribute('aria-keyshortcuts'); delete railGroupButton.dataset.tipKey; }
     railGroupButton.replaceChildren(icon(choice.icon, 20), h('span', { class: 'rail-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 10)));
@@ -355,7 +360,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       }
     });
     const opened = popover(railGroupButton, list, {
-      side: 'right', className: 'rail-tool-pop', label: 'Text, Markdown and link tools', role: 'menu',
+      side: 'right', className: 'rail-tool-pop', label: 'Text and content tools', role: 'menu',
       onClose: () => {
         railGroupButton.setAttribute('aria-expanded', 'false');
         closeRailGroup = () => {};
@@ -424,6 +429,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const templatesBtn = drawerBtn('Templates and team exercises', 'templates', 'templates');
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
   const shapesBtn = h('button', { class: 'rail-btn', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
+  const connectorBtn = toolBtn('Connector', 'connector', { kind: 'connector' }, 'L');
   const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
   // Images (docs/images.md): hidden when the server says it keeps none
   const imageBtn = h('button', { class: 'rail-btn', 'aria-label': 'Image', 'data-tip': 'Add an image', onclick: () => pickImages(app) }, icon('image', 22));
@@ -484,6 +490,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       stickyBtn,
       railGroupButton,
       shapesBtn,
+      connectorBtn,
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
       toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
       trackerCommand,
@@ -507,7 +514,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   );
   // The phone demo keeps six tools (see .demo-board in styles.css).
   for (const b of [stickyBtn, shapesBtn]) b.classList.add('demo-keep');
-  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"]')) b.classList.add('demo-keep');
+  for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="connector"]')) b.classList.add('demo-keep');
   railGroupButton.classList.add('demo-keep');
   rail.querySelector<HTMLElement>('[data-tool="pen"]')?.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out

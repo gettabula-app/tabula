@@ -31,7 +31,7 @@ A task box ticks on a selected block with a click, in one undo step; it rewrites
 
 ## Editing
 
-Double-click the block, press `Enter` on it, or make a new one with **Markdown block** in the left toolbar (no single-key shortcut: `M` is the chat's). The block shows its **source** in a monospace textarea on the canvas colour, with the caret at the end; the block's height follows what you type. `Esc` or `Ctrl/Cmd+Enter` leaves editing and the block is drawn; `Tab` indents (it does not leave). A block emptied of text is removed when editing ends, like a text object.
+Double-click the block, press `Enter` on it, or open the Text/Markdown/Link group in the left toolbar and choose **Markdown block** (no single-key shortcut: `M` is the chat's). The block shows its **source** in a monospace textarea on the canvas colour, with the caret at the end; the block's height follows what you type. `Esc` or `Ctrl/Cmd+Enter` leaves editing and the block is drawn; `Tab` indents (it does not leave). A block emptied of text is removed when editing ends, like a text object.
 
 Resize with the side handles: they set the width the text wraps at, and the height follows the content. There are no corner or rotate handles.
 

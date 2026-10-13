@@ -1,5 +1,5 @@
 // Adding link cards to the open board (docs/link-cards.md, proto/designer-preview/link-cards/SPEC.md): from a paste, a drop, the rail's
-// Link button, and Turn into link card. The card goes on the board at once and the preview fills in when the relay answers, written as
+// Link action, and Turn into link card. The card goes on the board at once and the preview fills in when the relay answers, written as
 // a change that is not an undo step, so Undo takes the whole card back and never leaves an empty one.
 import type { BoardApp } from './app';
 import type { BaseObj, Point } from './types';

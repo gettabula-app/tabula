@@ -23,9 +23,9 @@ afterAll(async () => {
   await server?.close();
 });
 
-async function openBoard(): Promise<Page> {
+async function openBoard(height = 900): Promise<Page> {
   for (let attempt = 0; ; attempt++) {
-    const context = await browser!.newContext({ viewport: { width: 1280, height: 900 } });
+    const context = await browser!.newContext({ viewport: { width: 1280, height } });
     const page = await context.newPage();
     try {
       await page.goto(base);
@@ -39,7 +39,7 @@ async function openBoard(): Promise<Page> {
   }
 }
 
-describe.skipIf(!available)('the grouped Text and Connector rail tool', { timeout: 200_000 }, () => {
+describe.skipIf(!available)('the grouped Text, Table, Markdown block and Link rail choices', { timeout: 200_000 }, () => {
   it('opens from the chevron and ArrowRight, then remembers the chosen tool', async () => {
     const page = await openBoard();
     const group = page.locator('.rail-tool-group');
@@ -47,16 +47,22 @@ describe.skipIf(!available)('the grouped Text and Connector rail tool', { timeou
 
     await page.locator('.rail-group-chevron').click();
     expect(await flyout.isVisible()).toBe(true);
-    await page.getByRole('menuitem', { name: 'Connector' }).click();
+    expect(await page.getByRole('menuitem', { name: 'Text' }).getAttribute('aria-keyshortcuts')).toBe('T');
+    expect(await page.getByRole('menuitem', { name: 'Markdown block' }).getAttribute('aria-keyshortcuts')).toBeNull();
+    await page.getByRole('menuitem', { name: 'Markdown block' }).click();
     expect(await flyout.count()).toBe(0);
-    expect(await group.getAttribute('data-tool')).toBe('connector');
-    expect(await group.getAttribute('aria-label')).toBe('Connector');
-    await expect.poll(() => page.evaluate(() => localStorage.getItem('driftboard:rail-tool-group:text-link'))).toBe('connector');
+    expect(await group.getAttribute('data-tool')).toBe('markdown');
+    expect(await group.getAttribute('aria-label')).toBe('Markdown block');
+    expect(await group.getAttribute('aria-pressed')).toBe('true');
+    expect(await group.getAttribute('class')).toContain(' on');
+    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('markdown');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('driftboard:rail-tool-group:text-markdown-link'))).toBe('markdown');
 
     await page.locator('.rail [data-tool="pen"]').click();
     await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('pen');
     await group.click();
-    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('connector');
+    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('markdown');
+    expect(await group.getAttribute('aria-pressed')).toBe('true');
 
     await group.focus();
     await page.keyboard.press('ArrowRight');
@@ -66,9 +72,19 @@ describe.skipIf(!available)('the grouped Text and Connector rail tool', { timeou
     expect(await flyout.count()).toBe(0);
     expect(await group.getAttribute('data-tool')).toBe('text');
     expect(await group.getAttribute('aria-label')).toBe('Text');
-    await expect.poll(() => page.evaluate(() => localStorage.getItem('driftboard:rail-tool-group:text-link'))).toBe('text');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('driftboard:rail-tool-group:text-markdown-link'))).toBe('text');
 
     await page.context().close();
+  });
+
+  it('puts the Table tool (key G) in the group: choosing it arms the table tool and the keycap shows', async () => {
+    const page = await openBoard();
+    await page.locator('.rail-group-chevron').click();
+    expect(await page.getByRole('menuitem', { name: 'Table' }).getAttribute('aria-keyshortcuts')).toBe('G');
+    await page.getByRole('menuitem', { name: 'Table' }).click();
+    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('table');
+    expect(await page.locator('.rail-tool-group').getAttribute('aria-label')).toBe('Table');
+    await page.close();
   });
 
   it('opens a menu with matching popup ARIA state and right-click', async () => {
@@ -102,7 +118,7 @@ describe.skipIf(!available)('the grouped Text and Connector rail tool', { timeou
     const flyout = page.locator('.rail-tool-pop');
 
     await page.locator('.rail-group-chevron').click();
-    await page.getByRole('menuitem', { name: 'Connector' }).click();
+    await page.getByRole('menuitem', { name: 'Markdown block' }).click();
     await page.locator('.rail [data-tool="pen"]').click();
     await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('pen');
 
@@ -119,7 +135,86 @@ describe.skipIf(!available)('the grouped Text and Connector rail tool', { timeou
     await page.waitForTimeout(75);
     await page.mouse.click(x, y);
 
-    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('connector');
+    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('markdown');
     await page.context().close();
+  });
+
+  it('opens Link from the flyout and keeps Connector as its own rail tool', async () => {
+    const page = await openBoard();
+    const group = page.locator('.rail-tool-group');
+    const connector = page.locator('.rail [data-tool="connector"]');
+
+    expect(await connector.getAttribute('aria-label')).toBe('Connector');
+    expect(await connector.getAttribute('aria-keyshortcuts')).toBe('L');
+    await connector.click();
+    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('connector');
+
+    await page.locator('.rail-group-chevron').click();
+    expect(await page.getByRole('menuitem', { name: 'Link' }).getAttribute('aria-keyshortcuts')).toBeNull();
+    await page.getByRole('menuitem', { name: 'Link' }).click();
+    const popover = page.locator('.link-popover');
+    expect(await popover.isVisible()).toBe(true);
+    const groupBox = (await group.boundingBox())!;
+    const popoverBox = (await popover.boundingBox())!;
+    expect(popoverBox.x).toBeGreaterThanOrEqual(groupBox.x + groupBox.width - 1);
+    expect(await group.getAttribute('aria-label')).toBe('Link');
+    expect(await group.getAttribute('data-tool')).toBeNull();
+    expect(await group.getAttribute('aria-pressed')).toBe('false');
+    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('connector');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('driftboard:rail-tool-group:text-markdown-link'))).toBe('link');
+
+    await popover.getByRole('button', { name: 'Cancel' }).click();
+    expect(await group.getAttribute('class')).not.toContain(' on');
+    await page.context().close();
+  });
+
+  it('disables the whole group on a read-only board, so Link cannot be added and no flyout opens', async () => {
+    const context = await browser!.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    await page.goto(`${base}?debug#/b/rail-ro-${Math.random().toString(36).slice(2, 8)}`);
+    await page.waitForFunction(() => (window as any).__board, null, { timeout: 25_000 });
+    const group = page.locator('.rail-tool-group');
+    await group.waitFor({ timeout: 25_000 });
+    await page.evaluate(() => { (window as any).__board.store.setReadOnly(true); });
+    await expect.poll(() => group.isDisabled()).toBe(true);
+    await group.focus().catch(() => undefined);
+    await page.keyboard.press('ArrowRight');
+    expect(await page.locator('.rail-tool-pop').count()).toBe(0);
+    expect(await page.locator('.link-popover').count()).toBe(0);
+    await context.close();
+  });
+
+  it('fits all visible tools without rail scrolling at 720 and 820 px', async () => {
+    const measurements = [];
+    for (const [height, expectedButtonSize] of [[720, 28], [820, 36]] as const) {
+      const page = await openBoard(height);
+      const measure = await page.evaluate(() => {
+        const rail = document.querySelector('.rail') as HTMLElement;
+        const tools = document.querySelector('.rail-tools') as HTMLElement;
+        const railBounds = rail.getBoundingClientRect();
+        const bounds = tools.getBoundingClientRect();
+        const buttons = [...tools.querySelectorAll<HTMLButtonElement>('button:not([hidden])')];
+        return {
+          finePointer: matchMedia('(pointer: fine)').matches,
+          railHeight: railBounds.height,
+          scrollHeight: tools.scrollHeight,
+          clientHeight: tools.clientHeight,
+          buttonHeight: buttons[0]?.getBoundingClientRect().height,
+          buttonCount: buttons.length,
+          buttonsInView: buttons.every((button) => {
+            const rect = button.getBoundingClientRect();
+            return rect.top >= bounds.top - 1 && rect.bottom <= bounds.bottom + 1;
+          }),
+        };
+      });
+      measurements.push({ height, expectedButtonSize, ...measure });
+      await page.context().close();
+    }
+    expect(measurements.find((measure) => measure.height === 720)?.finePointer).toBe(true);
+    for (const measure of measurements) {
+      expect(measure.buttonHeight).toBe(measure.expectedButtonSize);
+      expect(measure.scrollHeight - measure.clientHeight).toBeLessThanOrEqual(1);
+      expect(measure.buttonsInView).toBe(true);
+    }
   });
 });

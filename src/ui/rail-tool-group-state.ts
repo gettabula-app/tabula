@@ -1,11 +1,11 @@
-/** A tool that can be shown by a grouped rail button. Keep the state functions independent of the DOM and storage. */
+/** A selectable tool has a toolKind; action choices such as Link are restorable but have none. */
 export interface RailToolChoice {
   id: string;
-  kind: string;
+  toolKind?: string;
 }
 
 export function choiceForToolKind(kind: string, choices: readonly RailToolChoice[]): string | null {
-  return choices.find((choice) => choice.kind === kind)?.id ?? null;
+  return choices.find((choice) => choice.toolKind === kind)?.id ?? null;
 }
 
 function hasChoice(id: string, choices: readonly RailToolChoice[]): boolean {
