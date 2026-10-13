@@ -78,6 +78,7 @@ export function wrap(text: string, font: string, maxWidth: number): string[] {
 }
 
 // characters XML 1.0 cannot hold (they make an SVG or XML export unreadable), and a surrogate with no partner
+// oxlint-disable-next-line no-control-regex -- the control characters are the point
 const XML_ILLEGAL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
 
 export const escapeXml = (s: string) =>
