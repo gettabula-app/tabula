@@ -47,7 +47,7 @@ describe('the activity log', () => {
     const res = await log(dave);
     expect(res.status).toBe(200);
     const entry = res.body.entries[0];
-    expect(entry).toMatchObject({ agent: `Claude for ${alice.user.name.split(/\s+/)[0]}`, tool: 'create_objects', summary: 'created 2 sticky notes', counts: { created: 2, changed: 0, removed: 0 }, revertible: true });
+    expect(entry).toMatchObject({ agent: { token: 'Claude', member: alice.user.name.split(/\s+/)[0] }, tool: 'create_objects', summary: 'created 2 sticky notes', counts: { created: 2, changed: 0, removed: 0 }, revertible: true });
     expect(entry.ids.sort()).toEqual([...ids].sort());
     expect(JSON.stringify(res.body)).not.toContain('SECRET');
     expect(JSON.stringify(res.body)).not.toContain('inverse');
@@ -97,6 +97,9 @@ describe('reverting a call', () => {
     expect(done.body.applied).toBe(0);
     expect(done.body.skipped).toEqual([{ id, reason: 'changed' }]);
     expect(objects()[id].text).toBe('person edit');
+    // nothing was applied, so the entry is still there to try again once the person has dealt with what is in the way
+    expect((await log(alice)).body.entries.find((e: { id: string }) => e.id === entry.id)).toMatchObject({ revertible: true });
+    expect((await revert(alice, entry.id)).status).toBe(200);
   });
 
   it('authorises at revert time: an editor whose access was withdrawn is refused, whatever the entry says', async () => {

@@ -31,7 +31,7 @@ import { loadConfig } from './config.mjs';
 import { ogKind, withOgTags } from './og-tags.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
-import { createActivity, diffObjects, snapshotObjects } from './activity.mjs';
+import { CAPTURE_MAX_OBJECTS, createActivity, diffObjects, snapshotObjects, watchTouched } from './activity.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
 import { createSnapshotBarrier } from './snapshot-barrier.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
@@ -372,6 +372,19 @@ if (config.authEnabled) {
   };
   sweepNotifications();
   setInterval(sweepNotifications, NOTIFICATION_SWEEP_MS).unref();
+  // an agent activity log, with its revert data, does not outlive its board (deleted, or gone after a restore)
+  const sweepActivity = () => {
+    try {
+      activity.sweep((id) => {
+        const board = directory.getBoard(id);
+        return !!board && !board.deletedAt;
+      });
+    } catch (err) {
+      log('activity: sweep failed', err?.message);
+    }
+  };
+  sweepActivity();
+  setInterval(sweepActivity, 24 * 60 * 60 * 1000).unref();
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -1147,6 +1160,7 @@ const roomAccess = {
   },
   write(name, origin, fn, trackerContext = null) {
     const room = getRoom(name);
+    let trace = null;
     try {
       const commentThreadId = room.kind === 'comments' && typeof trackerContext?.commentThreadId === 'string'
         ? trackerContext.commentThreadId
@@ -1159,7 +1173,14 @@ const roomAccess = {
       };
       const commentBefore = commentThreadId && commentActorId ? commentSnapshot() : null;
       // an MCP write is logged with what it changed (docs/agent-presence.md): the objects as they were and as they are
-      const trace = room.kind === 'board' && typeof trackerContext?.activity?.onDiff === 'function' ? { before: snapshotObjects(room.doc) } : null;
+      // a board with more objects than CAPTURE_MAX_OBJECTS is not snapshotted (too costly on the shared event loop): only the ids touched are noted
+      if (room.kind === 'board' && typeof trackerContext?.activity?.onDiff === 'function') {
+        if (room.doc.getMap('objects').size <= CAPTURE_MAX_OBJECTS) trace = { before: snapshotObjects(room.doc) };
+        else {
+          const touched = new Set();
+          trace = { touched, off: watchTouched(room.doc, touched) };
+        }
+      }
       let result;
       const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
@@ -1174,7 +1195,8 @@ const roomAccess = {
       } else apply();
       if (trace) {
         try {
-          trackerContext.activity.onDiff(diffObjects(trace.before, snapshotObjects(room.doc)));
+          trace.off?.();
+          trackerContext.activity.onDiff(trace.before ? diffObjects(trace.before, snapshotObjects(room.doc)) : { tooLarge: true, touched: [...trace.touched] });
         } catch (err) {
           log('activity: could not read the change of a write', err?.message);
         }
@@ -1199,6 +1221,7 @@ const roomAccess = {
       }
       return result;
     } finally {
+      trace?.off?.();
       room.releaseIfIdle();
     }
   },
@@ -1747,6 +1770,7 @@ if (config.authEnabled) {
   });
   events.on('user-removed', ({ userId } = {}) => {
     for (const ws of socketsOf(userId)) refresh(ws, true);
+    activity.removeUser(userId); // the agent activity made with that person's tokens, revert data included (docs/agent-presence.md)
   });
   // A workspace that turns read-only (or back) applies to sockets that are already open, and only a flip of that switch
   // (not a banner, a seat limit or a repeated value) tells the clients, who then ask /api/me what is true. `send` skips
@@ -1991,6 +2015,7 @@ async function stopRelay() {
   clearInterval(pinger);
   await closeKeyFloorReporter();
   cloud?.close();
+  activity.flush(); // the activity logs that changed in the last moments
   api?.flushTelemetry?.(); // the running hour's report goes to its file: one small synchronous write, nothing to wait for
   // A snapshot hold must never turn a shutdown save into a deferred one: the process is about to exit.
   const saveNow = () => (snapshotBarrier ? snapshotBarrier.allowWrites(saveAllRooms) : saveAllRooms());

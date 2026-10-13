@@ -2537,7 +2537,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       if (out.audit) recordAudit(actor, tool.name, out.audit.boardId, out.audit.room, out.audit);
       if (call?.diffs.length && out.audit?.boardId) {
         try {
-          activity.record(out.audit.boardId, { userId: actor.createdBy, tokenName: actor.tokenName, userName: actor.userName, tool: tool.name, diff: composeDiffs(call.diffs) });
+          const diff = composeDiffs(call.diffs);
+          // notes kept private until the board is revealed are counted but their ids are not listed to people who cannot see them
+          const privateIds = diff.tooLarge ? [] : Object.entries(diff).filter(([, d]) => (d.after ?? d.before)?.privateStep).map(([id]) => id);
+          activity.record(out.audit.boardId, { userId: actor.createdBy, tokenName: actor.tokenName, userName: actor.userName, tool: tool.name, diff, privateIds });
         } catch (err) {
           log('mcp: could not write an activity entry', err?.message);
         }
