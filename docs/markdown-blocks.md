@@ -42,13 +42,15 @@ The stored height `h` is the height of the drawn content (hit areas, selection a
 ## Where it appears
 
 - **Board summary** (MCP `board summary`, `server/board-export.mjs`): the block's source, quoted, so its headings and lists do not become the summary's.
-- **MCP**: `create_objects` accepts `type: "markdown"` with `text` (1 to 4,000 characters over MCP; the board allows 20,000), `x`, `y`, `w?`, `h?`, `fontSize?`; `update_objects` can change `text`, `fontSize`, `textColor`, `fill` and the box. The text is returned by the read tools like any text.
+- **MCP**: `create_objects` accepts `type: "markdown"` with `text` (1 to 4,000 characters over MCP; the board allows 20,000), `x`, `y`, `w?`, `h?`, `fontSize?` and `lineHeight?` (0.8 to 3); `update_objects` can change `text`, `fontSize`, `lineHeight`, `textColor`, `fill` and the box. The text is returned by the read tools like any text.
 - **Export**: PNG and SVG draw it; `.drift` keeps the source (it is the `text` field).
 - **Copy as Markdown**: a button in the quick-action bar and the properties panel copies the source.
 - **Screen readers**: the outline names a block "Markdown block, "<first heading or line>"" and describes it with its plain text and the number of tasks and ticked tasks.
 - **Layers**: named by its first heading or line.
 - **Templates**: a template may hold Markdown blocks.
 - **AI**: the AI bar reads the block's text where it reads other text; it does not write Markdown blocks (follow-up).
+
+När du lämnar `lineHeight` tomt används 1.45. När du ändrar värdet ändras radavståndet i hela blocket. Rubriker behåller sin storlek i förhållande till brödtexten.
 
 ## Themes and phones
 

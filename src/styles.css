@@ -423,6 +423,7 @@ select.input {
 .props-fold { display: none; }
 .field { margin-top: 12px; }
 .field-label { margin-bottom: 6px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
+.line-height-custom { margin-top: 4px; color: var(--tray-muted); font-size: 12px; line-height: 1.3; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .row2 .field { margin-top: 12px; }
 .swatches { display: flex; flex-wrap: wrap; gap: 5px; }

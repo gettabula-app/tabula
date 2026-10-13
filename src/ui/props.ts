@@ -31,6 +31,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export const HAS_TEXT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'markdown', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component'].includes(o.type);
+const HAS_LINE_HEIGHT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'markdown'].includes(o.type);
 export const HAS_FILL = (o: Obj) => isBox(o) && ['shape', 'markdown', 'frame', 'uml-class', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-final'].includes(o.type);
 export const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && !isSticker(o) && ['shape', 'path', 'icon', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-initial', 'uml-final'].includes(o.type));
 
@@ -95,7 +96,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     const styleSame = styleSel.length > 0 && styleSel.every((o) => o.type === styleFirst.type);
     const s = styleOf(styleFirst);
     const up = (patch: Record<string, unknown>, filter?: (o: Obj) => boolean) => app.updateSelected(patch, filter);
-    const upLeaves = (patch: Record<string, unknown>, filter?: (o: Obj) => boolean) => app.updateSelectedLeaves(patch, filter);
+    const upLeaves = (patch: Record<string, unknown> | ((o: Obj) => Record<string, unknown>), filter?: (o: Obj) => boolean) => app.updateSelectedLeaves(patch, filter);
     const edit = app.styleEdit;
     /** Live preview, revert and commit of one patch shape, for a control. */
     // a control from an earlier render (a stray timer) must not write to whatever is selected now
@@ -210,6 +211,18 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         ...live((v) => ({ fontWeight: v }), HAS_TEXT),
       });
       text.push(h('div', { class: 'row2' }, field('Size', size), field('Weight', weight)));
+      if (styleSel.some(HAS_LINE_HEIGHT)) {
+        const presets = [1, 1.15, 1.3, 1.5, 2];
+        const lineHeight = sharedLeaves((o) => styleOf(o).lineHeight, HAS_LINE_HEIGHT);
+        const control = segmented(presets.map((value) => ({
+          value, label: String(value), ariaLabel: `Line height ${value}`,
+        })), typeof lineHeight === 'number' && presets.includes(lineHeight) ? lineHeight : undefined,
+        (value) => upLeaves((o) => ({ lineHeight: value === 1.3 && o.type !== 'markdown' ? undefined : value }), HAS_LINE_HEIGHT), 'Line height');
+        const custom = typeof lineHeight === 'number' && !presets.includes(lineHeight)
+          ? h('div', { class: 'line-height-custom' }, `Custom ${lineHeight}`)
+          : null;
+        text.push(field('Line height', h('div', null, control, custom)));
+      }
       // a Markdown block always reads from the left: its alignment is not a choice
       if (styleSel.some((o) => o.type !== 'markdown')) {
         text.push(field('Align', segmented([

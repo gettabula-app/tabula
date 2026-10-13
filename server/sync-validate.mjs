@@ -355,10 +355,10 @@ function tableCountCodes(value, only) {
 
 /** Per type: its own fields added to BOX (or, for connector and group, a list of their own). */
 export const FIELDS = Object.freeze({
-  shape: { ...BOX, kind: oneOf(SHAPE_KINDS) },
-  sticky: { ...BOX },
-  text: { ...BOX },
-  markdown: { ...BOX },
+  shape: { ...BOX, kind: oneOf(SHAPE_KINDS), lineHeight: num(0.8, 3) },
+  sticky: { ...BOX, lineHeight: num(0.8, 3) },
+  text: { ...BOX, lineHeight: num(0.8, 3) },
+  markdown: { ...BOX, lineHeight: num(0.8, 3) },
   // a table (docs/tables.md): the header flags, and rows, columns, widths and cells as keys of their own, checked by tablePartCheck
   table: { ...BOX, headerRow: bool, headerCol: bool },
   frame: { ...BOX, name: str(LIMITS.name) },

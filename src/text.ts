@@ -88,10 +88,10 @@ export interface TextLayout {
 }
 
 /** Wrap text, shrinking the font (down to `minSize`) until it fits the height. */
-export function fitText(text: string, slug: string | undefined, weight: number, size: number, w: number, h: number, minSize = 9): TextLayout {
+export function fitText(text: string, slug: string | undefined, weight: number, size: number, w: number, h: number, minSize = 9, lineHeight = 1.3): TextLayout {
   let s = size;
   for (;;) {
-    const lh = Math.round(s * 1.3 * 100) / 100;
+    const lh = Math.round(s * lineHeight * 100) / 100;
     const lines = wrap(text, fontCss(slug, s, weight), w);
     const height = lines.length * lh;
     if (height <= h || s <= minSize) return { lines, size: s, lineHeight: lh, height };

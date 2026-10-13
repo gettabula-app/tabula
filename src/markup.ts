@@ -123,6 +123,7 @@ export function styleOf(o: Obj) {
     font: b.font ?? 'satoshi',
     fontWeight: num(b.fontWeight, d.fontWeight),
     fontSize: num(b.fontSize, d.fontSize),
+    lineHeight: num(b.lineHeight, o.type === 'markdown' ? 1.45 : 1.3),
     textColor: safeColor(b.textColor, o.type === 'sticky' ? inkOn(fill) : d.textColor),
     align: b.align ?? d.align,
     valign: b.valign ?? d.valign,
@@ -144,9 +145,9 @@ export function layoutText(
   s: ReturnType<typeof styleOf>, opts: { valign?: VAlign; shrink?: boolean } = {},
 ): { lines: string[]; size: number; lineHeight: number; height: number; top: number } {
   const { lines, size, lineHeight, height } = opts.shrink
-    ? fitText(text, s.font, s.fontWeight, s.fontSize, box.w, box.h)
+    ? fitText(text, s.font, s.fontWeight, s.fontSize, box.w, box.h, 9, s.lineHeight)
     : (() => {
-        const lh = n(s.fontSize * 1.3);
+        const lh = n(s.fontSize * s.lineHeight);
         const ls = wrap(text, fontCss(s.font, s.fontSize, s.fontWeight), box.w);
         return { lines: ls, size: s.fontSize, lineHeight: lh, height: ls.length * lh };
       })();
@@ -173,7 +174,7 @@ export function textBlock(
 export function textHeight(o: BaseObj): number {
   const s = styleOf(o);
   const lines = wrap(o.text || ' ', fontCss(s.font, s.fontSize, s.fontWeight), o.w);
-  return Math.max(s.fontSize * 1.3, lines.length * s.fontSize * 1.3);
+  return Math.max(s.fontSize * s.lineHeight, lines.length * s.fontSize * s.lineHeight);
 }
 
 function wrapG(o: BaseObj, inner: string, opacity: number) {
@@ -264,7 +265,7 @@ function textMarkup(o: BaseObj, ctx: MarkupCtx) {
 /** What the Markdown block lays its source out with: the object's own font, size and weight. */
 export function markdownStyle(o: BaseObj): MdStyle {
   const s = styleOf(o);
-  return { font: s.font, size: s.fontSize, weight: s.fontWeight };
+  return { font: s.font, size: s.fontSize, weight: s.fontWeight, lineHeight: s.lineHeight };
 }
 
 /** The height a Markdown block needs for its source at its current width (the app, the editor and the height heal fit the object to it). */
