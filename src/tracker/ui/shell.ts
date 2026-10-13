@@ -47,6 +47,8 @@ type TrackerSort = { field: TrackerSortField; direction: 'asc' | 'desc' };
 export interface TrackerViewerState {
   tab: TrackerView;
   viewId: string | null;
+  /** The chosen saved view's own filter (from runView), in memory only: the element lists it in place of the tab's query. */
+  viewFilter: string[] | null;
   filter: string[];
   queryText: string;
   group: ListGroupBy;
@@ -93,7 +95,7 @@ export function trackerViewerState(store: TrackerStore, viewerId: string, tracke
   const existing = byViewer.get(stateKey);
   if (existing) return existing;
   const state: TrackerViewerState = {
-    tab: defaultTab, viewId: null, filter: [], queryText: '', group: 'state',
+    tab: defaultTab, viewId: null, viewFilter: null, filter: [], queryText: '', group: 'state',
     sort: defaultTab === 'my' ? { field: 'priority', direction: 'asc' } : { field: 'updatedAt', direction: 'desc' },
     allSort: { field: 'updatedAt', direction: 'desc' }, mySort: { field: 'priority', direction: 'asc' },
     density: 'comfortable', columns: new Set<Column>([...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]), collapsedGroups: new Set(),
@@ -183,6 +185,8 @@ function isTextTarget(target: EventTarget | null): boolean {
 
 function stableQuery(state: TrackerViewerState): TrackerListQuery {
   // The REST list route currently accepts filters, q and limit. Grouping, facets and sorting are applied locally.
+  // A chosen saved view runs its own filter (the element's tab is All while one is open).
+  if (state.viewId && state.viewFilter) return { filter: [...state.viewFilter], q: state.queryText.trim() || undefined, limit: 50 };
   const filters = state.tab === 'my' && state.mySubtab === 'active' ? ['assignee:me', ...state.filter] : [...state.filter];
   return {
     filter: filters, q: state.queryText.trim() || undefined, limit: 50,
@@ -255,6 +259,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const elementMode = options.element === true;
   // an element shows All, My or Board; a view stored from before (inbox, projects) reads as All
   if (elementMode && state.tab !== 'all' && state.tab !== 'my' && state.tab !== 'board') state.tab = 'all';
+  if (elementMode && state.viewId) state.tab = 'all';
   let fullScreen = options.fullScreen === true;
   let elementEmpty = false;
   let elementDenied = false;
@@ -317,6 +322,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const elementSwitchHost = h('div', { class: 'trk-element-switch' });
   let elementSwitcher: HTMLElement | null = null;
   const elementBack = h('button', { class: 'trk-small-button trk-element-back', type: 'button', onclick: () => setTicket(null) }, 'Back');
+  const elementViewsButton = h('button', { class: 'trk-element-views', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, 'Views');
+  elementViewsButton.hidden = true;
   const elementMenuButton = h('button', {
     class: 'trk-icon-button trk-element-menu-button', type: 'button', 'aria-label': 'Tracker menu', 'aria-haspopup': 'menu', 'data-tip': 'Tracker menu',
   }, icon('dots', 16));
@@ -330,7 +337,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   root.append(fullscreenStrip, elementMode
     ? h('header', { class: 'trk-header trk-element-header' },
       h('div', { class: 'trk-element-title' }, elementName, elementSub),
-      h('div', { class: 'trk-element-actions' }, elementSwitchHost, elementBack, newButton, fullscreenButton, elementMenuButton))
+      h('div', { class: 'trk-element-actions' }, elementSwitchHost, elementViewsButton, elementBack, newButton, fullscreenButton, elementMenuButton))
     : h('header', { class: 'trk-header' }, tabs,
       h('div', { class: 'trk-header-actions' }, commandButton, newButton, fullscreenButton)),
   offlineLine, errorBanner, content, live);
@@ -430,15 +437,19 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
 
   const elementTab = (): TrackerView => (state.tab === 'my' || state.tab === 'board' ? state.tab : 'all');
+  /** The saved view the element is showing, or null (the element only: the full-screen route keeps its own list). */
+  const elementView = (): string | null => (elementMode && state.viewId && state.viewFilter ? state.viewId : null);
   const elementTabLabel = () => ({ all: 'All', my: 'My', board: 'Board' } as const)[elementTab() as 'all' | 'my' | 'board'];
   /** The element header: All, My and Board (the shared segmented control), Back while a ticket is open, New ticket, expand, and the menu. */
   const renderElementHeader = () => {
     const width = layoutWidth;
-    const ticketOpen = Boolean(state.ticketKey);
-    elementName.textContent = ticketOpen ? state.ticketKey ?? 'Tracker' : 'Tracker';
-    elementSub.hidden = ticketOpen || width < 560;
-    // the switch hides while the unfiltered All view is empty, and when the person has no access; at under 360px it moves into the menu
-    const showSwitch = !ticketOpen && !elementDenied && !elementEmpty && width >= 360;
+    const inPlace = Boolean(state.ticketKey);
+    const view = elementView();
+    elementName.textContent = inPlace ? state.ticketKey ?? 'Tracker' : 'Tracker';
+    elementSub.textContent = view ? (getMeta()?.views ?? []).find((item) => item.id === view)?.name ?? 'Workspace tickets' : 'Workspace tickets';
+    elementSub.hidden = inPlace || width < 560;
+    // the switch hides while the unfiltered All view is empty, while a saved view is open (the menu's All returns), and when the person has no access; at under 360px it moves into the menu
+    const showSwitch = !inPlace && !elementDenied && !elementEmpty && !view && width >= 360;
     if (showSwitch && !elementSwitcher) {
       elementSwitcher = segmented<TrackerView>([{ value: 'all', label: 'All' }, { value: 'my', label: 'My' }, { value: 'board', label: 'Board' }], elementTab(),
         (value) => switchTab(value), 'Tickets');
@@ -450,7 +461,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       button.setAttribute('aria-checked', String(on));
     }
     elementSwitchHost.hidden = !showSwitch;
-    elementBack.hidden = !ticketOpen;
+    elementBack.hidden = !inPlace;
+    // the Views button comes and goes with the saved views the person can see; it is not in the way of a ticket in place
+    elementViewsButton.hidden = elementDenied || inPlace || (getMeta()?.views ?? []).length === 0;
     newButton.textContent = width >= 420 ? '+ New ticket' : '+';
     newButton.setAttribute('aria-label', 'New ticket');
     // one primary per view: while the element is empty the body's '+ New ticket' is the only one
@@ -474,6 +487,46 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       items.push(item('View: All', () => switchTab('all')), item('View: My', () => switchTab('my')), item('View: Board', () => switchTab('board')));
     }
     popover(anchor, h('div', { class: 'trk-element-menu-panel', role: 'menu' }, ...items), { className: 'trk trk-pop trk-element-menu', label: 'Tracker menu' });
+  };
+
+  /** The Views menu: All first (the element's tab), then the saved views the person can see. Choosing one runs it in place. */
+  const openElementViews = (anchor: HTMLElement) => {
+    const item = (label: string, current: boolean, action: () => void) => h('button', {
+      class: 'trk-display-option', type: 'button', role: 'menuitemradio', 'aria-checked': String(current),
+      onclick: () => { closePopover(); action(); },
+    }, label);
+    const items: HTMLElement[] = [item('All', !elementView() && state.tab === 'all', () => switchTab('all'))];
+    for (const view of getMeta()?.views ?? []) items.push(item(view.name, elementView() === view.id, () => { void chooseView(view.id); }));
+    popover(anchor, h('div', { class: 'trk-element-menu-panel', role: 'menu', 'aria-label': 'Views' }, ...items), { className: 'trk trk-pop trk-element-menu', label: 'Views' });
+  };
+
+  /** Runs a saved view (its filter is the list's query). A view that cannot be run is refreshed out of the menu and nothing changes. */
+  const chooseView = async (id: string) => {
+    try {
+      const page = await options.store.runView(id, { limit: 1 });
+      if (destroyed) return;
+      state.viewId = id; state.viewFilter = [...page.view.filter]; state.tab = 'all'; state.sort = { ...state.allSort };
+      state.ticketKey = null; state.cursorKey = null; state.selectedKeys = []; state.anchorKey = null;
+      options.onTabChange?.('all', id);
+      renderPage();
+    } catch {
+      if (!destroyed) void options.store.listViews().catch(() => undefined);
+    }
+  };
+
+  /** A saved view on the element at mount: it runs again; if it was deleted or is not visible, the element shows All, quietly (the board keeps the id). */
+  const restoreView = async (id: string) => {
+    try {
+      const page = await options.store.runView(id, { limit: 1 });
+      if (destroyed || state.viewId !== id) return;
+      state.viewFilter = [...page.view.filter];
+      renderPage();
+    } catch {
+      if (destroyed || state.viewId !== id) return;
+      state.viewId = null; state.viewFilter = null;
+      void options.store.listViews().catch(() => undefined);
+      renderPage();
+    }
   };
 
   const renderTabs = () => {
@@ -686,7 +739,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const issuesForView = (cache: typeof currentCache): TrackerTicket[] => {
     const tickets = cache.tickets.map((row) => ticketFromListRow(row as unknown as TrackerRow, meta!, options.trackerId));
-    if (state.tab !== 'my') return tickets;
+    if (state.tab !== 'my' || elementView()) return tickets;
     const me = getMeta()?.me.userId;
     if (!me) return [];
     if (state.mySubtab === 'created') return tickets.filter((ticket) => ticket.creator.type === 'user' && ticket.creator.id === me);
@@ -763,7 +816,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     skeletonHost.hidden = !(cache.loading && cache.tickets.length === 0);
     const filterActive = state.filter.length > 0 || Boolean(state.queryText.trim());
     const wasEmpty = elementEmpty;
-    elementEmpty = elementMode && !cache.loading && tickets.length === 0 && state.tab === 'all' && !filterActive;
+    elementEmpty = elementMode && !cache.loading && tickets.length === 0 && state.tab === 'all' && !filterActive && !elementView();
     if (elementMode && wasEmpty !== elementEmpty) updateActions(); // the header's New ticket comes and goes with the empty state
     const columns: Column[] = elementMode ? elementColumns(layoutWidth) : visibleColumns(layoutWidth, state.columns);
     if (elementMode && !cache.loading && tickets.length === 0) {
@@ -1665,10 +1718,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     else setFullscreen(!fullScreen);
   });
   elementMenuButton.addEventListener('click', () => openElementMenu(elementMenuButton));
+  elementViewsButton.addEventListener('click', () => openElementViews(elementViewsButton));
   stopStore = options.store.subscribe((snapshot) => {
     meta = snapshot.meta ?? meta;
     if (snapshot.metaError) showError(snapshot.metaError.message);
     updateActions();
+    if (elementMode) renderElementHeader();
     if (snapshot.meta && (state.tab === 'all' || state.tab === 'my') && !state.ticketKey && !stopList) startWatch();
     if (snapshot.meta && state.tab === 'board' && !state.ticketKey && stopBoard.length === 0) startBoardWatch();
     if (!snapshot.metaLoading && !meta && !snapshot.metaError) showError('Tracker information could not be loaded.');
@@ -1687,7 +1742,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   void options.store.loadMeta().then((loaded) => {
     meta = loaded;
     updateActions();
-    if (state.tab === 'all' || state.tab === 'my') startWatch();
+    if (elementMode) void options.store.listViews().catch(() => undefined);
+    if (elementMode && state.viewId) void restoreView(state.viewId);
+    else if (state.tab === 'all' || state.tab === 'my') startWatch();
     else if (state.tab === 'board') startBoardWatch();
   }).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load tracker information.'));
   renderPage();

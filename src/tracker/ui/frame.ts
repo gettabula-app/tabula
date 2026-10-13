@@ -150,6 +150,7 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
         return path ? `${location.origin}${path}` : null;
       },
       initialTab: typeof obj.view === 'string' ? obj.view as TrackerView : 'all',
+      onTabChange: (_tab, viewId) => persistView(mount, viewId),
       initialViewId: typeof obj.viewId === 'string' ? obj.viewId : undefined,
       initialTicketKey: mount.obj.trackerId === options.initialTrackerId ? options.initialTicketKey ?? obj.focusKey : obj.focusKey,
       boardName: app.store.getMeta().name, layoutWidth: obj.w,
@@ -162,6 +163,14 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
       onPointerPress: () => { if (mount.shell) { app.setSelection([mount.obj.id]); mount.shell.focus(); } },
     });
     reposition(mount);
+  };
+
+  /** The chosen saved view is kept on the object (viewId) so the element opens on it. A read-only board keeps the pick for this session only. */
+  const persistView = (mount: FrameMount, viewId: string | undefined) => {
+    const obj = lookup(mount.obj.id);
+    if (!obj || app.readOnly || (obj.viewId ?? undefined) === viewId) return;
+    // not an undo step: the view is how the element looks, not an edit to the board
+    app.store.transactAs(() => app.store.update(obj.id, { viewId: viewId ?? undefined }), 'tracker-view');
   };
 
   const destroyShell = (mount: FrameMount) => {

@@ -629,6 +629,10 @@
   height: 30px; min-height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: 500 13px/1 var(--ui);
 }
 .trk.trk-element .trk-element-back:hover { background: var(--tray-hover); }
+.trk.trk-element .trk-element-views {
+  height: 30px; min-height: 30px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font: 500 13px/1 var(--ui);
+}
+.trk.trk-element .trk-element-views:hover { background: var(--tray-hover); }
 .trk.trk-element .trk-element-menu-panel { display: grid; min-width: 160px; gap: 2px; padding: 4px; }
 .trk.trk-element .trk-all-issues { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; }
 .trk.trk-element .trk-content { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
@@ -693,7 +697,7 @@
 @media (pointer: coarse) {
   .trk.trk-element .trk-element-header { height: auto; min-height: 44px; padding-block: 4px; }
   .trk.trk-element .trk-primary-button, .trk.trk-element .trk-element-back, .trk.trk-element .trk-element-expand,
-  .trk.trk-element .trk-element-menu-button { height: 44px; min-height: 44px; }
+  .trk.trk-element .trk-element-menu-button, .trk.trk-element .trk-element-views { height: 44px; min-height: 44px; }
   .trk.trk-element .trk-primary-button, .trk.trk-element .trk-element-back { min-width: 44px; }
   .trk.trk-element .trk-element-expand, .trk.trk-element .trk-element-menu-button { width: 44px; min-width: 44px; }
   .trk.trk-element .trk-list-row { min-height: 40px; height: 40px; }
