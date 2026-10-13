@@ -3,7 +3,7 @@
 // SVG and PNG exports, and the height the editor and the app fit the object to.
 
 import { fontCss, measure } from './text';
-import { type Align, type Block, type Inline, type ListItem, parseMarkdown } from './markdown';
+import { type Align, type Block, type Inline, type ListItem, parseInlineText, parseMarkdown } from './markdown';
 
 export interface MdStyle {
   /** Fontshare slug, or 'system' (src/fonts.ts). */
@@ -287,3 +287,21 @@ export function layoutMarkdown(src: string, width: number, style: MdStyle): MdLa
 export function markdownHeight(src: string, width: number, style: MdStyle): number {
   return layoutMarkdown(src, width, style).height;
 }
+
+/**
+ * Inline Markdown only (bold, italic, code, strike, links; no headings, lists or tables), laid out in a column `width` wide from the top left at 0,0:
+ * what a table cell shows (docs/tables.md). A line break in the text is a line break on the page. `height` is the space the lines take.
+ */
+export function layoutInlineText(src: string, width: number, style: MdStyle, opts: { size?: number; weight?: number; align?: Align } = {}): MdLayout {
+  const builder = new Builder(style);
+  const size = opts.size ?? style.size;
+  const inline: Inline[] = [];
+  src.split('\n').forEach((line, i) => {
+    if (i > 0) inline.push({ t: 'br' });
+    inline.push(...parseInlineText(line));
+  });
+  const end = builder.inline(inline, 0, 0, Math.max(20, width), size, opts.weight ?? style.weight, false, opts.align ?? null);
+  return { items: builder.items, height: Math.max(size * LINE, end) };
+}
+
+export const INLINE_LINE_HEIGHT = LINE;

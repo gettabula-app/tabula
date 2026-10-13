@@ -18,7 +18,7 @@ import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, objBounds, pointInRect, rectContains, rectOfPoints, rectsIntersect,
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
-import { cardBody, kanbanHeaderControls, markdownBoxHeight, objectMarkup, styleOf, textHeight } from './markup';
+import { cardBody, kanbanHeaderControls, markdownBoxHeight, objectMarkup, styleOf, tableBoxSize, tableStyle, textHeight } from './markup';
 import { cornerBox, cornerFactor, isCorner, keyResize, scaledText, type Corner, type TextKey } from './text-resize';
 import {
   addLane, addLaneRefusal, moveLaneRefusal, laneReorderRefusal, moveLaneTo, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
@@ -43,6 +43,10 @@ import { guestMark } from './ui/guest-mark';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
 import { watchMarkdownHeights } from './markdown-heal';
+import { watchTableSizes } from './table-heal';
+import { cellAt, layoutTable } from './table-layout';
+import { TableController, newTableId } from './table-ui';
+import { MAX_TABLE_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS, DEFAULT_COL_WIDTH, gridChars, newTableFields, parseGrid, tableFromGrid } from '../shared/tables';
 import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
@@ -78,6 +82,7 @@ export type Tool =
   | { kind: 'sticky' }
   | { kind: 'text' }
   | { kind: 'markdown' }
+  | { kind: 'table' }
   | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'connector'; relation?: UmlRelation }
   | { kind: 'pen' }
@@ -130,6 +135,11 @@ export class BoardApp {
   readonly r: Renderer;
   readonly flow: Flow;
   readonly editor: TextEditor;
+  /** The cells of a table: selecting them, the row and column operations, the clipboard (src/table-ui.ts). */
+  private tablesController: TableController | null = null;
+  get tables(): TableController {
+    return (this.tablesController ??= new TableController(this));
+  }
   /** The inline "+ Add card" input (docs/kanban.md, Cards). */
   readonly cardInput: CardInput;
   /** The card a keyboard move is on: it shows the ring and the "Moving" tag until the selection changes. */
@@ -287,6 +297,7 @@ export class BoardApp {
     });
     this.disposers.push(this.watchCardHeights());
     this.disposers.push(this.watchMarkdownHeights());
+    this.disposers.push(this.watchTableSizes());
 
     this.bindPointer();
     this.bindKeys();
@@ -342,6 +353,24 @@ export class BoardApp {
     });
   }
 
+  /** Keeps a table's stored size equal to its columns and rows after remote edits, agent writes and on load. */
+  private watchTableSizes(): () => void {
+    return watchTableSizes({
+      store: this.store,
+      role: () => this.role,
+      busy: () => Boolean(this.drag || this.editor.active || this.cardInput.active),
+      hidden: (o) => !this.store.isShown(o) || this.flow.isHidden(o),
+    });
+  }
+
+  /** Fits a table object to its columns and rows after this person changed it (the same size the heal gives everyone else). */
+  fitTable(id: Id) {
+    const o = this.store.get(id);
+    if (!o || o.type !== 'table') return;
+    const size = tableBoxSize(o as BaseObj);
+    if (Math.abs(o.w - size.w) > 0.5 || Math.abs(o.h - size.h) > 0.5) this.store.transact(() => this.store.update(id, size));
+  }
+
   // ---------------------------------------------------------------- events
 
   on(ev: Events, fn: () => void) {
@@ -358,6 +387,7 @@ export class BoardApp {
   private emitSelection() {
     if (this.kbMoving && (this.selection.length !== 1 || this.selection[0] !== this.kbMoving)) this.clearMoving();
     this.r.setOverlay({ selection: this.selection, enteredGroup: this.scope });
+    this.tables.selectionChanged();
     this.conn.awareness.setLocalStateField('sel', this.selection);
     this.emit('selection');
   }
@@ -893,6 +923,8 @@ export class BoardApp {
       this.mdDown = { owner: mdOwner, at };
       if (!second && (this.selection.includes(mdOwner) || e.ctrlKey || e.metaKey)) return;
     } else this.mdDown = null;
+    // cells of a selected table: a press selects the cell under it (Shift extends the range), and one on a column border resizes the column
+    if (e.button === 0 && this.tool.kind === 'select' && !this.readOnly && this.tables.pointerDown(e, (this.hit(this.worldOf(e)) ?? null))) return;
     // another pointer going down (a pinch, a second device) gives up a lane drag, overlay and all
     if (this.drag?.mode === 'lane') this.cancelCardDrag();
     this.cancelLongPress();
@@ -1867,6 +1899,7 @@ export class BoardApp {
     else if (t === 'select' && top?.type === 'container' && this.kanbanControlAt(top.id, p)) cursor = 'pointer';
     else if (t === 'select' && top?.type === 'lane' && !this.readOnly && this.laneRegion(top.id, p) === 'menu') cursor = 'pointer';
     else if (live?.type === 'lane' && t === 'select' && !this.readOnly && this.laneRegion(live.id, p) === 'add') cursor = 'pointer';
+    else if (t === 'select' && !this.readOnly && live?.type === 'table' && this.tables.overBorder(p, live)) cursor = 'col-resize';
     else if (live && t === 'select' && !this.readOnly) cursor = this.flow.isVoting() && (live.type === 'sticky' || live.type === 'shape') ? 'pointer' : 'move';
     else if (lockedTop && t === 'select' && !this.readOnly && this.flow.isVoting() && (lockedTop.type === 'sticky' || lockedTop.type === 'shape')) cursor = 'pointer';
     this.r.svg.style.cursor = cursor;
@@ -2149,6 +2182,7 @@ export class BoardApp {
       case 'sticky': return { w: 192, h: 192 };
       case 'text': return { w: 240, h: 28 };
       case 'markdown': return { w: 360, h: 120 };
+      case 'table': return { w: DEFAULT_COL_WIDTH * 3, h: 3 * 40 };
       case 'frame': return { w: 960, h: 600 };
       case 'shape': return shapeDefaultSize(t.shape);
       case 'uml': return { w: t.def.w, h: t.def.h };
@@ -2162,6 +2196,13 @@ export class BoardApp {
       case 'sticky': return this.makeObj('sticky', rect);
       case 'text': return this.makeObj('text', { ...rect, h: Math.max(rect.h, 28) });
       case 'markdown': return this.makeObj('markdown', { ...rect, w: Math.max(rect.w, 160), h: Math.max(rect.h, 60) });
+      case 'table': {
+        // a dragged box asks for as many columns and rows as fit it; a click makes 3 x 3
+        const cols = Math.min(MAX_TABLE_COLS, Math.max(1, Math.round(rect.w / DEFAULT_COL_WIDTH)));
+        const rows = Math.min(MAX_TABLE_ROWS, Math.max(1, Math.round(rect.h / 40)));
+        const o = this.makeObj('table', { x: rect.x, y: rect.y, w: cols * DEFAULT_COL_WIDTH, h: rows * 40 }, newTableFields(rows, cols, newTableId) as Partial<BaseObj>);
+        return { ...o, ...tableBoxSize(o) };
+      }
       case 'frame': return this.makeObj('frame', rect, { name: 'Frame' });
       case 'shape': return this.makeObj('shape', rect, { kind: t.shape });
       case 'uml': return this.makeObj(t.def.type, rect, structuredClone(t.def.defaults || {}));
@@ -2197,6 +2238,16 @@ export class BoardApp {
     if (o.type === 'frame') this.adoptInto(o);
     this.setTool({ kind: 'select' });
     if (o.type === 'sticky' || o.type === 'text' || o.type === 'shape' || o.type === 'markdown') this.editor.start(o.id);
+    if (o.type === 'table') this.startFirstCell(o.id);
+  }
+
+  /** Opens the first cell of a table for typing. */
+  private startFirstCell(id: Id) {
+    const o = this.store.get(id);
+    if (!o || o.type !== 'table') return;
+    const layout = layoutTable(o as unknown as Record<string, unknown>, tableStyle(o as BaseObj));
+    const first = layout.cells[0];
+    if (first) this.editor.startCell(id, first.rowId, first.colId);
   }
 
   /** A new frame drawn over existing objects takes them as children. */
@@ -2325,6 +2376,14 @@ export class BoardApp {
       this.openCardDialog(hit.id);
       return;
     }
+    if (hit?.type === 'table') {
+      // a double click edits the cell under it
+      const layout = layoutTable(hit as unknown as Record<string, unknown>, tableStyle(hit as BaseObj));
+      const cell = cellAt(layout, p.x - hit.x, p.y - hit.y);
+      this.setSelection([hit.id]);
+      if (cell) this.editor.startCell(hit.id, cell.rowId, cell.colId);
+      return;
+    }
     if (hit) {
       if (hit.type === 'frame' || hit.type === 'tracker' || hit.type === 'icon' || hit.type === 'image' || hit.type === 'path' || hit.type === 'uml-initial' || hit.type === 'uml-final') {
         if (hit.type === 'frame') this.editor.start(hit.id);
@@ -2411,6 +2470,8 @@ export class BoardApp {
         return;
       }
       if (typing) return;
+      // cells selected on a table: Enter edits, the arrows and Tab move, Delete empties, Esc lets go of them
+      if (this.tables.key(e, k)) { e.preventDefault(); return; }
       const mod = e.metaKey || e.ctrlKey;
       const ro = this.readOnly;
       if (e.shiftKey && !e.altKey && !mod && (k === 'h' || k === 'v')) {
@@ -2442,7 +2503,7 @@ export class BoardApp {
       if (mod && k === ']') { e.preventDefault(); if (!ro) this.bringForward(); return; }
       if (mod && k === '[') { e.preventDefault(); if (!ro) this.sendBackward(); return; }
       if (mod && k === 'd') { e.preventDefault(); if (!ro) this.duplicate(); return; }
-      if (mod && k === 'c') { this.copy(); return; }
+      if (mod && k === 'c') { if (!this.tables.copy()) this.copy(); return; }
       if (mod && k === 'x') { if (!ro) { this.copy(); this.deleteSelection(); } return; }
       if (mod && (k === '=' || k === '+')) { e.preventDefault(); this.zoomBy(1.25); return; }
       if (mod && k === '-') { e.preventDefault(); this.zoomBy(0.8); return; }
@@ -2771,6 +2832,23 @@ export class BoardApp {
     return this.makeObj('text', { x: at.x, y: at.y, w, h: textHeight(probe) }, { text: content });
   }
 
+  /** Tab-separated lines (a copy from Excel, Sheets or Numbers) as a new table at the pointer; false when the text is not that. */
+  private pasteTable(text: string): boolean {
+    const lines = text.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.trim() !== '');
+    if (lines.length === 0 || !lines.every((l) => l.includes('\t'))) return false;
+    const grid = parseGrid(text);
+    if (!grid.length || Math.max(...grid.map((r) => r.length)) < 2) return false;
+    if (gridChars(grid) > MAX_TABLE_CHARS) { this.notify(`That is too much text for one table (up to ${MAX_TABLE_CHARS.toLocaleString('en-US')} characters).`); return true; }
+    const fields = tableFromGrid(grid, newTableId);
+    if (!fields) return false;
+    const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());
+    const probe = this.makeObj('table', { x: at.x, y: at.y, w: 100, h: 100 }, fields as Partial<BaseObj>);
+    const size = tableBoxSize(probe);
+    const o = { ...probe, ...size, x: at.x - size.w / 2, y: at.y - size.h / 2 };
+    this.createObject(o);
+    return true;
+  }
+
   pasteText(text: string) {
     if (this.readOnly) return;
     try {
@@ -2786,6 +2864,8 @@ export class BoardApp {
       }
     } catch { /* not JSON */ }
     if (this.clipboard.length && text === JSON.stringify({ driftboard: 1, objects: this.clipboard })) return;
+    // tab separated text with cells selected fills them; with none selected it makes a table (docs/tables.md)
+    if (this.tables.paste(text) || this.pasteTable(text)) return;
     // Preserve the clipboard's line breaks, removing only empty lines at either end.
     const lines = text.replace(/\r\n?/g, '\n').split('\n');
     while (lines.length && !lines[0].trim()) lines.shift();
@@ -2828,6 +2908,8 @@ export class BoardApp {
     const hit = this.hit(this.r.clientToWorld(e.clientX, e.clientY));
     if (!hit) return;
     if (!this.selection.includes(hit.id)) this.setSelection([hit.id]);
+    // a right click on a table's cell selects it, unless it is inside the cells already selected: the menu then acts on that cell or range
+    if (hit.type === 'table') this.tables.selectUnderPointer(hit, e);
     if (this.drag?.mode === 'pan') {
       this.drag = null;
       this.r.root.classList.remove('panning');
@@ -2901,6 +2983,9 @@ export class BoardApp {
     }
     if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
       this.store.update(o.id, { h: markdownBoxHeight({ ...o, ...patch } as BaseObj) });
+    }
+    if (o.type === 'table' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'headerRow' in patch || 'headerCol' in patch)) {
+      this.store.update(o.id, tableBoxSize({ ...o, ...patch } as BaseObj));
     }
     if (o.type === 'uml-class' && 'stereotype' in patch) {
       this.store.update(o.id, { h: classHeight({ ...o, ...patch } as BaseObj) });

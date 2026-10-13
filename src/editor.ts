@@ -5,12 +5,15 @@ import { center, connectorGeom, rotate } from './geometry';
 import { LABEL_FONT, labelBox, labelPill, layoutText, markdownBoxHeight, styleOf, textHeight } from './markup';
 import { fontFamily } from './fonts';
 import { MD_PAD } from './markdown-layout';
+import { TABLE_PAD_X, TABLE_PAD_Y, layoutTable } from './table-layout';
+import { MAX_CELL_CHARS, MAX_TABLE_CHARS, insertRowPatch, setCellPatch, tableModel } from '../shared/tables';
+import { newTableId } from './table-ui';
 import { CANVAS_INK } from './palette';
 import { classHeight, formatClass, parseClass } from './uml';
 import { KANBAN, LIMITS } from '../shared/containers';
 import { safeColor } from '../shared/colors';
 
-type EditMode = 'text' | 'class' | 'frame' | 'label';
+type EditMode = 'text' | 'class' | 'frame' | 'label' | 'cell';
 
 /** Objects whose edited text is a name, not their text. */
 const NAMED = (type: string) => type === 'frame' || type === 'container' || type === 'lane';
@@ -41,6 +44,10 @@ export function editColours(o: Obj, mode: EditMode): { color: string; background
 export class TextEditor {
   private ta: HTMLTextAreaElement;
   private id: Id | null = null;
+  /** The table cell being edited (mode 'cell'): its row and column ids. */
+  private cell: { rowId: string; colId: string } | null = null;
+  /** The text of the edited cell as last written to the board (a keystroke the table cannot hold is put back to it). */
+  private lastCellText = '';
   private mode: EditMode = 'text';
   private unsubCam: (() => void) | null = null;
   private original = '';
@@ -70,7 +77,11 @@ export class TextEditor {
         e.preventDefault();
         this.commit();
       }
-      if (e.key === 'Tab' && this.isMarkdown()) {
+      if (e.key === 'Tab' && this.mode === 'cell' && this.active) {
+        // a table cell: Tab and Shift+Tab move to the next and previous cell (Tab on the last cell adds a row); Enter is a new line in the cell
+        e.preventDefault();
+        this.moveCell(e.shiftKey ? -1 : 1);
+      } else if (e.key === 'Tab' && this.isMarkdown()) {
         // in Markdown a Tab indents (nested lists); Esc or Ctrl/Cmd+Enter leaves
         e.preventDefault();
         this.insertAtCursor('  ');
@@ -194,6 +205,78 @@ export class TextEditor {
     this.app.emit('editing');
   }
 
+  /** Edits one cell of a table in place (docs/tables.md): the textarea sits over the cell, and every keystroke writes that cell's own key. */
+  startCell(id: Id, rowId: string, colId: string) {
+    if (this.app.readOnly) return;
+    if (this.id) this.commit();
+    const o = this.app.store.get(id);
+    if (!o || o.locked || o.type !== 'table') return;
+    const model = tableModel(o as unknown as Record<string, unknown>);
+    if (!model.rows.includes(rowId) || !model.cols.includes(colId)) return;
+    this.id = id;
+    this.cell = { rowId, colId };
+    this.mode = 'cell';
+    this.original = model.cell(rowId, colId);
+    this.lastCellText = this.original;
+    this.ta.value = this.original;
+    this.selectionStart = this.selectionEnd = this.original.length;
+    this.ta.dataset.mode = 'cell';
+    this.ta.dataset.kind = 'table';
+    this.ta.placeholder = '';
+    this.ta.style.display = 'block';
+    this.app.r.setEditing(id);
+    this.app.store.undo.stopCapturing();
+    this.reposition();
+    this.unsubCam = this.app.r.onCamera(() => this.reposition());
+    // focused at once, so a Tab or a keystroke right after a move goes into this cell, not to the page behind it
+    this.ta.focus({ preventScroll: true });
+    this.ta.setSelectionRange(this.original.length, this.original.length);
+    this.rememberSelection();
+    requestAnimationFrame(() => {
+      if (this.id !== id || this.cell?.rowId !== rowId || this.cell?.colId !== colId) return;
+      this.ta.focus();
+      this.ta.setSelectionRange(this.ta.value.length, this.ta.value.length);
+      this.rememberSelection();
+    });
+    this.app.emit('editing');
+  }
+
+  /** The cell being edited, when a table cell is. */
+  get editingCell(): { id: Id; rowId: string; colId: string } | null {
+    return this.id && this.cell && this.mode === 'cell' ? { id: this.id, ...this.cell } : null;
+  }
+
+  /** Leaves this cell and edits the one `step` away in reading order (rows, then columns); a Tab past the last cell adds a row. */
+  private moveCell(step: 1 | -1) {
+    const here = this.editingCell;
+    if (!here) return;
+    const obj = this.app.store.get(here.id) as unknown as Record<string, unknown> | undefined;
+    if (!obj) return;
+    const model = tableModel(obj);
+    const r = model.rows.indexOf(here.rowId);
+    const c = model.cols.indexOf(here.colId);
+    const at = r * model.cols.length + c + step;
+    this.commit();
+    if (at < 0) return;
+    if (at >= model.rows.length * model.cols.length) {
+      const rowId = newTableId();
+      const patch = insertRowPatch(obj, model.rows.length - 1, rowId);
+      if (!patch) return;
+      this.app.store.transact(() => this.app.store.update(here.id, patch as never));
+      this.growTable(here.id);
+      this.startCell(here.id, rowId, model.cols[0]);
+      return;
+    }
+    this.startCell(here.id, model.rows[Math.floor(at / model.cols.length)], model.cols[at % model.cols.length]);
+  }
+
+  /** Fits the table object to its columns and rows after a change. */
+  private growTable(id: Id) {
+    const o = this.app.store.get(id);
+    if (!o || o.type !== 'table') return;
+    this.app.fitTable(id);
+  }
+
   reposition() {
     const id = this.id;
     const o = this.app.store.getPlaced(id ?? undefined);
@@ -226,6 +309,24 @@ export class TextEditor {
       return;
     }
     const b = o as BaseObj;
+    if (this.mode === 'cell' && b.type === 'table' && this.cell) {
+      // the textarea is the cell: same box, same padding and font as the drawn text, on the canvas colour so the cell's own text is not seen twice
+      const layout = layoutTable(b as unknown as Record<string, unknown>, { font: st.font, size: st.fontSize, weight: st.fontWeight });
+      const cell = layout.cells.find((x) => x.rowId === this.cell!.rowId && x.colId === this.cell!.colId);
+      if (!cell) { this.commit(); return; }
+      const header = (b.headerRow === true && cell.row === 0) || (b.headerCol === true && cell.col === 0);
+      ta.style.fontWeight = header ? '700' : String(st.fontWeight);
+      ta.style.textAlign = 'left';
+      ta.style.color = 'var(--ink)';
+      ta.style.background = 'var(--canvas, #fff)';
+      const scale = this.setEditorFont(st.fontSize);
+      ta.style.lineHeight = '1.45';
+      ta.style.padding = `${TABLE_PAD_Y / scale}px ${TABLE_PAD_X / scale}px`;
+      const c = center(b);
+      const tl = rotate({ x: b.x + cell.x, y: b.y + cell.y }, c, b.rotation || 0);
+      this.place(tl.x, tl.y, cell.w, cell.h, b.rotation || 0, z, scale);
+      return;
+    }
     if (b.type === 'markdown') {
       // the source in a monospace face over the block, as tall as it needs (the rendered block keeps its own height under it)
       ta.style.fontFamily = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
@@ -318,6 +419,17 @@ export class TextEditor {
         if (o.type === 'text') s.update(o.id, { h: textHeight({ ...(o as BaseObj), text: v }) });
         if (o.type === 'markdown') s.update(o.id, { h: markdownBoxHeight({ ...(o as BaseObj), text: v }) });
       });
+    } else if (this.mode === 'cell' && this.cell) {
+      const patch = setCellPatch(o as unknown as Record<string, unknown>, this.cell.rowId, this.cell.colId, v);
+      if (patch) {
+        s.transact(() => s.update(o.id, patch as never));
+        this.lastCellText = v;
+        this.app.fitTable(o.id);
+      } else if (this.original !== v) {
+        // past the cell limit or the table's total: the text stays as it was last accepted
+        this.ta.value = this.lastCellText;
+        this.app.notify(`That is as much text as this table can hold (a cell up to ${MAX_CELL_CHARS.toLocaleString('en-US')} characters, a table up to ${MAX_TABLE_CHARS.toLocaleString('en-US')}).`);
+      }
     } else if (this.mode === 'frame') {
       // lane and kanban names have limits (docs/kanban.md, Limits: 60 and 80 characters); a frame's name has none
       const max = o.type === 'lane' ? LIMITS.laneName : o.type === 'container' ? LIMITS.containerName : Infinity;
@@ -328,7 +440,7 @@ export class TextEditor {
       s.transact(() => s.update(o.id, { label: v || undefined }));
       this.reposition(); // the pill grows and wraps with the text
     }
-    if (o.type === 'text' || o.type === 'markdown') this.reposition();
+    if (o.type === 'text' || o.type === 'markdown' || this.mode === 'cell') this.reposition();
     else if (this.mode === 'text') {
       // re-centre vertically as lines are added
       requestAnimationFrame(() => this.reposition());
@@ -339,6 +451,7 @@ export class TextEditor {
     const id = this.id;
     if (!id) return;
     this.id = null;
+    this.cell = null;
     this.unsubCam?.();
     this.unsubCam = null;
     const o = this.app.store.get(id);

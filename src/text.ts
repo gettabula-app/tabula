@@ -34,7 +34,10 @@ export function measure(text: string, font: string): number {
 }
 
 /** Fonts finished loading: measurements taken with fallback faces are stale. */
-export const clearMeasureCache = () => cache.clear();
+let epoch = 0;
+export const clearMeasureCache = () => { cache.clear(); epoch++; };
+/** Changes whenever the measurements are cleared (fonts loaded): anything cached from measurements is stale after it. */
+export const measureEpoch = () => epoch;
 
 /** Greedy word wrap. Newlines are hard breaks; long words break by character. */
 export function wrap(text: string, font: string, maxWidth: number): string[] {

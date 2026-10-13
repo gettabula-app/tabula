@@ -42,6 +42,7 @@ export const ICONS = {
   sticky: '<path d="M5 4h14v10l-5 6H5z"/><path d="M14 20v-6h5"/>',
   text: '<path d="M5 6V4.5h14V6M12 4.5v15M9 19.5h6"/>',
   markdown: '<path d="M3 17V7l4 5 4-5v10M17 7v8m-3-3 3 3 3-3"/>',
+  table: '<rect x="4" y="5" width="16" height="14" style="rx:var(--radius-xs)"/><path d="M4 10h16M4 14.5h16M10 5v14"/>',
   rect: '<rect x="4" y="5" width="16" height="14" style="rx:var(--radius-xs)"/>',
   ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="7"/>',
   diamond: '<path d="M12 3.5l8.5 8.5-8.5 8.5L3.5 12z"/>',

@@ -343,6 +343,7 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
   const ctx = {
     ...app.r.ctx,
     editingId: null,
+    tableSelection: null,
     // a file shows the board's content: full detail at any zoom, and nothing of a drag, an input or the editing chrome
     zoom: 1,
     dragging: undefined,

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
+import { DEFAULT_COL_WIDTH, isTableKey, tableModel } from '../shared/tables';
 import { Comments } from '../src/comments';
 import { STICKY_COLORS as PALETTE } from '../src/palette';
 import { Store } from '../src/store';
@@ -95,6 +96,38 @@ describe('create', () => {
     expect(failure(() => planCreate(d, [{ type: 'markdown', text: '', x: 0, y: 0 }], who)).message).toMatch(/1 to/);
     expect(failure(() => planCreate(d, [{ type: 'markdown', text: 'x'.repeat(LIMITS.text + 1), x: 0, y: 0 }], who)).message).toMatch(/1 to/);
     expect(failure(() => planCreate(d, [{ type: 'markdown', text: 'x', x: 0, y: 0, fill: '#fff' }], who))).toBeInstanceOf(OpsError); // not a field a creator may set
+  });
+
+  it('creates a table from rows and replaces its cells through update_objects (TAB-121)', () => {
+    const d = new Y.Doc();
+    const res = create(d, [{ type: 'table', ref: 't', rows: [['Name', 'Note'], ['Ann', '**bold**']], headerRow: true, x: 10, y: 10 }]);
+    const t = new Store(d).get(res.refs.t) as any;
+    expect(t).toMatchObject({ type: 'table', headerRow: true, createdBy: 'user-1' });
+    const m = tableModel(t);
+    expect([m.rows.length, m.cols.length, m.cell(m.rows[0], m.cols[0]), m.cell(m.rows[1], m.cols[1])]).toEqual([2, 2, 'Name', '**bold**']);
+    expect([t.w, t.h]).toEqual([2 * DEFAULT_COL_WIDTH, 2 * 40]); // a first estimate: the app measures it properly
+    expect(JSON.stringify(getObjectsDetail(d, [res.refs.t]))).toContain('Ann');
+    update(d, [{ id: res.refs.t, rows: [['x'], ['y'], ['z']], headerCol: true }]);
+    const after = new Store(d).get(res.refs.t) as any;
+    const m2 = tableModel(after);
+    expect([m2.rows.length, m2.cols.length, after.headerCol]).toEqual([3, 1, true]);
+    expect(Object.keys(after).filter((k) => isTableKey(k)).length).toBe(3 + 1 + 3); // none of the old rows, columns or cells are left
+    expect(m2.cell(m2.rows[2], m2.cols[0])).toBe('z');
+  });
+
+  it('refuses a table with no rows, too many, a cell that is too long, or a size set by hand', () => {
+    const d = new Y.Doc();
+    const bad = (item: Record<string, unknown>) => failure(() => planCreate(d, [{ type: 'table', x: 0, y: 0, ...item }], who));
+    expect(bad({}).path).toBe('objects[0].rows');
+    expect(bad({ rows: [] }).message).toMatch(/1 to 100 rows/);
+    expect(bad({ rows: [[]] }).message).toMatch(/1 to 30 cell texts/);
+    expect(bad({ rows: Array.from({ length: 101 }, () => ['x']) }).message).toMatch(/1 to 100 rows/);
+    expect(bad({ rows: [['x'.repeat(1001)]] }).message).toMatch(/at most 1000 characters/);
+    expect(bad({ rows: [[3]] }).message).toMatch(/Must be a string/);
+    expect(bad({ rows: Array.from({ length: 100 }, () => Array.from({ length: 2 }, () => 'y'.repeat(1000))) }).message).toMatch(/at most 150,000 characters/);
+    expect(bad({ rows: [['x']], w: 300 })).toBeInstanceOf(OpsError); // the size follows the columns and rows
+    const res = create(d, [{ type: 'table', ref: 't', rows: [['x']], x: 0, y: 0 }]);
+    expect(failure(() => planUpdate(d, [{ id: res.refs.t, w: 500 }], who))).toBeInstanceOf(OpsError);
   });
 
   it('writes every object type in a form the real Store loads', () => {

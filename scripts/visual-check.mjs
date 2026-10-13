@@ -772,6 +772,34 @@ async function mdBlock(env, { selected }) {
 
 const LINK_OK = { url: 'https://www.example.com/articles/a-page-about-things', title: 'A page about things worth reading closely', description: 'A short description of what the page says, long enough to run onto a second line in the larger layouts.', siteName: 'Example', unfurl: 'ok', fetchedAt: 1 };
 
+/** A table beside the seed board (TAB-121, docs/tables.md): a header row, a right-aligned column, a filled cell and cells with Markdown, two of them selected. */
+async function tableBlock(env, { selected, editing }) {
+  const { tableFromGrid, tableModel, setAlignPatch, setFillPatch, setWidthPatch } = await import('../shared/tables.mjs');
+  let n = 0;
+  const base = tableFromGrid([['Item', 'Owner', 'Hours'], ['Write the **guide**', 'Ann', '12'], ['Review `export` and [links](https://example.com)', 'Ben', '4'], ['Ship', 'Cy', '2']], () => `v${(++n).toString(36)}`);
+  const m = tableModel(base);
+  const fields = { ...base, headerRow: true, ...setAlignPatch(base, m.cols[2], 'right'), ...setFillPatch(base, [m.rows[1]], [m.cols[1]], '#BCE88C'), ...setWidthPatch(base, m.cols[0], 240) };
+  const ids = { row1: m.rows[1], row2: m.rows[2], col0: m.cols[0] };
+  await env.page.evaluate((f) => {
+    const app = window.__board;
+    const s = app.store;
+    const all = app.r.contentBounds();
+    s.transactAs(() => s.create({ id: 'visual-table', type: 'table', x: all ? all.x + all.w + 120 : 0, y: all ? all.y : 0, w: 480, h: 160, rotation: 0, z: s.topZ(), font: 'satoshi', ...f }), 'visual');
+  }, fields);
+  await env.page.waitForTimeout(700);
+  await env.page.evaluate(({ sel, edit, ids: id }) => {
+    const app = window.__board;
+    app.r.fit(app.r.contentBounds(['visual-table']), 80, 1.3);
+    if (sel) {
+      app.setSelection(['visual-table']);
+      app.tables.select('visual-table', 1, 0);
+      app.tables.select('visual-table', 2, 1, true);
+    }
+    if (edit) app.editor.startCell('visual-table', id.row1, id.col0);
+  }, { sel: selected, edit: editing, ids });
+  await settle(env.page);
+}
+
 async function openAiKeyDialogWith({ page, base }, testReply) {
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   await page.route('**/api/me', async (route) => {
@@ -4822,6 +4850,20 @@ const STATES = {
     await mdBlock(env, { selected: true });
     await env.page.evaluate(() => window.__board.editor.start('visual-md'));
     await settle(env.page);
+    return { keepFocus: true };
+  },
+  // TAB-121: a table (docs/tables.md): drawn, with two cells selected, and with a cell being typed in
+  async 'table-block'(env) {
+    await openSeedBoard(env);
+    await tableBlock(env, { selected: false, editing: false });
+  },
+  async 'table-selected'(env) {
+    await openSeedBoard(env);
+    await tableBlock(env, { selected: true, editing: false });
+  },
+  async 'table-editing'(env) {
+    await openSeedBoard(env);
+    await tableBlock(env, { selected: true, editing: true });
     return { keepFocus: true };
   },
   async 'text-handles'(env) {

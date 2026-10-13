@@ -12,6 +12,7 @@ import {
 } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
+import { DEFAULT_COL_WIDTH, MAX_CELL_CHARS, MAX_TABLE_CHARS, gridChars, isTableKey, MAX_TABLE_COLS, MAX_TABLE_ROWS, tableFromGrid, tableModel } from '../shared/tables.mjs';
 
 export const LIMITS = Object.freeze({
   bodyBytes: 256 * 1024,
@@ -50,7 +51,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -423,6 +424,22 @@ export function summarise(o, textMax, detail = false) {
       out.alt = alt.text;
       if (alt.truncated) out.altTruncated = true;
     }
+  }
+  if (o.type === 'table') {
+    // A table (docs/tables.md): its cells as rows of cleaned text, in order, cut at a total size so one table cannot fill a model's context
+    const model = tableModel(o);
+    let budget = 20_000;
+    let truncated = false;
+    out.rows = model.rows.map((row) => model.cols.map((col) => {
+      const cell = cleanForModel(model.cell(row, col), Math.min(1000, textMax));
+      if (cell.truncated) truncated = true;
+      if (budget <= 0) { truncated = true; return ''; }
+      budget -= cell.text.length;
+      return cell.text;
+    }));
+    if (truncated) out.rowsTruncated = true;
+    if (o.headerRow === true) out.headerRow = true;
+    if (o.headerCol === true) out.headerCol = true;
   }
   if (o.type === 'link') {
     // A link card (docs/link-cards.md): the address and the page's own words. The title, description and site name are text from a
@@ -1203,11 +1220,23 @@ function textHeight(content, w, fontSize) {
   return r2(Math.max(LIMITS.sizeMin, lines * fontSize * 1.3));
 }
 
+/** The rows of a new table: 1 to MAX_TABLE_ROWS rows of 1 to MAX_TABLE_COLS cell texts of at most MAX_CELL_CHARS characters each. */
+function tableGrid(v, path) {
+  if (!Array.isArray(v) || v.length < 1 || v.length > MAX_TABLE_ROWS) throw invalid(path, `Must be a list of 1 to ${MAX_TABLE_ROWS} rows`);
+  const grid = v.map((row, r) => {
+    if (!Array.isArray(row) || row.length < 1 || row.length > MAX_TABLE_COLS) throw invalid(`${path}[${r}]`, `Must be a list of 1 to ${MAX_TABLE_COLS} cell texts`);
+    return row.map((cell, c) => text(cell, `${path}[${r}][${c}]`, 0, MAX_CELL_CHARS, (value) => [...value].length));
+  });
+  if (gridChars(grid) > MAX_TABLE_CHARS) throw invalid(path, `All the cells of a table together can hold at most ${MAX_TABLE_CHARS.toLocaleString('en-US')} characters`);
+  return grid;
+}
+
 const CREATE_KEYS = {
   sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'parent', 'flipX', 'flipY'],
   shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent', 'flipX', 'flipY'],
   text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent', 'flipX', 'flipY'],
   markdown: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'fontSize', 'parent', 'flipX', 'flipY'],
+  table: ['type', 'ref', 'rows', 'headerRow', 'headerCol', 'x', 'y', 'fontSize', 'parent', 'flipX', 'flipY'],
   frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
   link: ['type', 'ref', 'url', 'x', 'y', 'w', 'h', 'parent', 'flipX', 'flipY'],
@@ -1321,6 +1350,17 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
         const w = item.w === undefined ? 360 : size(item.w, at(path, 'w'));
         const fontSize = item.fontSize === undefined ? undefined : num(item.fontSize, at(path, 'fontSize'), LIMITS.fontMin, LIMITS.fontMax);
         Object.assign(fields, { w, h: item.h === undefined ? markdownHeightEstimate(content, w, fontSize ?? 16) : size(item.h, at(path, 'h')), text: content, fontSize });
+      } else if (type === 'table') {
+        // a table (docs/tables.md): `rows` is a grid of cell texts (inline Markdown); the size is an estimate that the app corrects when the board opens
+        const grid = tableGrid(required(item, 'rows', path), at(path, 'rows'));
+        const fontSize = item.fontSize === undefined ? undefined : num(item.fontSize, at(path, 'fontSize'), LIMITS.fontMin, LIMITS.fontMax);
+        const parts = tableFromGrid(grid, () => crypto.randomBytes(5).toString('hex').slice(0, 6));
+        const cols = Math.max(...grid.map((r) => r.length));
+        Object.assign(fields, parts, { w: cols * DEFAULT_COL_WIDTH, h: grid.length * 40, fontSize });
+        for (const key of ['headerRow', 'headerCol']) {
+          if (item[key] !== undefined && typeof item[key] !== 'boolean') throw invalid(at(path, key), 'Must be a boolean');
+          if (typeof item[key] === 'boolean') fields[key] = item[key];
+        }
       } else if (type === 'text') {
         const content = text(required(item, 'text', path), at(path, 'text'), 1, LIMITS.text);
         const w = item.w === undefined ? 240 : size(item.w, at(path, 'w'));
@@ -1381,6 +1421,8 @@ const UPDATABLE = {
   shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth'],
   text: [...BOX_FIELDS, 'text', 'fontSize', 'textColor'],
   markdown: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'fill'],
+  // a table's size follows its columns and rows, so w and h are not set here; `rows` replaces every cell (docs/tables.md)
+  table: ['x', 'y', 'rotation', 'parent', 'flipX', 'flipY', 'headerRow', 'headerCol', 'fontSize', 'rows'],
   frame: [...BOX_FIELDS, 'name', 'fill'],
   connector: ['from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
   group: ['name'],
@@ -1405,7 +1447,7 @@ const UPDATABLE = {
 const KNOWN_UPDATE_FIELDS = new Set([
   ...BOX_FIELDS, 'id', 'type', 'text', 'color', 'kind', 'fill', 'stroke', 'strokeWidth', 'name', 'fontSize', 'textColor',
   'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'rank', 'title', 'description', 'due', 'labels', 'link',
-  'ownerId', 'ownerName', 'ownerKind', 'stage', 'wip', 'wipMode', 'laneW', 'layout',
+  'ownerId', 'ownerName', 'ownerKind', 'stage', 'wip', 'wipMode', 'laneW', 'layout', 'rows', 'headerRow', 'headerCol',
 ]);
 const CLEARABLE = new Set(['parent', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'textColor', 'dash', 'label']);
 const GROUP_NAME_MAX = 80;
@@ -1465,10 +1507,19 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'x': case 'y': sets.set(key, coordinate(v, fieldPath)); break;
         case 'w': case 'h': sets.set(key, size(v, fieldPath)); break;
         case 'rotation': sets.set(key, (num(v, fieldPath, -3600, 3600) * Math.PI) / 180); break;
-        case 'flipX': case 'flipY':
+        case 'flipX': case 'flipY': case 'headerRow': case 'headerCol':
           if (typeof v !== 'boolean') throw invalid(fieldPath, 'Must be a boolean');
           sets.set(key, v);
           break;
+        case 'rows': {
+          const grid = tableGrid(v, fieldPath);
+          const parts = tableFromGrid(grid, () => crypto.randomBytes(5).toString('hex').slice(0, 6));
+          for (const old of Object.keys(current)) if (isTableKey(old)) unsets.add(old);
+          for (const [k, value] of Object.entries(parts)) sets.set(k, value);
+          sets.set('w', Math.max(...grid.map((r) => r.length)) * DEFAULT_COL_WIDTH);
+          sets.set('h', grid.length * 40);
+          break;
+        }
         case 'text': sets.set(key, text(v, fieldPath, current.type === 'text' || current.type === 'markdown' ? 1 : 0, LIMITS.text)); break;
         case 'name': sets.set(key, text(v, fieldPath, 1, current.type === 'group' ? GROUP_NAME_MAX : LIMITS.name)); break;
         case 'label': sets.set(key, text(v, fieldPath, 0, LIMITS.label)); break;

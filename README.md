@@ -252,6 +252,7 @@ Screenshots show demo data.
 | Frames | Nested frames carry their contents. Size presets cover screens, tablets, phones, A3, A4, Letter and square, with custom width and height (see [Shapes, text and sticky notes](docs/guide/shapes-text-notes.md)) |
 | Groups | Group and ungroup selected items, including nested groups; enter a group to edit its members. See [the guide](docs/guide/shapes-text-notes.md#groups) |
 | Images | Add PNG, JPEG, GIF, WebP or SVG pictures; move, resize, rotate, comment, and include them in PNG/SVG and `.drift` exports. See [docs/images.md](docs/images.md) and [the guide](docs/guide/images.md) |
+| Tables | Press **G** and click the board (or drag out a box) for a grid of cells you type in: Tab and Shift+Tab move between cells, cells show bold, italic, code and links, and you can select cells to clear, copy and paste them. Right-click for rows and columns (insert, move, delete), header row and column, alignment and cell fill; drag a column border to resize it. Two people can edit different cells at the same time. Tables appear in PNG, SVG and print. See [docs/tables.md](docs/tables.md) and [the guide](docs/guide/tables.md) |
 | Themes | Default, Ayu, Kanagawa, Matrix and Evergreen, chosen under Appearance in the board menu; the whole app (canvas, grid, toolbars, and the default colour of text, drawings, icons and connectors) follows the theme; the choice is remembered on this device; exports always use the light colours on white |
 | Sticky colours | Pick a colour before placing (tray beside the toolbar while the sticky tool is on), recolour selected notes, or choose any colour with “+”; custom colours are saved to the board (up to 12) and shared with everyone; your last colour is remembered on your device |
 | Connectors | Bound or free ends, straight/elbow/curved routing, 10 arrowheads incl. UML and crow's foot, labels, reverse; drag from a shape's blue dots, or click a dot to add a connected copy; deleting a shape keeps its lines; connectors meet a shape's visible outline, including triangles, stars, arrows and callouts |
@@ -275,7 +276,7 @@ Screenshots show demo data.
 
 ### Not built yet (from the spec)
 
-End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; comment mentions and per-thread notifications; editable data tables outside kanban boards; PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; and peer-to-peer WebRTC sync.
+End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; comment mentions and per-thread notifications; data tables with typed columns and formulas (TAB-186); PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; and peer-to-peer WebRTC sync.
 
 Native and desktop development (Mac, Windows, Linux, iPhone, Android) is frozen since 2026-10-11 while we focus on the web app; the shell on main still builds and stays for reference, but is not maintained and gets no new features until we revisit this.
 

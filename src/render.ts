@@ -6,7 +6,7 @@ import { lowDetail, type FilterChip } from './ui/kanban-logic';
 import type { Store } from './store';
 import type { ImageState } from './image-loader';
 import { boxBounds, buildConnectorLayout, center, connectorGeom, movedConnectors, objBounds, rectsIntersect, rotate, sideAnchor, type ConnectorLayout } from './geometry';
-import { SVG_DEFS, objectMarkup, placeholderZoom, type MarkupCtx } from './markup';
+import { SVG_DEFS, objectMarkup, placeholderZoom, type MarkupCtx, type TableSelection } from './markup';
 import { clearMeasureCache, escapeXml } from './text';
 import { onFontLoaded } from './fonts';
 import { USER_COLORS, WIRE } from './palette';
@@ -175,8 +175,10 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
   if (o.type === 'text') hs = all.filter((h) => h.id === 'e' || h.id === 'w' || h.id.length === 2);
   // a Markdown block: the sides change the width the text wraps at; its height follows its content (src/markdown-heal.ts)
   if (o.type === 'markdown') hs = all.filter((h) => h.id === 'e' || h.id === 'w');
+  // a table: its size is its columns and rows, changed with their own controls (docs/tables.md), so the box has no handles
+  if (o.type === 'table') hs = [];
   if (o.type === 'uml-initial' || o.type === 'uml-final') hs = all.filter((h) => h.id.length === 2);
-  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package' && o.type !== 'markdown') {
+  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package' && o.type !== 'markdown' && o.type !== 'table') {
     hs = [...hs, { id: 'rot', p: L(o.w / 2, -24 / zoom) }];
   }
   return hs;
@@ -464,6 +466,15 @@ export class Renderer {
     if (next.size === this.promotedPinIds.size && [...next].every((id) => this.promotedPinIds.has(id))) return;
     this.promotedPinIds = next;
     this.overlayDirty = true;
+    this.schedule();
+  }
+
+  /** The selected cells of a table, drawn as an outline over them (never part of an export). */
+  setTableSelection(sel: TableSelection | null) {
+    const prev = this.ctx.tableSelection?.id;
+    this.ctx.tableSelection = sel;
+    if (prev) this.markDirty(prev);
+    if (sel) this.markDirty(sel.id);
     this.schedule();
   }
 

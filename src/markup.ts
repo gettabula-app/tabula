@@ -17,11 +17,15 @@ import { safeColor } from '../shared/colors';
 import { safeObj } from './safe-obj';
 import { renderTrackerFrame } from './tracker-frame';
 import { linkMarkup } from './link-markup';
+import { layoutTable } from './table-layout';
 import { layoutMarkdown, type MdStyle } from './markdown-layout';
 import { mdItemsMarkup } from './markdown-svg';
 import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
 import type { TrackerPriority, TrackerStateCategory } from './tracker-types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
+
+/** A block of cells of one table: its first and last row and column index (either order). */
+export interface TableSelection { id: string; r0: number; c0: number; r1: number; c1: number }
 
 export interface MarkupCtx {
   get: (id: string) => Obj | undefined;
@@ -29,6 +33,8 @@ export interface MarkupCtx {
   isHidden?: (o: BaseObj) => boolean;
   /** Object whose label is being edited (label is not drawn). */
   editingId?: string | null;
+  /** The selected cells of a table (docs/tables.md): a block of rows and columns by index, drawn as an outline. Never in a file. */
+  tableSelection?: TableSelection | null;
   /** Where each connector end sits among the ends on the same side of its shape; called only when a connector is drawn. */
   layout?: () => ConnectorLayout;
   /** What there is to draw for an image object: its pixels, or why not yet (src/image-loader.ts). Without it an image draws as its placeholder. */
@@ -77,6 +83,7 @@ export const DEFAULTS = {
   text: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 20, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   frame: { fill: '#FFFFFF', stroke: 'var(--canvas-rule, #C9D1DA)', strokeWidth: 1, textColor: 'var(--graphite, #5B6672)', fontSize: 14, fontWeight: 600, align: 'left' as const, valign: 'top' as const },
   markdown: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
+  table: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 15, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   uml: { fill: '#FFFFFF', stroke: INK, strokeWidth: 1.5, textColor: INK, fontSize: 14, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
   path: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 3, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
   icon: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 0, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
@@ -86,6 +93,7 @@ export function defaultsFor(o: Obj) {
   if (o.type === 'sticky') return DEFAULTS.sticky;
   if (o.type === 'text') return DEFAULTS.text;
   if (o.type === 'markdown') return DEFAULTS.markdown;
+  if (o.type === 'table') return DEFAULTS.table;
   if (o.type === 'frame') return DEFAULTS.frame;
   if (o.type === 'tracker') return DEFAULTS.frame;
   if (o.type === 'path') return DEFAULTS.path;
@@ -279,6 +287,50 @@ function markdownMarkup(o: BaseObj, ctx: MarkupCtx) {
   const { items } = layoutMarkdown(o.text || '', o.w, markdownStyle(o));
   const body = mdItemsMarkup(items, { color: s.textColor, family: fontFamily(s.font), owner: o.id });
   return wrapG(o, `${background}<svg x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" overflow="hidden">${body}</svg>`, s.opacity);
+}
+
+/** What a table lays its cells out with: the object's own font, size and weight (the defaults of DEFAULTS.table without them). */
+export function tableStyle(o: BaseObj): MdStyle {
+  const s = styleOf(o);
+  return { font: s.font, size: s.fontSize, weight: s.fontWeight };
+}
+
+/** The size a table needs for its cells: columns' widths in total, rows' heights in total (the app and the table heal fit the object to it). */
+export function tableBoxSize(o: BaseObj): { w: number; h: number } {
+  const { w, h } = layoutTable(o as unknown as Record<string, unknown>, tableStyle(o));
+  return { w, h };
+}
+
+/**
+ * A table (docs/tables.md): a grid of cells in SVG, each cell's text laid out as inline Markdown. The layout (src/table-layout.ts) is the same for the canvas,
+ * the exports and the print, and nothing of a cell reaches an attribute except as an escaped number or text.
+ */
+function tableMarkup(o: BaseObj, ctx: MarkupCtx) {
+  const s = styleOf(o);
+  const { items, w, h, fills, colX, rowY } = layoutTable(o as unknown as Record<string, unknown>, tableStyle(o));
+  const base = s.fill === 'none' ? '' : `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" fill="${escapeXml(s.fill)}"/>`;
+  // a cell's own fill is a colour the board can draw (shared/colors.mjs); anything else is not painted
+  const paint = { color: s.textColor, family: fontFamily(s.font), owner: o.id };
+  let cellFills = '';
+  let filledText = '';
+  for (const f of fills) {
+    const color = safeColor(f.color, null);
+    if (color && color !== 'none') {
+      cellFills += `<rect x="${n(f.x)}" y="${n(f.y)}" width="${n(f.w)}" height="${n(f.h)}" fill="${escapeXml(color)}"/>`;
+      filledText += mdItemsMarkup(f.items, { ...paint, color: inkOn(color) }); // the colour is the cell's own: the text reads on it in every theme
+    } else filledText += mdItemsMarkup(f.items, paint);
+  }
+  const body = mdItemsMarkup(items, paint);
+  const sel = ctx.tableSelection?.id === o.id ? ctx.tableSelection : null;
+  let outline = '';
+  if (sel) {
+    const r0 = Math.max(0, Math.min(sel.r0, sel.r1)), r1 = Math.min(rowY.length - 2, Math.max(sel.r0, sel.r1));
+    const c0 = Math.max(0, Math.min(sel.c0, sel.c1)), c1 = Math.min(colX.length - 2, Math.max(sel.c0, sel.c1));
+    if (r1 >= r0 && c1 >= c0) {
+      outline = `<rect x="${n(colX[c0])}" y="${n(rowY[r0])}" width="${n(colX[c1 + 1] - colX[c0])}" height="${n(rowY[r1 + 1] - rowY[r0])}" fill="var(--wire, #2F6BFF)" fill-opacity="0.12" stroke="var(--wire, #2F6BFF)" stroke-width="2" pointer-events="none" data-table-selection="1"/>`;
+    }
+  }
+  return wrapG(o, `${base}${cellFills}${body}${filledText}${outline}`, s.opacity);
 }
 
 function frameMarkup(o: BaseObj) {
@@ -989,6 +1041,7 @@ export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
     case 'sticky': return stickyMarkup(o, ctx);
     case 'text': return textMarkup(o, ctx);
     case 'markdown': return markdownMarkup(o, ctx);
+    case 'table': return tableMarkup(o, ctx);
     case 'frame': return frameMarkup(o);
     case 'tracker': return wrapG(o, renderTrackerFrame(o), styleOf(o).opacity);
     case 'icon': return iconMarkup(o);

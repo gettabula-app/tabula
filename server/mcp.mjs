@@ -35,6 +35,7 @@ import { createMilestone, createProject, listMilestones, listProjects, updateMil
 import { createSavedView, deleteSavedView, getSavedView, listSavedViews, updateSavedView } from './tracker/views.mjs';
 import { diffBoardUpdates } from './board-diff.mjs';
 import { exportBoardMarkdown } from './board-export.mjs';
+import { MAX_CELL_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS } from '../shared/tables.mjs';
 
 export const MCP_SERVER_NAME = 'board';
 const SERVER_VERSION = '1.0.0';
@@ -116,17 +117,27 @@ const parentSchema = {
 };
 const colourText = 'A #RRGGBB colour.';
 
+const tableRowsSchema = {
+  type: 'array',
+  minItems: 1,
+  maxItems: MAX_TABLE_ROWS,
+  description: `A table's cells: 1 to ${MAX_TABLE_ROWS} rows, each a list of 1 to ${MAX_TABLE_COLS} cell texts of at most ${MAX_CELL_CHARS} characters (bold, italic, code and links only). On update it replaces every cell.`,
+  items: { type: 'array', minItems: 1, maxItems: MAX_TABLE_COLS, items: { type: 'string', maxLength: MAX_CELL_CHARS } },
+};
+
 const createItemSchema = {
   type: 'object',
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source: headings, lists, [ ] tasks, tables, code, links; no HTML), x, y, w?, h?, fontSize?. frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source: headings, lists, [ ] tasks, tables, code, links; no HTML), x, y, w?, h?, fontSize?. table: rows (a list of rows, each a list of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
   properties: {
-    type: { enum: ['sticky', 'shape', 'text', 'markdown', 'frame', 'connector', 'link'] },
+    type: { enum: ['sticky', 'shape', 'text', 'markdown', 'table', 'frame', 'connector', 'link'] },
     ref: refSchema,
     url: { type: 'string', maxLength: 2048, description: 'A link card: an http or https web address, without a user name or password.' },
     text: { type: 'string', maxLength: LIMITS.text },
+    rows: tableRowsSchema,
+    headerRow: { type: 'boolean' }, headerCol: { type: 'boolean' },
     name: { type: 'string', maxLength: LIMITS.name },
     label: { type: 'string', maxLength: LIMITS.label },
     x: num('Left edge.'),
@@ -162,6 +173,8 @@ const updateItemSchema = {
     flipX: { type: 'boolean' }, flipY: { type: 'boolean' },
     parent: { type: ['string', 'null'] },
     text: { type: 'string', maxLength: LIMITS.text },
+    rows: tableRowsSchema,
+    headerRow: { type: 'boolean' }, headerCol: { type: 'boolean' },
     name: { type: 'string', maxLength: LIMITS.name },
     label: { type: ['string', 'null'], maxLength: LIMITS.label },
     color: { type: 'string' },

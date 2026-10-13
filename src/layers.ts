@@ -17,7 +17,7 @@ import type { ZPatch } from './z-order';
 export const CONTAINERS = new Set<string>(['frame', 'container', 'lane']);
 
 export const TYPE_LABEL: Record<string, string> = {
-  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', frame: 'Frame', tracker: 'Tracker', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
+  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', table: 'Table', frame: 'Frame', tracker: 'Tracker', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
   container: 'Board', lane: 'Lane', card: 'Card', group: 'Group',
   'uml-class': 'Class', 'uml-actor': 'Actor', 'uml-usecase': 'Use case', 'uml-lifeline': 'Lifeline', 'uml-note': 'Note',
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',

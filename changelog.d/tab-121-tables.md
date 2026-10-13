@@ -1,0 +1,3 @@
+section: Added
+
+- Tables: press **G** and click the board (or drag out a box) for a grid of cells you type in. Tab and Shift+Tab move between cells, Enter adds a line, and cells show bold, italic, code and links. Select cells (click, Shift-click, arrow keys) to clear, copy and paste them; right-click for rows and columns (insert, move, delete), header row and column, alignment and cell fill; drag a column border to resize it. Paste tab-separated rows and columns onto the board to make a table. Two people can edit different cells at the same time; the same cell, the later change wins. Tables appear in PNG, SVG and print, and agents can create them and fill them with rows of text.

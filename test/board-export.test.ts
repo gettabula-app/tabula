@@ -63,4 +63,15 @@ describe('exportBoardMarkdown', () => {
     expect(markdown.split('\n').filter((l) => l.startsWith('# ') || l.startsWith('## ')).sort()).toEqual(['# Notes', '## Meeting']);
     expect(markdown).not.toContain('md-empty');
   });
+
+  it('writes a table as a quoted Markdown table with every cell cleaned, pipes and line breaks made safe (TAB-121)', () => {
+    const doc = new Y.Doc();
+    doc.getMap('meta').set('name', 'Notes');
+    add(doc, 'frame-1', { type: 'frame', name: 'Plan', x: 0, y: 0, w: 500, h: 400, z: 'a0' });
+    add(doc, 'tb-1', { type: 'table', parent: 'frame-1', x: 20, y: 20, w: 320, h: 80, z: 'a1', 'r:r1': 'a0', 'r:r2': 'a1', 'k:c1': 'a0', 'k:c2': 'a1', 'c:r1:c1': 'Name', 'c:r1:c2': 'Note\u202e', 'c:r2:c1': 'a|b', 'c:r2:c2': 'two\nlines', 'c:gone:c1': 'orphan' });
+    const markdown = exportBoardMarkdown(doc);
+    expect(markdown).toContain('> | Name | Note |\n> | --- | --- |\n> | a\\|b | two lines |');
+    expect(markdown).not.toContain('\u202e');
+    expect(markdown).not.toContain('orphan');
+  });
 });

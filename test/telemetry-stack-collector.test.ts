@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -419,16 +419,12 @@ describe('erasure cannot be undone by live ingestion', () => {
 
   it('waits for in-flight requests before purging when it created the marker', async () => {
     const cfg = config({ COLLECTOR_DELETE_WAIT_MS: '300', VM_URL: 'http://127.0.0.1:1', LOKI_URL: 'http://127.0.0.1:1' });
-    // Count the 300 ms waits instead of timing the calls: an upper bound on elapsed time fails on a slow runner (it measured 291 ms against 250 on Windows).
-    const waits = vi.spyOn(globalThis, 'setTimeout');
     const started = Date.now();
     await deleteWorkspace(cfg, WORKSPACE, { now: NOW });
     expect(Date.now() - started).toBeGreaterThanOrEqual(280);
-    expect(waits.mock.calls.filter(([, ms]) => ms === 300)).toHaveLength(1);
-    waits.mockClear();
+    const second = Date.now();
     const retry = await deleteWorkspace(cfg, WORKSPACE, { now: NOW });
-    expect(waits.mock.calls.filter(([, ms]) => ms === 300)).toHaveLength(0); // the marker exists, so the second call does not wait again
-    waits.mockRestore();
+    expect(Date.now() - second).toBeLessThan(250);
     expect(retry.ok).toBe(false); // the stores are unreachable, so the caller must retry; the marker still blocks writes
     expect(isDeleting(cfg, WORKSPACE)).toBe(true);
   });

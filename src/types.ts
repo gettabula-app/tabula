@@ -18,7 +18,7 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'link' | 'path' | 'connector' | 'container' | 'lane' | 'card' | 'markdown' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'link' | 'path' | 'connector' | 'container' | 'lane' | 'card' | 'markdown' | 'table' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
@@ -119,6 +119,9 @@ export interface BaseObj extends Partial<StyleFields> {
   viewId?: string;
   /** Ticket key opened by default in this frame: navigation state only. */
   focusKey?: string;
+  // table (docs/tables.md): the header flags; rows, columns, widths and cells are the keys r:/k:/w:/c: (shared/tables.mjs)
+  headerRow?: boolean;
+  headerCol?: boolean;
   // icon
   ref?: string;
   body?: string;

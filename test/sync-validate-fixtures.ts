@@ -6,6 +6,7 @@
 import * as Y from 'yjs';
 import { Builder, TEMPLATES } from '../src/templates';
 import { Store, newId } from '../src/store';
+import { tableFromGrid } from '../shared/tables';
 import { Comments } from '../src/comments';
 import { seedDemo } from '../src/demo/seed';
 import { addCard, editCard, newKanban, stickiesToCards } from '../src/containers';
@@ -143,6 +144,8 @@ export function clientObjects(): ClientObjects {
   put('sticky', make(store, 'sticky', rect, { text: 'Idea', fill: '#FFE16B', parent: frame.id }));
   // a Markdown block (src/markdown.ts): its source is the text field
   put('markdown', make(store, 'markdown', { x: 20, y: 60, w: 360, h: 200 }, { text: '# Plan\n\n- [ ] one\n- [x] two\n\n| a | b |\n| - | - |\n| 1 | 2 |', fontSize: 16, textColor: '#112233', parent: frame.id }));
+  // a table (shared/tables.mjs): header flags, then rows, columns, a width and cells as keys of their own
+  put('table', make(store, 'table', { x: 20, y: 280, w: 320, h: 80 }, { headerRow: true, fontSize: 15, parent: frame.id, ...tableFromGrid([['Name', 'Note'], ['Ann', '**bold** and `code`']], (() => { let i = 0; return () => `t${++i}`; })()), 'w:t1': 200 } as never));
   put('sticky:private', make(store, 'sticky', rect, { text: 'Hidden', fill: '#BCE88C', privateStep: 'step1' }));
   put('sticky:locked', make(store, 'sticky', rect, { text: 'Locked', fill: '#E2E6EB', locked: true, hidden: true, flipX: true, flipY: true }));
   for (const { kind } of SHAPE_KINDS) put(`shape:${kind}`, make(store, 'shape', { x: 0, y: 0, w: 160, h: 100 }, { kind, text: kind, fill: '#FFFFFF', stroke: '#112233', strokeWidth: 2, dash: 'dashed', opacity: 0.8 }));
