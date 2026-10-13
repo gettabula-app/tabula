@@ -119,7 +119,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
   let ownerActionsOpen = false;
 
   function readinessCheckRow(check: TrackerReadinessReport['checks'][number]): HTMLElement {
-    const stateIcon = check.state === 'pass' ? icon('check', 14) : check.state === 'fail' ? icon('close', 14) : check.state === 'unknown' ? icon('timer', 14) : null;
+    const stateIcon = check.state === 'pass' ? icon('check', 12) : check.state === 'fail' ? icon('close', 12) : check.state === 'unknown' ? icon('timer', 12) : null;
     return h('div', { class: 'backups-readiness-row', 'data-check-id': check.id },
       h('div', { class: 'backups-readiness-name' },
         h('strong', null, trackerCheckLabel(check.id, check.label)),

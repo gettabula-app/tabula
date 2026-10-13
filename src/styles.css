@@ -125,9 +125,11 @@ hr { border: 0; }
 
 /* Pastel status labels use theme pairs so they stay legible across light and dark themes. */
 .tag {
-  display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: fit-content; max-width: 100%; min-height: 20px; padding: 2px 9px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: fit-content; max-width: 100%; min-height: 22px; padding: 0 10px;
   border: 0; border-radius: 9999px; font: 600 10px/1.4 var(--ui); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
 }
+/* an icon in a pill is 12px, vertically centred with the label, and never shrinks */
+.tag > .ico, .tag > svg { flex: none; width: 12px; height: 12px; }
 .tag-yellow { background: var(--tag-yellow); color: var(--on-tag-yellow); }
 .tag-blue { background: var(--tag-blue); color: var(--on-tag-blue); }
 .tag-green { background: var(--tag-green); color: var(--on-tag-green); }
