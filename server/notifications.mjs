@@ -10,7 +10,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const PAGE_BATCH = 100;
 const UNREAD_LIMIT = 200;
 const KEEP_PER_USER = 500;
-const KINDS = new Set(['chat_mention', 'comment_reply', 'board_shared', 'team_joined']);
+const KINDS = new Set(['chat_mention', 'comment_reply', 'comment_mention', 'board_shared', 'team_joined']);
 const MENTION_KINDS = new Set(['chat_mention', 'comment_mention', 'ticket_mentioned']);
 const WORKSPACE_REF = 'main';
 
@@ -88,6 +88,29 @@ function threadValue(doc, threadId) {
   return objectOf(thread);
 }
 
+/**
+ * The comment a mention row points at: the latest comment in the thread by the person who wrote the mention, preferring
+ * one that names the recipient. The ledger keeps only the thread, so this is the best match, not a certain one.
+ */
+function mentionSnippet(roomAccess, boardId, threadId, actorId, recipientId, nameOf) {
+  if (!roomAccess?.read || !actorId) return null;
+  try {
+    return roomAccess.read(`${boardId}~comments`, (doc) => {
+      const thread = threadValue(doc, threadId);
+      if (!thread) return null;
+      const token = `@{${recipientId}}`;
+      const candidates = [[threadId, thread], ...Object.entries(thread.replies ?? {}).map(([id, value]) => [String(id), objectOf(value)])]
+        .filter(([, c]) => c && c.authorId === actorId && typeof c.text === 'string')
+        .sort((a, b) => Number(b[1].createdAt ?? 0) - Number(a[1].createdAt ?? 0) || (a[0] < b[0] ? 1 : -1));
+      const named = candidates.find(([, c]) => c.text.includes(token));
+      const pick = (named ?? candidates[0])?.[1];
+      return pick ? snippetOf(pick.text, nameOf) : null;
+    });
+  } catch {
+    return null;
+  }
+}
+
 function replySnippet(roomAccess, boardId, threadId, actorId) {
   if (!roomAccess?.read) return null;
   try {
@@ -158,7 +181,7 @@ export function createNotifications({
       const message = chatDb()?.getMessage?.(Number(row.ref));
       return message !== null && message !== undefined;
     }
-    if (row.kind === 'comment_reply') {
+    if (row.kind === 'comment_reply' || row.kind === 'comment_mention') {
       if (!row.board_id || directory.boardRole(row.board_id, user.id) === null) return false;
       let exists = false;
       try {
@@ -198,6 +221,9 @@ export function createNotifications({
       }
     } else if (row.kind === 'comment_reply' && row.board_id) {
       snippet = replySnippet(roomAccess, row.board_id, row.ref, row.actor_id);
+    } else if (row.kind === 'comment_mention' && row.board_id) {
+      const nameOf = (id) => directory.getUser(id)?.name ?? null;
+      snippet = mentionSnippet(roomAccess, row.board_id, row.ref, row.actor_id, user.id, nameOf);
     }
     return {
       id: sourceId('n', row.id),

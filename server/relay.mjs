@@ -38,6 +38,7 @@ import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs
 import { saveDelay, saveMaxWaitMs } from './save-delay.mjs';
 import { renameSyncRetry } from './fs-retry.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
+import { commentIndex, commentsAddedSince, mentionsRecipient, recordCommentMentions } from './comment-mentions.mjs';
 import { createSyncGuard } from './sync-guard.mjs';
 import { syncValidateMode } from './sync-validate.mjs';
 import { scrubText } from './ai/errors.mjs';
@@ -689,19 +690,32 @@ class Room {
     this.guard = directory && this.kind === 'comments'
       ? createCommentGuard(this.doc, {
           isAccount: (id) => directory.getUser(id) !== null,
-          onReplyAdded: ({ threadId, threadAuthorId, replyAuthorId }) => {
+          onReplyAdded: ({ threadId, threadAuthorId, replyId, replyAuthorId }) => {
             try {
+              const boardId = this.name.slice(0, -'~comments'.length);
+              // A reply that names the thread's author gets a comment_mention row for them instead (TAB-53).
+              const text = this.doc.getMap('threads').get(threadId)?.toJSON?.()?.replies?.[replyId]?.text;
+              if (mentionsRecipient({ directory, boardId, text, authorId: replyAuthorId, recipientId: threadAuthorId })) return;
               notificationStore?.record({
                 userId: threadAuthorId,
                 kind: 'comment_reply',
                 actorId: replyAuthorId,
-                boardId: this.name.slice(0, -'~comments'.length),
+                boardId,
                 ref: threadId,
               });
             } catch (err) {
               log('comments: could not store a reply notification', err?.message);
             }
           },
+          onCommentAdded: ({ threadId, authorId, text }) => recordCommentMentions({
+            directory,
+            notifications: notificationStore,
+            log,
+            boardId: this.name.slice(0, -'~comments'.length),
+            threadId,
+            authorId,
+            text,
+          }),
         })
       : null;
 
@@ -1155,6 +1169,7 @@ const roomAccess = {
         return thread instanceof Y.Map ? thread.toJSON() : null;
       };
       const commentBefore = commentThreadId && commentActorId ? commentSnapshot() : null;
+      const mentionIndex = room.kind === 'comments' && commentActorId && directory ? commentIndex(room.doc) : null;
       let result;
       const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
@@ -1172,6 +1187,8 @@ const roomAccess = {
         const beforeReplies = commentBefore.replies ?? {};
         for (const [replyId, reply] of Object.entries(commentAfter.replies ?? {})) {
           if (Object.hasOwn(beforeReplies, replyId) || reply?.authorId !== commentActorId) continue;
+          // A reply that names the thread's author gets a comment_mention row for them instead (TAB-53).
+          if (mentionsRecipient({ directory, boardId: room.name.slice(0, -'~comments'.length), text: reply.text, authorId: commentActorId, recipientId: commentBefore.authorId })) continue;
           try {
             (trackerContext?.notifications ?? notificationStore)?.record({
               userId: commentBefore.authorId,
@@ -1183,6 +1200,20 @@ const roomAccess = {
           } catch (err) {
             log('comments: could not store a reply notification', err?.message);
           }
+        }
+      }
+      if (mentionIndex) {
+        const boardId = room.name.slice(0, -'~comments'.length);
+        for (const added of commentsAddedSince(mentionIndex, room.doc, commentActorId)) {
+          recordCommentMentions({
+            directory,
+            notifications: trackerContext?.notifications ?? notificationStore,
+            log,
+            boardId,
+            threadId: added.threadId,
+            authorId: commentActorId,
+            text: added.text,
+          });
         }
       }
       return result;
