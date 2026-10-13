@@ -3846,7 +3846,7 @@ const STATES = {
     await openSeedBoard(env);
     await page.evaluate(() => {
       const b = window.__board;
-      b.store.transact(() => b.store.create({ id: 'k-frame', type: 'frame', name: 'Frame 1', x: -300, y: -200, w: 960, h: 600, rotation: 0, z: 1, fill: '#FFFFFF', createdBy: 'seed', createdAt: 1, updatedAt: 1 }));
+      b.store.transact(() => b.store.create({ id: 'k-frame', type: 'frame', name: 'Frame 1', x: -300, y: -200, w: 960, h: 600, rotation: 0, z: 'a0', fill: '#FFFFFF', createdBy: 'seed', createdAt: 1, updatedAt: 1 }));
       b.setSelection(['k-frame']);
     });
     const size = () => page.evaluate(() => { const o = window.__board.store.get('k-frame'); return `${o.w}x${o.h}`; });
