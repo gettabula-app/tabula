@@ -51,7 +51,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
 /** Check a stored or imported template and return a safe copy. Throws a readable Error. */
-export function validateTemplate(raw: unknown): CustomTemplate {
+/** `stored`: the template was saved earlier, so the size caps added since do not hide it (see validateContent). */
+export function validateTemplate(raw: unknown, opts: { stored?: boolean } = {}): CustomTemplate {
   if (!isRecord(raw)) throw new Error('A template must be an object.');
   const { id, version, name, category, description, createdBy, createdAt, updatedAt } = raw;
   if (typeof id !== 'string' || !id) throw new Error('A template needs an id.');
@@ -63,7 +64,7 @@ export function validateTemplate(raw: unknown): CustomTemplate {
   if (!isNum(createdAt) || !isNum(updatedAt)) throw new Error(`Template "${id}" has no dates.`);
   const t: CustomTemplate = {
     id, version, name, category, description, createdBy, createdAt, updatedAt,
-    content: validateContent(raw.content),
+    content: validateContent(raw.content, opts),
   };
   // Who a template is shared with only means something on the server; templates kept in the browser have none of it.
   if (typeof raw.scope === 'string' && (SCOPES as readonly string[]).includes(raw.scope)) {
@@ -85,7 +86,7 @@ export function createTemplateStore(backend: TemplateBackend | null): TemplateSt
 
   const parse = (raw: unknown): CustomTemplate | undefined => {
     try {
-      return validateTemplate(raw);
+      return validateTemplate(raw, { stored: true });
     } catch (e) {
       console.warn(`Skipped a saved template: ${errorText(e)}`);
       return undefined;
@@ -121,7 +122,7 @@ export function createTemplateStore(backend: TemplateBackend | null): TemplateSt
       let saved = safe;
       try {
         const kept = await backend.put(safe);
-        if (kept !== undefined) saved = validateTemplate(kept);
+        if (kept !== undefined) saved = validateTemplate(kept, { stored: true });
       } catch (e) {
         throw e instanceof TemplateError ? e : new Error(`Could not save the template: ${errorText(e)}`);
       }
@@ -133,7 +134,7 @@ export function createTemplateStore(backend: TemplateBackend | null): TemplateSt
       if (!backend?.duplicate) throw new Error(UNAVAILABLE);
       let copy: CustomTemplate;
       try {
-        copy = validateTemplate(await backend.duplicate(id));
+        copy = validateTemplate(await backend.duplicate(id), { stored: true });
       } catch (e) {
         throw e instanceof TemplateError ? e : new Error(`Could not duplicate the template: ${errorText(e)}`);
       }
