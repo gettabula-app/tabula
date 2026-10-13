@@ -11,9 +11,19 @@ on:
     paths-ignore: ['**.md', 'docs/**', 'design/**', 'LICENSE*', '.github/dependabot.yml']
   pull_request:
   workflow_dispatch:
+    inputs:
+      full-matrix:
+        description: 'Run the full matrix (Linux, macOS and Windows on every Node version) instead of Linux only'
+        type: boolean
+        default: false
   # release.yml (a v* tag, or by hand) runs these gates before it builds and pushes the image. A tag no longer starts CI by itself:
   # the release workflow calls it, so the gates run once per tag, and the Docker job below still publishes the semver tags to ghcr.
+  # The release passes full-matrix: true, so the SHA that is released has always run on all three systems.
   workflow_call:
+    inputs:
+      full-matrix:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -40,6 +50,7 @@ jobs:
     outputs:
       code: ${{ steps.classify.outputs.code }}
       guide: ${{ steps.classify.outputs.guide }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,6 +81,20 @@ jobs:
             echo "No usable range to compare, so everything runs"
             printf 'code=true\nguide=true\n' | tee -a "$GITHUB_OUTPUT"
           fi
+      # Every push and pull request tests on Linux only (Node 24, which also runs the browser tests, and Node 26, the Node the Docker image ships).
+      # The full matrix (Linux with Node 22, 24 and 26, macOS, and Windows in two shards) runs for a release, on request (workflow_dispatch with
+      # full-matrix) and in nightly.yml. Windows and macOS path and timing differences therefore show up at the latest on the release SHA.
+      - id: matrix
+        shell: bash
+        env:
+          FULL: ${{ inputs.full-matrix }}
+        run: |
+          if [ "$FULL" = true ]; then
+            matrix='{"include":[{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"ubuntu-latest","node":26},{"os":"macos-latest","node":22},{"os":"macos-latest","node":24},{"os":"macos-latest","node":26},{"os":"windows-latest","node":22,"shard":"1/2"},{"os":"windows-latest","node":22,"shard":"2/2"},{"os":"windows-latest","node":24,"shard":"1/2"},{"os":"windows-latest","node":24,"shard":"2/2"},{"os":"windows-latest","node":26,"shard":"1/2"},{"os":"windows-latest","node":26,"shard":"2/2"}]}'
+          else
+            matrix='{"include":[{"os":"ubuntu-latest","node":24},{"os":"ubuntu-latest","node":26}]}'
+          fi
+          echo "matrix=$matrix" | tee -a "$GITHUB_OUTPUT"
 
   quality:
     name: Lint, typecheck & audit
@@ -102,16 +127,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        node: [22, 24, 26]
-        include:
-          - { os: windows-latest, node: 22, shard: '1/2' }
-          - { os: windows-latest, node: 22, shard: '2/2' }
-          - { os: windows-latest, node: 24, shard: '1/2' }
-          - { os: windows-latest, node: 24, shard: '2/2' }
-          - { os: windows-latest, node: 26, shard: '1/2' }
-          - { os: windows-latest, node: 26, shard: '2/2' }
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

@@ -17,7 +17,7 @@ Text- och accentfärgerna i alla teman är valda för att vara läsbara.
 ## Byta tema
 
 1. Öppna en tavla och välj **Menu** (Meny) längst upp till höger.
-2. Klicka på ett tema under **Appearance** (Utseende). En bock visar vilket tema som är aktivt.
+2. Öppna undermenyn **Appearance** (Utseende) och klicka på ett tema. En bock visar vilket tema som är aktivt.
 
 Ändringen börjar gälla direkt. Temat används i hela appen, även på sidorna Tavlor och Mallar.
 

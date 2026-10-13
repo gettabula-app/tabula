@@ -46,7 +46,7 @@ A card owned by an AI tool has an eight-sided badge instead of a round one, in t
 
 ## Due dates and Overdue
 
-Set a **Due date** and the card shows it as "Today", "Tomorrow", a weekday and date, or "3 days ago". A card is **Overdue** when its date is before today and its lane is not a **done** lane, and it is then shown in a warning colour with the word as well as the colour. A card in a done lane is never overdue. "Today" is the date on your own device, so two people in different time zones can disagree for a few hours around midnight. Use **Due** in the filter to see overdue cards, cards due today or this week.
+Set a **Due date** and the card shows it as "Today", "Tomorrow", a weekday and date, or "3 days ago". A card is **Overdue** when its date is before today and its lane is not a **done** lane, and it is then shown in a warning colour with the word as well as the colour. A card in a done lane is never overdue. "Today" is the date on your own device, so two people in different time zones can disagree for a few hours around midnight. Use **Due** in the filter to see overdue cards, cards due today or this week. Reminders under the bell use UTC dates, so they can differ from the card's own **Overdue** colour for a few hours.
 
 ## Labels
 

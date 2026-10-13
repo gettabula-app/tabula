@@ -172,3 +172,5 @@
 .admin .backups-pick-row:hover,
 .admin .backups-pick-row.on { background: var(--page-hover); border-left: 0; }
 .restoring-body { border-top: 1px solid var(--page-hairline); }
+
+/* "Unreadable  the key is not available": the pill is the label, so the colon is dropped and the pill keeps its usual gap */

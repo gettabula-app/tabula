@@ -5,12 +5,16 @@ import crypto from 'node:crypto';
 import { ticketAccess, recipientActor, boardAccessForDirectory } from './tracker/access.mjs';
 import { notificationContent } from './tracker/inbox.mjs';
 import { snippetOf } from './chat-notify.mjs';
+import { cardFirstLine } from './card-due.mjs';
+import { createNotificationPrefs } from './notification-prefs.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PAGE_BATCH = 100;
 const UNREAD_LIMIT = 200;
 const KEEP_PER_USER = 500;
-const KINDS = new Set(['chat_mention', 'comment_reply', 'board_shared', 'team_joined']);
+const KINDS = new Set(['chat_mention', 'comment_reply', 'comment_mention', 'board_shared', 'team_joined', 'card_due_soon', 'card_overdue', 'card_assigned']);
+// Card kinds read the card's first line at list time, and only while the viewer still has a role on the board and the card exists.
+const CARD_KINDS = new Set(['card_due_soon', 'card_overdue', 'card_assigned']);
 const MENTION_KINDS = new Set(['chat_mention', 'comment_mention', 'ticket_mentioned']);
 const WORKSPACE_REF = 'main';
 
@@ -21,6 +25,38 @@ const clip = (value, max = 140) => {
   const plain = Array.from(textOf(value));
   return plain.length > max ? `${plain.slice(0, max - 1).join('')}…` : plain.join('');
 };
+
+// The bell's sentence for one list item (src/ui/notifications-logic.ts, rowText), as plain text for the digest email. It uses
+// only who, what and the board or team name; never a snippet, a card title or a ticket title (a ticket is named by its key).
+const sentenceName = (value, max = 80) => String(value ?? '').replace(/[\p{Cc}\p{Cf}\s]+/gu, ' ').trim().slice(0, max);
+const TICKET_KEY = /^\/t\/([A-Za-z0-9_-]{1,32})$/u;
+
+/** @param {{ kind: string, actor?: { name?: string } | null, board?: { title?: string } | null, team?: { name?: string } | null, target?: string | null }} item */
+export function sentenceFor(item) {
+  const who = sentenceName(item.actor?.name) || 'Someone';
+  const board = sentenceName(item.board?.title, 200);
+  const team = sentenceName(item.team?.name, 200);
+  switch (item.kind) {
+    case 'card_assigned': return `${who} assigned you a card on ${board || 'a board'}`;
+    case 'card_due_soon': return `A card is due soon on ${board || 'a board'}`;
+    case 'card_overdue': return `A card is overdue on ${board || 'a board'}`;
+    case 'chat_mention': {
+      const place = team || board;
+      return `${who} mentioned you in ${place ? `${place} chat` : 'the workspace chat'}`;
+    }
+    case 'comment_mention': return `${who} mentioned you in a comment on ${board || 'a board'}`;
+    case 'comment_reply': return `${who} replied to your comment on ${board || 'a board'}`;
+    case 'board_shared': return `${who} shared ${board || 'a board'} with you`;
+    case 'team_joined': return `${who} joined ${team || 'a team'}`;
+    default: {
+      if (String(item.kind).startsWith('ticket_')) {
+        const key = TICKET_KEY.exec(String(item.target ?? ''))?.[1];
+        return key ? `Your ticket ${key} changed` : 'Your ticket changed';
+      }
+      return 'You have a new notification';
+    }
+  }
+}
 
 function timestampOf(item) {
   return Number(item.at ?? item.createdAt ?? item.created_at ?? 0);
@@ -88,6 +124,29 @@ function threadValue(doc, threadId) {
   return objectOf(thread);
 }
 
+/**
+ * The comment a mention row points at: the latest comment in the thread by the person who wrote the mention, preferring
+ * one that names the recipient. The ledger keeps only the thread, so this is the best match, not a certain one.
+ */
+function mentionSnippet(roomAccess, boardId, threadId, actorId, recipientId, nameOf) {
+  if (!roomAccess?.read || !actorId) return null;
+  try {
+    return roomAccess.read(`${boardId}~comments`, (doc) => {
+      const thread = threadValue(doc, threadId);
+      if (!thread) return null;
+      const token = `@{${recipientId}}`;
+      const candidates = [[threadId, thread], ...Object.entries(thread.replies ?? {}).map(([id, value]) => [String(id), objectOf(value)])]
+        .filter(([, c]) => c && c.authorId === actorId && typeof c.text === 'string')
+        .sort((a, b) => Number(b[1].createdAt ?? 0) - Number(a[1].createdAt ?? 0) || (a[0] < b[0] ? 1 : -1));
+      const named = candidates.find(([, c]) => c.text.includes(token));
+      const pick = (named ?? candidates[0])?.[1];
+      return pick ? snippetOf(pick.text, nameOf) : null;
+    });
+  } catch {
+    return null;
+  }
+}
+
 function replySnippet(roomAccess, boardId, threadId, actorId) {
   if (!roomAccess?.read) return null;
   try {
@@ -125,6 +184,7 @@ function replySnippet(roomAccess, boardId, threadId, actorId) {
  * @param {{ notify?: Function }|null} [options.hub]
  * @param {Function} [options.now]
  * @param {Function|null} [options.boardAccess]
+ * @param {{ allows: Function }} [options.prefs] the per-member switches (notification-prefs.mjs); one is made from the directory when absent
  */
 export function createNotifications({
   directory,
@@ -135,9 +195,11 @@ export function createNotifications({
   hub = null,
   now = Date.now,
   boardAccess = boardAccessForDirectory(directory),
+  prefs = null,
 }) {
   const db = directory?.db;
   if (!db || typeof db.prepare !== 'function') throw new TypeError('Notifications need a directory database');
+  const switches = prefs ?? createNotificationPrefs({ directory });
 
   const nowValue = () => {
     const value = typeof now === 'function' ? now() : now;
@@ -158,7 +220,7 @@ export function createNotifications({
       const message = chatDb()?.getMessage?.(Number(row.ref));
       return message !== null && message !== undefined;
     }
-    if (row.kind === 'comment_reply') {
+    if (row.kind === 'comment_reply' || row.kind === 'comment_mention') {
       if (!row.board_id || directory.boardRole(row.board_id, user.id) === null) return false;
       let exists = false;
       try {
@@ -170,7 +232,24 @@ export function createNotifications({
     }
     if (row.kind === 'board_shared') return Boolean(row.board_id && directory.boardRole(row.board_id, user.id) !== null);
     if (row.kind === 'team_joined') return Boolean(row.team_id && canOpenTeam(user, row.team_id));
+    if (CARD_KINDS.has(row.kind)) return cardOf(user, row) !== null;
     return false;
+  }
+
+  /** The card a card row points at: `{ snippet }` when the viewer may open it and it is still on the board, else null. */
+  function cardOf(user, row) {
+    if (!row.board_id || !roomAccess?.read || directory.boardRole(row.board_id, user.id) === null) return null;
+    let firstLine = null;
+    let found = false;
+    try {
+      roomAccess.read(row.board_id, (doc) => {
+        firstLine = cardFirstLine(doc, row.ref);
+        found = firstLine !== null;
+      });
+    } catch {
+      return null;
+    }
+    return found ? { snippet: clip(firstLine) || null } : null;
   }
 
   function targetForUserRow(row) {
@@ -184,12 +263,16 @@ export function createNotifications({
   }
 
   function userRowItem(user, row) {
-    if (!canOpenUserRow(user, row)) return null;
+    // A card row reads its card once: the same read proves access and supplies the snippet.
+    const card = CARD_KINDS.has(row.kind) ? cardOf(user, row) : undefined;
+    if (card === null || (card === undefined && !canOpenUserRow(user, row))) return null;
     const actorUser = row.actor_id ? directory.getUser(row.actor_id) : null;
     const boardRow = row.board_id ? directory.getBoard(row.board_id) : null;
     const teamRow = row.team_id ? directory.getTeam(row.team_id) : null;
     let snippet = null;
-    if (row.kind === 'chat_mention') {
+    if (CARD_KINDS.has(row.kind)) {
+      snippet = card?.snippet ?? null;
+    } else if (row.kind === 'chat_mention') {
       const message = chatDb()?.getMessage?.(Number(row.ref));
       if (!message) return null;
       if (message.deletedAt === null) {
@@ -198,6 +281,9 @@ export function createNotifications({
       }
     } else if (row.kind === 'comment_reply' && row.board_id) {
       snippet = replySnippet(roomAccess, row.board_id, row.ref, row.actor_id);
+    } else if (row.kind === 'comment_mention' && row.board_id) {
+      const nameOf = (id) => directory.getUser(id)?.name ?? null;
+      snippet = mentionSnippet(roomAccess, row.board_id, row.ref, row.actor_id, user.id, nameOf);
     }
     return {
       id: sourceId('n', row.id),
@@ -246,11 +332,16 @@ export function createNotifications({
     };
   }
 
-  /** @param {Record<string, any>} fields @param {{ notify?: boolean }} [options] */
+  /**
+   * Stores one row for a person and pings their open tabs. Returns null, and records nothing, when the person has switched that
+   * kind's group off (docs/notifications.md, Settings). Every writer goes through here.
+   * @param {Record<string, any>} fields @param {{ notify?: boolean }} [options]
+   */
   function record(fields, { notify = true } = {}) {
     const userId = fields?.userId;
     if (typeof userId !== 'string' || !userId) throw new TypeError('Notification needs a recipient');
     if (!KINDS.has(fields.kind)) throw new TypeError('Unknown notification kind');
+    if (!switches.allows(userId, fields.kind)) return null;
     const ref = fields.ref == null ? null : String(fields.ref);
     if (fields.kind === 'chat_mention' && ref !== null) {
       const exists = db.prepare(
@@ -450,5 +541,5 @@ export function createNotifications({
     return { old, overflow, deleted: old + overflow };
   }
 
-  return { record, list, unread: readCounts, markRead, markChatReadThrough, prune, ping };
+  return { record, list, unread: readCounts, markRead, markChatReadThrough, prune, ping, prefs: switches };
 }

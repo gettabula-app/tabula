@@ -60,6 +60,8 @@ export interface Overlay {
   anchorHot: string | null;     // `${id}:${side}` under the pointer
   marquee: Rect | null;
   guides: Guide[];
+  /** The axis line of a drag locked to one axis (src/axis-lock.ts): through `at`, along `axis`, across the view. */
+  axisLock: { axis: 'x' | 'y'; at: Point } | null;
   preview: string;              // world-space markup of an object being drawn
   remote: RemoteSel[];
   votes: Map<Id, { mine: number; total: number | null }>;
@@ -92,7 +94,7 @@ export interface KanbanDrawState {
 }
 
 export const emptyOverlay = (): Overlay => ({
-  selection: [], enteredGroup: null, hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
+  axisLock: null, selection: [], enteredGroup: null, hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
   guides: [], preview: '', remote: [], votes: new Map(), votable: new Set(), dropTarget: null, ai: '', kanban: null,
 });
 
@@ -872,6 +874,14 @@ export class Renderer {
     for (const g of ov.guides) out += g.kind === 'line'
       ? `<path d="M${fin(g.x1)} ${fin(g.y1)}L${fin(g.x2)} ${fin(g.y2)}" stroke="${GUIDE}" stroke-width="${px(1)}"/>`
       : g.kind === 'gap' ? gapMarkup(g, px) : sizeMarkup(g, px);
+
+    // the axis line of a locked drag: dashed 4/4, 1px, faint, across the whole view
+    if (ov.axisLock) {
+      const { axis, at } = ov.axisLock;
+      const v = this.viewport();
+      const d = axis === 'x' ? `M${fin(v.x)} ${fin(at.y)}L${fin(v.x + v.w)} ${fin(at.y)}` : `M${fin(at.x)} ${fin(v.y)}L${fin(at.x)} ${fin(v.y + v.h)}`;
+      out += `<path class="axis-lock-line" d="${d}" stroke="${GUIDE}" stroke-opacity="0.4" stroke-width="${px(1)}" stroke-dasharray="${px(4)} ${px(4)}" fill="none"/>`;
+    }
 
     // drawing preview
     if (ov.preview) out += `<g opacity="0.85">${ov.preview}</g>`;

@@ -368,11 +368,11 @@ function tableCountCodes(value, only) {
 
 /** Per type: its own fields added to BOX (or, for connector and group, a list of their own). */
 export const FIELDS = Object.freeze({
-  shape: { ...BOX, kind: oneOf(SHAPE_KINDS) },
-  sticky: { ...BOX },
-  text: { ...BOX },
+  shape: { ...BOX, kind: oneOf(SHAPE_KINDS), lineHeight: num(0.8, 3) },
+  sticky: { ...BOX, lineHeight: num(0.8, 3) },
+  text: { ...BOX, lineHeight: num(0.8, 3) },
   // a Markdown block's text is capped lower than a note: every viewer lays it out
-  markdown: { ...BOX, text: str(LIMITS.markdown) },
+  markdown: { ...BOX, text: str(LIMITS.markdown), lineHeight: num(0.8, 3) },
   // a table (docs/tables.md): the header flags, and rows, columns, widths and cells as keys of their own, checked by tablePartCheck
   table: { ...BOX, headerRow: bool, headerCol: bool },
   frame: { ...BOX, name: str(LIMITS.name) },
@@ -987,14 +987,15 @@ const unwrap = (r) => (r.ok ? [] : r.violations);
 export const SYNC_VALIDATE_MODES = Object.freeze(['off', 'report', 'enforce']);
 
 /**
- * TABULA_SYNC_VALIDATE=off|report|enforce. Unset or empty is `off`. Anything else throws, so a typo cannot silently
- * turn the check off: call this once at startup and let the error stop the server.
+ * TABULA_SYNC_VALIDATE=off|report|enforce. Unset or empty is `report`: the check counts what it would flag and
+ * blocks nothing. `off` is the explicit switch. Anything else throws, so a typo cannot silently
+ * change the mode: call this once at startup and let the error stop the server.
  * @param {Record<string, string | undefined>} [env]
  * @returns {'off' | 'report' | 'enforce'}
  */
 export function syncValidateMode(env = process.env) {
   const raw = env?.TABULA_SYNC_VALIDATE;
-  if (raw === undefined || raw === null || String(raw).trim() === '') return 'off';
+  if (raw === undefined || raw === null || String(raw).trim() === '') return 'report';
   const value = String(raw).trim().toLowerCase();
   if (SYNC_VALIDATE_MODES.includes(value)) return value;
   throw new Error(`TABULA_SYNC_VALIDATE must be one of ${SYNC_VALIDATE_MODES.join(', ')}; got "${String(raw).slice(0, 20)}"`);

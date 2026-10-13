@@ -53,4 +53,4 @@ The board outline lists a Markdown block as "Markdown block" with its first head
 
 ## Limits
 
-A block holds up to 20,000 characters. An agent writing through an access token can write up to 4,000 characters at a time. Pictures from the board's own library can be named in a block, but a block shows them as a labelled box for now.
+A block holds up to 8,000 characters, and a single word or code line is cut at 2,000 characters. An agent writing through an access token can write up to 4,000 characters at a time. Pictures from the board's own library can be named in a block, but a block shows them as a labelled box for now.

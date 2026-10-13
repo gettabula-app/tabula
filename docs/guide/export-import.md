@@ -4,7 +4,7 @@ You can save a board as an image, a file you can reopen, or text. You can also b
 
 ## Export
 
-Open the board menu (the three-dot **Menu** button at the top right). The **Export** section lists every format. If you have items selected, the heading reads **Export selection** and PNG, SVG and JSON contain those items, contents of selected frames or groups, and connectors between exported items.
+Open the board menu (the three-dot **Menu** button at the top right). **Export** opens a submenu that lists every format; you can also find an export with **Search actions** at the top of the menu. If you have items selected, the heading reads **Export selection** and PNG, SVG and JSON contain those items, contents of selected frames or groups, and connectors between exported items.
 
 | Item | What you get |
 |---|---|

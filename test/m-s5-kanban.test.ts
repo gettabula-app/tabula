@@ -38,14 +38,15 @@ describe('M-S5 kanban styling', () => {
     expect(svg).not.toContain('fill:var(--danger');
   });
 
-  it('marks a full lane with the quiet WIP status token', () => {
+  it('marks a lane at its limit with the quiet yellow pill (the over-limit red pill is pinned in kanban-markup)', () => {
     const { store, lane, ctx } = fixture();
     store.transact(() => store.update(lane, { wip: 1, wipMode: 'block' }));
 
     const svg = draw(store, lane, ctx);
-    expect(svg).toContain('WIP full');
+    expect(svg).toContain('>At limit</text>');
     expect(svg).toContain('fill:var(--tag-yellow, #FBF3DB)');
     expect(svg).toContain('<title>Limit, blocks drops</title>');
+    expect(svg).not.toContain('>Over limit</text>');
     expect(svg).not.toContain('fill:var(--danger');
   });
 });

@@ -56,6 +56,11 @@ describe('platform-specific shortcut labels', () => {
     expect(formatShortcutLabel('Shift while resizing', platform)).toBe('Shift while resizing');
   });
 
+  it('writes the axis-lock key as Cmd on a Mac and Ctrl elsewhere', () => {
+    expect(formatShortcutLabel('Ctrl/Cmd while dragging', 'MacIntel')).toBe('⌘ while dragging');
+    expect(formatShortcutLabel('Ctrl/Cmd while dragging', 'Win32')).toBe('Ctrl while dragging');
+  });
+
   it('uses Mac Shift glyphs only for keys, digits, arrows, and key chords', () => {
     expect(formatShortcutLabel('Shift+1 / Shift+2 / Shift+0', 'MacIntel')).toBe('⇧1 / ⇧2 / ⇧0');
     expect(formatShortcutLabel('Shift+Arrows', 'MacIntel')).toBe('⇧Arrows');

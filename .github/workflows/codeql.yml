@@ -1,11 +1,12 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [main]
+  # Not on every push to main: a run takes 20 to 38 minutes and the next push cancelled 20 of the last 25 of them before they finished, so it only
+  # held a runner. It runs on pull requests, every night on main, and on request (workflow_dispatch, for example on a release SHA).
   pull_request:
+  workflow_dispatch:
   schedule:
-    - cron: '27 4 * * 1'
+    - cron: '27 4 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

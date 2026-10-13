@@ -116,6 +116,13 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | task box (tick box in a block) | uppgiftsruta | Ny UI-term för kryssrutan i ett Markdown-block; kontrollera om ”kryssruta” eller ”checkruta” är bättre. |
 | board outline (screen reader) | tavlans översikt | Ny term för skärmläsarens lista över objekt på tavlan; kontrollera mot appens formulering. |
 | source (of a block) | källtext | Ny term för texten i redigeringsrutan innan den formateras; kontrollera om ”Markdown-källa” är tydligare. |
+| table (the object, toolbar item) | tabell | Termen finns inte i ordlistan; används för både verktygsknappen och sidan. Kontrollera att den inte blir förvirrande bredvid "tabell" i kalkylbladsmening. |
+| Insert / Move / Delete (table menu) | Infoga / Flytta / Ta bort | Menyalternativen i tabellmenyn; glosorna är nya och bör stämmas av mot appens formuleringar. |
+| Header row / header column | Rubrikrad / Rubrikkolumn | Nya UI-glosor för tabellens stilalternativ; kontrollera att de matchar appens text. |
+| Align / Fill / Clear cells | Justera / Fyll / Töm celler | Nya UI-glosor i tabellmenyn; kontrollera att de matchar appens text. |
+| Copy for a spreadsheet | Kopiera för ett kalkylblad | Ny UI-glosa för kopieringsalternativet; kontrollera om appen använder ett annat svenskt namn. |
+| Summarise / Cluster / Generate ideas | Sammanfatta / Gruppera / Generera idéer | Namnen på de inbyggda AI-åtgärderna; glosorna är nya och bör jämföras med appens texter. |
+| merged cells | sammanslagna celler | Ny term för en funktion som ännu inte finns; kontrollera att formuleringen stämmer med produktens planer. |
 
 ## Övriga anmärkningar från översättarna
 

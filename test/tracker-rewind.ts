@@ -1,7 +1,8 @@
 // Tests that rewind a directory to an older schema (PRAGMA user_version = n) must also remove what tracker migrations 12, 13,
-// 14 and 15, the OAuth tables of migration 16, the MCP usage tables of migration 17, and user_notifications of migration 18 added,
-// or replaying the later migrations meets tables and columns that already exist.
+// 14 and 15, the OAuth tables of migration 16, the MCP usage tables of migration 17, and user_notifications of migration 18 and
+// card_due of migration 19 added, or replaying the later migrations meets tables and columns that already exist.
 export const REMOVE_TRACKER_MIGRATION = `
+  DROP TABLE IF EXISTS card_due;
   DROP TABLE IF EXISTS user_notifications;
   DROP TABLE IF EXISTS mcp_requests; DROP TABLE IF EXISTS mcp_daily_usage;
   DROP TABLE IF EXISTS oauth_tokens; DROP TABLE IF EXISTS oauth_codes; DROP TABLE IF EXISTS oauth_grants; DROP TABLE IF EXISTS oauth_requests; DROP TABLE IF EXISTS oauth_clients;

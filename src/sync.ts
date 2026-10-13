@@ -1,5 +1,7 @@
 import * as Y from 'yjs';
 import * as decoding from 'lib0/decoding';
+import * as encoding from 'lib0/encoding';
+import * as syncProtocol from 'y-protocols/sync';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { WebsocketProvider } from 'y-websocket';
 import { Awareness } from 'y-protocols/awareness';
@@ -363,6 +365,12 @@ export interface BoardConn {
   onAiRuns: (fn: (message: AiRunsMessage) => void) => () => void;
   /** Reconnects both rooms for a fresh sync; does nothing once the relay has refused this board. */
   resync: () => void;
+  /**
+   * Resolves true once the relay has answered a state-vector request sent now: it processes frames in order, so everything this client
+   * sent before has been seen (and, if refused, reverted and the revert sent) by then. False when it cannot be reached within the time.
+   * A board with no relay (a local board) has nobody to ask and resolves true.
+   */
+  roundTrip: (timeoutMs: number, room?: 'board' | 'comments') => Promise<boolean>;
   destroy: () => void;
 }
 
@@ -385,6 +393,41 @@ export function localCopy(name: string, doc: Y.Doc, waitMs = LOCAL_COPY_WAIT_MS)
   } catch {
     return { whenSynced: Promise.resolve(), destroy: () => undefined };
   }
+}
+
+/**
+ * Asks the relay for the state it lacks (sync step 1) and resolves true when its answer (step 2) arrives: it handles frames in
+ * order, so everything sent before has been seen by then, and anything it refused has been reverted and the revert sent. False
+ * when it cannot be reached within `timeoutMs`. No provider means a local board: nobody to ask.
+ */
+export function roundTripOf(provider: WebsocketProvider | null, doc: Y.Doc, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const ws = provider?.ws;
+    if (!provider) return resolve(true);
+    if (!provider.wsconnected || !ws || ws.readyState !== 1) return resolve(false);
+    let settled = false;
+    const done = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ws.removeEventListener('message', onMessage);
+      ws.removeEventListener('close', onClose);
+      resolve(ok);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!(event.data instanceof ArrayBuffer)) return;
+      const bytes = new Uint8Array(event.data);
+      if (bytes[0] === 0 && bytes[1] === 1) done(true);
+    };
+    const onClose = () => done(false);
+    const timer = setTimeout(() => done(false), timeoutMs);
+    ws.addEventListener('message', onMessage);
+    ws.addEventListener('close', onClose);
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, 0);
+    syncProtocol.writeSyncStep1(enc, doc);
+    ws.send(encoding.toUint8Array(enc));
+  });
 }
 
 export async function openBoard(id: string, user: User): Promise<BoardConn> {
@@ -434,6 +477,7 @@ export async function openBoard(id: string, user: User): Promise<BoardConn> {
       return () => aiRunListeners.delete(fn);
     },
     resync: () => resyncRooms(conn, [provider, commentsProvider].filter((p): p is WebsocketProvider => p !== null)),
+    roundTrip: (timeoutMs, room = 'board') => roundTripOf(room === 'board' ? provider : commentsProvider, room === 'board' ? doc : cdoc, timeoutMs),
     destroy: () => {
       clearTimeout(retryTimer);
       clearTimeout(stableTimer);
@@ -566,6 +610,7 @@ export function scratchBoard(id: string, user: User, commentsReadOnly = true): B
     onTrackerNotice: () => () => undefined,
     onAiRuns: () => () => undefined,
     resync: () => undefined,
+    roundTrip: async () => true,
     destroy: () => {
       awareness.destroy();
       doc.destroy();
