@@ -222,7 +222,7 @@ describe('auditSentence', () => {
       'team.create', 'team.update', 'team.member.role', 'team.leave', 'team.member.remove',
       'invite.create', 'invite.revoke', 'invite.accept',
       'board.create', 'board.update', 'board.delete', 'board.share', 'board.unshare',
-      'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore',
+      'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore', 'board.activity.revert',
       'template.create', 'template.update', 'template.delete',
       'member.update', 'member.remove',
       'admin.sessions.revoke', 'admin.session.revoke', 'board.restore', 'cloud.limits', 'cloud.notify', 'updates.auto', 'telemetry.enabled', 'telemetry.disabled', 'telemetry.settings',
