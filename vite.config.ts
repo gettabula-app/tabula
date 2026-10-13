@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import docs from './scripts/vite-docs.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
+const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src 'self' https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
 
 function demoBuildPlugin() {
   let outDir = '';
@@ -31,7 +31,7 @@ function demoBuildPlugin() {
   };
 }
 
-/** Stamps dist/sw.js with a hash of the release so every deploy gets fresh caches and the old ones are deleted. */
+/** Stamps dist/sw.js with its release hash and the emitted Newsreader asset for the shell precache. */
 function swVersionPlugin() {
   let outDir = '';
   return {
@@ -47,7 +47,13 @@ function swVersionPlugin() {
       // index.html names the hashed bundles, so it changes whenever the app does
       const index = fs.existsSync(path.join(outDir, 'index.html')) ? fs.readFileSync(path.join(outDir, 'index.html')) : '';
       const build = createHash('sha256').update(src).update(index).digest('hex').slice(0, 10);
-      fs.writeFileSync(sw, src.replace('__TABULA_BUILD__', build));
+      const assetsDir = path.join(outDir, 'assets');
+      const fontFile = fs.existsSync(assetsDir)
+        ? fs.readdirSync(assetsDir).find((file) => /^newsreader-latin-wght-normal(?:-[\w-]+)?\.woff2$/.test(file))
+        : undefined;
+      if (!fontFile) throw new Error('Newsreader font asset was not emitted into the app bundle');
+      const fontUrl = `/assets/${fontFile}`;
+      fs.writeFileSync(sw, src.replace('__TABULA_BUILD__', build).replace('__TABULA_NEWSREADER_FONT__', fontUrl));
     },
   };
 }

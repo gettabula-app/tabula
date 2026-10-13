@@ -327,6 +327,7 @@ function renderFontsAndAssets() {
     '## Fonts, art, and project icons', '',
     '### Fonts', '',
     '- The app loads Fontshare CSS and font files remotely. The standard families are Switzer, Cabinet Grotesk, and Satoshi; the font picker can load additional Fontshare families. Fontshare’s FFL 2.0 selectable-font terms are **UNDER REVIEW** for this editor use. See [`docs/dependency-audit.md`](dependency-audit.md) for the source review. No Fontshare font binaries are checked into this repository.',
+    '- Newsreader: Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader), licensed under the SIL Open Font License 1.1. The app ships the variable Latin subset with its [OFL.txt](../src/assets/fonts/newsreader/OFL.txt).',
     '- The brand guide references Bodoni Moda and Instrument Sans under SIL Open Font License 1.1. Bodoni Moda outlines also appear in the reserved Tabula wordmark and monogram marks. No source font binaries are included with those outlines; see [`docs/brand.md`](brand.md).', '',
     '### Brand art', '',
     'The `cutouts/`, `marks/`, `paper/`, `tape/`, and `board/` folders in `design/brand/assets/` are Tabula-created art under CC BY 4.0. Required credit: **“Art by Tabula, CC BY 4.0”**, with a link to [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The name, wordmark, and monograms are reserved and are not licensed under CC BY. `torn-edges.svg` and `torn-edges.css` are project code under AGPL-3.0-only. See [`design/brand/assets/LICENSE.md`](../design/brand/assets/LICENSE.md).', '',

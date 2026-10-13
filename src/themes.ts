@@ -1,4 +1,4 @@
-export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--wire','--selection-handle-fill','--selection-handle-stroke','--danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide'] as const;
+export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--wire','--selection-handle-fill','--selection-handle-stroke','--danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide','--shade'] as const;
 export type ThemeVar = (typeof THEME_VARS)[number];
 
 export interface Theme {
@@ -19,29 +19,30 @@ export const THEMES: Theme[] = [
     name: 'Default',
     scheme: 'light',
     vars: {
-      '--canvas': '#EEF1F4',
+      '--canvas': '#F7F6F3',
       '--paper': '#FFFFFF',
-      '--ink': '#18212B',
-      '--graphite': '#5B6672',
-      '--rule': '#D5DBE2',
-      '--signal': '#FFD23F',
-      '--on-signal': '#18212B',
-      '--wire': '#2F6FED',
+      '--ink': '#111111',
+      '--graphite': '#65635F',
+      '--rule': '#EAEAEA',
+      '--signal': '#111111',
+      '--on-signal': '#FFFFFF',
+      '--wire': '#2A64D6',
       '--selection-handle-fill': '#FFFFFF',
-      '--selection-handle-stroke': '#2F6FED',
+      '--selection-handle-stroke': '#2A64D6',
       '--danger': '#D41E24',
-      '--tray': '#18212B',
-      '--tray-2': '#222D39',
-      '--tray-line': 'rgba(233, 237, 242, 0.12)',
-      '--tray-text': '#E9EDF2',
-      '--tray-muted': '#98A4B1',
-      '--tray-hover': 'rgba(233, 237, 242, 0.08)',
-      '--grid-dot': '#AEB8C4',
-      '--grid-line': '#DDE3E9',
-      '--grid-major': '#C6CFD8',
-      '--canvas-ink': '#18212B',
-      '--canvas-rule': '#C9D1DA',
+      '--tray': '#FFFFFF',
+      '--tray-2': '#F7F6F3',
+      '--tray-line': 'rgba(17, 17, 17, 0.08)',
+      '--tray-text': '#111111',
+      '--tray-muted': '#65635F',
+      '--tray-hover': 'rgba(17, 17, 17, 0.05)',
+      '--grid-dot': '#D4D2CC',
+      '--grid-line': '#ECEBE7',
+      '--grid-major': '#DDDBD5',
+      '--canvas-ink': '#111111',
+      '--canvas-rule': '#D9D8D4',
       '--guide': '#D6247F',
+      '--shade': '#000000',
     },
   },
   {
@@ -72,6 +73,7 @@ export const THEMES: Theme[] = [
       '--canvas-ink': '#CCCAC2',
       '--canvas-rule': '#3D4455',
       '--guide': '#FF7EB6',
+      '--shade': '#000000',
     },
   },
   {
@@ -102,6 +104,7 @@ export const THEMES: Theme[] = [
       '--canvas-ink': '#DCD7BA',
       '--canvas-rule': '#54546D',
       '--guide': '#FF5D8F',
+      '--shade': '#000000',
     },
   },
   {
@@ -132,6 +135,7 @@ export const THEMES: Theme[] = [
       '--canvas-ink': '#3DFF70',
       '--canvas-rule': '#14501F',
       '--guide': '#FF4FA3',
+      '--shade': '#000000',
     },
   },
   {
@@ -162,6 +166,7 @@ export const THEMES: Theme[] = [
       '--canvas-ink': '#14301F',
       '--canvas-rule': '#CBD9CE',
       '--guide': '#D6247F',
+      '--shade': '#000000',
     },
   },
 ];

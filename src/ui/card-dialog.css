@@ -99,7 +99,7 @@
 .k-label-tools { display: flex; gap: 4px; }
 .k-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
 .k-swatch {
-  width: 28px; height: 28px; padding: 0; border: 1px solid var(--tray-line); border-radius: var(--radius-xs); background: var(--c);
+  width: 28px; height: 28px; padding: 0; border: 1px solid var(--field-edge-strong); border-radius: var(--radius-xs); background: var(--c);
 }
 .k-swatch[aria-checked='true'] { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .k-label-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 16px; }

@@ -6,13 +6,14 @@
   --k-meta: color-mix(in srgb, var(--canvas-ink) 82%, var(--canvas));
 }
 
-/* + Add card, typed in place: a card with a 2px ink border, laid over the canvas and scaled with it */
+/* + Add card, typed in place: a filled field laid over the canvas and scaled with it */
 .k-input-wrap { position: absolute; left: 0; top: 0; z-index: 5; display: none; transform-origin: 0 0; }
 .k-input-wrap.show { display: block; }
 .k-input {
-  display: block; width: 100%; height: 34px; margin: 0; padding: 0 12px; border: 2px solid var(--ink); border-radius: var(--radius-sm);
-  background: var(--paper); color: var(--ink); font: 500 13px/18px var(--k-font, inherit); outline: none; caret-color: var(--ink);
+  display: block; width: 100%; height: 34px; margin: 0; padding: 0 12px; border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule);
+  background: color-mix(in srgb, var(--ink) 6%, var(--paper)); color: var(--ink); font: 500 13px/18px var(--k-font, inherit); outline: none; caret-color: var(--ink);
 }
+.k-input:focus { box-shadow: inset 0 0 0 1px var(--tray-text), 0 0 0 3px color-mix(in srgb, var(--tray-text) 10%, transparent); }
 .k-input::placeholder { color: color-mix(in srgb, var(--ink) 55%, var(--paper)); }
 .k-input-hint {
   display: block; margin-top: 4px; color: var(--k-meta); white-space: nowrap;
@@ -31,6 +32,7 @@
 .popover.k-pop { box-shadow: 0 0 0 1px var(--tray-line), inset 0 2px 0 var(--tray-text); max-width: calc(100vw - 16px); }
 .k-menu { min-width: 0; max-width: 100%; }
 .k-menu .menu-item { min-height: 36px; font-size: 13px; color: var(--tray-text); }
+.k-seg .k-chip { border-color: var(--field-edge-strong); }
 .k-menu .menu-item.danger { color: var(--danger); }
 .k-menu .menu-item:disabled { color: var(--tray-muted); cursor: default; }
 .k-menu .menu-item:disabled:hover { background: transparent; }

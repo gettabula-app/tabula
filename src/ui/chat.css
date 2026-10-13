@@ -139,9 +139,9 @@
 }
 .chat-panel .chat-input {
   display: block; width: 100%; min-height: 38px; resize: none; overflow-y: hidden; border-radius: var(--radius-sm);
-  padding: 8px 12px; border: 1px solid var(--tray-line); background: var(--tray-2); font-size: 14px; line-height: 20px;
+  padding: 8px 12px; border: 0; box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule); background: var(--tray-2); font-size: 14px; line-height: 20px;
 }
-.chat-panel .chat-input:focus { border-color: var(--tray-text); }
+.chat-panel .chat-input:focus { outline: 0; box-shadow: inset 0 0 0 1px var(--tray-text), 0 0 0 3px color-mix(in srgb, var(--tray-text) 10%, transparent); }
 .chat-panel .chat-input:disabled { opacity: 1; color: var(--tray-muted); cursor: not-allowed; }
 .chat-compose-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; }
 .chat-note { flex: 1; min-width: 0; margin: 0; color: var(--tray-muted); font-size: 12px; line-height: 16px; }
@@ -193,7 +193,7 @@
   font: 600 12px/1 var(--ui); cursor: pointer;
 }
 .chat-reaction:hover:not(:disabled) { background: var(--tray-hover); }
-.chat-reaction.mine { border-color: var(--signal); background: color-mix(in srgb, var(--signal) 14%, transparent); }
+.chat-reaction.mine { border: 2px solid var(--tray-text); background: color-mix(in srgb, var(--tray-text) 10%, transparent); }
 .chat-reaction:disabled { cursor: default; opacity: 1; }
 .chat-reaction:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 1px; }
 .chat-reaction-n { min-width: 8px; text-align: left; }

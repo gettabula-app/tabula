@@ -19599,6 +19599,7 @@ Total hosted sets from the `2.2.540` source: 188.
 ### Fonts
 
 - The app loads Fontshare CSS and font files remotely. The standard families are Switzer, Cabinet Grotesk, and Satoshi; the font picker can load additional Fontshare families. Fontshare’s FFL 2.0 selectable-font terms are **UNDER REVIEW** for this editor use. See [`docs/dependency-audit.md`](dependency-audit.md) for the source review. No Fontshare font binaries are checked into this repository.
+- Newsreader: Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader), licensed under the SIL Open Font License 1.1. The app ships the variable Latin subset with its [OFL.txt](../src/assets/fonts/newsreader/OFL.txt).
 - The brand guide references Bodoni Moda and Instrument Sans under SIL Open Font License 1.1. Bodoni Moda outlines also appear in the reserved Tabula wordmark and monogram marks. No source font binaries are included with those outlines; see [`docs/brand.md`](brand.md).
 
 ### Brand art

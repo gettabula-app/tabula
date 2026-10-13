@@ -1,18 +1,21 @@
-/* Number fields and comboboxes on trays (the properties panel). Shared 8px control radius, theme variables only; the box
+/* Number fields and comboboxes on trays (the properties panel). Shared 6px control radius, theme variables only; the box
    matches .input so it lines up with the other fields. */
 
 .num-field, .combo { border-radius: var(--radius-sm); }
 .num-field { font-variant-numeric: tabular-nums; cursor: ns-resize; }
-.num-field:focus { cursor: text; border-color: var(--tray-text); outline: none; }
+.num-field:focus { cursor: text; }
 .num-field::placeholder { color: var(--tray-muted); }
 
 .combo {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  border: 0; box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule);
   text-align: left; cursor: pointer; font: inherit; color: var(--tray-text);
 }
-.combo:hover { border-color: var(--tray-text); }
-.combo:focus { outline: none; border-color: var(--tray-text); }
-.combo:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+.combo:hover { background-color: color-mix(in srgb, var(--tray-text) 9%, var(--tray)); }
+.combo:focus, .combo:focus-visible {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--tray-text), 0 0 0 3px color-mix(in srgb, var(--tray-text) 10%, transparent);
+}
 .combo-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .combo-option-icon { flex: none; }
 .combo-option-icon svg { display: block; }
@@ -21,8 +24,7 @@
 
 .combo-list {
   position: fixed; z-index: 80; margin: 0; padding: 4px 0; list-style: none; max-height: min(360px, 60vh, calc(100vh - 16px - var(--safe-top) - var(--safe-bottom))); max-height: min(360px, 60dvh, calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom))); overflow-y: auto;
-  border-radius: var(--radius-md); background: var(--tray); color: var(--tray-text); color-scheme: dark;
-  box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--tray) 30%, transparent);
+  border-radius: var(--radius-md); background: var(--tray); color: var(--tray-text);
   font-size: 14px;
 }
 .combo-opt { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }

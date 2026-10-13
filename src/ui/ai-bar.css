@@ -52,10 +52,10 @@
 .aibar-ctx:hover { background: var(--tray-hover); }
 .aibar-field { position: relative; flex: 1 1 0; min-width: 0; display: flex; }
 .aibar-input {
-  width: 100%; height: 36px; padding: 0 40px 0 10px; border-radius: var(--radius-sm); border: 1px solid var(--tray-line);
+  width: 100%; height: 36px; padding: 0 40px 0 10px; border-radius: var(--radius-sm); border: 0; box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule);
   background: color-mix(in srgb, var(--tray-text) 6%, transparent); color: var(--tray-text); outline: none; font-size: 13px;
 }
-.aibar-input:focus { border-color: var(--signal); }
+.aibar-input:focus { box-shadow: inset 0 0 0 1px var(--tray-text), 0 0 0 3px color-mix(in srgb, var(--tray-text) 10%, transparent); }
 .aibar-input::placeholder { color: var(--tray-muted); opacity: 1; }
 .aibar-hist { position: absolute; right: 2px; top: 2px; width: 32px; height: 32px; }
 

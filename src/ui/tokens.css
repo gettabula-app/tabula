@@ -23,14 +23,13 @@
 .tokens-label { margin-bottom: 8px; color: var(--tray-muted); }
 
 .tokens-field { min-width: 0; }
-.tokens-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--tray-line); }
-.tokens-dialog .input:focus { border-color: var(--tray-text); }
+.tokens-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); border: 0; }
 .tokens-dialog :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 
 /* Exclusive options: compact controls on hairlines; the chosen one is the one signal fill. */
 .tokens-opts { display: flex; flex-wrap: wrap; gap: 8px; }
 .tokens-opt {
-  min-height: 44px; height: auto; padding: 8px 12px; border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: none; color: var(--tray-text);
+  min-height: 44px; height: auto; padding: 8px 12px; border: 1px solid var(--field-edge-strong); border-radius: var(--radius-sm); background: none; color: var(--tray-text);
   font-size: 13px; font-weight: 600;
 }
 .tokens-opt:hover { border-color: var(--tray-text); }

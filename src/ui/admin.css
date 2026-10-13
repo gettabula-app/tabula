@@ -99,7 +99,7 @@
 .admin-check { display: inline-flex; align-items: center; gap: 8px; color: var(--graphite); }
 .admin-check input { width: 16px; height: 16px; accent-color: var(--ink); }
 .admin-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
-.admin .admin-chip { height: 32px; padding: 0 12px; border: 1px solid var(--rule); border-radius: var(--radius-xs); background: var(--paper); color: var(--graphite); }
+.admin .admin-chip { height: 32px; padding: 0 12px; border: 1px solid var(--field-edge-strong); border-radius: var(--radius-xs); background: var(--paper); color: var(--graphite); }
 .admin .admin-chip:hover { border-color: var(--ink); color: var(--ink); }
 .admin .admin-chip.on { border-color: var(--ink); background: var(--ink); color: var(--paper); }
 
@@ -158,9 +158,8 @@
 .admin .btn.armed:not(:disabled):hover { background: var(--danger); color: var(--paper); }
 
 .admin .input {
-  height: 32px; padding: 0 10px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); color: var(--ink);
+  height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); color: var(--ink);
 }
-.admin .input:focus { border-color: var(--ink); }
 .admin .input[type='search'] { min-width: 0; width: 100%; }
 .admin .icon-btn { border-radius: var(--radius-sm); }
 .admin .icon-btn:hover { background: var(--ink); color: var(--paper); }
