@@ -121,10 +121,11 @@ const createItemSchema = {
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. frame: name, x, y, w?, h?, fill?. Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?. Any object but a connector may have parent.',
   properties: {
-    type: { enum: ['sticky', 'shape', 'text', 'frame', 'connector'] },
+    type: { enum: ['sticky', 'shape', 'text', 'frame', 'connector', 'link'] },
     ref: refSchema,
+    url: { type: 'string', maxLength: 2048, description: 'A link card: an http or https web address, without a user name or password.' },
     text: { type: 'string', maxLength: LIMITS.text },
     name: { type: 'string', maxLength: LIMITS.name },
     label: { type: 'string', maxLength: LIMITS.label },
@@ -1656,7 +1657,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'create_objects',
       title: 'Add objects',
       description:
-        'Adds up to 100 stickies, shapes, text, frames and connectors in one all-or-nothing call. Connectors may point at objects created in the same call through ref. New objects appear for everyone viewing the board at once.',
+        'Adds up to 100 stickies, shapes, text, frames, link cards (an address only) and connectors in one all-or-nothing call. Connectors may point at objects created in the same call through ref. New objects appear for everyone viewing the board at once.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: false },

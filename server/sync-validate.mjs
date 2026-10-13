@@ -110,11 +110,11 @@ export const FORBIDDEN_KEYS = Object.freeze(['__proto__', 'constructor', 'protot
 // ---------------------------------------------------------------- enumerations (kept equal to board-ops.mjs by a test)
 
 export const OBJ_TYPES = Object.freeze([
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ]);
-/** Object types the validator knows beyond board-ops.mjs's list: link cards (docs/link-cards.md, server side merged, client not yet). */
-export const EXTRA_TYPES = Object.freeze(['link']);
+/** Object types the validator knows beyond board-ops.mjs's list: none now that link cards (docs/link-cards.md) are in both. */
+export const EXTRA_TYPES = Object.freeze([]);
 export const SHAPE_KINDS = Object.freeze([
   'rect', 'rounded', 'ellipse', 'diamond', 'triangle', 'hexagon', 'octagon', 'parallelogram', 'trapezoid', 'star', 'cylinder',
   'document', 'terminator', 'manual-input', 'predefined', 'pentagon', 'cross', 'heart', 'cloud', 'arrow-right', 'arrow-left',

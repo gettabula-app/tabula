@@ -1555,3 +1555,42 @@ describe('server-owned tracker fields over MCP', () => {
     }
   });
 });
+
+describe('link cards for agents (docs/link-cards.md, MCP)', () => {
+  it('creates a plain card with the address only: off, 320 by 48, no fetch, and refuses anything but a web address', () => {
+    const d = new Y.Doc();
+    const { created } = create(d, [{ type: 'link', url: 'https://Example.com/a b?x=1#f', x: 10, y: 20 }]);
+    const o = (d.getMap('objects').get(created[0].id) as Y.Map<unknown>).toJSON();
+    expect(o).toMatchObject({ type: 'link', url: 'https://example.com/a%20b?x=1#f', unfurl: 'off', w: 320, h: 48, x: 10, y: 20 });
+    for (const field of ['title', 'description', 'siteName', 'image', 'icon']) expect(o).not.toHaveProperty(field);
+    for (const url of ['javascript:alert(1)', 'data:text/html,x', 'file:///etc/passwd', 'ftp://a.test/', 'https://user:pw@a.test/', 'not a url', '', 42, `https://a.test/${'x'.repeat(2100)}`]) {
+      const err = failure(() => planCreate(new Y.Doc(), [{ type: 'link', url, x: 0, y: 0 }], who));
+      expect([String(url).slice(0, 30), err.path]).toEqual([String(url).slice(0, 30), url === undefined ? 'objects[0].url' : 'objects[0].url']);
+    }
+    expect(failure(() => planCreate(new Y.Doc(), [{ type: 'link', x: 0, y: 0 }], who)).path).toBe('objects[0].url');
+    expect(failure(() => planCreate(new Y.Doc(), [{ type: 'link', url: 'https://a.test/', x: 0, y: 0, title: 'x' }], who)).path).toBe('objects[0].title');
+  });
+
+  it('reads a card as its address and the page\'s own words, cleaned and cut, with no hash and no other field', () => {
+    const d = new Y.Doc();
+    seed(d, boardObject('lk', 'link', {
+      url: 'https://example.com/p', title: 'A\u202E title\u200B', description: 'x'.repeat(1200), siteName: 'Example', unfurl: 'ok',
+      image: 'a'.repeat(64), icon: 'b'.repeat(64), imageW: 10, imageH: 5, finalUrl: 'https://example.com/final', fetchedAt: 5,
+    }));
+    const board = summariseBoard(d, { textMax: 500 } as never) as { objects: Record<string, unknown>[] };
+    const card = board.objects.find((o) => o.id === 'lk')!;
+    expect(card).toMatchObject({ type: 'link', url: 'https://example.com/p', title: 'A title', siteName: 'Example', unfurl: 'ok', descriptionTruncated: true });
+    expect((card.description as string).length).toBeLessThanOrEqual(501); // 500 characters and the ellipsis
+    for (const hidden of ['image', 'icon', 'imageW', 'imageH', 'finalUrl', 'fetchedAt', 'asset']) expect(card).not.toHaveProperty(hidden);
+  });
+
+  it('shows a card with a bad stored address without one, and lets an agent move and resize but not change the address', () => {
+    const d = new Y.Doc();
+    seed(d, boardObject('bad', 'link', { url: 'javascript:alert(1)', unfurl: 'ok' }), boardObject('lk', 'link', { url: 'https://example.com/', unfurl: 'ok' }));
+    const board = summariseBoard(d, { textMax: 500 } as never) as { objects: Record<string, unknown>[] };
+    expect(board.objects.find((o) => o.id === 'bad')).not.toHaveProperty('url');
+    expect(update(d, [{ id: 'lk', x: 50, w: 400 }])).toBeTruthy();
+    expect(failure(() => planUpdate(d, [{ id: 'lk', url: 'https://evil.test/' }])).path).toBe('updates[0].url');
+  });
+});
+

@@ -6,6 +6,7 @@ import { stepViewBounds } from './step-view';
 import { boxBounds } from './geometry';
 import { Polls, PollError, pollInstructions, type PollInput } from './polls';
 import { mdText } from './md-text';
+import { markdownLink } from './link-cards';
 import { isSafeHttpUrl } from '../shared/containers';
 
 /** What a new dot vote covers (TAB-232). */
@@ -488,13 +489,13 @@ export class Flow {
     for (const id of voteSteps) for (const v of this.votesForStep(id)) totals.set(v.itemId, (totals.get(v.itemId) ?? 0) + 1);
     for (const fr of frames) {
       const kids = [...s.cache.values()].filter((o): o is BaseObj => isBox(o) && s.frameOf(o)?.id === fr.id &&
-        (Boolean(o.text || o.type === 'image') && !this.isHidden(o) && s.isShown(o)));
+        (Boolean(o.text || o.type === 'image' || (o.type === 'link' && markdownLink(o, mdText))) && !this.isHidden(o) && s.isShown(o)));
       if (!kids.length) continue;
       lines.push(`## ${mdText(fr.name) || 'Frame'}`, '');
       kids.sort((a, b) => (totals.get(b.id) ?? 0) - (totals.get(a.id) ?? 0) || a.y - b.y || a.x - b.x);
       for (const k of kids) {
         const n = totals.get(k.id);
-        lines.push(`- ${k.type === 'image' ? imageLine(k) : mdText(k.text)}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
+        lines.push(`- ${k.type === 'image' ? imageLine(k) : k.type === 'link' ? markdownLink(k, mdText) : mdText(k.text)}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
       }
       lines.push('');
     }

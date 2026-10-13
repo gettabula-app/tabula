@@ -92,7 +92,7 @@ export function createLinkUnfurl({ config, getSetting = () => null, hosted = fal
     if (rateKeys.person) limiters.push([person.minute, rateKeys.person], [person.hour, rateKeys.person]);
     if (rateKeys.workspace) limiters.push([workspace, rateKeys.workspace]);
     const wait = Math.max(0, ...limiters.map(([limiter, key]) => limiter.wait(key)));
-    if (wait) throw new LinkRouteError(429, 'rate_limited', 'Too many previews. Try again in a moment.', wait);
+    if (wait) throw new LinkRouteError(429, 'rate_limited', 'Too many previews right now. Try again in a moment.', wait);
     for (const [limiter, key] of limiters) limiter.hit(key);
   }
 

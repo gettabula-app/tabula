@@ -15,7 +15,7 @@ Johan went with the recommendations on every open question, which changes this p
 - **GIFs** pass through unchanged when within the caps and play once or on hover.
 - **Deleted images stay in history** until the versions holding them expire; a purge action is v2.
 - **JSON snapshot**: references only. `.drift`: embeds the files.
-- **No images in templates** in v1, **alt text only**, **pasting a URL fetches nothing**.
+- **No images in templates** in v1, **alt text only**, **pasting a URL fetches no picture**: a pasted web address becomes a link card, whose preview the relay reads once and stores as assets of the board (docs/link-cards.md).
 - **Who may add**: owners and editors (open mode: everyone who can edit). Everyone who can open the board can view.
 - **Toolbar**: **Image**, after **Frame**.
 
@@ -44,7 +44,7 @@ Johan went with the recommendations on every open question, which changes this p
 3. **Scoped to a board for access, shared on disk.** A bare hash is a capability anyone could replay if it leaked (in a log, in a screenshot of a URL). So reads are always `board id + hash`, and the server answers only when the caller can read that board and the `assets` table says that board owns that hash. The file on disk is shared; the permission is not.
 4. **Downscale in the client, validate on the server.** The browser is the only place that can decode every format cheaply, and it removes most of the cost (bytes, memory, sync traffic) before anything is sent. The server still checks type, size, pixel count and metadata, with small pure functions and no image library, in keeping with the project's no-new-runtime-dependency stance.
 5. **Never inline SVG as markup.** The icon path renders SVG bodies as DOM (after sanitising). An uploaded SVG comes from anyone, so it renders only through `<image>`/`<img>`, where scripts do not run, with the template allow-list as a second line of defence.
-6. **No URL fetching.** Pasting a web address does not fetch it. A server-side fetch is an SSRF hole, and a client-side one leaks the board's viewers' IP addresses to a third party.
+6. **No URL fetching for images.** Pasting an image address does not fetch it into an image object. A server-side fetch is an SSRF hole, and a client-side one leaks the board's viewers' IP addresses to a third party. Link cards (docs/link-cards.md) are the one exception, and are built so that neither happens: the relay fetches a page once behind an address guard and stores its preview picture as an asset, and no browser contacts the linked site.
 
 ## Object model
 

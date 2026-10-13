@@ -15,6 +15,7 @@ Tabula is a whiteboard you share with your team: draw, write and organise ideas 
 - [Smart guides](smart-guides.md)
 - [Layers](layers.md)
 - [Images](images.md)
+- [Link cards](link-cards.md)
 - [Stickers](stickers.md)
 - [Templates](templates.md)
 - [Themes](themes.md)
@@ -36,6 +37,7 @@ Tabula is a whiteboard you share with your team: draw, write and organise ideas 
 ## For workspace admins
 
 - [Admin dashboard](admin.md)
+- [Link previews](link-previews.md)
 - [Access tokens and AI tools](ai-tools.md)
 
 ## AI

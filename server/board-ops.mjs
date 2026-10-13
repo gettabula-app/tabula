@@ -50,7 +50,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'path', 'connector', 'container', 'lane', 'card',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -354,6 +354,18 @@ function endOut(end) {
 }
 
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+/** A link card's address as the model sees it: `http` or `https`, no user name or password, at most 2,048 characters; otherwise nothing. */
+export function linkUrlOf(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 2048) return '';
+  try {
+    const u = new URL(value.trim());
+    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.username || u.password || !u.hostname || u.href.length > 2048) return '';
+    return cleanForModel(u.href, 2048).text;
+  } catch {
+    return '';
+  }
+}
 const TRACKER_FIELD_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const TRACKER_VIEWS = ['inbox', 'my', 'all', 'board', 'projects'];
 
@@ -411,6 +423,20 @@ export function summarise(o, textMax, detail = false) {
       out.alt = alt.text;
       if (alt.truncated) out.altTruncated = true;
     }
+  }
+  if (o.type === 'link') {
+    // A link card (docs/link-cards.md): the address and the page's own words. The title, description and site name are text from a
+    // third-party page, so they are cleaned and cut like board text and carry no more trust than it; the picture and icon hashes are never returned.
+    const url = linkUrlOf(o.url);
+    if (url) out.url = url;
+    for (const [key, max] of [['title', 300], ['description', 1000], ['siteName', 100]]) {
+      if (typeof o[key] === 'string' && o[key]) {
+        const clean = cleanForModel(o[key], Math.min(max, textMax));
+        out[key] = clean.text;
+        if (clean.truncated) out[`${key}Truncated`] = true;
+      }
+    }
+    if (['pending', 'ok', 'failed', 'off'].includes(o.unfurl)) out.unfurl = o.unfurl;
   }
   if (typeof o.fill === 'string') out.fill = cleanForModel(o.fill, 64).text;
   if (typeof o.parent === 'string') out.parent = id64(o.parent);
@@ -1176,6 +1202,7 @@ const CREATE_KEYS = {
   text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent', 'flipX', 'flipY'],
   frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
+  link: ['type', 'ref', 'url', 'x', 'y', 'w', 'h', 'parent', 'flipX', 'flipY'],
 };
 
 export const SERVER_TRACKER_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
@@ -1268,6 +1295,11 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
           text: text(required(item, 'text', path), at(path, 'text'), 0, LIMITS.text),
           fill: item.color === undefined ? STICKY_COLORS[0].fill : colour(item.color, at(path, 'color'), { names: true }),
         });
+      } else if (type === 'link') {
+        // a plain card with the address only: no fetch is made for an agent's word (docs/link-cards.md); a person can press Refresh
+        const url = linkUrlOf(required(item, 'url', path));
+        if (!url) throw invalid(at(path, 'url'), 'Must be an http or https web address without a user name or password, at most 2,048 characters');
+        Object.assign(fields, dims(320, 48), { url, unfurl: 'off' });
       } else if (type === 'shape') {
         Object.assign(fields, dims(160, 100), {
           kind: item.kind === undefined ? 'rect' : choice(item.kind, SHAPE_KINDS, at(path, 'kind')),
@@ -1339,6 +1371,7 @@ const UPDATABLE = {
   group: ['name'],
   icon: BOX_FIELDS,
   image: BOX_FIELDS,
+  link: BOX_FIELDS,
   path: BOX_FIELDS,
   'uml-class': BOX_FIELDS,
   'uml-actor': BOX_FIELDS,

@@ -728,6 +728,32 @@ async function notifHome({ page, base }, { items, unread, unreadMentions, open =
     await page.locator('.notif').waitFor();
   }
 }
+// Link cards (docs/link-cards.md, proto/designer-preview/link-cards/SPEC.md): the relay's answers are stubbed in the page, so every state of the
+// card is drawn without a network. The grey picture stands in for a preview image, as it does in the designer's mock.
+const LINK_HASH = 'b'.repeat(64);
+const LINK_GREY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+async function linkBoard(env, name, { previews = true, unfurl } = {}) {
+  const { page, base, theme, width } = env;
+  await page.route('**/api/config', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ authEnabled: false, images: true, linkPreviews: previews }) }));
+  await page.route('**/api/boards/*/unfurl', (route) => (unfurl ? unfurl(route) : route.fulfill({ contentType: 'application/json', body: JSON.stringify({ title: 'Example Domain', description: 'This domain is for use in illustrative examples in documents.', siteName: 'Example', image: LINK_HASH, imageW: 1200, imageH: 630, icon: LINK_HASH, finalUrl: 'https://example.com/', fetchedAt: 1 }) })));
+  await page.route('**/api/boards/*/assets/**', (route) => route.fulfill({ contentType: 'image/png', body: LINK_GREY_PNG }));
+  await page.goto(`${base}/?debug#/b/${name}-${theme}-${width}`);
+  await page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
+  await page.waitForFunction(() => { const p = window.__board.conn.provider; return !p || p.synced; }, null, { timeout: 15_000 });
+}
+async function linkCards(page, cards) {
+  await page.evaluate((list) => {
+    const app = window.__board;
+    const at = Date.now();
+    app.store.transact(() => list.forEach((o, i) => {
+      if (!app.store.get(o.id)) app.store.create({ type: 'link', rotation: 0, z: `l${i}`, createdBy: 'visual-seed', updatedAt: at, ...o });
+    }));
+    app.r.invalidateObjects(list.map((o) => o.id));
+  }, cards);
+  await page.evaluate((ids) => { const b = window.__board.r.contentBounds(ids); if (b) window.__board.r.fit(b, 60, 1); }, cards.map((o) => o.id));
+  await page.waitForTimeout(400);
+}
+const LINK_OK = { url: 'https://www.example.com/articles/a-page-about-things', title: 'A page about things worth reading closely', description: 'A short description of what the page says, long enough to run onto a second line in the larger layouts.', siteName: 'Example', unfurl: 'ok', fetchedAt: 1 };
 
 async function openAiKeyDialogWith({ page, base }, testReply) {
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -4109,6 +4135,84 @@ const STATES = {
     await notifHome(env, { items: long, unread: 3, unreadMentions: 1, open: true });
     await env.page.locator('.notif-row[data-id]').first().waitFor();
   },
+  async 'link-layouts'(env) {
+    await linkBoard(env, 'link-layouts');
+    await linkCards(env.page, [
+      { id: 'lk-compact', x: 0, y: 0, w: 320, h: 48, ...LINK_OK, image: LINK_HASH, icon: LINK_HASH },
+      { id: 'lk-card', x: 0, y: 80, w: 320, h: 128, ...LINK_OK, image: LINK_HASH, imageW: 1200, imageH: 630, icon: LINK_HASH },
+      { id: 'lk-card-text', x: 0, y: 240, w: 320, h: 128, ...LINK_OK },
+      { id: 'lk-large', x: 360, y: 0, w: 320, h: 280, ...LINK_OK, image: LINK_HASH, imageW: 1200, imageH: 630, icon: LINK_HASH },
+    ]);
+  },
+  async 'link-hover'(env) {
+    await linkBoard(env, 'link-hover');
+    await linkCards(env.page, [{ id: 'lk-hover', x: 0, y: 0, w: 320, h: 128, ...LINK_OK, image: LINK_HASH, icon: LINK_HASH }]);
+    const at = await env.page.evaluate(() => { const app = window.__board; const p = app.r.toScreen({ x: 100, y: 60 }); const b = app.r.svg.getBoundingClientRect(); return { x: b.left + p.x, y: b.top + p.y }; });
+    await env.page.mouse.move(at.x, at.y);
+    await env.page.locator('.link-hover').waitFor();
+    return { keepFocus: true };
+  },
+  async 'link-selected'(env) {
+    await linkBoard(env, 'link-selected');
+    await linkCards(env.page, [{ id: 'lk-sel', x: 0, y: 0, w: 320, h: 128, ...LINK_OK, image: LINK_HASH, icon: LINK_HASH }]);
+    await env.page.evaluate(() => window.__board.setSelection(['lk-sel']));
+    await env.page.waitForTimeout(250);
+  },
+  async 'link-pending'(env) {
+    await linkBoard(env, 'link-pending');
+    await linkCards(env.page, [{ id: 'lk-pending', x: 0, y: 0, w: 320, h: 128, url: 'https://www.example.com/articles/a-page', unfurl: 'pending' }, { id: 'lk-pending-compact', x: 0, y: 160, w: 320, h: 48, url: 'https://www.example.com/articles/a-page', unfurl: 'pending' }]);
+  },
+  async 'link-ok-noimage'(env) {
+    await linkBoard(env, 'link-ok-noimage');
+    await linkCards(env.page, [{ id: 'lk-noimg', x: 0, y: 0, w: 320, h: 128, ...LINK_OK }]);
+  },
+  async 'link-failed'(env) {
+    await linkBoard(env, 'link-failed');
+    await linkCards(env.page, [{ id: 'lk-failed', x: 0, y: 0, w: 320, h: 128, url: 'https://www.example.com/missing', unfurl: 'failed', unfurlError: 'http_status' }, { id: 'lk-failed-compact', x: 0, y: 160, w: 320, h: 48, url: 'https://www.example.com/missing', unfurl: 'failed', unfurlError: 'http_status' }]);
+  },
+  async 'link-off'(env) {
+    await linkBoard(env, 'link-off', { previews: false });
+    await linkCards(env.page, [{ id: 'lk-off', x: 0, y: 0, w: 320, h: 128, url: 'https://www.example.com/articles/a-page', unfurl: 'off' }, { id: 'lk-off-compact', x: 0, y: 160, w: 320, h: 48, url: 'https://www.example.com/articles/a-page', unfurl: 'off' }]);
+  },
+  async 'link-long-address'(env) {
+    await linkBoard(env, 'link-long-address');
+    await linkCards(env.page, [{ id: 'lk-long', x: 0, y: 0, w: 320, h: 128, url: `https://www.example.com/${'a-very-long-path-segment/'.repeat(8)}index.html?utm_source=newsletter&utm_medium=email&utm_campaign=autumn`, unfurl: 'failed', unfurlError: 'timeout' }]);
+  },
+  async 'link-rail-popover'(env) {
+    await linkBoard(env, 'link-rail-popover');
+    await env.page.getByRole('button', { name: 'Link', exact: true }).click();
+    const field = env.page.getByRole('textbox', { name: 'Web address' });
+    await field.fill('example.org');
+    await env.page.keyboard.press('Enter');
+    await env.page.locator('.link-problem').waitFor();
+    return { keepFocus: true };
+  },
+  async 'link-paste-toast'(env) {
+    await linkBoard(env, 'link-paste-toast');
+    await env.page.evaluate(() => { const dt = new DataTransfer(); dt.setData('text/plain', 'https://www.example.com/articles/a-page'); window.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+    await env.page.locator('.toast-action').waitFor();
+    await env.page.waitForFunction(() => [...window.__board.store.cache.values()].some((o) => o.type === 'link' && o.unfurl === 'ok'));
+    await env.page.waitForTimeout(300);
+  },
+  async 'link-secret-dialog'(env) {
+    await linkBoard(env, 'link-secret-dialog');
+    await env.page.evaluate(() => { const dt = new DataTransfer(); dt.setData('text/plain', 'https://www.example.com/callback?token=abc123def456&state=ok'); window.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+    await env.page.getByRole('alertdialog').waitFor();
+    await env.page.waitForTimeout(300);
+    return { keepFocus: true };
+  },
+  async 'link-admin-on'(env) {
+    await env.page.route('**/api/admin/link-previews', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ enabled: true, locked: false, setting: true }) }));
+    await env.page.goto(`${env.base}/#/admin/privacy`);
+    await env.page.locator('.lp-switch').waitFor();
+    await env.page.locator('.lp-admin').scrollIntoViewIfNeeded();
+  },
+  async 'link-admin-off'(env) {
+    await env.page.route('**/api/admin/link-previews', (route) => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ enabled: false, locked: false, setting: null }) }));
+    await env.page.goto(`${env.base}/#/admin/privacy`);
+    await env.page.locator('.lp-switch').waitFor();
+    await env.page.locator('.lp-admin').scrollIntoViewIfNeeded();
+  },
   async 'chat-admin'({ page, base }) {
     await page.goto(`${base}/#/admin/chat`);
     await page.getByRole('radio', { name: '1 year' }).waitFor();
@@ -4883,7 +4987,7 @@ const BACKUPS_STATES = ['backups-list', 'backups-detail', 'backups-board-copy', 
 /** States that drive the kanban's phone sheet, which only exists under 600 px (it is a side panel on a wide screen): not run wider. */
 const PHONE_ONLY_STATES = new Set(['kanban-moveto', 'kanban-moveto-full', 'kanban-sheet-adding', 'kanban-sheet-filter', 'kanban-card-meta', 'kanban-sheet-meta', 'vote-running-touch', 'vote-running-touch-steps', 'emoji-keyboard', 'emoji-keyboard-high', 'emoji-tap', 'tracker-phone', 'tracker-phone-bulk', 'tracker-phone-new-issue', 'review-ticket-page-phone', 'share-code-phone']);
 const NARROW_STATES = new Set(['tracker-inbox-narrow']);
-const CHAT_STATES = new Set(['chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays', 'home-presence', 'notif-closed-0', 'notif-closed-3', 'notif-closed-mention', 'notif-closed-99', 'notif-open-all', 'notif-open-mentions', 'notif-open-empty', 'notif-open-mentions-empty', 'notif-loading', 'notif-error', 'notif-stale-error', 'notif-row-hover', 'notif-row-focus', 'notif-long-text']);
+const CHAT_STATES = new Set(['link-admin-on', 'link-admin-off', 'chat', 'chat-focus-pill', 'chat-focus-send', 'chat-composer', 'chat-unread', 'chat-page', 'chat-page-team', 'chat-workspace-empty', 'chat-page-pick', 'chat-home', 'chat-admin', 'chat-react', 'chat-mention', 'chat-notifications', 'chat-members', 'chat-object', 'chat-session', 'chat-poll', 'chat-poll-overlap', 'chat-dock-compact', 'chat-dock-keyboard', 'chat-dock-bubble', 'chat-dock-home', 'chat-dock-sheet', 'esc-trays', 'home-presence', 'notif-closed-0', 'notif-closed-3', 'notif-closed-mention', 'notif-closed-99', 'notif-open-all', 'notif-open-mentions', 'notif-open-empty', 'notif-open-mentions-empty', 'notif-loading', 'notif-error', 'notif-stale-error', 'notif-row-hover', 'notif-row-focus', 'notif-long-text']);
 // The kanban board is opened by id and seeded with a fixed comment author, which only open mode accepts as it is.
 const KANBAN_STATES = Object.keys(STATES).filter((s) => s.startsWith('kanban'));
 const STATE_MODES = { admin: ['accounts'], 'press-admin': ['accounts'], 'admin-tokens': ['accounts'], 'privacy-hosted': ['accounts'], 'privacy-self': ['accounts'], 'privacy-top': ['accounts'], 'ai-key-test': ['accounts'], 'ai-key-test-error': ['accounts'], 'join-short-code': ['accounts'], 'tracker-real-server': ['accounts'], 'share-code-phone': ['accounts'], 'guest-cursors': ['accounts'], 'guest-expired': ['accounts'], ...Object.fromEntries(['ai-key-me', 'ai-key-me-openai', 'ai-key-me-openai-bad', 'ai-key-me-openai-saved', 'ai-key-me-anthropic-saved', 'ai-admin', 'ai-admin-openai', 'ai-admin-openai-bad', 'ai-admin-openai-saved', 'ai-admin-anthropic-saved', 'ai-key-me-keyboard', 'ai-admin-keyboard'].map((s) => [s, ['accounts']])), 'ai-review': ['open'], 'ai-preview-empty': ['open'], 'text-handles': ['open'], 'paste-text': ['open'], 'text-scale-touch': ['open'], 'ai-live-remote-ring': ['open'], 'ai-live-remote-preview': ['open'], ...Object.fromEntries(KANBAN_STATES.map((s) => [s, ['open']])), ...Object.fromEntries([...CHAT_STATES].map((s) => [s, ['accounts']])), ...Object.fromEntries(BACKUPS_STATES.map((s) => [s, ['accounts']])) };

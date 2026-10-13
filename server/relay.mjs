@@ -1480,7 +1480,7 @@ async function onRequest(req, res) {
       if (api) {
         if (!(await api.handle(req, res))) sendJson(res, 404, { error: 'not_found' });
       } else if (url.pathname === '/api/config') {
-        sendJson(res, 200, { authEnabled: false, ...(assets ? { images: true } : {}) });
+        sendJson(res, 200, { authEnabled: false, ...(assets ? { images: true } : {}), ...(openLinks ? { linkPreviews: true } : {}) });
       } else if (url.pathname === '/api/ai/config' && req.method === 'GET') {
         sendJson(res, 200, openAiConfig(config));
       } else if (url.pathname === '/api/ai/run' && req.method === 'POST') {

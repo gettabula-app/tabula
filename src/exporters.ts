@@ -315,6 +315,16 @@ export function resolveColorMix(svg: string): string {
 export async function imageDataUrls(app: BoardApp, objs: Obj[]): Promise<Map<Id, string>> {
   const out = new Map<Id, string>();
   for (const o of objs) {
+    if (o.type === 'link') {
+      // a link card's preview image and icon, under `<id>:image` and `<id>:icon`
+      const l = o as BaseObj;
+      for (const [part, hash] of [['image', l.image], ['icon', l.icon]] as const) {
+        if (typeof hash !== 'string') continue;
+        const url = await app.images.dataUrl({ ...l, asset: hash } as BaseObj);
+        if (url) out.set(`${o.id}:${part}`, url);
+      }
+      continue;
+    }
     if (o.type !== 'image') continue;
     const url = await app.images.dataUrl(o as BaseObj);
     if (url) out.set(o.id, url);
@@ -345,6 +355,9 @@ export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; b
     openControl: null,
     // an image is its data URL here, or a placeholder when its bytes were not found: never a link that only works on screen
     imageState: (o: BaseObj): ImageState => { const url = images?.get(o.id); return url ? { kind: 'ok', url } : { kind: 'failed', why: 'missing' }; },
+    // a link card in a file: its picture and icon inlined like any image, no moving line, a pending preview drawn as one without an image
+    linkAsset: (o: BaseObj, hash: string): ImageState => { const url = images?.get(`${o.id}:${hash === o.image ? 'image' : 'icon'}`); return url ? { kind: 'ok', url } : { kind: 'failed', why: 'missing' }; },
+    still: true,
   };
   const body = objs.map((o) => objectMarkup(app.store.placed(o), ctx)).join('\n');
   const style = opts.fontCss ?? '';

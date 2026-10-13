@@ -36,6 +36,8 @@ afterEach(() => browser.uninstall());
 
 function harness(store: Store): Harness {
   const app = Object.create(BoardApp.prototype) as Harness;
+  // the link-card helper the key and paste handlers call (src/link-add.ts); a harness has no use for it
+  Object.assign(app, { links: { noteKey: () => undefined, open: () => undefined, pasteUrl: () => false } });
   const svg = browser.document.createElement('svg') as FakeElement & { setPointerCapture: (id: number) => void };
   svg.setPointerCapture = vi.fn<(id: number) => void>();
   const overlay = { anchorsFor: null, selection: [], enteredGroup: null, kanban: null };

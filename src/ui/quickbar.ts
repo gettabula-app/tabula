@@ -13,6 +13,7 @@ import { HAS_FILL, HAS_STROKE, HAS_TEXT } from './props';
 import type { mountProps } from './props';
 import { trackMore } from './scroll-cue';
 import { clampX, clearOfDock, dockTopOf, GROUP_BAR_GAP, placeBar, type Box } from './quickbar-layout';
+import { linkActions } from './link-bar';
 
 // the phone layout of styles.css, where the rail runs the full height
 const isPhone = () => typeof matchMedia === 'function' && matchMedia('(max-width: 860px)').matches;
@@ -42,7 +43,9 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
   let lock: HTMLButtonElement | undefined;
   let more: HTMLButtonElement | undefined;
 
-  const visible = () => app.selection.length > 0 && app.tool.kind === 'select' && !app.dragging && !app.editor.active && !app.readOnly;
+  // a viewer or commenter has no quick bar, except on a link card, which they can still open
+  const visible = () => app.selection.length > 0 && app.tool.kind === 'select' && !app.dragging && !app.editor.active
+    && (!app.readOnly || (app.selection.length === 1 && app.store.get(app.selection[0])?.type === 'link'));
 
   function sync() {
     const show = visible();
@@ -156,6 +159,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
       more.setAttribute('aria-pressed', String(props.isOpen()));
     }
     paints.forEach((f) => f());
+    linkPaint();
   }
 
   function refresh() {
@@ -225,6 +229,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
       }, icon(horizontal ? 'flipHorizontal' : 'flipVertical', 18), h('span', null, label), h('span', { class: 'menu-hint' }, horizontal ? 'Shift+H' : 'Shift+V'));
     };
     return h('div', { class: 'menu qb-action-menu', role: 'menu', 'aria-label': 'More actions' },
+      ...linkOverflow.map((el) => { const clone = el.cloneNode(true) as HTMLElement; clone.addEventListener('click', () => { closePopover(); el.click(); }); return clone; }),
       flipItem('horizontal'), flipItem('vertical'),
     );
   }
@@ -286,10 +291,15 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     return out;
   }
 
+  let linkPaint: () => void = () => undefined;
+  let linkOverflow: HTMLElement[] = [];
+
   function build() {
     paints = [];
     lock = undefined;
     more = undefined;
+    linkPaint = () => undefined;
+    linkOverflow = [];
     const sel = app.selected();
     const styleSel = app.selectedLeaves();
     if (!sel.length) {
@@ -303,6 +313,16 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     const boxes = sel.filter(isBox).length;
     const groups: HTMLElement[][] = [];
     groups.push(kanbanActions(sel));
+    // link cards (docs/link-cards.md): a viewer gets Open alone; an editor the layout, Open, Refresh, Edit and Turn into text
+    const links = linkActions(app, parent, sel, isPhone());
+    linkPaint = links.paint;
+    linkOverflow = links.overflow;
+    groups.push(links.bar);
+    if (app.readOnly) {
+      bar.replaceChildren(...links.bar);
+      refreshStates();
+      return;
+    }
 
     const style: HTMLElement[] = [];
     if (styleSame && styleFirst.type === 'sticky') {

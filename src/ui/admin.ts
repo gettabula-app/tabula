@@ -9,6 +9,7 @@ import { chatAdminPanel } from './chat-admin';
 import { download } from '../exporters';
 import { backupsAdminPanel } from './backups';
 import { updatesAdminPanel } from './updates-admin';
+import { linkPreviewsAdminPanel } from './link-previews-admin';
 import { privacyAdminPanel } from './privacy-admin';
 import { PRIVACY_COPY } from './privacy-logic';
 import { fmtAgo } from './common';
@@ -54,6 +55,7 @@ const AUDIT_FILTERS: { label: string; prefix: string }[] = [
   { label: 'Chat', prefix: 'chat.' },
   { label: 'Updates', prefix: 'updates.' },
   { label: PRIVACY_COPY.auditFilterLabel, prefix: 'telemetry.' },
+  { label: 'Link previews', prefix: 'linkPreviews.' },
   // The audit filter is one literal prefix, so backups and restores each get a chip.
   { label: 'Backups', prefix: 'backup.' },
   { label: 'Restores', prefix: 'restore.' },
@@ -706,7 +708,7 @@ const PANELS: Record<AdminTab, (me: Me) => HTMLElement> = {
   chat: () => chatAdminPanel({ head, loadList, change, armable, emptyLine }),
   backups: (me) => backupsAdminPanel(me, { head, loadList, change, armable, emptyLine }),
   settings: (me) => updatesAdminPanel(me),
-  privacy: (me) => privacyAdminPanel(me),
+  privacy: (me) => h('div', null, privacyAdminPanel(me), linkPreviewsAdminPanel(me)),
   audit: () => auditPanel(),
 };
 

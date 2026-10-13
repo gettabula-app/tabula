@@ -40,6 +40,8 @@ afterEach(() => {
 
 function harness(store = new Store(new Y.Doc())) {
   const app = Object.create(BoardApp.prototype) as Harness;
+  // the link-card helper the key and paste handlers call (src/link-add.ts); a harness has no use for it
+  Object.assign(app, { links: { noteKey: () => undefined, open: () => undefined, pasteUrl: () => false } });
   const hit = vi.fn<(...args: unknown[]) => Obj | undefined>(() => store.get('a'));
   const flow = { handleClick: vi.fn<(o: Obj) => boolean>((_o) => false), isHidden: () => false, isVoting: vi.fn<() => boolean>(() => false), activeStep: () => null };
   const svg = browser.document.createElement('svg') as FakeElement & { setPointerCapture: (id: number) => void };

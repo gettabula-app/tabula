@@ -18,7 +18,7 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'link' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
@@ -131,6 +131,22 @@ export interface BaseObj extends Partial<StyleFields> {
   nw?: number;
   nh?: number;
   alt?: string;
+  // link card (docs/link-cards.md): the address, and what the relay read from the page once
+  url?: string;
+  title?: string;
+  description?: string;
+  siteName?: string;
+  /** Asset hashes of the preview image and the site icon (stored as this board's assets, never hot-linked). */
+  image?: string;
+  imageW?: number;
+  imageH?: number;
+  icon?: string;
+  finalUrl?: string;
+  unfurl?: 'pending' | 'ok' | 'failed' | 'off';
+  unfurlError?: string;
+  fetchedAt?: number;
+  /** Fields a person changed by hand; Refresh keeps them. */
+  edited?: ('title' | 'description')[];
   // path
   points?: number[]; // flat [x0,y0,x1,y1,...] relative to x,y
   // uml-class

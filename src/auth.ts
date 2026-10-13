@@ -216,6 +216,8 @@ function forgetCaches() {
 
 /** What the server said about images (docs/images.md): true, false, or null while it has not answered (then adding one stays possible, on this device). */
 let serverImages: boolean | null = null;
+/** Open mode: the relay says link previews are on (TABULA_LINK_PREVIEWS=on). Accounts mode reads `linkPreviews` from /api/me. */
+let serverLinkPreviews = false;
 
 /** Open, image-free mode for the ephemeral landing-page demo. It makes no API request and writes no identity cache. */
 export function setDemoMode(): AuthState {
@@ -227,6 +229,12 @@ export function setDemoMode(): AuthState {
  * Whether the **Image** button should show. A server that answered and does not list `images` (off, or older than this
  * feature) hides it; a server that has not answered, or a board kept only on this device, keeps it.
  */
+/** Whether adding a link card also asks the relay for a preview (docs/link-cards.md). Off, a card shows the address only. */
+export function linkPreviewsAvailable(): boolean {
+  const me = state.mode === 'signed-in' || state.mode === 'offline' ? state.me : null;
+  return me ? me.linkPreviews === true : serverLinkPreviews;
+}
+
 export function imagesAvailable(): boolean {
   const me = state.mode === 'signed-in' || state.mode === 'offline' ? state.me : null;
   return me ? me.images === true : serverImages !== false;
@@ -267,6 +275,7 @@ export async function initAuth(a: Pick<typeof api, 'config' | 'me'> = api): Prom
     authEnabled = config.authEnabled;
     joinCodesEnabled = config.joinCodes === true;
     serverImages = config.images === true;
+    serverLinkPreviews = config.linkPreviews === true;
   } catch {
     if (revision !== authRevision) return authState();
     const guest = readGuestSession();

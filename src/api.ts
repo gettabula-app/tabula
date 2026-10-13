@@ -41,6 +41,8 @@ export interface Me {
   mcpOauth: boolean;
   /** Present (true) when this server stores images on boards (docs/images.md). */
   images?: boolean;
+  /** Present (true) when the server fetches link previews for this workspace (docs/link-cards.md). */
+  linkPreviews?: boolean;
   /** Present only when this person may bring their own AI key (docs/ai.md). */
   ai?: { personalKeys: true };
   /** Present (true) when team chat is on for this server (docs/chat.md). */
@@ -151,6 +153,13 @@ export interface AdminUpdates {
 }
 
 /** GET and PUT /api/admin/privacy. */
+/** GET and PUT /api/admin/link-previews: whether the server fetches previews for link cards (docs/link-cards.md). `locked` is the operator's kill switch. */
+export interface AdminLinkPreviews {
+  enabled: boolean;
+  locked: boolean;
+  setting: boolean | null;
+}
+
 export interface AdminPrivacy {
   enabled: boolean;
   locked: null | 'env';
@@ -648,6 +657,8 @@ type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** A hung server must not freeze the app: a timeout rejects like any other network failure. */
 const REQUEST_TIMEOUT_MS = 8000;
+/** The relay reads the page, then its picture and icon: up to five seconds each. */
+const UNFURL_TIMEOUT_MS = 20_000;
 /** A version's state can be a few hundred kilobytes on a slow link. */
 const BYTES_TIMEOUT_MS = 30000;
 /** A template can be a megabyte, and it travels in both directions. */
@@ -805,7 +816,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
   };
 
   return {
-    config: () => call<{ authEnabled: boolean; images?: boolean; joinCodes?: boolean }>('GET', '/api/config'),
+    config: () => call<{ authEnabled: boolean; images?: boolean; linkPreviews?: boolean; joinCodes?: boolean }>('GET', '/api/config'),
     me: () => call<Me>('GET', '/api/me'),
     updateMe: (name: string) => call<ApiUser>('PATCH', '/api/me', { name }),
     requestLogin: (email: string, invite?: string, oauthRequest?: string) => {
@@ -850,6 +861,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     uploadAsset: (boardId: string, bytes: Blob, type: string) => sendBytes<AssetInfo>(`/api/boards/${seg(boardId)}/assets`, bytes, type),
     /** Asks for a file another board of the caller's already holds, without sending bytes. */
     claimAsset: (boardId: string, hash: string) => call<AssetInfo>('POST', `/api/boards/${seg(boardId)}/assets/claim`, { hash }),
+    /** A link card's preview: the relay reads the page once and stores its image and icon as this board's assets (docs/link-cards.md). */
+    unfurl: (boardId: string, url: string, refresh = false) => call<unknown>('POST', `/api/boards/${seg(boardId)}/unfurl`, { url, ...(refresh ? { refresh: true } : {}) }, UNFURL_TIMEOUT_MS),
     shares: (boardId: string) => call<Share[]>('GET', `/api/boards/${seg(boardId)}/shares`),
     share: (boardId: string, grant: { principalType: PrincipalType; principalId: string; role: ShareRole }) =>
       call<void>('POST', `/api/boards/${seg(boardId)}/shares`, grant),
@@ -946,6 +959,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     setAdminChat: (patch: Partial<ChatSettings>) => call<ChatSettings>('PUT', '/api/admin/chat', patch),
     adminUpdates: () => call<AdminUpdates>('GET', '/api/admin/updates'),
     setAdminUpdates: (auto: boolean) => call<AdminUpdates>('PUT', '/api/admin/updates', { auto }),
+    adminLinkPreviews: () => call<AdminLinkPreviews>('GET', '/api/admin/link-previews'),
+    setAdminLinkPreviews: (enabled: boolean) => call<AdminLinkPreviews>('PUT', '/api/admin/link-previews', { enabled }),
     adminPrivacy: () => call<AdminPrivacy>('GET', '/api/admin/privacy'),
     setAdminPrivacy: (enabled: boolean) => call<AdminPrivacy>('PUT', '/api/admin/privacy', { enabled }),
     adminPrivacyPreview: () => call<AdminPrivacyPreview>('GET', '/api/admin/privacy/preview'),
