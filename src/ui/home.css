@@ -299,7 +299,7 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
 .board-row:focus-within { background: var(--page-hover); }
 .board-link { font-size: 15px; font-weight: 500; }
 .board-row:hover .board-title { text-decoration: none; }
-.board-access .badge.tag { border: 0; padding: 2px 9px; line-height: 1.4; }
+.badge.tag, .board-access .badge.tag { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 9999px; padding: 0 10px; line-height: 1.4; }
 .board-access .badge.tag,
 .tpl-label.tag { font: 600 11px/1.4 var(--ui); letter-spacing: normal; text-transform: none; }
 /* the page's grey label colours above must not win over the pastel tag pair (the dark themes read it at under 3:1 otherwise) */

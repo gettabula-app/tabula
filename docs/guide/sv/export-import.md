@@ -4,7 +4,7 @@ Du kan spara en tavla som en bild, en fil som du kan öppna igen eller text. Du 
 
 ## Exportera
 
-Öppna tavlans meny (knappen **Menu** (Meny) med tre punkter längst upp till höger). Avsnittet **Export** (Exportera) visar alla format. Om du har markerat objekt heter rubriken **Export selection** (Exportera markering), och PNG, SVG och JSON innehåller de objekten, innehållet i markerade ramar eller grupper och kopplingslinjer mellan exporterade objekt.
+Öppna tavlans meny (knappen **Menu** (Meny) med tre punkter längst upp till höger). **Export** (Exportera) öppnar en undermeny som visar alla format. Du kan också hitta en export med **Search actions** (Sök åtgärder) överst i menyn. Om du har markerat objekt heter rubriken **Export selection** (Exportera markering), och PNG, SVG och JSON innehåller de objekten, innehållet i markerade ramar eller grupper och kopplingslinjer mellan exporterade objekt.
 
 | Objekt | Resultat |
 |---|---|

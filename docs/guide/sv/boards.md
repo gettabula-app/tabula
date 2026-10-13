@@ -58,7 +58,7 @@ I arbetsytor med inloggning sitter en klocka i det övre fältet på sidan Board
 - **Teamanslutningar**: någon du bjöd in gick med i teamet, också när personen loggade in via din inbjudningslänk.
 - **Spåraren**: ärenden som tilldelats dig, kommenterats och flyttats, om din arbetsyta har spåraren.
 
-Varje rad säger vem, vad och var, med de första orden i ett meddelande eller en kommentar, och när. Välj en rad för att gå dit. Välj bocken på en rad, eller **Mark all as read** (Markera alla som lästa), för att markera som läst. Att läsa en chatt rensar dess omnämnanden. **All** (Alla) och **Mentions** (Omnämnanden) filtrerar listan, **Show older** (Visa äldre) läser in fler, och listan går 90 dagar tillbaka. **Notification settings** (Aviseringsinställningar) öppnar dina chattaviseringsinställningar.
+Varje rad säger vem, vad och var, med de första orden i ett meddelande eller en kommentar, och när. Välj en rad för att gå dit. Välj bocken på en rad, eller **Mark all as read** (Markera alla som lästa), för att markera som läst. Att läsa en chatt rensar dess omnämnanden. **All** (Alla) och **Mentions** (Omnämnanden) filtrerar listan, **Show older** (Visa äldre) läser in fler, och listan går 90 dagar tillbaka. **Notification settings** (Aviseringsinställningar) har reglage för vad som visas här (omnämnanden, svar, kort och delningar) och för chattmejlet, och kan skicka ett mejl om dagen med vad som är nytt i dina aviseringar (avstängt tills du slår på det).
 
 Ett objekt försvinner från listan, och från räkningen, när du inte längre kan öppna det det pekar på, till exempel när en tavla inte längre delas med dig. Räkningen uppdateras direkt medan chatten är på, och varje minut när chatten är av. I öppet läge, utan inloggning, finns ingen klocka.
 
@@ -93,7 +93,7 @@ De här inställningarna hör till tavlan och delas med alla som använder den.
 
 ## Tavlans meny
 
-Knappen **Menu** längst upp till höger har följande avsnitt:
+Knappen **Menu** (Meny) längst upp till höger har följande avsnitt. Skriv i **Search actions** (Sök åtgärder) överst i menyn (eller tryck på `/` när menyn är öppen) för att hitta en åtgärd med namn. **Appearance** (Utseende) och **Export** (Exportera) öppnas som undermenyer bredvid menyn:
 
 - **Account** (Konto) i arbetsytor med inloggning: ditt namn och din e-postadress, **Sign out**, **Sign out everywhere** (Logga ut överallt) och **Admin** för ägare och administratörer. Om administratören har aktiverat AI-verktyg visas även **AI tool access** (Åtkomst till AI-verktyg). Om du får använda din egen AI-nyckel visas även **Your AI key** (Din AI-nyckel). Se [Åtkomsttoken och AI-verktyg](ai-tools.md) och [Din AI-nyckel](ai-keys.md).
 - **Board** (Tavla): **Board settings**, **Save board as template** (Spara tavlan som mall) ([Mallar](templates.md)), **Version history** (Versionshistorik) ([Versionshistorik](version-history.md)), **Your name and colour** (Ditt namn och din färg), **Show comments** (Visa kommentarer) ([Kommentarer](comments.md)), **Import a board file into this board** (Importera en tavelfil till den här tavlan) och **Import Mermaid** (Importera Mermaid).

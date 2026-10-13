@@ -56,9 +56,10 @@ In workspaces with sign-in, a bell sits in the top bar of the Boards page, next 
 - **Replies**: someone replied to a comment of yours.
 - **Shares**: someone shared a board directly with you.
 - **Team joins**: someone you invited joined the team, including when they signed in through your invite link.
+- **Cards**: a card you own is due tomorrow, due today or overdue, or someone assigned you a card. Selecting the row opens the board.
 - **Tracker**: tickets assigned to you, commented on and moved, if your workspace has the tracker.
 
-Each row says who, what and where, with the first words of a message or comment, and when. Select a row to go there. Select the check on a row, or **Mark all as read**, to mark items read. Reading a chat clears its mention notices. **All** and **Mentions** filter the list, **Show older** loads more, and the list goes back 90 days. **Notification settings** opens your chat notification settings.
+Each row says who, what and where, with the first words of a message or comment, and when. Select a row to go there. Select the check on a row, or **Mark all as read**, to mark items read. Reading a chat clears its mention notices. **All** and **Mentions** filter the list, **Show older** loads more, and the list goes back 90 days. **Notification settings** has switches for what appears here (mentions, replies, cards and shares) and for the chat email, and it can send you one email a day listing what is new in your notifications (off until you turn it on).
 
 An item disappears from the list, and from the count, when you can no longer open what it points to, for example after a board is unshared from you. The count updates live while chat is on, and every minute when chat is off. In open mode, without sign-in, there is no bell.
 

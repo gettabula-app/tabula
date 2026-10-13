@@ -276,7 +276,7 @@ Screenshots show demo data.
 
 ### Not built yet (from the spec)
 
-End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; comment mentions and per-thread notifications; data tables with typed columns and formulas (TAB-186); PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; and peer-to-peer WebRTC sync.
+End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; per-thread comment notifications; data tables with typed columns and formulas (TAB-186); PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; and peer-to-peer WebRTC sync.
 
 Native and desktop development (Mac, Windows, Linux, iPhone, Android) is frozen since 2026-10-11 while we focus on the web app; the shell on main still builds and stays for reference, but is not maintained and gets no new features until we revisit this.
 

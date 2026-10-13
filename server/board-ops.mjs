@@ -475,7 +475,7 @@ function addDetail(out, o) {
   for (const key of ['font', 'textColor', 'stroke']) {
     if (typeof o[key] === 'string') out[key] = cleanForModel(o[key], 64).text;
   }
-  for (const key of ['fontSize', 'fontWeight', 'strokeWidth', 'opacity', 'updatedAt']) {
+  for (const key of ['fontSize', 'fontWeight', 'lineHeight', 'strokeWidth', 'opacity', 'updatedAt']) {
     if (typeof o[key] === 'number' && Number.isFinite(o[key])) out[key] = r2(o[key]);
   }
   if (DASHES.includes(o.dash)) out.dash = o.dash;
@@ -1208,16 +1208,16 @@ function parseEnd(v, path, { allowRef, get, refs, allowKanbanTarget = false }) {
 }
 
 /** A rough height for a Markdown block's source: wrapped lines plus the room headings, code and blank lines take. The app measures properly and corrects it. */
-function markdownHeightEstimate(content, w, fontSize) {
+function markdownHeightEstimate(content, w, fontSize, lineHeight = 1.45) {
   let lines = 0;
   for (const line of content.split('\n')) lines += line.trim() === '' ? 0.5 : Math.max(1, Math.ceil((line.length * fontSize * 0.52) / Math.max(40, w - 20))) + (/^\s*#{1,2}\s/u.test(line) ? 0.6 : 0);
-  return r2(Math.max(LIMITS.sizeMin, 20 + lines * fontSize * 1.45));
+  return r2(Math.max(LIMITS.sizeMin, 20 + lines * fontSize * lineHeight));
 }
 
-function textHeight(content, w, fontSize) {
+function textHeight(content, w, fontSize, lineHeight = 1.3) {
   const newlines = content.match(/\n/g)?.length ?? 0;
   const lines = Math.max(1, Math.ceil((content.length * fontSize * 0.52) / w) + newlines);
-  return r2(Math.max(LIMITS.sizeMin, lines * fontSize * 1.3));
+  return r2(Math.max(LIMITS.sizeMin, lines * fontSize * lineHeight));
 }
 
 /** The rows of a new table: 1 to MAX_TABLE_ROWS rows of 1 to MAX_TABLE_COLS cell texts of at most MAX_CELL_CHARS characters each. */
@@ -1232,10 +1232,10 @@ function tableGrid(v, path) {
 }
 
 const CREATE_KEYS = {
-  sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'parent', 'flipX', 'flipY'],
-  shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent', 'flipX', 'flipY'],
-  text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent', 'flipX', 'flipY'],
-  markdown: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'fontSize', 'parent', 'flipX', 'flipY'],
+  sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'lineHeight', 'parent', 'flipX', 'flipY'],
+  shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'lineHeight', 'parent', 'flipX', 'flipY'],
+  text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'lineHeight', 'parent', 'flipX', 'flipY'],
+  markdown: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'fontSize', 'lineHeight', 'parent', 'flipX', 'flipY'],
   table: ['type', 'ref', 'rows', 'headerRow', 'headerCol', 'x', 'y', 'fontSize', 'parent', 'flipX', 'flipY'],
   frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
@@ -1305,6 +1305,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
 
   entries.forEach(({ item, type, id, path }, i) => {
     const base = { id, type, z: zs[i], createdBy, updatedAt: now };
+    const lineHeight = item.lineHeight === undefined ? undefined : num(item.lineHeight, at(path, 'lineHeight'), 0.8, 3);
     let fields;
     if (type === 'connector') {
       const ends = { allowRef: true, get, refs };
@@ -1331,6 +1332,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
         Object.assign(fields, dims(192, 192), {
           text: text(required(item, 'text', path), at(path, 'text'), 0, LIMITS.text),
           fill: item.color === undefined ? STICKY_COLORS[0].fill : colour(item.color, at(path, 'color'), { names: true }),
+          lineHeight,
         });
       } else if (type === 'link') {
         // a plain card with the address only: no fetch is made for an agent's word (docs/link-cards.md); a person can press Refresh
@@ -1343,13 +1345,17 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
           text: item.text === undefined ? undefined : text(item.text, at(path, 'text'), 0, LIMITS.text),
           fill: item.fill === undefined ? undefined : colour(item.fill, at(path, 'fill'), { none: true }),
           stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke'), { none: true }),
+          lineHeight,
         });
       } else if (type === 'markdown') {
         // a Markdown block (docs/markdown-blocks.md): the source is the text; the height is a first estimate that the app corrects when the board opens
         const content = text(required(item, 'text', path), at(path, 'text'), 1, LIMITS.text);
         const w = item.w === undefined ? 360 : size(item.w, at(path, 'w'));
         const fontSize = item.fontSize === undefined ? undefined : num(item.fontSize, at(path, 'fontSize'), LIMITS.fontMin, LIMITS.fontMax);
-        Object.assign(fields, { w, h: item.h === undefined ? markdownHeightEstimate(content, w, fontSize ?? 16) : size(item.h, at(path, 'h')), text: content, fontSize });
+        Object.assign(fields, {
+          w, h: item.h === undefined ? markdownHeightEstimate(content, w, fontSize ?? 16, lineHeight ?? 1.45) : size(item.h, at(path, 'h')),
+          text: content, fontSize, lineHeight,
+        });
       } else if (type === 'table') {
         // a table (docs/tables.md): `rows` is a grid of cell texts (inline Markdown); the size is an estimate that the app corrects when the board opens
         const grid = tableGrid(required(item, 'rows', path), at(path, 'rows'));
@@ -1365,7 +1371,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
         const content = text(required(item, 'text', path), at(path, 'text'), 1, LIMITS.text);
         const w = item.w === undefined ? 240 : size(item.w, at(path, 'w'));
         const fontSize = item.fontSize === undefined ? undefined : num(item.fontSize, at(path, 'fontSize'), LIMITS.fontMin, LIMITS.fontMax);
-        Object.assign(fields, { w, h: textHeight(content, w, fontSize ?? 20), text: content, fontSize });
+        Object.assign(fields, { w, h: textHeight(content, w, fontSize ?? 20, lineHeight ?? 1.3), text: content, fontSize, lineHeight });
       } else {
         Object.assign(fields, dims(960, 600), {
           name: text(required(item, 'name', path), at(path, 'name'), 1, LIMITS.name),
@@ -1417,10 +1423,10 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
 
 const BOX_FIELDS = ['x', 'y', 'w', 'h', 'rotation', 'parent', 'flipX', 'flipY'];
 const UPDATABLE = {
-  sticky: [...BOX_FIELDS, 'text', 'color'],
-  shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth'],
-  text: [...BOX_FIELDS, 'text', 'fontSize', 'textColor'],
-  markdown: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'fill'],
+  sticky: [...BOX_FIELDS, 'text', 'color', 'lineHeight'],
+  shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth', 'lineHeight'],
+  text: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'lineHeight'],
+  markdown: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'fill', 'lineHeight'],
   // a table's size follows its columns and rows, so w and h are not set here; `rows` replaces every cell (docs/tables.md)
   table: ['x', 'y', 'rotation', 'parent', 'flipX', 'flipY', 'headerRow', 'headerCol', 'fontSize', 'rows'],
   frame: [...BOX_FIELDS, 'name', 'fill'],
@@ -1445,11 +1451,11 @@ const UPDATABLE = {
   card: [],
 };
 const KNOWN_UPDATE_FIELDS = new Set([
-  ...BOX_FIELDS, 'id', 'type', 'text', 'color', 'kind', 'fill', 'stroke', 'strokeWidth', 'name', 'fontSize', 'textColor',
+  ...BOX_FIELDS, 'id', 'type', 'text', 'color', 'kind', 'fill', 'stroke', 'strokeWidth', 'name', 'fontSize', 'textColor', 'lineHeight',
   'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'rank', 'title', 'description', 'due', 'labels', 'link',
   'ownerId', 'ownerName', 'ownerKind', 'stage', 'wip', 'wipMode', 'laneW', 'layout', 'rows', 'headerRow', 'headerCol',
 ]);
-const CLEARABLE = new Set(['parent', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'textColor', 'dash', 'label']);
+const CLEARABLE = new Set(['parent', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'textColor', 'lineHeight', 'dash', 'label']);
 const GROUP_NAME_MAX = 80;
 
 const sameValue = (a, b) => (typeof a === 'object' || typeof b === 'object' ? JSON.stringify(a) === JSON.stringify(b) : a === b);
@@ -1528,6 +1534,7 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'textColor': sets.set(key, colour(v, fieldPath)); break;
         case 'strokeWidth': sets.set(key, num(v, fieldPath, 0, LIMITS.strokeMax)); break;
         case 'fontSize': sets.set(key, num(v, fieldPath, LIMITS.fontMin, LIMITS.fontMax)); break;
+        case 'lineHeight': sets.set(key, num(v, fieldPath, 0.8, 3)); break;
         case 'kind': sets.set(key, choice(v, SHAPE_KINDS, fieldPath)); break;
         case 'route': sets.set(key, choice(v, ROUTES, fieldPath)); break;
         case 'startHead': case 'endHead': sets.set(key, choice(v, HEADS, fieldPath)); break;
@@ -1562,17 +1569,19 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
       pendingParent.set(id, undefined);
     }
     // a text object's height follows its text, as in the app
-    if (current.type === 'text' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize'))) {
+    if (current.type === 'text' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize') || sets.has('lineHeight') || unsets.has('lineHeight'))) {
       const content = sets.get('text') ?? current.text ?? '';
       const w = sets.get('w') ?? current.w;
       const fontSize = unsets.has('fontSize') ? 20 : (sets.get('fontSize') ?? current.fontSize ?? 20);
-      sets.set('h', textHeight(content, w, fontSize));
+      const lineHeight = unsets.has('lineHeight') ? 1.3 : (sets.get('lineHeight') ?? current.lineHeight ?? 1.3);
+      sets.set('h', textHeight(content, w, fontSize, lineHeight));
     }
 
     // a Markdown block's height follows its source until a person sets one, like a text object's
-    if (current.type === 'markdown' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize'))) {
+    if (current.type === 'markdown' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize') || sets.has('lineHeight') || unsets.has('lineHeight'))) {
       const fontSize = unsets.has('fontSize') ? 16 : (sets.get('fontSize') ?? current.fontSize ?? 16);
-      sets.set('h', markdownHeightEstimate(sets.get('text') ?? current.text ?? '', sets.get('w') ?? current.w, fontSize));
+      const lineHeight = unsets.has('lineHeight') ? 1.45 : (sets.get('lineHeight') ?? current.lineHeight ?? 1.45);
+      sets.set('h', markdownHeightEstimate(sets.get('text') ?? current.text ?? '', sets.get('w') ?? current.w, fontSize, lineHeight));
     }
 
     let changed = false;

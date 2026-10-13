@@ -287,7 +287,7 @@ export function openWorkspaceMembers(me: Me, onChange: () => void): void {
       onChange();
     } }, ...roles.map((r) => h('option', { value: r, selected: r === m.role }, ROLE_NAMES[r])));
     const who = h('div', { class: 'who' },
-      h('div', null, m.disabled ? h('span', { class: 'badge-off' }, 'Disabled') : null, m.name, mine ? h('span', { class: 'muted' }, ' · You') : null),
+      h('div', null, m.disabled ? h('span', { class: 'admin-badge tag tag-yellow' }, 'Disabled') : null, m.name, mine ? h('span', { class: 'muted' }, ' · You') : null),
       h('div', { class: 'muted' }, m.email),
       h('div', { class: 'muted' }, m.teams.length ? m.teams.map((t) => t.name).join(', ') : 'No teams'),
     );

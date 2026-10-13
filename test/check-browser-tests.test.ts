@@ -16,10 +16,16 @@ const report = (entries: Record<string, string[]>) => ({
 describe('checkBrowserTests', () => {
   const files = ['test/a-browser.test.ts', 'test/b-browser.test.ts'];
 
-  it('passes when every browser file passed at least one test, whatever else it skipped', () => {
-    const result = checkBrowserTests(report({ 'test/a-browser.test.ts': ['passed', 'passed'], 'test/b-browser.test.ts': ['passed', 'skipped'] }), files);
+  it('passes when every browser file passed at least one test and skipped nothing it should not have', () => {
+    const result = checkBrowserTests(report({ 'test/a-browser.test.ts': ['passed', 'passed'], 'test/asset-store-browser.test.ts': ['passed', 'skipped'] }), ['test/a-browser.test.ts', 'test/asset-store-browser.test.ts']);
     expect(result.ok).toBe(true);
     expect(result.rows[1]).toMatchObject({ passed: 1, skipped: 1, ran: true });
+  });
+
+  it('fails when a file skips a test it is not allowed to skip, unless skips are allowed for the run', () => {
+    const r = report({ 'test/a-browser.test.ts': ['passed', 'skipped'] });
+    expect(checkBrowserTests(r, ['test/a-browser.test.ts']).problems).toEqual([expect.stringContaining('test/a-browser.test.ts: 1 skipped (allowed: 0)')]);
+    expect(checkBrowserTests(r, ['test/a-browser.test.ts'], { allowSkips: true }).ok).toBe(true);
   });
 
   it('fails for a file whose tests were all skipped (no Chromium), naming it', () => {

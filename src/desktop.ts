@@ -3,7 +3,7 @@
 import { cacheImportedAssets } from './board-images';
 import * as Y from 'yjs';
 import type { BoardApp } from './app';
-import { applyImported, importedBoardName, readBoardFile, setNativeSave, toDrift } from './exporters';
+import { applyImported, importedBoardName, OWN_BACKUP_LIMITS, readBoardBytes, readBoardFile, setNativeSave, toDrift } from './exporters';
 import { getUser, listBoards, onBoardDeleted, touchBoard, writeLocalBoard, type BoardConn } from './sync';
 import { authState } from './auth';
 import { newId } from './store';
@@ -15,8 +15,9 @@ import {
   createOpenedFiles,
   fileNameOf,
   mergeBackup,
-  restoreMissing,
+  runRecovery,
   saveExport,
+  showRecoveryFailure,
   worthBackingUp,
   type Invoke,
 } from './desktop-logic';
@@ -43,7 +44,8 @@ export async function startDesktop(nav: HomeNav): Promise<Desktop> {
   const [{ invoke }, { listen }] = await Promise.all([import('@tauri-apps/api/core'), import('@tauri-apps/api/event')]);
   const call: Invoke = invoke;
   const readBackup = async (id: string) => new Uint8Array(await call<ArrayBuffer>('read_backup', { id }));
-  const parseBackup = (id: string, bytes: Uint8Array) => readBoardFile(new File([bytes as BlobPart], `${id}.drift`));
+  // the app's own backup copies have their own, larger limits (OWN_BACKUP_LIMITS): they must fit every board the app supports
+  const parseBackup = async (_id: string, bytes: Uint8Array) => readBoardBytes(bytes, OWN_BACKUP_LIMITS);
 
   // Asks the webview not to evict this origin's storage. Whether WKWebView honours it is recorded in docs/desktop.md.
   void navigator.storage?.persist?.().catch(() => undefined);
@@ -58,25 +60,27 @@ export async function startDesktop(nav: HomeNav): Promise<Desktop> {
   // A deleted board must not come back from its backup at the next start.
   onBoardDeleted((id) => call('delete_backup', { id }));
 
-  try {
-    const restored = await restoreMissing({
-      listBackups: () => call<string[]>('list_backups'),
-      readBackup,
-      localIds: () => new Set(listBoards().map((b) => b.id)),
-      parse: parseBackup,
-      store: async (id, imported) => {
-        // The board's own copy: its comments keep their authors rather than being marked imported.
-        await writeLocalBoard(id, (target) => applyImported(target, imported, null));
-        await cacheImportedAssets(imported.assets);
-        const savedAt = Date.parse(imported.json.exportedAt);
-        touchBoard(id, { name: importedBoardName(imported, id), ...(Number.isFinite(savedAt) ? { createdAt: savedAt, updatedAt: savedAt } : {}) });
-      },
-      onError: (e, id) => console.warn(`could not restore board ${id} from its backup`, e),
-    });
-    if (restored.length) toast(restored.length === 1 ? 'Restored 1 board from its backup copy' : `Restored ${restored.length} boards from their backup copies`);
-  } catch (e) {
-    console.warn('could not look for backups', e);
-  }
+  const storeBackup = async (id: string, imported: Awaited<ReturnType<typeof parseBackup>>) => {
+    // The board's own copy: its comments keep their authors rather than being marked imported.
+    await writeLocalBoard(id, (target) => applyImported(target, imported, null));
+    await cacheImportedAssets(imported.assets);
+    const savedAt = Date.parse(imported.json.exportedAt);
+    touchBoard(id, { name: importedBoardName(imported, id), ...(Number.isFinite(savedAt) ? { createdAt: savedAt, updatedAt: savedAt } : {}) });
+  };
+  const restoreOne = async (id: string) => storeBackup(id, await parseBackup(id, await readBackup(id)));
+  const notice = {
+    toast,
+    retry: restoreOne,
+    saveCopy: async (id: string) => { await saveExport(call, await readBackup(id), `${id}.drift`); },
+    describe: messageOf,
+  };
+  await runRecovery({
+    listBackups: () => call<string[]>('list_backups'),
+    readBackup,
+    localIds: () => new Set(listBoards().map((b) => b.id)),
+    parse: parseBackup,
+    store: storeBackup,
+  }, notice, restoreOne);
 
   const opened = createOpenedFiles({
     invoke: call,
@@ -99,15 +103,18 @@ export async function startDesktop(nav: HomeNav): Promise<Desktop> {
   let backupFailed = false;
   return {
     async mergeBackup(conn) {
+      const apply = ({ update, comments, assets }: Awaited<ReturnType<typeof parseBackup>>) => {
+        // already checked against OWN_BACKUP_LIMITS when the file was read (header, counts, sizes)
+        if (update) Y.applyUpdate(conn.doc, update);
+        if (comments) Y.applyUpdate(conn.comments.doc, comments);
+        void cacheImportedAssets(assets);
+      };
       await mergeBackup(conn.id, {
         readBackup,
         parse: parseBackup,
-        apply: ({ update, comments, assets }) => {
-          if (update) Y.applyUpdate(conn.doc, update);
-          if (comments) Y.applyUpdate(conn.comments.doc, comments);
-          void cacheImportedAssets(assets);
-        },
-        onError: (e, id) => console.warn(`could not merge the backup of board ${id}`, e),
+        apply,
+        // a damaged or oversized backup is told, not only logged: the board may open without what it held
+        onError: (e, id) => showRecoveryFailure({ ...notice, retry: async () => { apply(await parseBackup(id, await readBackup(id))); } }, id, e),
       });
     },
     watchBoard(app) {

@@ -33,6 +33,8 @@ import {
 import { listLabels } from './labels';
 import { KANBAN, wipCheck } from '../shared/containers';
 import { remapObjects } from './custom-templates';
+import { h } from './ui/dom';
+import { isMacPlatform, lockKeyHeld, lockedOffset, noAxisLock, stepAxisLock, type AxisLock, type LockAxis } from './axis-lock';
 import { guidesCover, referenceRects, snapMove, snapResize, snapResizeLocked, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
@@ -51,6 +53,7 @@ import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
+import { sanitizeImportedObjects, tableProblem } from './import-sanitize';
 import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from './tracker/linked-lane';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
@@ -93,13 +96,13 @@ export type Tool =
 
 type Drag =
   | { mode: 'pan'; sx: number; sy: number; cx: number; cy: number }
-  | { mode: 'move'; start: Point; ids: Id[]; orig: Map<Id, Obj>; bounds: Rect; moved: boolean; guides?: GuideSession }
+  | { mode: 'move'; start: Point; ids: Id[]; orig: Map<Id, Obj>; bounds: Rect; moved: boolean; guides?: GuideSession; lock?: AxisLock }
   | { mode: 'resize'; id: Id; handle: HandleId; o0: BaseObj; guides?: GuideSession }
   | { mode: 'rotate'; id: Id; c: Point; a0: number; r0: number }
   | { mode: 'marquee'; start: Point; base: Id[]; moved: boolean }
-  | { mode: 'create'; start: Point; tool: Tool }
+  | { mode: 'create'; start: Point; tool: Tool; guides?: GuideSession }
   | { mode: 'connect'; from: End; relation?: UmlRelation; moved: boolean }
-  | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
+  | { mode: 'endpoint'; id: Id; end: 'from' | 'to'; lock?: AxisLock; last?: Point; fix?: Point }
   | { mode: 'pen'; pts: Point[] }
   // cards dragged as a ghost: nothing is written until the drop (docs/kanban.md, Decisions 4)
   // (`armed`: a touch long press started it, so it lifts at once, docs/kanban.md, Phone and touch)
@@ -786,6 +789,8 @@ export class BoardApp {
     const svg = this.r.svg;
     svg.addEventListener('pointerdown', (e) => this.onDown(e));
     svg.addEventListener('pointermove', (e) => this.onMove(e));
+    window.addEventListener('keydown', (e) => this.onLockKey(e));
+    window.addEventListener('keyup', (e) => this.onLockKey(e));
     svg.addEventListener('pointerup', (e) => this.onUp(e));
     // a cancelled pointer (the system took it, a palm, a lost capture) drops nothing: a card drag is given up
     svg.addEventListener('pointercancel', (e) => this.onCancel(e));
@@ -1775,7 +1780,20 @@ export class BoardApp {
     this.r.setOverlay({ kanban: this.r.overlay.kanban?.line ? { line: this.r.overlay.kanban.line } : null });
   }
 
+  /** The last pointer position of a pointer drag, so Cmd/Ctrl going down or up without the pointer moving still locks or unlocks (src/axis-lock.ts). */
+  private lastMove: { x: number; y: number; pointerId: number; pointerType: string } | null = null;
+  private onLockKey(ev: KeyboardEvent) {
+    const m = this.lastMove;
+    if (!m || !this.drag || (this.drag.mode !== 'move' && this.drag.mode !== 'endpoint')) return;
+    if (ev.key !== 'Meta' && ev.key !== 'Control') return;
+    this.onMove(new PointerEvent('pointermove', {
+      clientX: m.x, clientY: m.y, pointerId: m.pointerId, pointerType: m.pointerType,
+      metaKey: ev.metaKey, ctrlKey: ev.ctrlKey, shiftKey: ev.shiftKey, altKey: ev.altKey,
+    }));
+  }
+
   private onMove(e: PointerEvent) {
+    if (this.drag) this.lastMove = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, pointerType: e.pointerType };
     const lp = this.longPress;
     if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 5) this.cancelLongPress();
     const p = this.worldOf(e);
@@ -1815,11 +1833,12 @@ export class BoardApp {
         return;
       }
       case 'create': {
-        const q = this.snapPoint(p, e);
+        const { q, guides } = this.createCorner(d, p, e);
         const rect = rectOfPoints([d.start, q]);
         if (rect.w < 4 && rect.h < 4) return;
         const preview = this.previewObj(d.tool, rect, e.shiftKey);
-        this.r.setOverlay({ preview: preview ? objectMarkup(preview, this.r.ctx) : '' });
+        this.showSize(rect.w, rect.h, e);
+        this.r.setOverlay({ preview: preview ? objectMarkup(preview, this.r.ctx) : '', guides });
         return;
       }
       case 'connect': {
@@ -1837,7 +1856,18 @@ export class BoardApp {
         const other = d.end === 'from' ? c.to : c.from;
         const otherId = other.kind === 'bound' ? other.id : null;
         const target = this.hit(p, { connectors: false, frames: false, skip: new Set([c.id]) });
-        const end: End = CONNECTABLE(target) && target.id !== otherId ? { kind: 'bound', id: target.id, anchor: 'auto' } : { kind: 'free', ...this.snapPoint(p, e) };
+        // Cmd (Ctrl off a Mac) held: the free end moves along one axis from where it was when the key went down (src/axis-lock.ts)
+        d.lock = stepAxisLock(d.lock ?? noAxisLock(), lockKeyHeld(e, isMacPlatform()), { x: e.clientX, y: e.clientY }, { x: 0, y: 0 });
+        if (d.lock.from === null) d.fix = undefined;
+        else d.fix ??= d.last ?? p;
+        let free = this.snapPoint(p, e);
+        if (d.fix) {
+          const axis = d.lock.axis;
+          free = axis === 'x' ? { x: free.x, y: d.fix.y } : axis === 'y' ? { x: d.fix.x, y: free.y } : d.fix;
+          this.showAxisLock(d.lock, { x: d.fix.x, y: d.fix.y, w: 0, h: 0 }, d.fix, e);
+        } else this.clearAxisLock();
+        const end: End = CONNECTABLE(target) && !d.fix && target.id !== otherId ? { kind: 'bound', id: target.id, anchor: 'auto' } : { kind: 'free', ...free };
+        d.last = end.kind === 'free' ? { x: end.x, y: end.y } : p;
         this.r.setOverlay({ anchorsFor: end.kind === 'bound' ? end.id : null });
         this.queue(() => this.store.transact(() => this.store.update(c.id, { [d.end]: end })));
         return;
@@ -1913,6 +1943,10 @@ export class BoardApp {
     const first = !d.moved;
     d.moved = true;
     if (first) this.emit('drag');
+    // Cmd (Ctrl off a Mac) held: the drag moves along one axis, the one the pointer moves on first (src/axis-lock.ts)
+    const lock = (d.lock = stepAxisLock(d.lock ?? noAxisLock(), lockKeyHeld(e, isMacPlatform()), { x: e.clientX, y: e.clientY }, first ? { x: 0, y: 0 } : { x: dx, y: dy }));
+    ({ x: dx, y: dy } = lockedOffset(lock, { x: dx, y: dy }));
+    this.showAxisLock(lock, d.bounds, d.start, e);
     const guides: Guide[] = [];
     if (!e.altKey) {
       const b = d.bounds;
@@ -1922,11 +1956,13 @@ export class BoardApp {
         d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set(d.ids), (o) => this.flow.isHidden(o), (o) => this.store.geometry(o)), movers, vp);
       }
       const sn = snapMove(d.guides, dx, dy, this.zoom);
-      if (sn.dx !== null) dx += sn.dx;
-      else if (this.snapOn(e)) dx = snapTo(b.x + dx, this.grid()) - b.x;
-      if (sn.dy !== null) dy += sn.dy;
-      else if (this.snapOn(e)) dy = snapTo(b.y + dy, this.grid()) - b.y;
-      guides.push(...sn.guides, ...sn.gaps);
+      // a locked axis keeps the other coordinate exactly where it is: no guide or grid correction on it, and no mark that describes it
+      const free = (a: 'x' | 'y') => lock.from === null || lock.axis === a;
+      if (sn.dx !== null && free('x')) dx += sn.dx;
+      else if (this.snapOn(e) && free('x')) dx = snapTo(b.x + dx, this.grid()) - b.x;
+      if (sn.dy !== null && free('y')) dy += sn.dy;
+      else if (this.snapOn(e) && free('y')) dy = snapTo(b.y + dy, this.grid()) - b.y;
+      guides.push(...[...sn.guides, ...sn.gaps].filter((g) => lock.from === null || lock.axis === null ? lock.from === null : (g.kind === 'line' ? (g.x1 === g.x2) === (lock.axis === 'x') : g.axis === lock.axis)));
     }
     // over a lane, selected stickies would become cards there: the drop line says where, and no frame is the target
     const overLane = this.showStickyDrop(d.ids, p);
@@ -1950,20 +1986,91 @@ export class BoardApp {
     );
   }
 
+  /** The axis line, the pill and the cursor of a locked drag; nothing while the key is up (docs/guides.md, Axis lock). */
+  private dragPill: HTMLElement | null = null;
+  private axisShown: LockAxis | null = null;
+  private showAxisLock(lock: AxisLock, bounds: Rect, start: Point, e: PointerEvent) {
+    if (!lock.axis || !lock.from) {
+      this.clearAxisLock();
+      return;
+    }
+    const axis = lock.axis;
+    const at = { x: bounds.x + bounds.w / 2 + lock.from.offset.x, y: bounds.y + bounds.h / 2 + lock.from.offset.y };
+    this.r.setOverlay({ axisLock: { axis, at } });
+    this.r.svg.style.cursor = axis === 'x' ? 'ew-resize' : 'ns-resize';
+    const label = axis === 'x' ? 'Locked horizontal' : 'Locked vertical';
+    this.showPill(label, e);
+    if (this.axisShown !== axis) this.announce(label);
+    this.axisShown = axis;
+    void start;
+  }
+
+  private clearAxisLock() {
+    if (this.axisShown === null) return;
+    this.axisShown = null;
+    this.r.setOverlay({ axisLock: null });
+    this.hidePill();
+  }
+
+  /** The small pill that follows the pointer in a drag: the axis lock label or the size of what is being resized. */
+  private showPill(text: string, e: { clientX: number; clientY: number }) {
+    if (!this.dragPill) {
+      if (typeof document === 'undefined' || !document.body) return; // (unit tests drive the app without a page)
+      this.dragPill = h('div', { class: 'drag-pill', 'aria-hidden': 'true' });
+      document.body.append(this.dragPill);
+    }
+    if (!this.dragPill) return;
+    this.dragPill.textContent = text;
+    // 16 px below and right of the pointer; to its left when that would run past the visible area or cover a corner handle of the selection
+    const w = this.dragPill.offsetWidth, hgt = this.dragPill.offsetHeight;
+    const view = this.r.root.getBoundingClientRect();
+    let x = e.clientX + 16;
+    const y = e.clientY + 16;
+    const handles = this.selectionHandleRects();
+    const over = (px: number) => handles.some((r) => px < r.x + r.w && px + w > r.x && y < r.y + r.h && y + hgt > r.y);
+    if (x + w > view.right - 8 || over(x)) x = Math.max(view.left + 8, e.clientX - 16 - w);
+    this.dragPill.style.left = `${x}px`;
+    this.dragPill.style.top = `${y}px`;
+  }
+
+  /** The four corner handles of the current selection as screen rectangles (about 20 px squares), for keeping a pill off them. */
+  private selectionHandleRects(): Rect[] {
+    const b = this.selection.length ? this.r.contentBounds(this.selection) : null;
+    if (!b) return [];
+    const v = this.r.root.getBoundingClientRect();
+    const out: Rect[] = [];
+    for (const [wx, wy] of [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]]) {
+      const p = this.r.toScreen({ x: wx, y: wy });
+      out.push({ x: v.left + p.x - 10, y: v.top + p.y - 10, w: 20, h: 20 });
+    }
+    return out;
+  }
+
+  private hidePill() {
+    this.dragPill?.remove();
+    this.dragPill = null;
+  }
+
+  /** The size readout of a resize or a drawing drag: whole numbers, "320 × 180". */
+  private showSize(w: number, hgt: number, e: { clientX: number; clientY: number }) {
+    this.showPill(`${Math.round(w)} × ${Math.round(hgt)}`, e);
+  }
+
   /** A corner of a text: scales its type and its width together, the opposite corner staying where it is (src/text-resize.ts). */
-  private doTextScale(d: Extract<Drag, { mode: 'resize' }>, p: Point) {
+  private doTextScale(d: Extract<Drag, { mode: 'resize' }>, p: Point, e: PointerEvent) {
     const o0 = d.o0;
     const corner = d.handle as Corner;
     const { fontSize, w } = scaledText(o0, cornerFactor(o0, corner, toLocal(o0, p)));
     const h = textHeight({ ...o0, fontSize, w });
     const box = cornerBox(o0, corner, w, h);
+    this.showSize(w, h, e);
     const c = rotate({ x: o0.x + (box.l + box.r) / 2, y: o0.y + (box.t + box.b) / 2 }, center(o0), o0.rotation || 0);
     this.r.setOverlay({ guides: [] });
     this.queue(() => this.store.transact(() => this.store.update(d.id, { x: c.x - w / 2, y: c.y - h / 2, w, h, fontSize })));
   }
 
   private doResize(d: Extract<Drag, { mode: 'resize' }>, p: Point, e: PointerEvent) {
-    if (d.o0.type === 'text' && isCorner(d.handle)) return this.doTextScale(d, p);
+    if (d.o0.type === 'text' && isCorner(d.handle)) return this.doTextScale(d, p, e);
     const o0 = d.o0;
     const lp = toLocal(o0, p);
     let l = 0, t = 0, r = o0.w, b = o0.h;
@@ -2017,8 +2124,8 @@ export class BoardApp {
       if (h.includes('n') && sy === null) t = snapTo(o0.y + t, g) - o0.y;
       if (h.includes('s') && sy === null) b = snapTo(o0.y + b, g) - o0.y;
     }
-    const minW = o0.type === 'tracker' ? 480 : o0.type === 'markdown' ? 120 : 8;
-    const minH = o0.type === 'tracker' ? 360 : 8;
+    const minW = o0.type === 'tracker' ? 360 : o0.type === 'markdown' ? 120 : 8;
+    const minH = o0.type === 'tracker' ? 280 : 8;
     if (r - l < minW) {
       if (h.includes('w')) l = r - minW;
       else r = l + minW;
@@ -2028,6 +2135,7 @@ export class BoardApp {
       else b = t + minH;
     }
     const w = r - l, hh = b - t;
+    this.showSize(w, o0.type === 'text' ? textHeight({ ...o0, w }) : o0.type === 'markdown' ? markdownBoxHeight({ ...o0, w }) : hh, e);
     const c0 = center(o0);
     const cLocal = { x: o0.x + (l + r) / 2, y: o0.y + (t + b) / 2 };
     const c = rotate(cLocal, c0, o0.rotation || 0);
@@ -2057,6 +2165,8 @@ export class BoardApp {
     const d = this.drag;
     this.drag = null;
     this.r.root.classList.remove('panning');
+    this.clearAxisLock();
+    this.hidePill();
     if (!d) return;
     this.flushQueue();
     this.emit('drag');
@@ -2210,8 +2320,30 @@ export class BoardApp {
     }
   }
 
+  /**
+   * The corner a drawing drag has reached: the pointer's two moving edges snap to the guides of the other objects (alignment, equal gaps, equal sizes), the
+   * same query as a resize from that corner, and an axis with no guide match falls back to the grid, as a move does. Alt skips guides and grid, Shift (a
+   * square) and a kanban skip the guides. The preview and the drop both use it, so the object lands exactly where the preview showed.
+   */
+  private createCorner(d: Extract<Drag, { mode: 'create' }>, p: Point, e: { altKey: boolean; shiftKey: boolean }): { q: Point; guides: Guide[] } {
+    const grid = this.snapPoint(p, e);
+    if (e.altKey || e.shiftKey || d.tool.kind === 'kanban') return { q: grid, guides: [] };
+    const proposed = rectOfPoints([d.start, p]);
+    if (proposed.w * this.zoom < 8 && proposed.h * this.zoom < 8) return { q: grid, guides: [] };
+    const vp = this.r.viewport();
+    if (!d.guides || !guidesCover(d.guides, vp)) {
+      d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set<Id>(), (o) => this.flow.isHidden(o), (o) => this.store.geometry(o)), [], vp);
+    }
+    const handle = `${p.y < d.start.y ? 'n' : 's'}${p.x < d.start.x ? 'w' : 'e'}`;
+    const sn = snapResize(d.guides, proposed, handle, this.zoom);
+    return {
+      q: { x: sn.dx !== null ? p.x + sn.dx : grid.x, y: sn.dy !== null ? p.y + sn.dy : grid.y },
+      guides: [...sn.guides, ...sn.gaps, ...sn.sizes],
+    };
+  }
+
   private finishCreate(d: Extract<Drag, { mode: 'create' }>, p: Point, e: PointerEvent) {
-    const q = this.snapPoint(p, e);
+    const q = this.createCorner(d, p, e).q;
     let rect = rectOfPoints([d.start, q]);
     const dragged = rect.w * this.zoom > 8 || rect.h * this.zoom > 8;
     if (d.tool.kind === 'kanban') {
@@ -2423,7 +2555,9 @@ export class BoardApp {
     window.addEventListener('keydown', (e) => {
       this.links.noteKey(e);
       const tgt = e.target as HTMLElement;
-      const typing = !!tgt?.closest?.('[data-card-link]') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
+      // a key pressed inside the live tracker (a ticket row, its menus) belongs to the tracker: Backspace archives a ticket there and
+      // must not also delete the selected tracker frame, and a letter must not switch the board's tool
+      const typing = !!tgt?.closest?.('[data-card-link], .trk') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
       const k = e.key.toLowerCase();
       // Cmd/Ctrl+Enter on a selected link card opens it, like Enter (shortcuts with a modifier are handled below)
       if (k === 'enter' && (e.ctrlKey || e.metaKey) && !typing && this.selection.length === 1 && this.store.get(this.selection[0])?.type === 'link') {
@@ -2444,7 +2578,7 @@ export class BoardApp {
         if (action === 'drag') {
           this.cancelLongPress();
           this.cancelCardDrag();
-          if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
+          if (this.drag) { this.drag = null; this.clearAxisLock(); this.hidePill(); this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
           e.preventDefault();
           e.stopImmediatePropagation();
           return;
@@ -2515,7 +2649,7 @@ export class BoardApp {
       if (k === 'escape') {
         this.cancelLongPress();
         this.cancelCardDrag();
-        if (this.drag) { this.drag = null; this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
+        if (this.drag) { this.drag = null; this.clearAxisLock(); this.hidePill(); this.r.setOverlay({ marquee: null, preview: '', guides: [] }); }
         if (this.scope) this.leaveGroup();
         else this.setSelection([]);
         this.closeThread();
@@ -2794,17 +2928,28 @@ export class BoardApp {
 
   /** Insert copies of objects with fresh ids, remapping parents and bindings. */
   insertObjects(objs: Obj[], offset: Point) {
+    // a table past the limits of the editor would be taken back by the relay: leave it out and say so
+    const tooBig = objs.filter((o) => tableProblem(o as unknown as Record<string, unknown>));
+    if (tooBig.length) {
+      this.notify(`Left out ${tooBig.length === 1 ? 'a table' : `${tooBig.length} tables`} that ${tooBig.length === 1 ? 'is' : 'are'} bigger than a table may be (${tableProblem(tooBig[0] as unknown as Record<string, unknown>)}).`);
+      const gone = new Set(tooBig.map((o) => o.id));
+      objs = objs.filter((o) => !gone.has(o.id));
+    }
     if (!objs.length) return [];
     const map = new Map<Id, Id>();
     for (const o of objs) map.set(o.id, newId());
-    const out = remapObjects(objs, map, offset, (id) => {
+    const remapped = remapObjects(objs, map, offset, (id) => {
       const src = this.store.get(id);
       return src && isBox(src) ? center(src) : null;
     });
+    // the relay checks the people an object names (server/sync-validate.mjs): authored by me, and a card owner stays only if
+    // this board already shows that person on a card (a paste from another board must not name a stranger)
+    const owners = new Set<string>();
+    for (const o of this.store.cache.values()) if ((o as BaseObj).ownerId) owners.add((o as BaseObj).ownerId!);
+    const out = sanitizeImportedObjects(remapped, this.user.id, (id) => owners.has(id), { proposedBy: 'keep' });
     const zs = this.store.topZs(objs.length);
     out.forEach((o, i) => {
       o.z = zs[i];
-      o.createdBy = this.user.id;
     });
     this.store.undo.stopCapturing();
     this.store.transact(() => out.forEach((o) => this.store.create(o)));
@@ -2965,12 +3110,12 @@ export class BoardApp {
     });
   }
 
-  updateSelectedLeaves(patch: Record<string, unknown>, filter?: (o: Obj) => boolean) {
+  updateSelectedLeaves(patch: Record<string, unknown> | ((o: Obj) => Record<string, unknown>), filter?: (o: Obj) => boolean) {
     this.store.undo.stopCapturing();
     this.store.transact(() => {
       for (const o of this.selectedLeaves()) {
         if (filter && !filter(o)) continue;
-        this.writeStyle(o, patch);
+        this.writeStyle(o, typeof patch === 'function' ? patch(o) : patch);
       }
     });
   }
@@ -2978,10 +3123,10 @@ export class BoardApp {
   /** One object's style change, with the size it implies: a text box's height, a class's header. */
   private writeStyle(o: Obj, patch: Record<string, unknown>) {
     this.store.update(o.id, patch);
-    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'lineHeight' in patch)) {
       this.store.update(o.id, { h: textHeight({ ...o, ...patch } as BaseObj) });
     }
-    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'lineHeight' in patch)) {
       this.store.update(o.id, { h: markdownBoxHeight({ ...o, ...patch } as BaseObj) });
     }
     if (o.type === 'table' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'headerRow' in patch || 'headerCol' in patch)) {

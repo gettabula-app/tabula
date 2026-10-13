@@ -38,6 +38,7 @@ import { VolumeError, applyVolume, planVolume, volumeReport } from './volume.mjs
 import { saveDelay, saveMaxWaitMs } from './save-delay.mjs';
 import { renameSyncRetry } from './fs-retry.mjs';
 import { createCommentGuard } from './comment-authz.mjs';
+import { commentIndex, commentsAddedSince, mentionsRecipient, recordCommentMentions } from './comment-mentions.mjs';
 import { createSyncGuard } from './sync-guard.mjs';
 import { syncValidateMode } from './sync-validate.mjs';
 import { scrubText } from './ai/errors.mjs';
@@ -53,6 +54,7 @@ import { createSourceGate } from './source-policy.mjs';
 import { createPresenceRegistry } from './presence.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
+import { createCardDue } from './card-due.mjs';
 import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
 import { KEY_FLOOR_CHANGED_EVENT, createKeyFloorReporter } from './tracker/key-floor.mjs';
 import { trackerGateState } from './tracker/gate.mjs';
@@ -106,6 +108,10 @@ const MSG_TRACKER_NOTICE = 7;
 const MSG_AI_RUNS = 6;
 const AI_SWEEP_MS = 30_000;
 const NOTIFICATION_SWEEP_MS = 60 * 60 * 1000;
+// Card reminders (docs/notifications.md): due-soon and overdue sweep every 15 minutes; the test override can only shorten it.
+const CARD_DUE_SWEEP_MS = Number(process.env.TABULA_TEST_CARD_DUE_SWEEP_MS) > 0 ? Number(process.env.TABULA_TEST_CARD_DUE_SWEEP_MS) : 15 * 60 * 1000;
+// The email digest (docs/notifications.md, Digest): every 15 minutes; the test override is honoured only under NODE_ENV=test.
+const DIGEST_SWEEP_MS = process.env.NODE_ENV === 'test' && Number(process.env.TABULA_TEST_DIGEST_SWEEP_MS) > 0 ? Number(process.env.TABULA_TEST_DIGEST_SWEEP_MS) : 15 * 60 * 1000;
 const trackerSocketBudget = createTrackerSocketBudget();
 
 const CLOSE_UNAUTHENTICATED = 4401;
@@ -176,7 +182,7 @@ const log = (...a) => {
   if (process.env.QUIET !== '1') console.log(new Date().toISOString(), ...a);
 };
 
-// TABULA_SYNC_VALIDATE=off|report|enforce (default off), read once: a bad value stops the server at startup.
+// TABULA_SYNC_VALIDATE=off|report|enforce (default report: counts, blocks nothing; off is the explicit switch), read once: a bad value stops the server at startup.
 const syncGuard = createSyncGuard({ mode: syncValidateMode(process.env), log });
 
 /** The validator's view of the socket's person (server/sync-validate.mjs ctx). No user id (open mode) means no identity. */
@@ -303,6 +309,8 @@ let cloud = null;
 let keyFloorReporter = null;
 let buildApi = null;
 let notificationStore = null;
+let notificationDigest = null;
+let cardDue = null;
 // Team chat (docs/chat.md), accounts mode, on unless TABULA_CHAT=off. chat.sqlite is opened on first use.
 let chat = null;
 let chatHub = null;
@@ -336,13 +344,14 @@ function boardPresenceForRoom(user, boardId) {
 }
 
 if (config.authEnabled) {
-  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }, { createNotifications }] = await Promise.all([
+  const [{ openDirectory }, { createMailer }, { createAuth }, { createApi }, { createCloud }, { createNotifications }, { createNotificationPrefs }] = await Promise.all([
     import('./directory.mjs'),
     import('./mailer.mjs'),
     import('./auth.mjs'),
     import('./api.mjs'),
     import('./cloud.mjs'),
     import('./notifications.mjs'),
+    import('./notification-prefs.mjs'),
   ]);
   let oauthSecret = null;
   if (config.mcp?.oauth) {
@@ -350,6 +359,8 @@ if (config.authEnabled) {
     oauthSecret = loadOAuthSecret(DATA_DIR);
   }
   directory = openDirectory(path.join(DATA_DIR, 'directory.sqlite'), { snapshotBarrier, oauthSecret });
+  // The per-member switches (docs/notifications.md, Settings): record() and the card sweep both ask them.
+  const notificationPrefs = createNotificationPrefs({ directory });
   notificationStore = createNotifications({
     directory,
     trackerEnabled: config.tracker === true,
@@ -357,6 +368,7 @@ if (config.authEnabled) {
     chatAccess: (user, kind, ref) => chat?.access?.(user, kind, ref) ?? null,
     roomAccess: { read: (name, fn) => roomAccess.read(name, fn) },
     hub: { notify: (userId, counts) => chatHub?.notify(userId, counts) },
+    prefs: notificationPrefs,
   });
   const sweepNotifications = () => {
     const prune = () => directory.transaction(() => notificationStore.prune());
@@ -369,6 +381,24 @@ if (config.authEnabled) {
   };
   sweepNotifications();
   setInterval(sweepNotifications, NOTIFICATION_SWEEP_MS).unref();
+  cardDue = createCardDue({ directory, notifications: notificationStore, shouldNotify: (userId, kind) => notificationPrefs.allows(userId, kind) });
+  const runCardDue = (fn) => (snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn());
+  const sweepCardDue = () => {
+    try {
+      Promise.resolve(runCardDue(() => cardDue.sweep())).catch((err) => log('card reminders: sweep failed', err?.message));
+    } catch (err) {
+      log('card reminders: sweep failed', err?.message);
+    }
+  };
+  setInterval(sweepCardDue, CARD_DUE_SWEEP_MS).unref();
+  // One boot pass for boards that predate the index (docs/notifications.md). It runs on timers, never inside startup.
+  if (directory.getSetting('card_due.indexed') !== '1') {
+    cardDue.backfillAll({
+      roomAccess: { read: (name, fn) => roomAccess.read(name, fn) },
+      run: runCardDue,
+      log,
+    }).catch((err) => log('card reminders: boot backfill failed', err?.message));
+  }
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -387,6 +417,22 @@ if (config.authEnabled) {
     directory.setKeyFloorListener(() => events.emit(KEY_FLOOR_CHANGED_EVENT));
   }
   mailer = createMailer(config);
+  // The daily digest uses the same mailer as every other email; without one there is nothing to send with.
+  if (mailer && notificationStore) {
+    const { createDigest } = await import('./notification-digest.mjs');
+    const runDigest = (fn) => (snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn());
+    // only the database writes go through the snapshot barrier; the mail is sent outside it
+    notificationDigest = createDigest({ directory, notifications: notificationStore, mailer, baseUrl: config.baseUrl, log, write: runDigest });
+    let digestSweeping = false; // a slow mail relay must not let two sweeps run at once (they could both mail the same person)
+    const sweepDigest = () => {
+      if (digestSweeping) return;
+      digestSweeping = true;
+      Promise.resolve().then(() => notificationDigest.sweep())
+        .catch((err) => log('digest: sweep failed', err?.name ?? 'error'))
+        .finally(() => { digestSweeping = false; });
+    };
+    setInterval(sweepDigest, DIGEST_SWEEP_MS).unref();
+  }
   auth = createAuth({ directory, config, mailer, seatsAvailable: cloud?.seatsAvailable, notifications: notificationStore, log });
   buildApi = createApi; // created below, once the restore engine exists
   if (config.chat) {
@@ -550,7 +596,7 @@ const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpe
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, notificationDigest, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
@@ -668,6 +714,9 @@ class Room {
     }
     this.awareness = new awarenessProtocol.Awareness(this.doc);
     this.awareness.setLocalState(null);
+    if (this.kind === 'board' && cardDue) {
+      try { cardDue.seed(this.name, this.doc); } catch (err) { log(`room ${this.name}: could not index card reminders`, err?.message); }
+    }
 
     /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
     this.held = null;
@@ -684,24 +733,48 @@ class Room {
           log(`room ${this.name}: could not schedule tracker guard`, err?.message);
         }
       }
+      // Card reminders index every board write, including MCP and tracker writes; only a connection's write names an actor
+      // for the assignment notice.
+      if (this.kind === 'board' && cardDue) {
+        try {
+          const ids = changedObjectIds(transaction, this.doc);
+          const actor = this.conns.has(origin) && typeof origin?.userId === 'string' ? origin.userId : null;
+          if (ids.size) cardDue.upsertFor(this.name, this.doc, ids, { actorId: actor });
+        } catch (err) {
+          log(`room ${this.name}: could not update card reminders`, err?.message);
+        }
+      }
     });
     // Accounts mode: the relay checks comment authorship on every write to a comments room.
     this.guard = directory && this.kind === 'comments'
       ? createCommentGuard(this.doc, {
           isAccount: (id) => directory.getUser(id) !== null,
-          onReplyAdded: ({ threadId, threadAuthorId, replyAuthorId }) => {
+          onReplyAdded: ({ threadId, threadAuthorId, replyId, replyAuthorId }) => {
             try {
+              const boardId = this.name.slice(0, -'~comments'.length);
+              // A reply that names the thread's author gets a comment_mention row for them instead (TAB-53).
+              const text = this.doc.getMap('threads').get(threadId)?.toJSON?.()?.replies?.[replyId]?.text;
+              if (mentionsRecipient({ directory, boardId, text, authorId: replyAuthorId, recipientId: threadAuthorId })) return;
               notificationStore?.record({
                 userId: threadAuthorId,
                 kind: 'comment_reply',
                 actorId: replyAuthorId,
-                boardId: this.name.slice(0, -'~comments'.length),
+                boardId,
                 ref: threadId,
               });
             } catch (err) {
               log('comments: could not store a reply notification', err?.message);
             }
           },
+          onCommentAdded: ({ threadId, authorId, text }) => recordCommentMentions({
+            directory,
+            notifications: notificationStore,
+            log,
+            boardId: this.name.slice(0, -'~comments'.length),
+            threadId,
+            authorId,
+            text,
+          }),
         })
       : null;
 
@@ -923,6 +996,7 @@ class Room {
         clearTimeout(this.trackerGuardTimer);
         this.trackerGuardTimer = null;
         if (this.kind === 'board') trackerGuard?.clearTitles(this.name);
+        if (this.kind === 'board') cardDue?.forget(this.name);
         this.doc.destroy();
         rooms.delete(this.name);
         if (this.kind === 'board') aiLive.dropBoard(this.name);
@@ -1155,6 +1229,7 @@ const roomAccess = {
         return thread instanceof Y.Map ? thread.toJSON() : null;
       };
       const commentBefore = commentThreadId && commentActorId ? commentSnapshot() : null;
+      const mentionIndex = room.kind === 'comments' && commentActorId && directory ? commentIndex(room.doc) : null;
       let result;
       const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
@@ -1172,6 +1247,8 @@ const roomAccess = {
         const beforeReplies = commentBefore.replies ?? {};
         for (const [replyId, reply] of Object.entries(commentAfter.replies ?? {})) {
           if (Object.hasOwn(beforeReplies, replyId) || reply?.authorId !== commentActorId) continue;
+          // A reply that names the thread's author gets a comment_mention row for them instead (TAB-53).
+          if (mentionsRecipient({ directory, boardId: room.name.slice(0, -'~comments'.length), text: reply.text, authorId: commentActorId, recipientId: commentBefore.authorId })) continue;
           try {
             (trackerContext?.notifications ?? notificationStore)?.record({
               userId: commentBefore.authorId,
@@ -1183,6 +1260,20 @@ const roomAccess = {
           } catch (err) {
             log('comments: could not store a reply notification', err?.message);
           }
+        }
+      }
+      if (mentionIndex) {
+        const boardId = room.name.slice(0, -'~comments'.length);
+        for (const added of commentsAddedSince(mentionIndex, room.doc, commentActorId)) {
+          recordCommentMentions({
+            directory,
+            notifications: trackerContext?.notifications ?? notificationStore,
+            log,
+            boardId,
+            threadId: added.threadId,
+            authorId: commentActorId,
+            text: added.text,
+          });
         }
       }
       return result;

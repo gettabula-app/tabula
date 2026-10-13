@@ -64,6 +64,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'View', keys: 'Alt+L', action: 'Layers panel', ids: ['alt+l'] },
   { group: 'While dragging', keys: 'Alt while dragging', action: 'Ignore grid and guides', ids: [] },
   { group: 'While dragging', keys: 'Shift while resizing', action: 'Keep proportions', ids: [] },
+  { group: 'While dragging', keys: 'Ctrl/Cmd while dragging', action: 'Lock to one axis', ids: [] },
 ];
 
 /** Formats a canonical shortcut label for the platform that will display it. */
@@ -71,6 +72,7 @@ export function formatShortcutLabel(keys: string, platform: string): string {
   const mac = /Mac|iPhone|iPad/i.test(platform);
   return keys
     .replace(/Shift\+Ctrl\/Cmd\+/g, mac ? '⇧⌘' : 'Shift+Ctrl+')
+    .replace(/Ctrl\/Cmd(?= while)/g, mac ? '⌘' : 'Ctrl')
     .replace(/Ctrl\/Cmd\+/g, mac ? '⌘' : 'Ctrl+')
     .replace(/Ctrl\/Cmd \+/g, mac ? '⌘ +' : 'Ctrl +')
     .replace(/Alt\+/g, mac ? '⌥' : 'Alt+')
