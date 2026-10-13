@@ -323,7 +323,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const elementSwitchHost = h('div', { class: 'trk-element-switch' });
   let elementSwitcher: HTMLElement | null = null;
   const elementBack = h('button', { class: 'trk-small-button trk-element-back', type: 'button', onclick: () => setTicket(null) }, 'Back');
-  const elementViewsButton = h('button', { class: 'trk-element-views', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, 'Views');
+  const elementViewsButton = h('button', { class: 'trk-element-views', type: 'button', 'aria-haspopup': 'menu' }, 'Views');
   elementViewsButton.hidden = true;
   const elementMenuButton = h('button', {
     class: 'trk-icon-button trk-element-menu-button', type: 'button', 'aria-label': 'Tracker menu', 'aria-haspopup': 'menu', 'data-tip': 'Tracker menu',
