@@ -143,9 +143,12 @@ input[role='switch']::after, [role='switch']:not(input)::after {
 input[role='switch']:is(:checked, [aria-checked='true']), [role='switch']:not(input)[aria-checked='true'] { background: transparent; }
 input[role='switch']:is(:checked, [aria-checked='true'])::after, [role='switch']:not(input)[aria-checked='true']::after { background: currentColor; }
 input[role='switch']:is(:checked, [aria-checked='true'])::before, [role='switch']:not(input)[aria-checked='true']::before { transform: translateX(12px); }
+/* a switch button is a 28x24 target (24px is the smallest pointer target); the 28x16 pill is drawn inside it. On touch it is 44x44 below. */
+[role='switch']:not(input)::before { top: 5px; left: 1px; }
+[role='switch']:not(input)::after { inset: 4px 0; }
 [role='switch']:not(input) {
   appearance: none; -webkit-appearance: none; position: relative; display: inline-flex; align-items: center; justify-content: flex-start;
-  width: 28px; height: 16px; min-width: 28px; min-height: 16px; padding: 0; overflow: visible;
+  width: 28px; height: 24px; min-width: 28px; min-height: 24px; padding: 0; overflow: visible;
   border: 0; border-radius: 999px; background: transparent; color: inherit; vertical-align: middle;
 }
 input[type='checkbox']:focus-visible, input[type='radio']:focus-visible, input[role='switch']:focus-visible, [role='switch']:not(input):focus-visible {

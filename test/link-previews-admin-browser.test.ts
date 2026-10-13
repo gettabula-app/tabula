@@ -104,10 +104,10 @@ describe.skipIf(!available)('the Link previews admin row', () => {
     await page.close();
   });
 
-  it('is the shared 28 by 16 switch', async () => {
+  it('is the shared 28 by 24 switch target (a 28 by 16 pill inside)', async () => {
     const { page } = await open(false);
     const box = await page.locator('.lp-switch').boundingBox();
-    expect([box!.width, box!.height]).toEqual([28, 16]);
+    expect([box!.width, box!.height]).toEqual([28, 24]);
     await page.close();
   });
 });

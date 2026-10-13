@@ -99,3 +99,28 @@ describe.skipIf(!available)('dialog control styles in Chromium', { timeout: 240_
     }
   });
 });
+
+describe.skipIf(!available)('switch targets', { timeout: 120_000 }, () => {
+  it.each([[false, 24], [true, 44]])('a switch button is at least 24px (44px on touch): touch %s -> %s', async (touch, minimum) => {
+    const context = await browser!.newContext({ viewport: { width: 700, height: 400 }, hasTouch: touch, isMobile: touch });
+    const page = await context.newPage();
+    await page.route('**/__blank', (route) => route.fulfill({ contentType: 'text/html', body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><div id="app"></div>' }));
+    await page.goto(`${base}__blank`);
+    await page.addScriptTag({
+      type: 'module',
+      content: `
+        import '/src/styles.css'; import '/src/ui/link-previews-admin.css';
+        document.getElementById('app').innerHTML = '<button class="lp-switch" role="switch" aria-checked="true" aria-label="Link previews"></button><label class="check"><input type="checkbox" role="switch" checked><span>Notify me</span></label>';
+        window.__ready = true;
+      `,
+    });
+    await page.waitForFunction(() => (window as unknown as { __ready?: boolean }).__ready === true, undefined, { timeout: 60_000 });
+    const button = await page.locator('.lp-switch').boundingBox();
+    expect(button!.height).toBeGreaterThanOrEqual(minimum);
+    expect(button!.width).toBeGreaterThanOrEqual(touch ? 44 : 28);
+    // a switch input is reached through its label row, which is the target
+    const row = await page.locator('label.check').boundingBox();
+    expect(row!.height).toBeGreaterThanOrEqual(touch ? 44 : 24);
+    await context.close();
+  });
+});
