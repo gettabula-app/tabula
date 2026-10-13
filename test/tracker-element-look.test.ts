@@ -41,7 +41,7 @@ describe('tracker element look: CSS', () => {
       expect(rule).not.toMatch(/\b(?:rgba?|hsla?|hwb|lab|lch|oklch|oklab)\s*\(/i);
     }
     expect(block).toContain('.trk.trk-element .trk-board-ghost');
-    expect(block).toContain('outline: 1px solid color-mix(in srgb, var(--trk-text) 20%, transparent); outline-offset: -1px;');
+    expect(block).toContain('outline: 1px solid color-mix(in srgb, var(--trk-text) 35%, transparent); outline-offset: -1px;');
   });
 
   it('draws the drop outline and the dragged card in forced colours', () => {

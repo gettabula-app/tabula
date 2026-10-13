@@ -131,6 +131,40 @@ describe.skipIf(!available)('tracker element board tab in a real browser', { tim
     }
   });
 
+  it('the "Board" option fits inside the switch (the label is not wider than its segment) at 720, 480 and 400', async () => {
+    const page = await openBoardPage();
+    try {
+      for (const width of [720, 480, 400]) {
+        await mount(page, width);
+        const fit = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.trk-element .trk-element-switch .segmented button')].map((b) => ({
+          label: b.textContent, overflow: b.scrollWidth - b.clientWidth, width: b.getBoundingClientRect().width,
+        })));
+        expect(fit.map((b) => b.label)).toEqual(['All', 'My', 'Board']);
+        for (const b of fit) expect(b.overflow).toBeLessThanOrEqual(0);
+        expect(fit[2].width).toBeGreaterThanOrEqual(44);
+      }
+    } finally {
+      await page.context().close();
+    }
+  });
+
+  it('every lane runs to the bottom of the body, so the whole column is a drop target', async () => {
+    const page = await openBoardPage();
+    try {
+      await mount(page, 720);
+      const gaps = await page.evaluate(() => {
+        const strip = document.querySelector<HTMLElement>('.trk-element .trk-board-lanes')!;
+        const style = getComputedStyle(strip);
+        const bottom = strip.getBoundingClientRect().bottom - Number.parseFloat(style.paddingBottom) - Number.parseFloat(style.borderBottomWidth);
+        return [...document.querySelectorAll<HTMLElement>('.trk-element .trk-board-lane')].map((lane) => Math.abs(lane.getBoundingClientRect().bottom - bottom));
+      });
+      expect(gaps.length).toBeGreaterThan(2);
+      for (const gap of gaps) expect(gap).toBeLessThanOrEqual(2);
+    } finally {
+      await page.context().close();
+    }
+  });
+
   it('drags a card from To do to In progress: the card moves, the store changes, one undo is recorded', async () => {
     const page = await openBoardPage();
     try {
