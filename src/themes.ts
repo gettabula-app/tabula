@@ -14,6 +14,8 @@ export interface ThemeRoot {
   dataset: Record<string, string | undefined>;
 }
 
+// --scrim: the veil behind modal dialogs. Light themes darken the page (ink at 42%). The dark themes deliberately LIGHTEN it (white at 10 to 12%): black
+// disappears on their near-black canvases, so a pale wash is what makes the dialog layer read as raised (tech lead re-review, 13 Oct 2026).
 export const THEMES: Theme[] = [
   {
     id: 'default',
