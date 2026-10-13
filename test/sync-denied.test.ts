@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { deniedReason, denyOnce, type DeniedReason } from '../src/sync';
+import { deniedReason, denyOnce, retryableReason, retryDelayMs, handshakeBackoffMs, roleChangedDelayMs, ROLE_CHANGED_JITTER_MS, HANDSHAKE_BACKOFF_MAX_MS, RETRY_BASE_MS, RETRY_MAX_MS, type DeniedReason } from '../src/sync';
 
 describe('deniedReason', () => {
   it.each([
@@ -8,11 +8,15 @@ describe('deniedReason', () => {
     [4404, 'not_found'],
     [4410, 'access_removed'],
     [4503, 'restoring'],
+    [1009, 'too_large'],
+    [4413, 'too_large'],
+    [4429, 'rate_limited'],
+    [4430, 'too_many_connections'],
   ])('maps close code %i', (code, reason) => {
     expect(deniedReason(code)).toBe(reason);
   });
 
-  it.each([1000, 1006, 4000, 4411, 4502, 4504, 0])('returns null for close code %i', (code) => {
+  it.each([4511, 1000, 1006, 4000, 4411, 4502, 4504, 0])('returns null for close code %i', (code) => {
     expect(deniedReason(code)).toBeNull();
   });
 });
@@ -54,5 +58,51 @@ describe('denyOnce and the restoring close code', () => {
     });
     expect(conn.denied).toBeNull();
     expect(both[0].disconnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('the relay sync limits on the client', () => {
+  it('stops both rooms on 4413, 4429 and 4430 instead of reconnecting at once', () => {
+    for (const code of [1009, 4413, 4429, 4430]) {
+      const conn: { denied: DeniedReason | null } = { denied: null };
+      const both = [{ disconnect: vi.fn<() => void>(), shouldConnect: true }, { disconnect: vi.fn<() => void>(), shouldConnect: true }];
+      const seen: DeniedReason[] = [];
+      denyOnce(conn, both, code, (r) => seen.push(r));
+      expect(seen).toHaveLength(1);
+      for (const room of both) expect(room.shouldConnect).toBe(false);
+    }
+  });
+  it('retries only the limits that pass, from 30 s doubling to 5 minutes', () => {
+    expect(retryableReason('rate_limited')).toBe(true);
+    expect(retryableReason('too_many_connections')).toBe(true);
+    expect(retryableReason('too_large')).toBe(false);
+    expect(retryableReason('access_removed')).toBe(false);
+    expect([0, 1, 2, 3, 4, 10].map(retryDelayMs)).toEqual([RETRY_BASE_MS, 60_000, 120_000, 240_000, RETRY_MAX_MS, RETRY_MAX_MS]);
+  });
+});
+
+describe('handshakeBackoffMs', () => {
+  it('starts at 2 s, doubles to a 60 s ceiling and spreads each wait over up to 50% more', () => {
+    expect(handshakeBackoffMs(0, () => 0)).toBe(2000);
+    expect(handshakeBackoffMs(0, () => 1)).toBe(3000);
+    expect(handshakeBackoffMs(1, () => 0)).toBe(4000);
+    expect(handshakeBackoffMs(3, () => 0)).toBe(16000);
+    for (const n of [5, 6, 10, 50]) {
+      expect(handshakeBackoffMs(n, () => 0)).toBe(HANDSHAKE_BACKOFF_MAX_MS);
+      expect(handshakeBackoffMs(n, () => 1)).toBe(HANDSHAKE_BACKOFF_MAX_MS * 1.5);
+    }
+    // at the ceiling clients still differ
+    const atCeiling = [0, 0.2, 0.5, 0.9].map((r) => handshakeBackoffMs(8, () => r));
+    expect(new Set(atCeiling).size).toBe(4);
+    expect(new Set(Array.from({ length: 20 }, () => handshakeBackoffMs(2))).size).toBeGreaterThan(5);
+  });
+});
+
+describe('roleChangedDelayMs', () => {
+  it('spreads the reconnect after a role change over 0 to 3 s', () => {
+    expect(roleChangedDelayMs(() => 0)).toBe(0);
+    expect(roleChangedDelayMs(() => 0.5)).toBe(1500);
+    expect(roleChangedDelayMs(() => 0.999)).toBeLessThan(ROLE_CHANGED_JITTER_MS);
+    expect(new Set([0.1, 0.4, 0.7, 0.95].map((r) => roleChangedDelayMs(() => r))).size).toBe(4);
   });
 });
