@@ -36,8 +36,9 @@ const check = (value: unknown, c: Ctx = ctx, opts = {}) => validateBoardObject((
 
 describe('mode (TABULA_SYNC_VALIDATE)', () => {
   it('defaults to off and reads the three modes', () => {
-    expect(syncValidateMode({})).toBe('off');
-    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '' })).toBe('off');
+    expect(syncValidateMode({})).toBe('report');
+    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '' })).toBe('report');
+    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '  ' })).toBe('report');
     for (const mode of ['off', 'report', 'enforce']) expect(syncValidateMode({ TABULA_SYNC_VALIDATE: mode })).toBe(mode);
     expect(syncValidateMode({ TABULA_SYNC_VALIDATE: ' Enforce ' })).toBe('enforce');
   });
@@ -205,16 +206,39 @@ describe('tables', () => {
     expect(paths(check(table({ 'r:r3': 'a' })))).toEqual(['bad_value:r:r3']);
     expect(paths(check(table({ 'k:c3': '!!' })))).toEqual(['bad_value:k:c3']);
     expect(check(table({ 'r:r3': 'a2', 'k:c3': 'Zz' }))).toEqual({ ok: true });
-    const heavy = Object.fromEntries(Array.from({ length: 151 }, (_, i) => [`c:r1:x${i}`, 'q'.repeat(1000)]));
-    expect(codes(check(table(heavy)))).toContain('table_too_big');
-    expect(codes(check(table(Object.fromEntries(Array.from({ length: 149 }, (_, i) => [`c:r1:x${i}`, 'q'.repeat(1000)])))))).not.toContain('table_too_big');
+    // (cells count when their row and column exist; a cell outside the grid is dropped by the client and does not count)
+    const heavy = (n: number) => ({
+      ...Object.fromEntries(generateNKeysBetween('a1', null, n).map((rank, i) => [`k:x${i}`, rank])),
+      ...Object.fromEntries(Array.from({ length: n }, (_, i) => [`c:r1:x${i}`, 'q'.repeat(1000)])),
+    });
+    expect(codes(check(table(heavy(151))))).toContain('table_too_big');
+    expect(codes(check(table(heavy(149))))).not.toContain('table_too_big');
+    expect(codes(check(table(Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`c:r1:ghost${i}`, 'q'.repeat(1000)])))))).not.toContain('table_too_big');
+  });
+  it('accepts only base62 characters in a rank, and reports (never refuses) two equal ranks', () => {
+    for (const bad of ['a\0', 'a b', 'a:b', 'a\u202e', 'a\uffff']) expect(paths(check(table({ 'r:r3': bad })))).toEqual(['bad_value:r:r3']);
+    const twins = check(table({ 'r:r3': 'a0' }));
+    expect(codes(twins)).toEqual(['duplicate_rank']);
+    expect(twins).toMatchObject({ ok: false, violations: [{ code: 'duplicate_rank', reportOnly: true }] });
+    expect(shouldReject('enforce', twins)).toBe(false);
   });
   it('limits a table to 100 rows and 30 columns however the writes arrive, and only another type is refused its keys', () => {
     const many = (kind: string, n: number) => Object.fromEntries(generateNKeysBetween(null, null, n).map((rank, i) => [`${kind}:i${i}`, rank]));
     expect(codes(check(table({ ...many('r', 101) })))).toContain('too_many_rows');
     expect(codes(check(table({ ...many('k', 31) })))).toContain('too_many_columns');
-    expect(check(table({ ...many('r', 98), ...many('k', 28) }))).toEqual({ ok: true });
+    expect(codes(check(table({ ...many('r', 98), ...many('k', 28) })))).not.toContain('too_many_rows');
+    expect(codes(check(table({ ...many('r', 98), ...many('k', 28) })))).not.toContain('too_many_columns');
     expect(paths(check({ id: 'x1', type: 'sticky', x: 0, y: 0, w: 10, h: 10, rotation: 0, z: 'a0', createdBy: 'u1', 'c:r1:c1': 'x' }))).toEqual(['unknown_field:c:r1:c1']);
+  });
+});
+
+describe('a Markdown block', () => {
+  const md = (text: string) => ({ id: 'md1', type: 'markdown', x: 0, y: 0, w: 300, h: 200, rotation: 0, z: 'a0', createdBy: 'u1', text });
+  it('has a text cap of 8,000 characters (a note allows 20,000): over it is a too_long violation, report-only while the text caps are', () => {
+    expect(LIMITS.markdown).toBe(8000);
+    expect(check(md('x'.repeat(8000)))).toEqual({ ok: true });
+    expect(paths(check(md('x'.repeat(8001))))).toEqual(['too_long:text']);
+    expect(check(md('x'.repeat(8001)))).toMatchObject({ violations: [{ code: 'too_long', reportOnly: true }] });
   });
 });
 

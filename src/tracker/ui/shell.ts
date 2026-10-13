@@ -3,6 +3,7 @@ import { openTrackerMenu } from './account-menu';
 import './tracker.css';
 import { closePopover, dialog, popover, toast } from '../../ui/common';
 import { h, icon } from '../../ui/dom';
+import { kbdHint } from '../../ui/kbd';
 import { TrackerError, type TrackerFacets, type TrackerListQuery, type TrackerMeta, type TrackerPriority, type TrackerSortField, type TrackerState, type TrackerTicket, type TrackerView } from '../../tracker-types';
 import type { TrackerApi, TrackerStore } from '../../tracker-data';
 import { build, parse, type FilterChip } from './filter';
@@ -252,15 +253,15 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     if (options.account) openTrackerMenu(menuButton, { me: options.account, onBoards: () => options.onBoards?.() });
   });
   const fullscreenStrip = h('div', { class: 'trk-fullscreen-strip', hidden: !fullScreen },
+    h('h1', { class: 'trk-board-name' }, options.boardName ?? 'Tracker'),
+    h('span', { class: 'trk-strip-spacer' }),
     routeMode
       ? h('button', { class: 'trk-small-button trk-back-boards', type: 'button', onclick: () => options.onBoards?.() }, '‹ Boards')
       : h('button', { class: 'trk-small-button', type: 'button', onclick: () => setFullscreen(false) }, 'Back to board'),
-    h('span', { class: 'trk-board-name' }, options.boardName ?? 'Tracker'),
-    h('span', { class: 'trk-strip-spacer' }),
     menuButton,
   );
   const tabs = h('nav', { class: 'trk-tabs', role: 'tablist', 'aria-label': 'Tracker sections' });
-  const commandButton = h('button', { class: 'trk-command-trigger', type: 'button', 'aria-label': 'Open command box, Command or Control K' }, '⌘K');
+  const commandButton = h('button', { class: 'trk-command-trigger', type: 'button', 'aria-label': 'Open command box, Command or Control K' }, kbdHint('Ctrl/Cmd+K'));
   const newButton = h('button', { class: 'trk-primary-button trk-new-trigger', type: 'button', 'aria-label': 'New issue' }, '+ New issue');
   const fullscreenButton = h('button', { class: 'trk-icon-button', type: 'button', 'aria-label': fullScreen ? 'Back to board' : 'Open full screen' }, fullScreen ? '↙' : '↗');
   const offlineLine = h('div', { class: 'trk-offline-line', role: 'status', hidden: typeof navigator === 'undefined' || navigator.onLine !== false },
@@ -677,7 +678,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
             state.cursorKey = model.cursorKey;
             drawRows(cache);
           },
-        }, groupTicket && state.group === 'state' ? stateGlyph(groupTicket.state.category, groupTicket.state.key) : null,
+        }, h('span', { class: 'trk-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 12)),
+        groupTicket && state.group === 'state' ? stateGlyph(groupTicket.state.category, groupTicket.state.key) : null,
         h('span', null, group.label), h('span', { class: 'trk-muted' }, String(group.count)));
         rows.push(h('div', { class: 'trk-group-row', role: 'row' },
           h('div', { class: 'trk-cell trk-group-cell', role: 'gridcell', 'aria-colspan': String(columns.length) }, headerButton),
@@ -1281,6 +1283,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       setMySubtab(event.key === '[' ? 'active' : 'created');
       return;
     }
+    // Escape in the filter field with text in it clears the text first (the field's own handler); the next one leaves
+    if (event.key === 'Escape' && target instanceof HTMLInputElement && target.classList.contains('trk-filter-input') && target.value && !filterController?.suggestionsOpen()) return;
     const layers: KeyboardLayer[] = [];
     if (!fullScreen) layers.push('work');
     if (fullScreen) layers.push('fullscreen');

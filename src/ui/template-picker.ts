@@ -118,6 +118,7 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
     className: 'template-picker-back',
     onClose: () => {
       isClosed = true;
+      thumbObserver?.disconnect();
       releaseTemplates();
       opener?.setAttribute('aria-expanded', 'false');
       if (opener?.matches('[data-drawer="templates"]')) opener.classList.remove('on');
@@ -180,10 +181,29 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
     categories.replaceChildren(list);
   };
 
+  // Thumbnails are drawn when their card comes near the visible area (about one row ahead), not all at once: a long template list
+  // draws only what is shown. Without IntersectionObserver (a test, an old browser) a thumbnail is drawn at once.
+  const thumbObserver = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      thumbObserver?.unobserve(e.target);
+      (e.target as HTMLElement & { __draw?: () => string }).__draw?.();
+    }
+  }, { rootMargin: '240px 0px' });
+  const lazyThumb = (preview: HTMLElement, draw: () => string) => {
+    const paintThumb = () => {
+      preview.innerHTML = draw();
+      return '';
+    };
+    if (!thumbObserver || isClosed) return void paintThumb();
+    (preview as HTMLElement & { __draw?: () => string }).__draw = paintThumb;
+    thumbObserver.observe(preview);
+  };
+
   const makeCard = (entry: PickerItem, index: number) => {
-    const thumb = entry.kind === 'builtin'
+    const drawThumb = () => (entry.kind === 'builtin'
       ? builtinThumbnail(entry.template as TemplateDef)
-      : customThumbnail(entry.template as CustomTemplate);
+      : customThumbnail(entry.template as CustomTemplate));
     const card = h('button', {
       type: 'button',
       id: `${idPrefix}-option-${index}`,
@@ -194,7 +214,7 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
       'data-category': entry.category,
       tabindex: '-1',
     },
-    h('span', { class: 'template-picker-preview', 'aria-hidden': 'true', html: thumb }),
+    h('span', { class: 'template-picker-preview', 'aria-hidden': 'true' }),
     h('span', { class: 'template-picker-card-copy' },
       h('span', { class: 'template-picker-card-name' }, entry.name),
       h('span', { class: 'template-picker-card-description' }, entry.description || entry.category),
@@ -209,6 +229,7 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
       paintSelection();
     });
     card.addEventListener('dblclick', () => use(entry));
+    lazyThumb(card.querySelector<HTMLElement>('.template-picker-preview')!, drawThumb);
     return card;
   };
 

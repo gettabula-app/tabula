@@ -285,7 +285,7 @@ export function openContainerSheet(app: BoardApp, containerId: Id, laneId?: Id) 
     const link = isSafeHttpUrl(card.link) ? card.link : null;
     if (!due && !comments && !owner && !link) return null;
     return h('div', { class: 'ks-meta' },
-      due ? h('span', { class: `ks-due ${due.kind}` }, due.kind === 'done' ? icon('check', 12) : null, due.text, due.kind === 'overdue' ? h('span', { class: 'sr-only' }, ', overdue') : null) : null,
+      due ? h('span', { class: `ks-due ${due.kind}` }, icon('calendar', 12), due.kind === 'done' ? icon('check', 12) : null, due.text, due.kind === 'overdue' ? h('span', { class: 'sr-only' }, ', overdue') : null) : null,
       h('span', { class: 'ks-spacer' }),
       comments ? h('span', { class: 'ks-ccount', title: `${comments} ${comments === 1 ? 'comment' : 'comments'}` }, icon('comment', 14), String(comments)) : null,
       owner ? h('span', { class: `ks-owner${agent ? ' agent' : ''}`, title: `Owner: ${owner}${agent ? ' (agent)' : ''}`, 'aria-label': `Owner: ${owner}${agent ? ' (agent)' : ''}` },

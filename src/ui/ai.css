@@ -11,7 +11,9 @@
 .ai-field { display: grid; gap: 8px; min-width: 0; }
 .ai-field .input, .ai-limit .input { width: 100%; }
 
-.ai-label { display: block; margin-bottom: 8px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
+/* on the admin page the label sits on the page ground (graphite); in the dialog it sits on the tray */
+.ai-label { display: block; margin-bottom: 8px; color: var(--graphite); font-size: 12px; font-weight: 600; }
+.ai-dialog .ai-label { color: var(--tray-muted); }
 /* the OpenAI-compatible fields, a group inside a key form (TAB-222): spaced the same in both screens, and gone when empty */
 .ai-fields { display: grid; gap: 16px; min-width: 0; margin: 8px 0; }
 .ai-fields:empty { display: none; }

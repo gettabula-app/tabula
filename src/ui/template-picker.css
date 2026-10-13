@@ -181,7 +181,6 @@
   padding: 1px 9px;
   overflow: hidden;
   border-radius: 999px;
-  color: var(--tray-text);
   font-size: 10px;
   font-weight: 600;
   line-height: 1.8;
@@ -190,10 +189,6 @@
   text-transform: uppercase;
   white-space: nowrap;
 }
-.template-picker-card .tag-yellow { background: color-mix(in srgb, var(--canvas-signal) 14%, var(--tray)); }
-.template-picker-card .tag-blue { background: color-mix(in srgb, var(--wire) 14%, var(--tray)); }
-.template-picker-card .tag-green { background: color-mix(in srgb, var(--category-green) 14%, var(--tray)); }
-.template-picker-card .tag-red { background: color-mix(in srgb, var(--danger) 14%, var(--tray)); }
 .template-picker-empty {
   grid-column: 2;
   align-self: start;

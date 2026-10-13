@@ -59,6 +59,8 @@ Ramar tar med sig allt som finns inuti dem, och kopplingslinjer behålls när b�
 
 **Category** är en lista, inte ett fritextfält. Den innehåller de åtta inbyggda kategorierna och **Custom**. Det är de enda kategorier en mall kan ha.
 
+En mall rymmer högst 500 objekt och 200 000 tecken text.
+
 Gäster kan använda mallar men inte spara dem. Tavlans meny döljer **Save board as template** för gäster. Om du når ett sparformulär från en annan malåtgärd visas **Guests cannot save templates.** (Gäster kan inte spara mallar.) och **Save template** är inaktiverad.
 
 ## Dela en mall

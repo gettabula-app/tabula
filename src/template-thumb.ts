@@ -12,6 +12,17 @@ const PAD = 0.04;
 
 const round = (v: number) => Math.round(v * 100) / 100;
 
+/**
+ * What a thumbnail draws for a Markdown block or a table: a quiet box at its own position and size. The content is never read, so
+ * no text is measured and no table is laid out: a template can hold many blocks of thousands of characters (the layout of one
+ * would take seconds), and a thumbnail only needs to say that something is there.
+ */
+function placeholderMarkup(o: Obj): string {
+  const { x, y, w, h } = o as { x: number; y: number; w: number; h: number };
+  if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) return '';
+  return `<rect x="${round(x)}" y="${round(y)}" width="${round(w)}" height="${round(h)}" rx="4" fill="var(--paper, #FFFFFF)" stroke="color-mix(in srgb, var(--ink, #18212B) 22%, var(--paper, #FFFFFF))" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+}
+
 /** A throwaway host for building built-in templates: no board, default fonts. */
 const THUMB_HOST: BuilderHost = { user: { id: 'thumbnail' }, store: { getMeta: () => DEFAULT_META } };
 
@@ -37,7 +48,7 @@ export function thumbnailSvg(objects: Obj[], opts: { maxObjects?: number; labels
     get, layout: () => (layout ??= buildConnectorLayout(get, objects.filter(isConnector))),
     containerLayout: (id) => laid.layouts.get(id) ?? null, label: (id) => labels.get(id),
   };
-  const body = shown.map((o) => objectMarkup(o, ctx)).join('');
+  const body = shown.map((o) => (o.type === 'markdown' || o.type === 'table' ? placeholderMarkup(o) : objectMarkup(o, ctx))).join('');
   const view = `${round(b.x - pad)} ${round(b.y - pad)} ${round(b.w + pad * 2)} ${round(b.h + pad * 2)}`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${view}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false"><defs>${SVG_DEFS}</defs>${body}</svg>`;
 }

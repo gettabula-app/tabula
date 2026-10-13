@@ -101,7 +101,7 @@ export function openAccountMenu(anchor: HTMLElement, me: Me) {
     canChangeProfile(authState().mode) ? item('Your name and colour', () => openProfileDialog(getUser(), (u) => saveUser(u))) : null,
     aiToolsAvailable(me) ? item('AI tool access', () => openTokensDialog(me)) : null,
     me.ai?.personalKeys ? item('Your AI key', () => openAiKeyDialog()) : null,
-    me.chat ? item('Chat notifications', () => openChatNotifications()) : null,
+    item('Notification settings', () => openChatNotifications()),
     h('hr', { class: 'menu-sep' }),
     item('Sign out', () => { void signOutAndLeave(); }),
   ), { side: 'bottom', label: 'Account menu' });
@@ -129,13 +129,32 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
 }
 
 /** Filter box shared by the board lists and the template grid. */
+let slashSearchShortcutInstalled = false;
+
+function installSlashSearchShortcut(): void {
+  if (slashSearchShortcutInstalled) return;
+  slashSearchShortcutInstalled = true;
+  document.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.isContentEditable || target?.matches('input, textarea, select, [role="textbox"]')) return;
+    if (document.querySelector('.modal, .popover, [role="dialog"][aria-modal="true"], [role="menu"]')) return;
+    const input = document.querySelector<HTMLInputElement>('.home-search:not([hidden]) .input');
+    if (!input || input.closest('[hidden]')) return;
+    event.preventDefault();
+    input.focus();
+  });
+}
+
 export function searchField(label: string, value: string, onInput: (query: string) => void): HTMLElement {
+  installSlashSearchShortcut();
   return h('div', { class: 'home-search' },
     icon('search', 18),
     h('input', {
-      class: 'input', type: 'search', placeholder: label, 'aria-label': label, value,
+      class: 'input', type: 'search', placeholder: label, 'aria-label': label, 'aria-keyshortcuts': '/', value,
       oninput: (e: Event) => onInput((e.currentTarget as HTMLInputElement).value),
-    }));
+    }),
+    h('kbd', { class: 'home-search-key', 'aria-hidden': 'true' }, '/'));
 }
 
 export function pageFooter(note: string): HTMLElement {

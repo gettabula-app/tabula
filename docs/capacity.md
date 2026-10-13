@@ -92,8 +92,8 @@ A claim that can be defended today: "a class of 30 works on one board in our tes
 
 The relay can check the shape of what clients write into a board room or a comments room (`server/sync-validate.mjs`, run by `server/sync-guard.mjs` after the tracker and comments guards). It looks only at the keys one sync message changed, and for an edit of an existing object only at the fields that changed. Set `TABULA_SYNC_VALIDATE` to:
 
-- `off` (the default): the validator does not run.
-- `report`: nothing is rejected and no data changes. Violations are counted by code and kind in memory, and one summary line a minute goes to the log (counts and codes only: no board ids, user ids or content; an internal error is logged by its name and code only). A validator error never reaches the sync path.
+- `off`: the validator does not run. This is the explicit switch to turn the check off.
+- `report` (the default when the variable is unset or empty): nothing is rejected and no data changes. Violations are counted by code and kind in memory, and one summary line a minute goes to the log (counts and codes only: no board ids, user ids or content; an internal error is logged by its name and code only). A validator error never reaches the sync path.
 - `enforce`: a message with a violation is reverted with a Y.UndoManager and the revert goes out in the same broadcast, so every client ends on the state from before the message. A socket with 20 violations within 60 seconds is closed. Text-length caps stay report-only (`ENFORCE_TEXT_CAPS` in `server/sync-validate.mjs`) until the report has run for a release.
 
 Any other value stops the relay at startup. The comments guard runs first and repairs author ids and names as before; a field it repaired is counted as `repaired`, not as a violation.
@@ -102,7 +102,7 @@ Any other value stops the relay at startup. The comments guard runs first and re
 
 **Check errors.** If the check itself fails (an exception in the validator or while setting it up), `report` mode ignores it and counts `checkErrors` (the summary line carries the last error name and code, never a message). `enforce` mode rejects the message exactly as for a violation, counts `check_error`, and closes the socket after repeated errors; if the check cannot even be set up, the message is not applied.
 
-**Counters** (`mode`, `updates`, `keys`, `skipped`, `skippedBudget`, `tooManyKeys`, `checkErrors`, `violations`, `repaired`, `rejected`, `closed`, `reportOnly`, `byCode`, `byKind`) are under `syncValidate` in `GET /api/health` unless the mode is `off`. `node scripts/sync-validate-report.mjs` runs the validator over the templates, the demo board and one object of every type, to see what the real client writes.
+**Counters** (`mode`, `updates`, `keys`, `skipped`, `skippedBudget`, `tooManyKeys`, `checkErrors`, `violations`, `repaired`, `rejected`, `closed`, `reportOnly`, `byCode`, `byKind`) are under `syncValidate` in `GET /api/health` unless the mode is `off`; with the default `report` mode they are there on every relay, so `curl <host>/api/health` shows `syncValidate.mode` (`report`), how many updates were looked at (`updates`), what would have been flagged (`violations`, `byCode`, `byKind`) and that nothing was blocked (`rejected` and `closed` stay 0). The same counts go to the log as one summary line a minute. A relay that should not run the check at all sets `TABULA_SYNC_VALIDATE=off`. `node scripts/sync-validate-report.mjs` runs the validator over the templates, the demo board and one object of every type, to see what the real client writes.
 
 **Cost** (re-measured after the bounded collection; `nice node scripts/sync-validate-bench.mjs --rounds 7`, Node 24.10, 10 cores, measured on a machine with a load average of about 400, so the p99 figures are mostly scheduling noise and `min` is the figure to read). Time to apply one client message to the room, guard off against `report` (`enforce` also tracks the change for the revert):
 

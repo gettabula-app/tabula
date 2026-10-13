@@ -1023,7 +1023,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       ? item('user', 'Admin', () => { location.hash = '#/admin'; })
       : null,
     auth.me.mcp ? item('link', 'AI tool access', () => openTokensDialog(auth.me)) : null,
-    auth.me.chat ? item('chat', 'Chat notifications', () => openChatNotifications()) : null,
+    item('chat', 'Notification settings', () => openChatNotifications()),
     auth.me.ai?.personalKeys ? item('lock', 'Your AI key', () => openAiKeyDialog()) : null,
   ] : [];
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));

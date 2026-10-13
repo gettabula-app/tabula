@@ -105,7 +105,11 @@ describe.skipIf(!available)('here now', () => {
     const page = await open(390);
     const crowd = page.locator('.board-row', { hasText: 'Crowded' });
     expect(await crowd.locator('.here-names').isVisible()).toBe(true);
-    expect(await crowd.locator('.here-names').textContent()).toBe('Ana, Ben and 3 more');
+    // the line shows as many names as the free width holds (two, else one): by meaning, the first name is there and the names plus "N more" are the five people here
+    const label = (await crowd.locator('.here-names').textContent()) ?? '';
+    const parsed = /^(Ana(?:, Ben)?) and (\d+) more$/.exec(label);
+    expect(label).toMatch(/^Ana(, Ben)? and \d+ more$/);
+    expect(parsed![1].split(', ').length + Number(parsed![2])).toBe(5);
     expect(await crowd.locator('.here-sq').first().evaluate((el) => el.getBoundingClientRect().height)).toBe(20);
     expect(await crowd.locator('.here-tip').isVisible()).toBe(false);
     const order = await crowd.locator('.board-sub').evaluate((el) => [...el.children].map((c) => c.className.split(' ')[0]));
