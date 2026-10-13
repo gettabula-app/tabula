@@ -120,10 +120,5 @@
   .k-card-form .input, .k-card-form .btn { min-height: 40px; }
   .k-owner-kind-btn { min-height: 40px; }
   .k-chip { height: 40px; }
-  /* TAB-210: while the body scrolls on, a soft fade over its foot says there is more; gone at the end */
-  .k-card-dialog .modal-body.k-more .k-actions::before {
-    content: ''; position: absolute; left: 0; right: 0; bottom: calc(100% + 1px); height: 32px; pointer-events: none;
-    background: linear-gradient(color-mix(in srgb, var(--tray) 0%, transparent), var(--tray));
-  }
 }
 .k-up .ico svg { transform: rotate(180deg); }

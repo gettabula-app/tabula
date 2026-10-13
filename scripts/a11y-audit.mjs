@@ -257,7 +257,7 @@ const SCREENS = [
   { id: 'templates', hash: '#/templates', ready: async (p) => { await p.locator('.tpl-card').first().waitFor(); } },
   { id: 'board', hash: '#/b/a11y', board: true },
   { id: 'board-selected', hash: '#/b/a11y', board: true, after: async (p) => { await p.evaluate(() => window.__board.setSelection(['a11y-note'])); await p.locator('.quickbar.show').waitFor(); } },
-  { id: 'board-menu', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: 'Menu', exact: true }).click(); await p.locator('.menu').waitFor(); } },
+  { id: 'board-menu', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: 'Menu', exact: true }).click(); await p.locator('.menu').first().waitFor(); } },
   { id: 'shapes-drawer', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: 'Shapes', exact: true }).click(); await p.locator('.drawer.show').waitFor(); } },
   { id: 'comments-panel', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: /^Comments/ }).click(); await p.waitForTimeout(300); } },
   { id: 'share-dialog', hash: '#/b/a11y', board: true, after: async (p) => { await p.getByRole('button', { name: 'Share', exact: true }).click(); await p.getByRole('dialog').waitFor(); } },

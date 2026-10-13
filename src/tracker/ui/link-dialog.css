@@ -243,7 +243,7 @@
   border: 1px solid var(--trk-rule);
   background: var(--trk-ground);
   color: var(--trk-text);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--trk-text) 14%, transparent);
+  box-shadow: var(--popover-shadow);
 }
 .trk.trk-pop .trk-picker-option:hover, .trk.trk-pop .trk-picker-option.active { background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); }
 .trk.trk-pop .trk-picker-option[aria-disabled='true'] { color: var(--trk-muted); }

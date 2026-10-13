@@ -138,7 +138,8 @@ describe('markup for what no known layout places', () => {
     for (const o of [box('c', 'container', { layout: 'kanban' }), box('c', 'container'), box('l', 'lane'), box('k', 'card')]) {
       const svg = outsideVars(objectMarkup(o, ctx));
       expect(svg).not.toMatch(/#[\da-f]{3,8}\b|rgba?\(|\b(?:white|black)\b/i);
-      expect(objectMarkup(o, ctx)).toContain('var(--canvas-ink');
+      // a card's edge is the theme rule; containers and lanes draw their names in canvas ink
+      expect(objectMarkup(o, ctx)).toContain(o.type === 'card' ? 'var(--rule' : 'var(--canvas-ink');
     }
   });
 });

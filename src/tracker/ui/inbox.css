@@ -33,9 +33,8 @@
 }
 .trk .trk-inbox-row.is-unread { font-weight: 500; }
 .trk .trk-inbox-row.is-read { color: var(--trk-muted); font-weight: 400; }
-.trk .trk-inbox-row[aria-selected='true'] { background: var(--trk-cursor); box-shadow: inset 0 0 0 1px var(--trk-focus); }
-.trk .trk-inbox-row[tabindex='0'] { background: var(--trk-cursor); box-shadow: inset 0 0 0 1px var(--trk-focus); }
-.trk .trk-inbox-row[aria-selected='true'][tabindex='0'] { background: var(--trk-cursor); box-shadow: inset 0 0 0 1px var(--trk-focus); }
+.trk .trk-inbox-row[aria-selected='true'], .trk .trk-inbox-row[tabindex='0'] { background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); }
+.trk .trk-inbox-row:focus-visible { outline: 1px solid var(--trk-focus); outline-offset: -1px; }
 .trk .trk-inbox-unread-dot { display: inline-grid; width: 10px; height: 10px; place-items: center; }
 .trk .trk-inbox-unread-dot::before { width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 50%; background: currentColor; content: ''; }
 .trk .trk-inbox-copy { display: grid; min-width: 0; gap: 1px; }

@@ -771,7 +771,12 @@ describe('filters (docs/kanban.md, Filters)', () => {
     expect(head).not.toContain('k-filter');
     expect(head).not.toContain('k-menu');
     expect(head).not.toContain('k-addlane');
-    expect(objectMarkup(store.getPlaced(container)!, r.ctx)).toContain('FILTER · 1');
+    expect(head).not.toContain('>Filter</text>');
+    expect(head).not.toMatch(/<text [^>]*text-anchor="middle"[^>]*>\d+<\/text>/);
+    // the editor's header has the Filter button and its count chip (the 18 by 18 chip), so the export checks below are not vacuous
+    const editorHead = objectMarkup(store.getPlaced(container)!, r.ctx);
+    expect(editorHead).toContain('>Filter</text>');
+    expect(editorHead).toMatch(/<rect x="[\d.]+" y="[\d.]+" width="18" height="18" rx="6"/);
   });
 });
 
