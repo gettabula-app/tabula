@@ -37,16 +37,17 @@ async function open(): Promise<Page> {
 }
 
 /** Two stickies at a zoom: `ref` (the target, left edge at x = 400) and `a` (the one resized or drawn next to it), the camera centred on both. */
-const seed = (page: Page, zoom: number) => page.evaluate(async (z) => {
+const seed = (page: Page, zoom: number, a: { type: string; w: number; h: number; extra?: Record<string, unknown> } = { type: 'sticky', w: 160, h: 160 }) => page.evaluate(async ({ z, a }) => {
   const app = (window as any).__board;
-  const mk = (id: string, x: number, y: number, w: number, h: number) => app.store.transactAs(() => app.store.create({ id, type: 'sticky', x, y, w, h, rotation: 0, z: app.store.topZ(), text: '', fill: '#FFE16B' }), 'seed');
-  mk('ref', 400, 100, 200, 160);
-  mk('a', 100, 100, 160, 160);
+  const mk = (id: string, type: string, x: number, y: number, w: number, h: number, extra: Record<string, unknown> = {}) => app.store.transactAs(() => app.store.create({ id, type, x, y, w, h, rotation: 0, z: app.store.topZ(), text: '', fill: '#FFE16B', ...extra }), 'seed');
+  mk('ref', 'sticky', 400, 100, 200, 160);
+  mk('a', a.type, 100, 100, a.w, a.h, a.extra);
   app.setSelection(['a']);
   app.zoomTo(z);
   app.r.setCamera({ x: 350 - app.r.viewport().w / 2, y: 180 - app.r.viewport().h / 2, zoom: z });
-  await new Promise((r) => setTimeout(r, 400));
-}, zoom);
+  for (let i = 0; i < 100 && Math.abs(app.r.cam.zoom - z) > 1e-6; i++) await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 100));
+}, { z: zoom, a });
 const screenOf = (page: Page, x: number, y: number) => page.evaluate(({ x, y }) => {
   const app = (window as any).__board;
   const p = app.r.toScreen({ x, y });
@@ -77,6 +78,45 @@ describe.skipIf(!available)('guides while resizing and drawing', () => {
       await page.close();
     });
   }
+
+  it('snaps the east edge of a frame, and a frame with a child in it', async () => {
+    const page = await open();
+    await seed(page, 1, { type: 'frame', w: 160, h: 160, extra: { name: 'F' } });
+    await page.evaluate(() => { const app = (window as any).__board; app.store.transactAs(() => app.store.create({ id: 'child', type: 'sticky', x: 120, y: 120, w: 60, h: 60, rotation: 0, z: app.store.topZ(), text: '', fill: '#FFE16B', parent: 'a' }), 'seed'); });
+    const handle = await screenOf(page, 260, 180);
+    await page.mouse.move(handle.x, handle.y);
+    await page.mouse.down();
+    const near = await screenOf(page, 397, 180);
+    await page.mouse.move(near.x, near.y, { steps: 8 });
+    await page.waitForFunction(() => (window as any).__board.r.overlay.guides.length > 0);
+    const mid = await obj(page, 'a');
+    expect(mid!.x + mid!.w).toBeCloseTo(400, 3);
+    await page.mouse.up();
+    expect(await obj(page, 'a')).toEqual(mid);
+    await page.close();
+  });
+
+  it('snaps a corner of an image (its proportions are kept) and of a sticky resized with Shift', async () => {
+    for (const shape of [{ type: 'image', w: 160, h: 120, extra: { hash: 'x', src: '' }, shift: false }, { type: 'sticky', w: 160, h: 160, extra: {}, shift: true }]) {
+      const page = await open();
+      await seed(page, 1, shape);
+      const o0 = await obj(page, 'a');
+      const handle = await screenOf(page, 100 + shape.w, 100 + shape.h); // the south-east corner
+      await page.mouse.move(handle.x, handle.y);
+      if (shape.shift) await page.keyboard.down('Shift');
+      await page.mouse.down();
+      const near = await screenOf(page, 397, 100 + shape.h * (297 / shape.w));
+      await page.mouse.move(near.x, near.y, { steps: 8 });
+      await page.waitForFunction(() => (window as any).__board.r.overlay.guides.length > 0);
+      const mid = await obj(page, 'a');
+      expect(mid!.x + mid!.w).toBeCloseTo(400, 3); // the right edge snapped
+      expect(mid!.w / mid!.h).toBeCloseTo(o0!.w / o0!.h, 3); // proportions kept
+      await page.mouse.up();
+      if (shape.shift) await page.keyboard.up('Shift');
+      expect(await obj(page, 'a')).toEqual(mid);
+      await page.close();
+    }
+  });
 
   it('Alt turns the resize guides off', async () => {
     const page = await open();

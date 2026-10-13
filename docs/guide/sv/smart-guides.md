@@ -12,7 +12,7 @@ Smarta hjälplinjer visar hur objektet du flyttar eller ändrar storlek på ligg
 
 Hjälplinjer visas medan du flyttar och ändrar storlek på ett objekt. En flermarkering flyttas som ett enda block. Om du bara markerar kopplingslinjer visas inga hjälplinjer.
 
-När du ändrar storlek genom att dra i en fri kant är det bara kanten du drar i som fäster; den motsatta kanten står kvar. Om du drar i ett hörn med låsta proportioner vinner den närmaste vågräta eller lodräta justeringen. Den andra kanten följer proportionerna, och det motsatta hörnet ligger kvar. Det gäller hörn som du ändrar med `Shift` och bilder, ikoner och UML-aktörer. Om du ändrar storlek på ett roterat objekt visas inga hjälplinjer.
+När du ändrar storlek genom att dra i en fri kant är det bara kanten du drar i som fäster; den motsatta kanten står kvar. Om du drar i ett hörn med låsta proportioner vinner den närmaste vågräta eller lodräta justeringen. Den andra kanten följer proportionerna, och det motsatta hörnet ligger kvar. Det gäller hörn som du ändrar med `Shift` och bilder, ikoner och UML-aktörer. Om du ändrar storlek på ett roterat objekt visas inga hjälplinjer. En liten etikett intill pekaren visar storleken medan du ändrar storlek eller ritar, till exempel "320 × 180". Hörnet du drar ut när du ritar en ny form, lapp eller ram fäster på samma sätt.
 
 ## Hur nära du behöver vara
 
@@ -23,6 +23,10 @@ Justering och jämna mellanrum prioriteras framför rutnätet. Om en justering e
 ## Stäng av hjälplinjer för ett enskilt drag
 
 Håll ned `Alt` medan du drar. Då stängs hjälplinjer och fästning mot rutnätet av bara för det draget. På Mac håller du ned Option.
+
+## Lås ett drag till en riktning
+
+Håll ner `Cmd` (`Ctrl` på Windows och Linux) medan du drar för att flytta i bara en riktning. Tabula väljer den riktning du rör dig först, vågrät eller lodrät, efter ungefär 6 pixlar, och behåller den tills du släpper tangenten. En streckad linje visar riktningen och en liten etikett följer pekaren. Det fungerar för objekt, grupper, markeringar, ramar och den fria änden av en kopplingslinje eller linje. Släpp tangenten under draget för att flytta fritt igen. Hjälplinjer och fäst mot rutnät fungerar fortfarande längs den låsta riktningen, och `Alt` stänger dem av.
 
 ## Inställningen Snap to grid (Fäst mot rutnät)
 
