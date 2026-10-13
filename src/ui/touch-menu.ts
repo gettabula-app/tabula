@@ -48,6 +48,8 @@ export function mountTouchMenu(app: BoardApp) {
       if (app.selection.length) return;
       app.setSelection([target.id]);
     }
+    // a held finger on a table's cell selects that cell, so the menu has the table entries for it (docs/tables.md)
+    if (target.type === 'table') app.tables.selectUnderPointer(target, { clientX: at.x, clientY: at.y });
     firedAt = Date.now();
     held = { x: at.x, y: at.y, selection: [...app.selection], pointer: at.id };
     openContextMenu(app, at.x, at.y, true);

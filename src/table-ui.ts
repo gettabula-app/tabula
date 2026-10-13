@@ -83,7 +83,7 @@ export class TableController {
   }
 
   /** A right click at the pointer: selects the cell under it unless it is inside the range already selected. */
-  selectUnderPointer(hit: Obj, e: MouseEvent) {
+  selectUnderPointer(hit: Obj, e: { clientX: number; clientY: number }) {
     const o = this.app.store.getPlaced(hit.id) as BaseObj | undefined;
     if (!o || this.app.selection.length !== 1 || this.app.selection[0] !== o.id) return;
     const p = this.app.r.clientToWorld(e.clientX, e.clientY);

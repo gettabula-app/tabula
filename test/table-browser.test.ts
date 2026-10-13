@@ -349,4 +349,64 @@ describe.skipIf(!available)('the table', () => {
     expect(await grid(page)).toEqual([['a', 'b', ''], ['x', 'y', 'z']]);
     await page.close();
   });
+
+  // ---------------------------------------------------------------- files, copies and templates (slice 3)
+
+  it('survives a JSON snapshot, a duplicate and a template: every row, column, width, alignment, fill and cell comes back', async () => {
+    const page = await open();
+    await seedTable(page, [['Name', 'Qty'], ['Apples', '3']]);
+    const result = await page.evaluate(`(async () => {
+      const { toJson, insertImported } = await import('/src/exporters.ts');
+      const { tableModel, setAlignPatch, setFillPatch, setWidthPatch } = await import('/shared/tables.mjs');
+      const { toTemplateContent, instantiate } = await import('/src/custom-templates.ts');
+      const app = window.__board;
+      const base = app.store.get('tb1');
+      const m = tableModel(base);
+      app.store.update('tb1', { headerRow: true, ...setAlignPatch(base, m.cols[1], 'right'), ...setFillPatch(base, [m.rows[1]], [m.cols[0]], '#BCE88C'), ...setWidthPatch(base, m.cols[0], 240) });
+      const read = () => {
+        const all = [...app.store.cache.values()].filter((o) => o.type === 'table');
+        return all.map((o) => { const t = tableModel(o); return { grid: t.rows.map((r) => t.cols.map((c) => t.cell(r, c))), align: t.cols.map((c) => t.align(c)), fill: t.fill(t.rows[1], t.cols[0]), width: t.width(t.cols[0]), header: o.headerRow === true }; });
+      };
+      const original = read()[0];
+      const json = JSON.parse(JSON.stringify(toJson(app, ['tb1'])));
+      app.store.remove(['tb1']);
+      insertImported(app, json);
+      const fromJson = read();
+      app.setSelection([fromJson.length ? [...app.store.cache.values()].find((o) => o.type === 'table').id : '']);
+      app.duplicate();
+      const afterDuplicate = read();
+      const objs = [...app.store.cache.values()].filter((o) => o.type === 'table');
+      const content = toTemplateContent(objs.slice(0, 1), [], { includeSteps: false });
+      const made = instantiate(content, { x: 900, y: 900 }, 'u1');
+      const fromTemplate = made.objects.map((o) => { const t = tableModel(o); return { grid: t.rows.map((r) => t.cols.map((c) => t.cell(r, c))), align: t.cols.map((c) => t.align(c)), fill: t.fill(t.rows[1], t.cols[0]), width: t.width(t.cols[0]), header: o.headerRow === true }; });
+      return { original, fromJson, afterDuplicate, fromTemplate };
+    })()`) as { original: unknown; fromJson: unknown[]; afterDuplicate: unknown[]; fromTemplate: unknown[] };
+    expect(result.original).toMatchObject({ grid: [['Name', 'Qty'], ['Apples', '3']], align: ['left', 'right'], fill: '#BCE88C', width: 240, header: true });
+    expect(result.fromJson).toEqual([result.original]);
+    expect(result.afterDuplicate).toEqual([result.original, result.original]);
+    expect(result.fromTemplate).toEqual([result.original]);
+    await page.close();
+  });
+
+  it('prints and exports as vector with the cell fills drawn and no selection outline', async () => {
+    const page = await open();
+    await seedTable(page, [['a', 'b'], ['c', 'd']]);
+    await page.evaluate(`(async () => {
+      const { tableModel, setFillPatch } = await import('/shared/tables.mjs');
+      const app = window.__board;
+      const o = app.store.get('tb1');
+      const m = tableModel(o);
+      app.store.update('tb1', setFillPatch(o, [m.rows[0]], [m.cols[0]], '#A3D2FF'));
+      app.setSelection(['tb1']);
+      app.tables.select('tb1', 0, 0);
+    })()`);
+    const svg = await page.evaluate(`(async () => {
+      const { exportSvg } = await import('/src/exporters.ts');
+      return exportSvg(window.__board, ['tb1']).svg;
+    })()`) as string;
+    expect(svg).toContain('fill="#A3D2FF"');
+    expect(svg).not.toContain('data-table-selection'); // the selection is for the screen, never a file
+    expect(svg).not.toContain('foreignObject');
+    await page.close();
+  });
 });
