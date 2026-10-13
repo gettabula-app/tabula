@@ -3,6 +3,7 @@ import { copyMarkdownSource, copyTable } from './markdown-actions';
 import type { Align, BaseObj, ConnectorObj, Obj, Route, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
 import { h, icon } from './dom';
+import { kbdHint } from './kbd';
 import { closePopover, field, popover, segmented, swatches } from './common';
 import { FILLS, STROKES, TEXT_COLORS, colorName } from '../palette';
 import { stickyColorField } from './colors';
@@ -227,7 +228,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
         'data-tip': reason ?? label,
         'data-tip-key': horizontal ? 'shift+h' : 'shift+v',
         onclick: () => { closePopover(); app.flipSelection(axis); },
-      }, icon(horizontal ? 'flipHorizontal' : 'flipVertical', 18), h('span', null, label), h('span', { class: 'menu-hint' }, horizontal ? 'Shift+H' : 'Shift+V'));
+      }, icon(horizontal ? 'flipHorizontal' : 'flipVertical', 16), h('span', null, label), h('span', { class: 'menu-hint' }, kbdHint(horizontal ? 'Shift+H' : 'Shift+V')));
     };
     return h('div', { class: 'menu qb-action-menu', role: 'menu', 'aria-label': 'More actions' },
       ...linkOverflow.map((el) => { const clone = el.cloneNode(true) as HTMLElement; clone.addEventListener('click', () => { closePopover(); el.click(); }); return clone; }),

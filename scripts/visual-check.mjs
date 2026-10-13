@@ -4098,8 +4098,9 @@ const STATES = {
   },
   async 'chat-notifications'(env) {
     await env.page.goto(`${env.base}/#/chat`);
-    await env.page.getByRole('button', { name: 'Notifications' }).click();
-    await env.page.getByRole('checkbox', { name: 'Email me when I am mentioned in chat' }).waitFor();
+    await env.page.getByRole('navigation', { name: 'Chat channels' })
+      .getByRole('button', { name: 'Notification settings', exact: true }).click();
+    await env.page.getByRole('switch', { name: 'Email me when I am mentioned in chat' }).waitFor();
     await env.page.waitForFunction(() => !document.querySelector('.modal input')?.disabled);
   },
   async 'chat-home'(env) {

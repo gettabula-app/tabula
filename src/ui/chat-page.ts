@@ -44,7 +44,7 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
   // ---------------------------------------------------------------- the list
   const status = h('p', { class: 'chat-list-status', role: 'status' });
   const listBody = h('div', { class: 'chat-list-body' });
-  const prefs = h('button', { class: 'chat-prefs', type: 'button', onclick: () => openChatNotifications() }, 'Notifications');
+  const prefs = h('button', { class: 'chat-prefs', type: 'button', 'aria-label': 'Notification settings', onclick: () => openChatNotifications() }, 'Notification settings');
   const list = h('nav', { class: 'chat-list', 'aria-label': 'Chat channels' }, listBody, status, h('div', { class: 'chat-list-foot' }, prefs));
 
   // ---------------------------------------------------------------- the conversation

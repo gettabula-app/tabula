@@ -7,7 +7,9 @@ import { h } from './dom';
  * it is changed. The dialog says what the email holds and when it goes, so the switch is not a guess.
  */
 export function openChatNotifications(): void {
-  const box = h('input', { type: 'checkbox', disabled: true, 'aria-describedby': 'chat-prefs-note' });
+  const box = h('input', { type: 'checkbox', role: 'switch', disabled: true, 'aria-label': 'Email me when I am mentioned in chat', 'aria-describedby': 'chat-prefs-note' });
+  const switchControl = h('span', { class: 'chat-switch-control' }, box,
+    h('span', { class: 'chat-switch-track', 'aria-hidden': 'true' }, h('span', { class: 'chat-switch-thumb' })));
   const note = h('p', { class: 'muted small', id: 'chat-prefs-note' },
     'When someone mentions you and you have not had Tabula open for 10 minutes, you get one email per conversation with who wrote it and the first words, and a link. You are never emailed for something you have read, or while you are using Tabula.');
   const status = h('p', { class: 'muted small', role: 'status' }, 'Loading…');
@@ -26,8 +28,8 @@ export function openChatNotifications(): void {
     }
   });
   dialog('Chat notifications', h('div', { class: 'stack' },
-    h('label', { class: 'ai-check' }, box, h('span', null, 'Email me when I am mentioned in chat')),
-    note, status), [{ label: 'Close', primary: true }]);
+    h('label', { class: 'chat-prefs-switch' }, h('span', null, 'Email me when I am mentioned in chat'), switchControl),
+    note, status), [{ label: 'Done', primary: true }]);
   api.chatPrefs().then((p) => {
     loaded = true;
     box.checked = p.emailMentions;

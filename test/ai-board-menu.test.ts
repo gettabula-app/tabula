@@ -160,7 +160,7 @@ describe('board AI entry points without a key or credits', () => {
     expect(textOf(dialog)).not.toContain('Ask AI');
   });
 
-  it('puts the User guide first in the menu, as a quiet accent on the same button', async () => {
+  it('keeps search first and the User guide in the footer as a quiet accent on its button', async () => {
     const { root, app } = prepareBoard('member');
     const { mountBoardUi } = await import('../src/ui/board');
     mountBoardUi(app as never, root as unknown as HTMLElement, { home: () => undefined });
@@ -169,11 +169,15 @@ describe('board AI entry points without a key or credits', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const menu = browser!.document.body.querySelector('.menu') as FakeElement;
     const items = menu.querySelectorAll('.menu-item');
-    expect(textOf(items[0])).toContain('User guide');
-    expect(items[0].className).toContain('guide-item');
-    expect(items[0].tagName.toLowerCase()).toBe('button');
-    // nothing before it, not even the account block
-    expect(menu.children[0]).toBe(items[0]);
-    expect(items.filter((item) => textOf(item).includes('User guide'))).toHaveLength(1);
+    const searchField = menu.children[0] as FakeElement;
+    expect(searchField.className).toContain('board-menu-search');
+    expect(searchField.querySelector('.board-menu-search-input')?.getAttribute('aria-label')).toBe('Search actions');
+
+    const guides = items.filter((item) => textOf(item).includes('User guide'));
+    expect(guides).toHaveLength(1);
+    const guide = guides[0];
+    expect(guide.parentNode).toBe(menu.querySelector('.board-menu-footer'));
+    expect(guide.className).toContain('guide-item');
+    expect(guide.tagName.toLowerCase()).toBe('button');
   });
 });

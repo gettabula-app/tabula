@@ -1,9 +1,8 @@
-/* AI tool access: a dialog of flush-left type, one 2px rule and hairlines. Theme variables only; dialog and control radius tokens, no shadows.
+/* AI tool access: a dialog of flush-left type with hairlines and the shared paper shadow. Theme variables only.
    The Access tokens tab in the admin dashboard reuses the admin-* classes and adds nothing here. */
 
 .tokens-dialog {
-  width: min(640px, 100%); border-radius: var(--radius-lg); box-shadow: none;
-  border: 1px solid var(--tray-line); border-top: 1px solid var(--tray-line);
+  width: min(640px, 100%); border-radius: var(--radius-lg);
 }
 .tokens-dialog .icon-btn { border-radius: var(--radius-sm); }
 .tokens-dialog .modal-body { padding: 8px 24px 24px; }
@@ -16,14 +15,13 @@
 .tokens-section-title { margin: 0 0 12px; padding-top: 16px; border-top: 1px solid var(--tray-line); font: 700 18px/1.25 var(--display); letter-spacing: -0.02em; }
 .tokens-connected { display: grid; gap: 12px; min-width: 0; }
 
-/* Label style: 11px uppercase meta. */
-.tokens-label, .tokens-badge {
+.tokens-badge {
   font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
-.tokens-label { margin-bottom: 8px; color: var(--tray-muted); }
+.tokens-label { margin-bottom: 8px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
 
 .tokens-field { min-width: 0; }
-.tokens-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); border: 0; }
+.tokens-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); }
 .tokens-dialog :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 
 /* Exclusive options: compact controls on hairlines; the chosen one is the one signal fill. */
@@ -76,8 +74,7 @@
 }
 .tokens-dialog .btn:disabled { opacity: 0.5; }
 @media (max-width: 640px) { .tokens-dialog .btn { min-height: 44px; } }
-.tokens-dialog .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
-.tokens-dialog .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--tray-text)); color: var(--on-signal); }
+.tokens-dialog .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 86%, var(--paper)); color: var(--paper); }
 
 .admin-token-actions { display: contents; }
 .tokens-section-title:focus-visible, .admin-box:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
