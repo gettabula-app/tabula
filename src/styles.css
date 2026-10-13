@@ -206,11 +206,11 @@ select.input {
 .rail-tools[data-more-y='down'] { -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 12px), transparent); }
 .rail-tools[data-more-y='up'] { -webkit-mask-image: linear-gradient(to top, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to top, var(--ink) calc(100% - 12px), transparent); }
 .rail-tools[data-more-y='both'] { -webkit-mask-image: linear-gradient(to bottom, transparent, var(--ink) 12px, var(--ink) calc(100% - 12px), transparent); mask-image: linear-gradient(to bottom, transparent, var(--ink) 12px, var(--ink) calc(100% - 12px), transparent); }
-/* A short window on a mouse or trackpad: tools 30 px, icons 18 px, 1 px gaps, tighter dividers, and the rail starts at 64 px with a 12 px bottom margin, so it needs about 626 px and does not scroll at 720. Touch keeps 44 px targets and the cue below. */
+/* A short window on a mouse or trackpad: tools 28 px, icons 18 px, 1 px gaps, tighter dividers, and the rail starts at 64 px with a 12 px bottom margin, so it needs about 626 px and does not scroll at 720. Touch keeps 44 px targets and the cue below. */
 @media (max-height: 720px) and (pointer: fine) {
   .rail { top: calc(64px + var(--safe-top)); max-height: calc(100% - 76px - var(--safe-top) - var(--safe-bottom)); }
   .rail, .rail-tools, .rail-end { gap: 1px; }
-  .rail .rail-btn { width: 30px; height: 30px; }
+  .rail .rail-btn { width: 28px; height: 28px; } /* 28 since the Link tool made nineteen: 30 px no longer fit a 720 px window without scrolling */
   .rail .rail-btn svg { width: 18px; height: 18px; }
   .rail hr { margin: 2px 0; }
 }

@@ -23,6 +23,8 @@ function harness(objects: Obj[], selection: Id[]) {
   store.transact(() => objects.forEach((o) => store.create(o)));
   store.undo.clear();
   const app = Object.create(BoardApp.prototype) as AppHarness;
+  // the link-card helper the key and paste handlers call (src/link-add.ts); a harness has no use for it
+  Object.assign(app, { links: { noteKey: () => undefined, open: () => undefined, pasteUrl: () => false } });
   const flow = { isHidden: () => false };
   const bounds = (ids: Iterable<Id>): Rect | null => {
     const rects = [...ids].flatMap((id) => {
@@ -156,6 +158,8 @@ describe('flip keyboard shortcuts', () => {
     vi.stubGlobal('document', { querySelector: () => null });
     const store = new Store(new Y.Doc());
     const app = Object.create(BoardApp.prototype) as AppHarness;
+    // the link-card helper the key and paste handlers call (src/link-add.ts); a harness has no use for it
+    Object.assign(app, { links: { noteKey: () => undefined, open: () => undefined, pasteUrl: () => false } });
     const flip = vi.fn<(axis: 'horizontal' | 'vertical') => boolean>();
     const setTool = vi.fn<(tool: { kind: string }) => void>();
     Object.assign(app, { store, lifetime: new AbortController(), drag: null, longPress: null, scope: null, flipSelection: flip, setTool });

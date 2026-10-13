@@ -63,6 +63,8 @@ function harness() {
   const r = new Renderer(store, new FakeEl() as unknown as HTMLElement);
   r.setCamera({ x: -100, y: -100, zoom: 1 });
   const app = Object.create(BoardApp.prototype) as Harness;
+  // the link-card helper the key and paste handlers call (src/link-add.ts); a harness has no use for it
+  Object.assign(app, { links: { noteKey: () => undefined, open: () => undefined, pasteUrl: () => false } });
   const notify = vi.fn<(msg: string) => void>();
   const startInput = vi.fn<(lane: Id) => void>();
   Object.assign(app, {
