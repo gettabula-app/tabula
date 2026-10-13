@@ -62,7 +62,7 @@
   flex: 1 1 auto; min-width: 0; height: 24px; box-sizing: border-box; padding: 0 4px; border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule);
   background: color-mix(in srgb, var(--tray-text) 6%, var(--tray)); color: var(--tray-text); font: inherit; outline: none;
 }
-.layer-edit:focus { box-shadow: inset 0 0 0 1px var(--tray-text), 0 0 0 3px color-mix(in srgb, var(--tray-text) 10%, transparent); }
+.layer-edit:focus { box-shadow: inset 0 0 0 1px var(--field-edge-strong), 0 0 0 3px color-mix(in srgb, var(--field-edge-strong) 10%, transparent); }
 
 .layer-line {
   position: absolute; right: 0; height: 2px; margin-top: -1px; background: var(--signal); pointer-events: none; z-index: 1;

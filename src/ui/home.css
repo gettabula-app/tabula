@@ -75,9 +75,9 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 
 .home .input {
   width: 100%; height: 36px; padding: 0 10px 0 34px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper));
-  color: var(--ink); appearance: none; -webkit-appearance: none;
+  --placeholder: var(--ink); color: var(--ink); appearance: none; -webkit-appearance: none;
 }
-.home .input::placeholder { color: var(--graphite); opacity: 1; }
+.home .input::placeholder { color: var(--placeholder); opacity: 1; }
 
 .home-groups { display: grid; gap: 48px; }
 .group-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 16px; }

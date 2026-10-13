@@ -59,6 +59,12 @@ describe('theme catalogue', () => {
     expect(missing).toEqual([]);
   });
 
+  it('defines the native-control scheme for each tray', () => {
+    expect(THEMES.map((theme) => [theme.id, theme.trayScheme])).toEqual([
+      ['default', 'light'], ['ayu', 'dark'], ['kanagawa', 'dark'], ['matrix', 'dark'], ['evergreen', 'dark'],
+    ]);
+  });
+
   it('falls back to the default theme for unknown ids', () => {
     expect(themeById('nope').id).toBe('default');
   });
@@ -116,6 +122,14 @@ describe('applyTheme', () => {
     expect(root.dataset.theme).toBe('matrix');
     expect(root.dataset.scheme).toBe('dark');
     expect(values.get('color-scheme')).toBe('dark');
+  });
+
+  it('sets the tray scheme dataset for every theme', () => {
+    const { root } = fakeRoot();
+    for (const theme of THEMES) {
+      applyTheme(theme.id, root);
+      expect(root.dataset.trayScheme).toBe(theme.trayScheme);
+    }
   });
 
   it('removes every inline override when returning to the default theme', () => {

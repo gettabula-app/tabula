@@ -31,7 +31,7 @@ describe('accessibility audit follow-ups', () => {
 
     const modalDanger = styles.match(/\.modal \.btn\.armed,\s*\.modal \.btn\.danger\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(modalDanger).toMatch(/background:\s*var\(--danger\)/);
-    expect(modalDanger).toMatch(/color:\s*var\(--on-signal\)/);
+    expect(modalDanger).toMatch(/color:\s*var\(--on-danger\)/);
     expect(styles).toMatch(/\.modal \.btn\.armed\s*\{[^}]*outline:\s*2px solid var\(--danger\);[^}]*outline-offset:\s*2px/);
     for (const file of ['src/ui/tokens.ts', 'src/ui/ai.ts']) {
       expect(read(file)).toMatch(/button\.textContent = armedLabel;\s*button\.classList\.add\('armed'\)/);

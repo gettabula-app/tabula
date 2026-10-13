@@ -1,10 +1,11 @@
-export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--wire','--selection-handle-fill','--selection-handle-stroke','--danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide','--shade'] as const;
+export const THEME_VARS = ['--canvas','--paper','--ink','--graphite','--rule','--signal','--on-signal','--canvas-signal','--on-canvas-signal','--wire','--selection-handle-fill','--selection-handle-stroke','--danger','--on-danger','--tray','--tray-2','--tray-line','--tray-text','--tray-muted','--tray-hover','--grid-dot','--grid-line','--grid-major','--canvas-ink','--canvas-rule','--guide','--shade','--scrim'] as const;
 export type ThemeVar = (typeof THEME_VARS)[number];
 
 export interface Theme {
   id: string;
   name: string;
   scheme: 'light' | 'dark';
+  trayScheme: 'light' | 'dark';
   vars: Record<ThemeVar, string>;
 }
 
@@ -18,6 +19,7 @@ export const THEMES: Theme[] = [
     id: 'default',
     name: 'Default',
     scheme: 'light',
+    trayScheme: 'light',
     vars: {
       '--canvas': '#F7F6F3',
       '--paper': '#FFFFFF',
@@ -26,10 +28,13 @@ export const THEMES: Theme[] = [
       '--rule': '#EAEAEA',
       '--signal': '#111111',
       '--on-signal': '#FFFFFF',
+      '--canvas-signal': '#FFD23F',
+      '--on-canvas-signal': '#18212B',
       '--wire': '#2A64D6',
       '--selection-handle-fill': '#FFFFFF',
       '--selection-handle-stroke': '#2A64D6',
       '--danger': '#D41E24',
+      '--on-danger': '#FFFFFF',
       '--tray': '#FFFFFF',
       '--tray-2': '#F7F6F3',
       '--tray-line': 'rgba(17, 17, 17, 0.08)',
@@ -43,12 +48,14 @@ export const THEMES: Theme[] = [
       '--canvas-rule': '#D9D8D4',
       '--guide': '#D6247F',
       '--shade': '#000000',
+      '--scrim': 'rgba(17, 17, 17, 0.42)',
     },
   },
   {
     id: 'ayu',
     name: 'Ayu',
     scheme: 'dark',
+    trayScheme: 'dark',
     vars: {
       '--canvas': '#1F2430',
       '--paper': '#272D38',
@@ -57,10 +64,13 @@ export const THEMES: Theme[] = [
       '--rule': '#3D4455',
       '--signal': '#FFCC66',
       '--on-signal': '#1F2430',
+      '--canvas-signal': '#FFCC66',
+      '--on-canvas-signal': '#1F2430',
       '--wire': '#73D0FF',
       '--selection-handle-fill': '#272D38',
       '--selection-handle-stroke': '#73D0FF',
       '--danger': '#F28779',
+      '--on-danger': '#1F2430',
       '--tray': '#171B24',
       '--tray-2': '#232834',
       '--tray-line': 'rgba(204, 202, 194, 0.12)',
@@ -74,12 +84,14 @@ export const THEMES: Theme[] = [
       '--canvas-rule': '#3D4455',
       '--guide': '#FF7EB6',
       '--shade': '#000000',
+      '--scrim': 'rgba(255, 255, 255, 0.10)',
     },
   },
   {
     id: 'kanagawa',
     name: 'Kanagawa',
     scheme: 'dark',
+    trayScheme: 'dark',
     vars: {
       '--canvas': '#1F1F28',
       '--paper': '#2A2A37',
@@ -88,10 +100,13 @@ export const THEMES: Theme[] = [
       '--rule': '#363646',
       '--signal': '#E6C384',
       '--on-signal': '#1F1F28',
+      '--canvas-signal': '#E6C384',
+      '--on-canvas-signal': '#1F1F28',
       '--wire': '#7E9CD8',
       '--selection-handle-fill': '#2A2A37',
       '--selection-handle-stroke': '#7E9CD8',
       '--danger': '#E56E7B',
+      '--on-danger': '#1F1F28',
       '--tray': '#16161D',
       '--tray-2': '#2A2A37',
       '--tray-line': 'rgba(220, 215, 186, 0.12)',
@@ -105,12 +120,14 @@ export const THEMES: Theme[] = [
       '--canvas-rule': '#54546D',
       '--guide': '#FF5D8F',
       '--shade': '#000000',
+      '--scrim': 'rgba(255, 255, 255, 0.10)',
     },
   },
   {
     id: 'matrix',
     name: 'Matrix',
     scheme: 'dark',
+    trayScheme: 'dark',
     vars: {
       '--canvas': '#050A06',
       '--paper': '#0B140C',
@@ -119,10 +136,13 @@ export const THEMES: Theme[] = [
       '--rule': '#14501F',
       '--signal': '#00FF41',
       '--on-signal': '#021004',
+      '--canvas-signal': '#00FF41',
+      '--on-canvas-signal': '#021004',
       '--wire': '#22D3EE',
       '--selection-handle-fill': '#0B140C',
       '--selection-handle-stroke': '#22D3EE',
       '--danger': '#FF4D4D',
+      '--on-danger': '#021004',
       '--tray': '#0A120B',
       '--tray-2': '#102014',
       '--tray-line': 'rgba(61, 255, 112, 0.16)',
@@ -136,12 +156,14 @@ export const THEMES: Theme[] = [
       '--canvas-rule': '#14501F',
       '--guide': '#FF4FA3',
       '--shade': '#000000',
+      '--scrim': 'rgba(255, 255, 255, 0.12)',
     },
   },
   {
     id: 'evergreen',
     name: 'Evergreen',
     scheme: 'light',
+    trayScheme: 'dark',
     vars: {
       '--canvas': '#EEF3EC',
       '--paper': '#FFFFFF',
@@ -150,10 +172,13 @@ export const THEMES: Theme[] = [
       '--rule': '#CBD9CE',
       '--signal': '#E0B040',
       '--on-signal': '#14301F',
+      '--canvas-signal': '#E0B040',
+      '--on-canvas-signal': '#14301F',
       '--wire': '#1E6FD9',
       '--selection-handle-fill': '#FFFFFF',
       '--selection-handle-stroke': '#1E6FD9',
       '--danger': '#C14036',
+      '--on-danger': '#FFFFFF',
       '--tray': '#0F2A1D',
       '--tray-2': '#1B3F2C',
       '--tray-line': 'rgba(226, 240, 228, 0.14)',
@@ -167,6 +192,7 @@ export const THEMES: Theme[] = [
       '--canvas-rule': '#CBD9CE',
       '--guide': '#D6247F',
       '--shade': '#000000',
+      '--scrim': 'rgba(17, 17, 17, 0.42)',
     },
   },
 ];
@@ -196,6 +222,7 @@ export function applyTheme(id: string, root: ThemeRoot = document.documentElemen
   }
   root.dataset.theme = theme.id;
   root.dataset.scheme = theme.scheme;
+  root.dataset.trayScheme = theme.trayScheme;
   root.style.setProperty('color-scheme', theme.scheme);
 }
 

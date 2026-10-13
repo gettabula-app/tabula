@@ -36,7 +36,7 @@
 
 /* Inputs sit inside the 11px label, so the field resets the label's type. */
 .signin .input {
-  height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); color: var(--ink);
+  height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink);
   font-size: 14px; font-weight: 400; letter-spacing: normal; text-transform: none;
 }
 .signin .signin-recovery-email { display: inline-block; width: min(100%, 320px); margin: 8px 0; }

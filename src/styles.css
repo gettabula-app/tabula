@@ -30,6 +30,10 @@
   --selection-handle-stroke: var(--wire);
   --danger: #D41E24;
   --on-signal: #FFFFFF;
+  --on-danger: #FFFFFF;
+  --canvas-signal: #FFD23F;
+  --on-canvas-signal: #18212B;
+  --scrim: rgba(17, 17, 17, 0.42);
   --canvas-ink: #111111;
   --canvas-rule: #D9D8D4;
   --guide: #D6247F;
@@ -41,6 +45,7 @@
   --tray-text: #111111;
   --tray-muted: #65635F;
   --tray-hover: rgba(17, 17, 17, 0.05);
+  --placeholder: color-mix(in srgb, var(--tray-muted) 90%, var(--tray-text));
 
   --grid-dot: #D4D2CC;
   --grid-line: #ECEBE7;
@@ -73,6 +78,9 @@
   /* ink of the white class and label editors; the same in every theme */
   --editor-fallback-ink: #18212B;
 }
+
+:root[data-tray-scheme='light'] :is(.tray, .modal, .popover, .menu, select, input, textarea) { color-scheme: light; }
+:root[data-tray-scheme='dark'] :is(.tray, .modal, .popover, .menu, select, input, textarea) { color-scheme: dark; }
 
 /* Evergreen reverses the usual tray contrast direction: use a darker edge against its unchanged light canvas. */
 :root[data-theme='evergreen'] {
@@ -179,8 +187,8 @@ hr { border: 0; }
 .btn:hover { background: var(--tray-hover); }
 .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
 .btn.primary:hover { background: color-mix(in srgb, var(--signal) 86%, var(--tray)); }
-.btn.danger { border: 0; background: var(--danger); color: var(--on-signal); }
-.btn.danger:hover { background: color-mix(in srgb, var(--danger) 86%, var(--tray)); }
+.btn.danger { border: 0; background: var(--danger); color: var(--on-danger); }
+.btn.danger:hover { background: color-mix(in srgb, var(--danger) 95%, var(--on-danger)); }
 .btn.ghost { border: 0; background: transparent; }
 .btn.ghost:hover { background: var(--tray-hover); }
 .btn.wide { width: 100%; }
@@ -192,6 +200,7 @@ hr { border: 0; }
   box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule);
 }
 .input { width: 100%; height: 34px; padding: 0 10px; }
+input::placeholder, textarea::placeholder { color: var(--placeholder); opacity: 1; }
 select, textarea:not(.text-editor) { padding: 0 10px; }
 .input:hover, select:hover, textarea:not(.text-editor):hover { background-color: color-mix(in srgb, var(--tray-text) 9%, var(--tray)); }
 .input:focus, select:focus, textarea:not(.text-editor):focus {
@@ -309,7 +318,7 @@ select.input {
   background: linear-gradient(315deg, transparent 50%, color-mix(in srgb, var(--c) 60%, #fff) 50%);
 }
 .swatch.add { position: relative; display: grid; place-items: center; border-radius: var(--radius-xs); background: var(--c, transparent); box-shadow: inset 0 0 0 1px var(--field-edge-strong); color: var(--tray-muted); cursor: pointer; }
-.swatch.add:hover { color: var(--tray-text); box-shadow: inset 0 0 0 1.5px var(--tray-text); }
+.swatch.add:hover { color: var(--tray-text); box-shadow: inset 0 0 0 1.5px var(--field-edge-strong); }
 .swatch.add.on { color: transparent; box-shadow: 0 0 0 2px var(--signal); }
 .swatch.add input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
 .sticky-swatches.lg .swatch.add { width: 28px; height: 28px; }
@@ -419,7 +428,7 @@ select.input {
   box-shadow: 0 0 0 1px var(--field-edge-strong);
 }
 .swatch.none { background: linear-gradient(135deg, transparent 45%, var(--danger) 45% 55%, transparent 55%), color-mix(in srgb, var(--tray-text) 8%, transparent); }
-.swatch.on { box-shadow: 0 0 0 2px var(--tray), 0 0 0 4px var(--signal); }
+.swatch.on { box-shadow: 0 0 0 2px var(--tray-2), 0 0 0 4px var(--signal); }
 .segmented { display: flex; gap: 2px; padding: 2px; background: color-mix(in srgb, var(--tray-text) 6%, transparent); border-radius: var(--radius-sm); }
 .segmented button { flex: 1; min-width: 0; height: 30px; display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; box-shadow: inset 0 0 0 1px var(--field-edge-strong); font-size: 12.5px; font-weight: 500; }
 .segmented button:hover { background: var(--tray-hover); }
@@ -482,10 +491,10 @@ select.input {
   background: color-mix(in srgb, var(--wire) 14%, transparent); color: var(--tray-text); font-size: 12.5px; font-weight: 500; white-space: nowrap;
 }
 .votes-left:hover { background: color-mix(in srgb, var(--wire) 24%, transparent); }
-.votes-left .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--wire) 70%, var(--tray-text)); }
+.votes-left .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--wire); }
 .votes-left .dot.on { background: color-mix(in srgb, var(--wire) 70%, var(--tray-text)); }
 .votes-left > span:not(.dot) { margin-left: 4px; }
-.votes-left.none { color: var(--signal); }
+.votes-left.none { color: var(--signal); font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 2px; }
 .votes-left .ico { opacity: 0.7; }
 .vote-compact-count { display: none; }
 .remove-dots-toggle[aria-pressed='true'] { background: var(--signal); color: var(--on-signal); }
@@ -572,7 +581,7 @@ select.input {
 .font-list .list-label { padding: 0 10px; }
 .pop-foot { padding-top: 6px; border-top: 1px solid var(--tray-line); }
 
-.modal-back { position: fixed; inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-height, 100dvh); z-index: 60; display: grid; place-items: safe center; overflow: hidden; padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left)); background: color-mix(in srgb, var(--tray) 55%, transparent); }
+.modal-back { position: fixed; inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-height, 100dvh); z-index: 60; display: grid; place-items: safe center; overflow: hidden; padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left)); background: var(--scrim); }
 .modal { width: min(560px, 100%); max-height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md); }
 :root .modal { box-shadow: var(--dialog-shadow); }
 .modal-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 24px 16px 8px 24px; }
@@ -587,7 +596,7 @@ select.input {
 
 /* controls and labels inside dialogs and popovers */
 .modal .list-label, .modal .field-label, .modal .tray-label {
-  color: color-mix(in srgb, var(--tray-muted) 84%, var(--tray)); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .menu .list-label, .popover .list-label, .popover .field-label, .popover .tray-label {
   color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
@@ -600,9 +609,9 @@ select.input {
 .modal .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 86%, var(--tray)); color: var(--on-signal); }
 .modal .btn.ghost { border: 0; background: transparent; }
 .modal .btn.ghost:not(:disabled):hover { background: transparent; color: var(--tray-text); text-decoration: underline; text-underline-offset: 4px; }
-.modal .btn.armed, .modal .btn.danger { border: 0; background: var(--danger); color: var(--on-signal); }
+.modal .btn.armed, .modal .btn.danger { border: 0; background: var(--danger); color: var(--on-danger); }
 .modal .btn.armed { outline: 2px solid var(--danger); outline-offset: 2px; }
-.modal .btn.armed:not(:disabled):hover, .modal .btn.danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 86%, var(--tray)); color: var(--on-signal); }
+.modal .btn.armed:not(:disabled):hover, .modal .btn.danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 95%, var(--on-danger)); color: var(--on-danger); }
 .popover .btn {
   border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); font-size: 13px; font-weight: 500;
 }
@@ -611,8 +620,8 @@ select.input {
 .popover .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 86%, var(--tray)); color: var(--on-signal); }
 .popover .btn.ghost { border: 0; }
 .popover .btn.ghost:not(:disabled):hover { background: transparent; color: var(--tray-text); text-decoration: underline; text-underline-offset: 4px; }
-.popover .btn.armed, .popover .btn.danger { border: 0; background: var(--danger); color: var(--on-signal); }
-.popover .btn.armed:not(:disabled):hover, .popover .btn.danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 86%, var(--tray)); color: var(--on-signal); }
+.popover .btn.armed, .popover .btn.danger { border: 0; background: var(--danger); color: var(--on-danger); }
+.popover .btn.armed:not(:disabled):hover, .popover .btn.danger:not(:disabled):hover { background: color-mix(in srgb, var(--danger) 95%, var(--on-danger)); color: var(--on-danger); }
 .modal .icon-btn, .popover .icon-btn { border-radius: var(--radius-sm); }
 .modal kbd { border-radius: var(--radius-xs); }
 .modal :focus-visible:not(input):not(textarea):not(select):not(.combo), .popover :focus-visible:not(.combo) { outline: 2px solid var(--tray-text); outline-offset: 2px; }
@@ -819,7 +828,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 .quickbar :focus-visible { outline-offset: -2px; }
 .qb-sep { flex: none; width: 1px; height: 20px; margin: 0 4px; background: var(--tray-line); }
 .icon-btn.qb-text { width: auto; min-width: 36px; padding: 0 9px; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
-.qb-chip { display: block; width: 18px; height: 18px; border-radius: var(--radius-xs); background: var(--c); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--tray-text) 35%, transparent); }
+.qb-chip { display: block; width: 18px; height: 18px; border-radius: var(--radius-xs); background: var(--c); box-shadow: inset 0 0 0 1.5px var(--tray-line); }
 .qb-chip.none { background: linear-gradient(135deg, transparent calc(50% - 1px), var(--danger) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); }
 .qb-pop { padding: 12px; max-width: 288px; }
 .qb-pop .field:first-child { margin-top: 0; }
@@ -830,7 +839,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 .qb-align { display: grid; grid-template-columns: repeat(4, 36px); gap: 4px; }
 
 /* themes */
-.theme-preview { flex: none; position: relative; width: 36px; height: 24px; border-radius: var(--radius-xs); background: var(--c); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tray-text) 25%, transparent); overflow: hidden; }
+.theme-preview { flex: none; position: relative; width: 36px; height: 24px; border-radius: var(--radius-xs); background: var(--c); box-shadow: inset 0 0 0 1px var(--tray-line); overflow: hidden; }
 .theme-preview::before { content: ''; position: absolute; left: 4px; top: 4px; bottom: 4px; width: 8px; border-radius: var(--radius-xs); background: var(--t); }
 .theme-preview::after { content: ''; position: absolute; right: 5px; bottom: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--a); }
 .theme-item .theme-check { flex: none; width: 16px; height: 16px; display: grid; place-items: center; margin-left: auto; }
@@ -888,7 +897,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .top-right > .chat-toggle { display: none; }
   .menu-chat-narrow { display: flex; }
   .top-right:has(.chat-count.show) > button[aria-label='Menu'] { position: relative; }
-  .top-right:has(.chat-count.show) > button[aria-label='Menu']::after { content: ''; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 2px var(--tray); }
+  .top-right:has(.chat-count.show) > button[aria-label='Menu']::after { content: ''; position: absolute; top: 10px; right: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 2px var(--canvas); }
 }
 
 /* Link cards (docs/link-cards.md): the line along the bottom edge while the relay reads the page. It stands still for people who ask for less motion. */

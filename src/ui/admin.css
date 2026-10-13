@@ -155,10 +155,10 @@
 .admin .btn-slot > * { grid-area: 1 / 1; }
 .admin .btn-slot > .btn-reserve { visibility: hidden; }
 .admin .btn.armed { border-color: var(--danger); color: var(--danger); }
-.admin .btn.armed:not(:disabled):hover { background: var(--danger); color: var(--paper); }
+.admin .btn.armed:not(:disabled):hover { background: var(--danger); color: var(--on-danger); }
 
 .admin .input {
-  height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); color: var(--ink);
+  height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink);
 }
 .admin .input[type='search'] { min-width: 0; width: 100%; }
 .admin .icon-btn { border-radius: var(--radius-sm); }
