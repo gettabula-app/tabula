@@ -55,7 +55,29 @@ function colourButton(l: Label, onPick: (key: string) => void): HTMLElement {
         }, s2, h('span', null, colourName(key)), key === l.color ? h('span', { class: 'k-chip-check', 'aria-hidden': 'true' }, icon('check', 12)) : null);
       }));
       keepKeys(list);
-      popover(b, list, { side: 'bottom', className: 'k-colour-pop', label: `Colour of ${l.name}` });
+      const row = b.closest<HTMLElement>('.k-label-row');
+      const narrow = () => window.matchMedia?.('(max-width: 480px)').matches ?? window.innerWidth <= 480;
+      const handle = popover(b, list, {
+        side: 'right',
+        getAnchorRect: () => {
+          const buttonRect = b.getBoundingClientRect();
+          const modalRect = !narrow() ? b.closest<HTMLElement>('.modal')?.getBoundingClientRect() : null;
+          return modalRect ? {
+            left: modalRect.right, right: modalRect.right, top: buttonRect.top, bottom: buttonRect.bottom, width: 0, height: buttonRect.height,
+          } : buttonRect;
+        },
+        className: 'k-colour-pop',
+        label: `Colour of ${l.name}`,
+        onClose: () => row?.style.removeProperty('--colour-popover-space'),
+      });
+      if (narrow() && row) {
+        row.dataset.colourOpen = 'true';
+        const listRect = handle.el.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const space = Math.max(0, Math.ceil(listRect.bottom - rowRect.bottom + 8));
+        if (space) row.style.setProperty('--colour-popover-space', `${space}px`);
+        handle.place();
+      }
     },
   }, sw, h('span', { class: 'k-colour-name' }, colourName(l.color)));
   return b;

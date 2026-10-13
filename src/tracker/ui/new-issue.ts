@@ -221,7 +221,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
   const createReason = h('span', { class: 'trk-create-reason', hidden: !options.offline }, 'Needs a connection to get a ticket number.');
   const createButton = h('button', {
     class: 'trk-primary-button', type: 'button', disabled: options.offline || !options.meta.me.canWrite,
-    'aria-keyshortcuts': 'Meta+Enter Control+Enter', 'data-tip': 'Create issue · ⌘ Enter / Ctrl Enter',
+    'aria-keyshortcuts': 'Meta+Enter Control+Enter', 'data-tip': 'Create issue', 'data-tip-keys': 'Ctrl/Cmd+Enter',
     'aria-description': options.offline ? 'Needs a connection to get a ticket number.' : undefined,
   }, 'Create issue');
   const anotherButton = h('button', {

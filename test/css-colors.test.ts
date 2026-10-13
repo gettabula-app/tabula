@@ -17,11 +17,6 @@ const ALLOWED: { file: string; selector: string; literals: string[] }[] = [
   { file: 'src/styles.css', selector: '.text-editor[data-mode', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.tile.uml svg', literals: ['#fff'] },
   { file: 'src/styles.css', selector: '.icon-tile', literals: ['#fff'] },
-  {
-    file: 'src/styles.css',
-    selector: '.empty-hint',
-    literals: ['#1D1A12', '#FFE16B', '#FFF0B0', '#FFE58A', '#18212B', 'rgba(24, 33, 43, 0.2)', 'rgba(0, 0, 0, 0.12)', 'rgba(29, 26, 18, 0.1)'],
-  },
   { file: 'src/ui/comments.css', selector: '.comment-avatar', literals: ['#fff'] },
   { file: 'src/ui/chat.css', selector: '.chat-avatar', literals: ['#fff'] },
   { file: 'src/ui/home-presence.css', selector: '.here-sq', literals: ['#fff'] },

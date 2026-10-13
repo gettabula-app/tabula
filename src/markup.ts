@@ -336,11 +336,12 @@ function tableMarkup(o: BaseObj, ctx: MarkupCtx) {
 function frameMarkup(o: BaseObj) {
   const s = styleOf(o);
   const fill = s.fill === 'none' ? 'none' : escapeXml(s.fill);
-  const name = escapeXml(o.name || 'Frame');
+  // a frame without a stored name reads "Frame"; a name that was emptied on purpose stays empty and draws nothing (here and in exports)
+  const name = escapeXml(typeof o.name === 'string' ? o.name : 'Frame');
+  const title = name === '' ? '' : `<text x="2" y="-10" font-family="${escapeXml(fontFamily(s.font))}" font-size="${s.fontSize}" font-weight="${s.fontWeight}" fill="${escapeXml(s.textColor)}">${name}</text>`;
   return wrapG(
     o,
-    `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" rx="6" fill="${fill}" ${strokeAttrs(s.stroke, s.strokeWidth, s.dash)}/>` +
-      `<text x="2" y="-10" font-family="${escapeXml(fontFamily(s.font))}" font-size="${s.fontSize}" font-weight="${s.fontWeight}" fill="${escapeXml(s.textColor)}">${name}</text>`,
+    `<rect x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" rx="6" fill="${fill}" ${strokeAttrs(s.stroke, s.strokeWidth, s.dash)}/>` + title,
     s.opacity,
   );
 }

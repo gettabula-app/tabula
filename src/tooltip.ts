@@ -4,7 +4,7 @@
  */
 
 /** How long the pointer rests on a target before the first tooltip opens. Keyboard focus opens it at once. */
-export const SHOW_DELAY = 500;
+export const SHOW_DELAY = 400;
 /** After a tooltip closes, the next target still opens at once for this long (a warm group). */
 export const COOL_DELAY = 400;
 /** Space between target and tooltip, and the least space kept to the edge of the viewport. */
@@ -190,12 +190,12 @@ export interface TipContent {
 
 /** What a target says: its data-tip (or, for icon buttons without one, its aria-label) and its shortcut, if it has one. */
 export function tipContent(
-  src: { tip: string | null; ariaLabel: string | null; keyId: string | null },
+  src: { tip: string | null; ariaLabel: string | null; keyId: string | null; keys?: string | null },
   keysOf: (id: string) => string | undefined,
 ): TipContent | null {
   const label = (src.tip ?? src.ariaLabel ?? '').trim();
   if (!label) return null;
-  const keys = src.keyId ? keysOf(src.keyId) : undefined;
+  const keys = src.keys?.trim() || (src.keyId ? keysOf(src.keyId) : undefined);
   return keys ? { label, keys } : { label };
 }
 

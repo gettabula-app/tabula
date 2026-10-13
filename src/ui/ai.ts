@@ -147,6 +147,7 @@ export function openAiKeyDialog(): void {
     const mine = config.myKey;
     const problem = h('p', { class: 'ai-problem', role: 'status' });
     const save = h('button', { class: 'btn primary', disabled: true }, 'Save key');
+    let keyTouched = false;
     const savedProvider = mine && PROVIDER_OPTIONS.some((o) => o.value === mine.provider) ? mine.provider : PROVIDER;
     const provider = h('select', { class: 'input', 'aria-label': 'Provider' }, PROVIDER_OPTIONS.map((o) => h('option', { value: o.value, selected: o.value === savedProvider }, o.label)));
     provider.value = savedProvider;
@@ -170,8 +171,9 @@ export function openAiKeyDialog(): void {
 
     const check = () => {
       const why = keyProblem(field.input.value, provider.value, baseUrl.value, model.value);
-      problem.classList.toggle('bad', why !== null);
-      problem.textContent = why ?? '';
+      const visibleProblem = keyTouched ? why : null;
+      problem.classList.toggle('bad', visibleProblem !== null);
+      problem.textContent = visibleProblem ?? '';
       save.disabled = why !== null;
     };
     const renderProviderFields = () => {
@@ -210,7 +212,7 @@ export function openAiKeyDialog(): void {
         problem.textContent = message;
       }
     };
-    const field = keyField('API key', check, () => void submit());
+    const field = keyField('API key', () => { keyTouched = true; check(); }, () => void submit());
     const keyFields = h('div', { class: 'ai-field' },
       h('label', { class: 'ai-label' }, mine ? 'Replace with a new key' : 'API key', field.input));
     provider.addEventListener('change', renderProviderFields);

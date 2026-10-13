@@ -3067,7 +3067,9 @@ export class BoardApp {
   rename(id: Id, name: string | undefined) {
     if (this.readOnly || !this.store.get(id)) return;
     this.store.undo.stopCapturing();
-    this.store.transact(() => this.store.update(id, { name }));
+    // a frame keeps an emptied name as empty (it then draws no title); undefined would bring the default "Frame" back
+    const keepEmpty = this.store.get(id)?.type === 'frame' && name === undefined;
+    this.store.transact(() => this.store.update(id, { name: keepEmpty ? '' : name }));
   }
 
   /** Writes stacking keys from the layers panel as one undo step. */

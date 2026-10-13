@@ -27,11 +27,11 @@
   .k-ghost { animation: none; }
 }
 
-/* The lane ⋯ menu, the kanban ⋯ menu and the Filter popover (slice 4). Chrome, so tray tokens as the other menus; a 2px
-   rule on top as the design's popovers have. Widths are set inline (240 for menus, 320 for the filter). */
-.popover.k-pop { box-shadow: 0 0 0 1px var(--tray-line), inset 0 2px 0 var(--field-edge-strong); max-width: calc(100vw - 16px); }
+/* The lane ⋯ menu, the kanban ⋯ menu and the Filter popover (slice 4). Chrome uses the shared tray tokens and popover shadow.
+   Widths are set inline (240 for menus, 320 for the filter). */
+.popover.k-pop { box-shadow: var(--popover-shadow); max-width: calc(100vw - 16px); }
 .k-menu { min-width: 0; max-width: 100%; }
-.k-menu .menu-item { min-height: 36px; font-size: 13px; color: var(--tray-text); }
+.k-menu .menu-item { min-height: 32px; font-size: 13px; color: var(--tray-text); }
 .k-seg .k-chip { border-color: var(--field-edge-strong); }
 .k-menu .menu-item.danger { color: var(--danger); }
 .k-menu .menu-item:disabled { color: var(--tray-muted); cursor: default; }
@@ -52,26 +52,24 @@
 .k-wip-input { width: 100%; margin-top: 6px; }
 .k-mi-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
-/* the Filter popover: sections on hairlines, 11px uppercase heads, chips as in the card dialog */
+/* the Filter popover: sections on hairlines, sentence-case heads, chips as in the card dialog */
 .k-filter-pop { padding: 0; }
 .canvas .k-card-link:focus-visible .k-card-link-focus-ring { stroke: var(--canvas-ink); stroke-width: 1.5; }
 .k-pop-sec { padding: 12px 16px; border-top: 1px solid var(--tray-line); }
 .k-pop-sec:first-child { border-top: 0; }
-.k-pop-h {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--tray-muted);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-}
+.k-pop-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
 label.k-pop-h { display: block; margin: 0; }
 .k-pop-aside { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; }
 .k-seg { display: flex; flex-wrap: wrap; gap: 8px; }
 .k-seg .k-chip svg { flex: none; }
 .k-pop-sec .input { width: 100%; }
 .k-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--tray-line); }
-.k-pop-count { color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.k-pop-count { color: var(--tray-muted); font-size: 12px; font-weight: 600; }
 .k-linkbtn {
   border: 0; background: none; padding: 4px 0; color: var(--tray-text); font-size: 13px; font-weight: 600;
   text-decoration: underline; text-underline-offset: 4px; cursor: pointer;
 }
 @media (max-width: 860px) {
-  .k-menu .menu-item, .k-seg .k-chip { min-height: 40px; }
+  .k-menu .menu-item, .k-seg .k-chip { min-height: 44px; }
 }
+@media (pointer: coarse) { .k-menu .menu-item, .k-seg .k-chip { min-height: 44px; } }

@@ -47,6 +47,14 @@ const matches = (t: { name: string; category: string; description: string }, que
 
 const countLabel = (n: number) => `${n} ${n === 1 ? 'template' : 'templates'}`;
 
+/** A restrained pastel colour for the category pill; custom categories use the calm green pair. */
+export function templateTagTone(category: string): 'yellow' | 'blue' | 'green' | 'red' {
+  if (category === 'Retrospective' || category === 'Prioritisation') return 'yellow';
+  if (category === 'Ideation' || category === 'Planning' || category === 'Strategy') return 'blue';
+  if (category === 'Risk') return 'red';
+  return 'green';
+}
+
 const deleteNote = (t: CustomTemplate) => {
   if (!templatesShared()) return `“${t.name}” will be removed from this browser. Boards made from it are not affected.`;
   const who = t.scope === 'team' ? `everyone in ${t.teamName || 'the team'}` : t.scope === 'workspace' ? 'everyone in the workspace' : 'your account';
@@ -215,7 +223,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
     return h('li', null,
       h('article', { class: 'tpl-card' },
         h('div', { class: 'tpl-thumb', html: customThumbnail(t) }),
-        h('p', { class: 'tpl-label' }, t.category),
+        h('p', { class: `tpl-label tag tag-${templateTagTone(t.category)}` }, t.category),
         userId === null ? null : h('p', { class: 'tpl-scope' }, `${scopeLabel(t, userId)}${who}`),
         h('h2', { class: 'tpl-title' }, t.name),
         h('p', { class: 'tpl-text' }, t.description),
@@ -249,7 +257,7 @@ export function renderTemplates(root: HTMLElement, nav: HomeNav, auth: AuthState
     grid.replaceChildren(...shown.map((t) => h('li', null,
       h('article', { class: 'tpl-card' },
         h('div', { class: 'tpl-thumb', html: builtinThumbnail(t) }),
-        h('p', { class: 'tpl-label' }, t.category),
+        h('p', { class: `tpl-label tag tag-${templateTagTone(t.category)}` }, t.category),
         h('h2', { class: 'tpl-title' }, t.name),
         h('p', { class: 'tpl-text' }, t.description),
         h('div', { class: 'tpl-actions' },

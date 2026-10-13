@@ -2897,10 +2897,13 @@ const STATES = {
     await env.page.locator('.comment-msg').first().waitFor();
   },
   // TAB-124: the empty-board hint lies under every overlay
+  async 'empty-hint'(env) {
+    await openEmptyBoard(env);
+  },
   async 'empty-templates'(env) {
     await openEmptyBoard(env);
     await env.page.getByRole('button', { name: 'Start from a template' }).click();
-    await env.page.locator('.drawer.show').waitFor();
+    await env.page.locator('.template-picker').waitFor();
   },
   async 'empty-share'(env) {
     await openEmptyBoard(env);
@@ -3067,7 +3070,9 @@ const STATES = {
   async 'chat-react'(env) {
     await openSeedChat(env);
     await env.page.locator('.chat-reaction').first().waitFor();
-    await env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) }).locator('.chat-more').click();
+    const targetMessage = env.page.locator('.chat-msg', { has: env.page.locator('.chat-text', { hasText: 'Are we starting at ten?' }) });
+    await targetMessage.locator('.chat-text').hover();
+    await targetMessage.locator('.chat-more').click();
     await env.page.getByRole('menuitem', { name: 'React' }).click();
     await env.page.locator('.chat-picker').waitFor();
   },
@@ -3589,6 +3594,12 @@ const STATES = {
     });
     await settle(env.page);
   },
+  // typing in the search: the results stay in view, with a header named Emoji
+  async 'emoji-search'(env) {
+    await openEmojiPickerForNote(env, { clearPoll: true });
+    await env.page.getByLabel('Search emoji').fill(env.query ?? 'smile');
+    await env.page.waitForTimeout(250);
+  },
   async 'emoji-picker'(env) {
     const page = env.page;
     await openEmojiPickerForNote(env, { clearPoll: true });
@@ -4098,8 +4109,9 @@ const STATES = {
   },
   async 'chat-notifications'(env) {
     await env.page.goto(`${env.base}/#/chat`);
-    await env.page.getByRole('button', { name: 'Notifications' }).click();
-    await env.page.getByRole('checkbox', { name: 'Email me when I am mentioned in chat' }).waitFor();
+    await env.page.getByRole('navigation', { name: 'Chat channels' })
+      .getByRole('button', { name: 'Notification settings', exact: true }).click();
+    await env.page.getByRole('switch', { name: 'Email me when I am mentioned in chat' }).waitFor();
     await env.page.waitForFunction(() => !document.querySelector('.modal input')?.disabled);
   },
   async 'chat-home'(env) {
@@ -4280,11 +4292,11 @@ const STATES = {
     await openSeedBoard(env);
     const button = env.page.getByRole('button', { name: 'Templates and team exercises' });
     await button.click();
-    await env.page.locator('.drawer.show').waitFor();
+    await env.page.locator('.template-picker').waitFor();
     await env.page.keyboard.press('Escape');
-    await env.page.locator('.drawer.show').waitFor({ state: 'hidden' });
+    await env.page.locator('.template-picker').waitFor({ state: 'detached' });
     const result = await env.page.evaluate(() => ({
-      open: !!document.querySelector('.drawer.show'),
+      open: !!document.querySelector('.template-picker'),
       focusReturned: document.activeElement === document.querySelector('[data-drawer="templates"]'),
     }));
     if (result.open || !result.focusReturned) throw new Error(`templates-esc: ${JSON.stringify(result)}`);

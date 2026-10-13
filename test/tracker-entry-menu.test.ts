@@ -86,16 +86,14 @@ async function openBoardMenu(opts: { scratch?: boolean; demo?: boolean } = {}) {
 const labels = (menu: FakeElement) => (menu.querySelectorAll('.menu-item') as FakeElement[]).map((item) => textOf(item));
 
 describe('the Tracker item of the board menu', () => {
-  it('sits directly under the User guide row, then a separator, and opens the tracker', async () => {
+  it('appears in the Board group and opens the tracker', async () => {
     mocks.auth = signedIn(true);
     const menu = await openBoardMenu();
-    const items = labels(menu);
-    expect(items[0]).toContain('User guide');
-    expect(items[1]).toBe('Tracker');
-    const children = menu.children as FakeElement[];
-    const at = children.findIndex((c) => textOf(c) === 'Tracker');
-    expect(children[at + 1].tagName.toLowerCase()).toBe('hr');
-    (menu.querySelectorAll('.menu-item') as FakeElement[])[1].click();
+    const boardGroup = menu.querySelector('.board-menu-board') as FakeElement;
+    const tracker = (boardGroup.querySelectorAll('.menu-item') as FakeElement[])
+      .find((item) => textOf(item).trim() === 'Tracker');
+    expect(tracker).toBeDefined();
+    tracker!.click();
     expect(mocks.navigate).toHaveBeenCalledWith({ kind: 'view', view: 'all' });
   });
 

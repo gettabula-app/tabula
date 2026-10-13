@@ -44,7 +44,7 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
   // ---------------------------------------------------------------- the list
   const status = h('p', { class: 'chat-list-status', role: 'status' });
   const listBody = h('div', { class: 'chat-list-body' });
-  const prefs = h('button', { class: 'chat-prefs', type: 'button', onclick: () => openChatNotifications() }, 'Notifications');
+  const prefs = h('button', { class: 'chat-prefs', type: 'button', 'aria-label': 'Notification settings', onclick: () => openChatNotifications() }, 'Notification settings');
   const list = h('nav', { class: 'chat-list', 'aria-label': 'Chat channels' }, listBody, status, h('div', { class: 'chat-list-foot' }, prefs));
 
   // ---------------------------------------------------------------- the conversation
@@ -61,7 +61,11 @@ export function renderChatPage(root: HTMLElement, selected: { kind?: ChannelKind
   const empty = h('div', { class: 'chat-conv-empty' }, h('p', null, 'Pick a channel to read it.'));
   const conv = h('section', { class: 'chat-conv', 'aria-label': 'Conversation' }, head, panel, empty);
 
-  const main = h('main', { class: 'chat-page' }, h('h1', { class: 'sr-only' }, 'Chat'), list, conv);
+  const main = h('main', { class: 'chat-page' },
+    h('header', { class: 'chat-page-heading' },
+      h('h1', { class: 'chat-page-title' }, 'Chat'),
+      h('p', { class: 'chat-page-lede' }, 'Workspace, team and board conversations.')),
+    list, conv);
   root.replaceChildren(createTopbar('chat', me), main);
 
   // ---------------------------------------------------------------- list drawing

@@ -92,7 +92,7 @@
 .backups-confirm { max-width: 360px; margin-top: 8px; }
 .admin .backups-label {
   display: block; margin: 0 0 8px; color: var(--graphite);
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 12px; font-weight: 600;
 }
 .admin .backups-confirm .input { width: 100%; font-family: inherit; letter-spacing: 0.04em; }
 .admin .backups-confirm .input:disabled { opacity: 0.5; }
@@ -149,3 +149,26 @@
 .backups-readiness-owner > summary::after { content: '+'; margin-left: auto; font-weight: 400; }
 .backups-readiness-owner[open] > summary::after { content: '\2212'; }
 .backups-readiness-owner > summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+/* M page details use the same 1px paper hairline and unnumbered restore steps as the other admin tabs. */
+.admin .backups-back { height: 44px; font-size: 13px; font-weight: 500; letter-spacing: normal; text-transform: none; }
+.admin .backups-back:hover { background: var(--page-hover); text-decoration: none; }
+.backups-readiness { border-top: 1px solid var(--page-hairline); }
+.backups-readiness-checks { border-top-color: var(--page-hairline); }
+.backups-readiness-row { border-bottom-color: var(--page-hairline); }
+.backups-readiness button:focus-visible,
+.backups-readiness input:focus-visible,
+.backups-readiness textarea:focus-visible,
+.backups-readiness-owner > summary:focus-visible { outline-color: var(--ink); }
+.backups-steps { border-top: 1px solid var(--page-hairline); border-bottom: 1px solid var(--page-hairline); counter-reset: none; }
+.backups-steps li { display: block; padding: 12px 0 12px 24px; border-top-color: var(--page-hairline); counter-increment: none; }
+.backups-steps li::before { display: none; content: none; }
+.admin .backups-badge.tag { margin: 0 8px 0 0; border: 0; }
+.admin .backups-badge.tag-red { background: var(--tag-red); color: var(--on-tag-red); }
+.admin .backups-badge.tag-green { background: var(--tag-green); color: var(--on-tag-green); }
+.admin .backups-badge.tag-blue { background: var(--tag-blue); color: var(--on-tag-blue); }
+.admin .backups-badge.tag-yellow { background: var(--tag-yellow); color: var(--on-tag-yellow); }
+.admin .backups-pick-row { border-left: 0; border-radius: var(--radius-sm); }
+.admin .backups-pick-row:hover,
+.admin .backups-pick-row.on { background: var(--page-hover); border-left: 0; }
+.restoring-body { border-top: 1px solid var(--page-hairline); }

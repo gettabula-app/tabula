@@ -8,7 +8,7 @@ const entries = (rows: string): EmojiItem[] => rows.trim().split('\n').map((row)
 
 export const EMOJI_GROUPS: EmojiGroup[] = [
   {
-    name: 'Smileys',
+    name: 'Emoji',
     items: entries(`
 😀|Grinning face|smile happy grin
 😁|Beaming face|grin smile happy
