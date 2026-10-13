@@ -40,10 +40,10 @@ function emptyBoardState(onNew: () => void, onImport?: () => void, disabled = fa
     h(top ? 'h1' : 'h2', null, 'No boards yet'),
     h('p', null, 'Create a board, or start from a template.'),
     h('div', { class: 'home-empty-actions' },
-      h('button', { class: 'btn ghost', disabled, onclick: onNew }, 'New board'),
+      h('button', { class: 'btn primary', disabled, onclick: onNew }, 'New board'),
       onImport
-        ? h('button', { class: 'btn ghost', disabled, onclick: onImport }, 'Import file')
-        : h('a', { class: 'btn ghost', href: '#/templates' }, 'Start from a template')));
+        ? h('button', { class: 'btn', disabled, onclick: onImport }, 'Import file')
+        : h('a', { class: 'btn', href: '#/templates' }, 'Start from a template')));
 }
 const normalise = (query: string) => query.trim().toLowerCase();
 const matches = (title: string, query: string) => !query || title.toLowerCase().includes(query);
