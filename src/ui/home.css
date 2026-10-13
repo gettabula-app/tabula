@@ -302,6 +302,11 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
 .board-access .badge.tag { border: 0; padding: 2px 9px; line-height: 1.4; }
 .board-access .badge.tag,
 .tpl-label.tag { font: 600 10px/1.4 var(--ui); letter-spacing: 0.05em; text-transform: uppercase; }
+/* the page's grey label colours above must not win over the pastel tag pair (the dark themes read it at under 3:1 otherwise) */
+.tpl-label.tag-yellow { background: var(--tag-yellow); color: var(--on-tag-yellow); }
+.tpl-label.tag-blue { background: var(--tag-blue); color: var(--on-tag-blue); }
+.tpl-label.tag-green { background: var(--tag-green); color: var(--on-tag-green); }
+.tpl-label.tag-red { background: var(--tag-red); color: var(--on-tag-red); }
 .board-chat { border-radius: 9999px; }
 .board-chat.mention { outline-color: var(--danger); border-radius: 9999px; }
 .board-actions .icon-btn { border-color: transparent; }

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { THEMES, contrast } from '../src/themes';
 
@@ -20,5 +21,12 @@ describe('status tag colours', () => {
     expect(theme).toBeDefined();
     expect(TAGS.map((tag) => theme!.vars[`--tag-${tag}`])).toEqual(['#FBF3DB', '#E1F3FE', '#EDF3EC', '#FDEBEC']);
     expect(TAGS.map((tag) => theme!.vars[`--on-tag-${tag}`])).toEqual(['#956400', '#1F6C9F', '#346538', '#9F2F2D']);
+  });
+
+  it('keeps the template label on its tag pair, not the page label grey', () => {
+    const css = readFileSync(new URL('../src/ui/home.css', import.meta.url), 'utf8');
+    for (const tag of TAGS) {
+      expect(css).toContain(`.tpl-label.tag-${tag} { background: var(--tag-${tag}); color: var(--on-tag-${tag}); }`);
+    }
   });
 });
