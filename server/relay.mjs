@@ -94,6 +94,9 @@ const ROLE_RECHECK_MS = 5_000;
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
+/** How long an agent shows as at work on a board after its last change (TAB-158), and how many are shown at once. */
+const AGENT_PRESENCE_MS = 30_000;
+const MAX_AGENTS_SHOWN = 6;
 // Not a y-websocket type (it uses 0 sync, 1 awareness, 2 auth, 3 query awareness). Relay to client only: a hosted
 // workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.
 const MSG_WORKSPACE = 4;
@@ -927,6 +930,32 @@ class Room {
   }
 
   // Starts the unload timer when nobody is connected. A room opened for an MCP edit would otherwise stay in memory.
+  /**
+   * An agent at work on this board (TAB-158, docs/agent-presence.md), set by an MCP write only and published in the room's own awareness state, which no client
+   * can write (the `agents` field is stripped from every client state). It stays for AGENT_PRESENCE_MS after the agent's last change, then goes.
+   */
+  setAgent(agent) {
+    if (this.kind !== 'board') return;
+    this.agents ??= new Map();
+    const known = this.agents.get(agent.id);
+    this.agents.set(agent.id, { id: agent.id, token: agent.token, member: agent.member, x: agent.x ?? known?.x ?? null, y: agent.y ?? known?.y ?? null, until: Date.now() + AGENT_PRESENCE_MS });
+    this.publishAgents();
+  }
+
+  publishAgents() {
+    clearTimeout(this.agentTimer);
+    this.agentTimer = null;
+    const t = Date.now();
+    for (const [id, a] of this.agents ?? []) if (a.until <= t) this.agents.delete(id);
+    const list = [...(this.agents?.values() ?? [])].slice(-MAX_AGENTS_SHOWN);
+    this.awareness.setLocalState(list.length ? { agents: list } : null);
+    if (list.length) {
+      const next = Math.min(...list.map((a) => a.until));
+      this.agentTimer = setTimeout(() => this.publishAgents(), Math.max(50, next - Date.now()) + 25);
+      this.agentTimer.unref?.();
+    }
+  }
+
   releaseIfIdle() {
     if (this.conns.size !== 0) return;
     clearTimeout(this.unloadTimer);
@@ -938,6 +967,8 @@ class Room {
         }
         clearTimeout(this.trackerGuardTimer);
         this.trackerGuardTimer = null;
+        clearTimeout(this.agentTimer);
+        this.agentTimer = null;
         if (this.kind === 'board') trackerGuard?.clearTitles(this.name);
         this.doc.destroy();
         rooms.delete(this.name);
@@ -1227,6 +1258,10 @@ const roomAccess = {
   },
   invalidateTracker(boardId) {
     trackerGuard?.invalidate(boardId);
+  },
+  /** An MCP call changed a board: its agent is at work there now (only an open room has anyone to show it to). */
+  agentActive(name, agent) {
+    rooms.get(name)?.setAgent(agent);
   },
 };
 

@@ -176,8 +176,10 @@ describe('the log', () => {
   it('marks an entry reverted and drops its revert data', () => {
     const store = createActivity({ dataDir: dir, now: tick });
     const entry = record(store)!;
-    store.markReverted('b1', entry.id, 'Bob');
-    expect(store.list('b1')[0]).toMatchObject({ revertible: false, reverted: { by: 'Bob' } });
+    store.markReverted('b1', entry.id, 'u7');
+    expect(store.list('b1', 100, (id: string) => (id === 'u7' ? 'Bob' : null))[0]).toMatchObject({ revertible: false, reverted: { by: 'Bob' } });
+    expect(store.removeUser('u7')).toBe(0); // the entries of a person who only reverted stay, but the reverter is forgotten
+    expect(store.list('b1', 100, () => 'Bob')[0].reverted).toEqual({ at: expect.any(Number), by: null });
     expect(store.find('b1', entry.id)!.inverse).toBeUndefined();
   });
 });
@@ -248,7 +250,7 @@ describe('what the review of the log asked for (cybersec, TAB-158)', () => {
     expect([...touched].sort()).toEqual(['a', 'b', 'c']);
     const store = createActivity({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'act-')), now });
     const entry = store.record('b1', { userId: 'u1', tokenName: 'Claude', userName: 'Ada', tool: 'update_objects', diff: composeDiffs([{ tooLarge: true, touched: [...touched] } as never]) as never })!;
-    expect(entry).toMatchObject({ summary: 'changed 3 objects', revertible: false, reason: 'too_large', ids: ['a', 'b', 'c'] });
+    expect(entry).toMatchObject({ summary: 'changed 3 objects', revertible: false, reason: 'too_large', ids: [] }); // which are private notes is unknown here: none are listed
     expect(store.find('b1', entry.id)!.inverse).toBeUndefined();
   });
 

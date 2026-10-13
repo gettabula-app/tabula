@@ -93,6 +93,18 @@ export function watchTouched(doc, into) {
   return () => doc.off('afterTransaction', handler);
 }
 
+/** Where on the board a call worked: the middle of the box around the objects it made, changed or removed; null when that is not known (a board too large to capture). */
+export function diffCenter(diff) {
+  if (!diff || diff.tooLarge) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const { before, after } of Object.values(diff)) {
+    const o = after ?? before;
+    if (![o?.x, o?.y, o?.w, o?.h].every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
+    x0 = Math.min(x0, o.x); y0 = Math.min(y0, o.y); x1 = Math.max(x1, o.x + o.w); y1 = Math.max(y1, o.y + o.h);
+  }
+  return x1 >= x0 ? { x: Math.round((x0 + x1) / 2), y: Math.round((y0 + y1) / 2) } : null;
+}
+
 const NOUN = {
   sticky: ['sticky note', 'sticky notes'], shape: ['shape', 'shapes'], text: ['text', 'texts'], markdown: ['Markdown block', 'Markdown blocks'],
   table: ['table', 'tables'], frame: ['frame', 'frames'], connector: ['connector', 'connectors'], link: ['link card', 'link cards'],
@@ -233,14 +245,18 @@ export function applyInverse(doc, inverse, { now }) {
 }
 
 /** The entry as clients see it: no revert data, no member id, who as two separate fields. */
-export const publicEntry = (e) => ({
+export const publicEntry = (e, nameOf = () => null) => ({
   id: e.id, at: e.at, agent: e.agent, tool: e.tool, summary: e.summary, counts: e.counts, ids: e.ids, revertible: e.revertible,
   ...(e.reason ? { reason: e.reason } : {}),
-  ...(e.reverted ? { reverted: e.reverted } : {}),
+  // who reverted it is stored as an id and named when listed, so removing that person leaves no name behind
+  ...(e.reverted ? { reverted: { at: e.reverted.at, by: e.reverted.userId ? nameOf(e.reverted.userId) : null } } : {}),
 });
 
 export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
   const dir = path.join(dataDir, 'activity');
+  let tmpSeq = 0;
+  /** A name of its own for every write, so a flush that overlaps a write still in flight never renames the other's file. */
+  const tmpOf = (boardId) => `${file(boardId)}.${process.pid}.${++tmpSeq}.tmp`;
   /** Board logs held in memory, least recently used first; the files are the record. */
   const boards = new Map();
   const dirty = new Set();
@@ -271,7 +287,7 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
   const writeNow = (boardId) => {
     try {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const tmp = `${file(boardId)}.${process.pid}.tmp`;
+      const tmp = tmpOf(boardId);
       fs.writeFileSync(tmp, encode(boardId), { mode: 0o600 });
       fs.renameSync(tmp, file(boardId));
     } catch (err) {
@@ -298,7 +314,7 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
       for (const id of batch) {
         try {
           await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
-          const tmp = `${file(id)}.${process.pid}.tmp`;
+          const tmp = tmpOf(id);
           await fs.promises.writeFile(tmp, encode(id), { mode: 0o600 });
           await fs.promises.rename(tmp, file(id));
         } catch (err) {
@@ -358,7 +374,7 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
         if (!diff.touched?.length) return null;
         entry = {
           counts: { created: 0, changed: diff.touched.length, removed: 0 }, summary: `changed ${diff.touched.length} ${diff.touched.length === 1 ? 'object' : 'objects'}`,
-          ids: listed(diff.touched), revertible: false, reason: 'too_large',
+          ids: [], revertible: false, reason: 'too_large', // the ids are not listed: which of them are private notes is not known here
         };
       } else {
         if (!Object.keys(diff).length) return null;
@@ -383,9 +399,9 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
     },
 
     /** Newest first, as clients see them. */
-    list(boardId, limit = 100) {
+    list(boardId, limit = 100, nameOf = () => null) {
       if (!BOARD_ID.test(boardId)) return [];
-      return prune(boardId).slice(-limit).reverse().map(publicEntry);
+      return prune(boardId).slice(-limit).reverse().map((e) => publicEntry(e, nameOf));
     },
 
     find(boardId, entryId) {
@@ -393,10 +409,10 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
       return prune(boardId).find((e) => e.id === entryId) ?? null;
     },
 
-    markReverted(boardId, entryId, by) {
+    markReverted(boardId, entryId, userId) {
       const entry = this.find(boardId, entryId);
       if (!entry) return;
-      entry.reverted = { at: now(), by: String(by).slice(0, 80) };
+      entry.reverted = { at: now(), userId: typeof userId === 'string' ? userId : null };
       delete entry.inverse; // taken back once: the data is not kept
       entry.revertible = false;
       scheduleSave(boardId);
@@ -414,7 +430,9 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
         if (!BOARD_ID.test(boardId)) continue;
         const entries = load(boardId);
         const keep = entries.filter((e) => e.userId !== userId);
-        if (keep.length === entries.length) continue;
+        let touched = keep.length !== entries.length;
+        for (const e of keep) if (e.reverted?.userId === userId) { e.reverted.userId = null; touched = true; }
+        if (!touched) continue;
         removed += entries.length - keep.length;
         boards.set(boardId, keep);
         scheduleSave(boardId);
@@ -441,7 +459,7 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
     },
 
     /** The accounts API routes: reading the log (anyone who can see the board) and reverting a call (editors and owners). */
-    routes({ compile, boardFor, audit, errors, write }) {
+    routes({ compile, boardFor, audit, errors, write, nameOf = () => null }) {
       const { HttpError, forbidden } = errors;
       const must = (user, boardId, edit) => {
         const { role } = boardFor(user, boardId); // throws for a person with no access to the board
@@ -451,7 +469,7 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
       return [
         compile('GET', 'boards/:id/activity', {}, ({ user, params }) => {
           must(user, params.id, false);
-          return [200, { entries: this.list(params.id) }];
+          return [200, { entries: this.list(params.id, 100, nameOf) }];
         }),
         compile('POST', 'boards/:id/activity/:eid/revert', {}, ({ user, params }) => {
           // authorised now, as for any editor's write: never by who the entry says made it
@@ -462,7 +480,7 @@ export function createActivity({ dataDir, log = () => {}, now = Date.now }) {
           if (!entry.revertible || !entry.inverse) throw new HttpError(409, 'not_revertible', entry.reason === 'expired' ? 'This change is too old to revert' : 'This change is too large to revert here');
           const result = write(params.id, `activity-revert:${entry.id}`, (doc) => applyInverse(doc, entry.inverse, { now }));
           // when nothing could be applied the entry stays: the person can sort out what is in the way and try again
-          if (result.applied > 0) this.markReverted(params.id, entry.id, user.name ?? user.id);
+          if (result.applied > 0) this.markReverted(params.id, entry.id, user.id);
           audit(user, 'board.activity.revert', { boardId: params.id, entryId: entry.id, tool: entry.tool, applied: result.applied, skipped: result.skipped.length });
           return [200, { applied: result.applied, skipped: result.skipped.slice(0, MAX_IDS) }];
         }),

@@ -36,7 +36,7 @@ import { createSavedView, deleteSavedView, getSavedView, listSavedViews, updateS
 import { diffBoardUpdates } from './board-diff.mjs';
 import { exportBoardMarkdown } from './board-export.mjs';
 import { MAX_CELL_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS } from '../shared/tables.mjs';
-import { composeDiffs } from './activity.mjs';
+import { agentParts, composeDiffs, diffCenter } from './activity.mjs';
 
 export const MCP_SERVER_NAME = 'board';
 const SERVER_VERSION = '1.0.0';
@@ -2541,6 +2541,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           // notes kept private until the board is revealed are counted but their ids are not listed to people who cannot see them
           const privateIds = diff.tooLarge ? [] : Object.entries(diff).filter(([, d]) => (d.after ?? d.before)?.privateStep).map(([id]) => id);
           activity.record(out.audit.boardId, { userId: actor.createdBy, tokenName: actor.tokenName, userName: actor.userName, tool: tool.name, diff, privateIds });
+          // the agent shows as at work on the board, at the middle of what it changed; the id is a hash, never the token's own
+          const who = agentParts({ tokenName: actor.tokenName, userName: actor.userName });
+          const at = diffCenter(diff);
+          roomAccess.agentActive?.(out.audit.boardId, { id: crypto.createHash('sha256').update(String(actor.tokenId)).digest('hex').slice(0, 12), token: who.token, member: who.member, x: at?.x ?? null, y: at?.y ?? null });
         } catch (err) {
           log('mcp: could not write an activity entry', err?.message);
         }

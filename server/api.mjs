@@ -1712,7 +1712,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     // ---------------------------------------------------------- agent activity log (TAB-158, docs/agent-presence.md)
 
-    ...(activity && roomAccess ? activity.routes({ compile, boardFor, audit, errors: { HttpError, forbidden }, write: (name, origin, fn) => roomAccess.write(name, origin, fn) }) : []),
+    ...(activity && roomAccess ? activity.routes({ compile, boardFor, audit, errors: { HttpError, forbidden }, write: (name, origin, fn) => roomAccess.write(name, origin, fn), nameOf: (id) => directory.getUser(id)?.name ?? null }) : []),
 
     // ---------------------------------------------------------- MCP access tokens (docs/mcp.md)
 
