@@ -18,9 +18,9 @@ on:
         type: boolean
         default: false
       max-workers:
-        description: 'Test files vitest runs at once on each runner (an experiment: the default 2 is what the suite is tuned for)'
+        description: 'Test files vitest runs at once on each runner (an experiment; empty uses 4 on Linux and 2 on Windows and macOS)'
         type: string
-        default: '2'
+        default: ''
   # release.yml (a v* tag, or by hand) runs these gates before it builds and pushes the image. A tag no longer starts CI by itself:
   # the release workflow calls it, so the gates run once per tag, and the Docker job below still publishes the semver tags to ghcr.
   # The release passes with-node22: true, so the SHA that is released has also passed on Node 22, the floor for self-hosters. CI is Linux only

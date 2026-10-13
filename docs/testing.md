@@ -42,7 +42,7 @@ A pull request run is cancelled by a newer push to the same pull request; every 
 
 On a push or pull request CI retries a failing browser test **once** (`test/setup-retry.ts`, only for files that ask for Chromium, and only when `TABULA_BROWSER_RETRY=1`, which `ci.yml` sets). A test that passed on its retry is listed in the job summary and as a warning annotation (`scripts/flake-reporter.mjs`; vitest's JSON report does not mark retries, so a small reporter reads the per-test diagnostic). The run stays green, the flake stays visible: give it to its owner. Unit tests are never retried. A run with `full-matrix` (the release gates and nightly-style runs) sets `TABULA_BROWSER_RETRY=0`, so the release SHA has no retries. Locally nothing is retried.
 
-`workflow_dispatch` also takes `max-workers` (default 2, the number the suite is tuned for) to try another number of parallel test files on the runner without a code change.
+CI runs four test files at once on Linux runners and two on Windows and macOS (`maxWorkers` in `vite.config.ts`). `workflow_dispatch` also takes `max-workers` to try another number on the runner without a code change.
 
 ### Windows
 
