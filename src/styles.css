@@ -1018,9 +1018,11 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   height: 20px;
   stroke-width: 1.8;
 }
-.chrome > .rail .rail-group-chevron { position: absolute; top: 0; right: 0; display: grid; place-items: center; width: 18px; height: 18px; color: var(--tray-muted); }
+.chrome > .quickbar .ico.group-action-icon svg,
+.chrome > .props .ico.group-action-icon svg { stroke-width: 2; }
+.chrome > .rail .rail-group-chevron { position: absolute; top: -7px; right: -7px; display: grid; place-items: center; width: 24px; height: 24px; color: var(--tray-muted); }
 .chrome > .rail .rail-group-chevron .ico svg { width: 10px; height: 10px; }
-.chrome > .rail .rail-group-chevron .ico { width: 10px; height: 10px; }
+.chrome > .rail .rail-group-chevron .ico { width: 10px; height: 10px; transform: translate(-4px, 4px); }
 .chrome > .rail .rail-tool-group { position: relative; }
 .chrome > .rail .rail-btn[data-tool='sticky']::after { display: none; }
 .chrome > .rail .rail-btn:focus-visible { outline-offset: 2px; }
@@ -1119,6 +1121,8 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 @media (pointer: coarse) {
   .chrome button, .chrome [role='button'], .chrome [role='tab'], .chrome [role='menuitem'],
   .chrome input, .chrome select, .chrome textarea { min-width: 44px; min-height: 44px; }
+  .chrome > .rail .rail-group-chevron { top: -3px; right: -3px; width: 24px; height: 24px; }
+  .chrome > .rail .rail-group-chevron .ico { transform: none; }
   .rail-tool-list .rail-tool-option { min-height: 44px; }
 }
 @media (forced-colors: active) {

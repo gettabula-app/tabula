@@ -30,8 +30,9 @@ function append(el: Node, children: Child[]) {
 export function icon(name: keyof typeof ICONS, size = 20): HTMLSpanElement {
   const s = document.createElement('span');
   s.className = 'ico';
+  if (name === 'group' || name === 'ungroup') s.classList.add('group-action-icon');
   s.setAttribute('aria-hidden', 'true');
-  const strokeWidth = 1.8;
+  const strokeWidth = name === 'group' || name === 'ungroup' ? 2 : 1.8;
   s.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
   return s;
 }

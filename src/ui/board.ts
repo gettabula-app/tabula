@@ -297,7 +297,21 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   let railGroupButton: HTMLButtonElement;
   let closeRailGroup: () => void = () => {};
   let longPressTimer = 0;
+  let suppressGroupClickTimer = 0;
   let suppressGroupClick = false;
+  const clearGroupClickSuppression = () => {
+    window.clearTimeout(suppressGroupClickTimer);
+    suppressGroupClickTimer = 0;
+    suppressGroupClick = false;
+  };
+  const deferClearGroupClickSuppression = () => {
+    window.clearTimeout(suppressGroupClickTimer);
+    if (!suppressGroupClick) return;
+    suppressGroupClickTimer = window.setTimeout(() => {
+      suppressGroupClick = false;
+      suppressGroupClickTimer = 0;
+    }, 50);
+  };
   const currentRailGroupChoice = () => railGroupChoices.find((choice) => choice.id === lastRailGroupChoice) ?? railGroupChoices[0];
   const paintRailGroupButton = () => {
     const choice = currentRailGroupChoice();
@@ -323,7 +337,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       class: 'menu-item rail-tool-option', type: 'button', role: 'menuitem', 'aria-label': choice.label,
       ...(choice.key ? { 'aria-keyshortcuts': choice.key } : {}), onclick: () => selectRailGroupChoice(choice.id),
     }, icon(choice.icon, 20), h('span', null, choice.label), ...(choice.key ? [h('kbd', null, choice.key)] : [])));
-    const list = h('div', { class: 'rail-tool-list', role: 'menu', 'aria-label': 'Text, Markdown and link tools' }, ...options);
+    const list = h('div', { class: 'rail-tool-list', role: 'presentation' }, ...options);
     list.addEventListener('keydown', (event: KeyboardEvent) => {
       const buttons = [...list.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
       const active = buttons.indexOf(event.target as HTMLButtonElement);
@@ -341,18 +355,22 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       }
     });
     const opened = popover(railGroupButton, list, {
-      side: 'right', className: 'rail-tool-pop', label: 'Text, Markdown and link tools',
-      onClose: () => { closeRailGroup = () => {}; },
+      side: 'right', className: 'rail-tool-pop', label: 'Text, Markdown and link tools', role: 'menu',
+      onClose: () => {
+        railGroupButton.setAttribute('aria-expanded', 'false');
+        closeRailGroup = () => {};
+      },
     });
+    railGroupButton.setAttribute('aria-expanded', 'true');
     closeRailGroup = opened.close;
   };
   railGroupButton = h('button', {
-    class: 'rail-btn rail-tool-group', type: 'button', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+    class: 'rail-btn rail-tool-group', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
   });
   paintRailGroupButton();
   railGroupButton.addEventListener('click', (event) => {
     if (suppressGroupClick) {
-      suppressGroupClick = false;
+      clearGroupClickSuppression();
       event.preventDefault();
       return;
     }
@@ -366,22 +384,33 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     openRailGroup();
   });
   railGroupButton.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) return;
+    clearGroupClickSuppression();
     window.clearTimeout(longPressTimer);
+    if (event.button !== 0) return;
     longPressTimer = window.setTimeout(() => {
       suppressGroupClick = true;
       openRailGroup();
     }, 500);
   });
   const cancelRailGroupPress = () => window.clearTimeout(longPressTimer);
-  railGroupButton.addEventListener('pointerup', cancelRailGroupPress);
-  railGroupButton.addEventListener('pointerleave', cancelRailGroupPress);
+  const releaseRailGroupPress = () => {
+    cancelRailGroupPress();
+    deferClearGroupClickSuppression();
+  };
+  railGroupButton.addEventListener('pointerup', releaseRailGroupPress);
+  railGroupButton.addEventListener('pointerleave', releaseRailGroupPress);
   railGroupButton.addEventListener('pointercancel', () => {
     cancelRailGroupPress();
-    suppressGroupClick = false;
+    clearGroupClickSuppression();
+  });
+  railGroupButton.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    cancelRailGroupPress();
+    openRailGroup();
   });
   app.lifetime.signal.addEventListener('abort', () => {
     window.clearTimeout(longPressTimer);
+    window.clearTimeout(suppressGroupClickTimer);
     closeRailGroup();
   }, { once: true });
   const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates' | 'layers') => {

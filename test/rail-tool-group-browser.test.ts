@@ -70,4 +70,56 @@ describe.skipIf(!available)('the grouped Text and Connector rail tool', { timeou
 
     await page.context().close();
   });
+
+  it('opens a menu with matching popup ARIA state and right-click', async () => {
+    const page = await openBoard();
+    const group = page.locator('.rail-tool-group');
+    const chevron = page.locator('.rail-group-chevron');
+    const flyout = page.locator('.rail-tool-pop');
+
+    expect(await group.getAttribute('aria-haspopup')).toBe('menu');
+    expect(await group.getAttribute('aria-expanded')).toBe('false');
+    expect(await chevron.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(24);
+
+    await group.click({ button: 'right' });
+    expect(await flyout.isVisible()).toBe(true);
+    expect(await group.getAttribute('aria-expanded')).toBe('true');
+    await page.keyboard.press('Escape');
+    expect(await group.getAttribute('aria-expanded')).toBe('false');
+
+    await chevron.click();
+    expect(await flyout.getAttribute('role')).toBe('menu');
+    expect(await group.getAttribute('aria-expanded')).toBe('true');
+    await page.keyboard.press('Escape');
+    expect(await group.getAttribute('aria-expanded')).toBe('false');
+
+    await page.context().close();
+  });
+
+  it('activates the remembered tool after a long press and pointer leave', async () => {
+    const page = await openBoard();
+    const group = page.locator('.rail-tool-group');
+    const flyout = page.locator('.rail-tool-pop');
+
+    await page.locator('.rail-group-chevron').click();
+    await page.getByRole('menuitem', { name: 'Connector' }).click();
+    await page.locator('.rail [data-tool="pen"]').click();
+    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('pen');
+
+    const box = await group.boundingBox();
+    expect(box).not.toBeNull();
+    const x = box!.x + box!.width / 2;
+    const y = box!.y + box!.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.waitForTimeout(550);
+    expect(await flyout.isVisible()).toBe(true);
+    await page.mouse.move(8, 8);
+    await page.mouse.up();
+    await page.waitForTimeout(75);
+    await page.mouse.click(x, y);
+
+    await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('connector');
+    await page.context().close();
+  });
 });
