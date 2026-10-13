@@ -292,11 +292,11 @@ describe('per-user notifications', () => {
     expect(JSON.stringify(row)).not.toContain('private notification canary');
   });
 
-  it('upgrades migration 18 and recreates it when rewound to schema 17', () => {
+  it('upgrades migrations 18 and 19 and recreates them when rewound to schema 17', () => {
     const root = fs.mkdtempSync(fileURLToPath(new URL('./notifications-migration-', import.meta.url)));
     roots.push(root);
     const file = path.join(root, 'directory.sqlite');
-    expect(MIGRATIONS).toHaveLength(18);
+    expect(MIGRATIONS).toHaveLength(19);
     expect(MIGRATIONS[17]).toMatchObject({ minReader: 11 });
     const raw = new DatabaseSync(file);
     raw.exec(`
@@ -308,13 +308,15 @@ describe('per-user notifications', () => {
       PRAGMA user_version = 17;
     `);
     migrate(raw, MIGRATIONS, 'directory');
-    expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(18);
+    expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(19);
     expect(raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'user_notifications_inbox'").get()!.sql)
       .toContain('(user_id, read_at, created_at DESC, id)');
-    raw.exec('DROP TABLE user_notifications; PRAGMA user_version = 17;');
+    expect(raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'card_due_due'").get()!.sql).toContain('(due)');
+    raw.exec('DROP TABLE card_due; DROP TABLE user_notifications; PRAGMA user_version = 17;');
     migrate(raw, MIGRATIONS, 'directory');
-    expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(18);
+    expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(19);
     expect(raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_notifications'").get()).toBeDefined();
+    expect(raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_due'").get()).toBeDefined();
     raw.close();
     expect(REMOVE_TRACKER_MIGRATION).toContain('DROP TABLE IF EXISTS user_notifications');
   });

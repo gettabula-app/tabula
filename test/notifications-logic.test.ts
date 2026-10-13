@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyRead, badgeText, bellLabel, countOf, markLabel, parseCounts, parseItem, parsePage, rowLabel, rowText, safeTarget, shortAgo, spokenAgo,
+  applyRead, badgeText, bellLabel, countOf, markLabel, matchesFilter, parseCounts, parseItem, parsePage, rowLabel, rowText, safeTarget, sentence, shortAgo, spokenAgo,
   type NotificationItem, type NotificationKind,
 } from '../src/ui/notifications-logic';
 
@@ -29,6 +29,28 @@ describe('what a row says', () => {
     expect(rowText(item('board_shared', { board }))).toMatchObject({ verb: 'shared', where: board.title, after: 'with you', context: 'Shared with you', excerpt: null });
     expect(rowText(item('team_joined', { team }))).toMatchObject({ verb: 'joined', where: 'Design team', context: 'Workspace' });
     expect(rowText(item('ticket_assigned', { snippet: 'TAB-12 Fix export margins' }))).toMatchObject({ verb: 'assigned you', where: 'TAB-12 Fix export margins', context: 'Tracker', excerpt: null });
+  });
+
+  it('words the card reminders as sentences about a card on a board', () => {
+    const board = { id: 'b1', title: 'Spring campaign board' };
+    expect(rowText(item('card_assigned', { board, snippet: 'Write the report' }))).toEqual({ who: 'Maja', verb: 'assigned you a card on', where: 'Spring campaign board', after: '', context: 'Spring campaign board · Card', excerpt: 'Write the report' });
+    expect(rowText(item('card_due_soon', { actor: null, board, snippet: 'Write the report' }))).toEqual({ who: 'A card', verb: 'is due soon on', where: 'Spring campaign board', after: '', context: 'Spring campaign board · Card', excerpt: 'Write the report' });
+    expect(rowText(item('card_overdue', { actor: null, board: null, snippet: null }))).toEqual({ who: 'A card', verb: 'is overdue on', where: 'a board', after: '', context: 'Card', excerpt: null });
+  });
+
+  it('never says Someone for a reminder that has no actor, and reads the sentence without a gap', () => {
+    const board = { id: 'b1', title: 'Retro team' };
+    expect(sentence(rowText(item('card_due_soon', { actor: null, board })))).toBe('A card is due soon on Retro team');
+    expect(rowLabel(item('card_overdue', { actor: null, board }), NOW)).toBe('A card is overdue on Retro team, unread. Retro team · Card. 2 minutes ago');
+    expect(rowLabel(item('card_assigned', { board, read: true }), NOW)).toBe('Maja assigned you a card on Retro team. Retro team · Card. 2 minutes ago');
+    expect(markLabel(item('card_due_soon', { actor: null, board }))).toBe('Mark as read: A card is due soon on Retro team');
+  });
+
+  it('counts card reminders as unread but not as mentions', () => {
+    const rows = [item('card_assigned'), item('card_due_soon', { actor: null }), item('card_overdue', { actor: null })];
+    expect(countOf(rows)).toEqual({ unread: 3, unreadMentions: 0 });
+    expect(rows.map((row) => matchesFilter(row, 'mentions'))).toEqual([false, false, false]);
+    expect(parseItem({ id: 'n_1', kind: 'card_overdue', at: 1, read: false, actor: null, board: { id: 'b', title: 'B' }, team: null, snippet: 'Due', target: '#/b/b' })).toMatchObject({ kind: 'card_overdue', snippet: 'Due' });
   });
 
   it('tolerates a missing excerpt, a missing actor and a missing place', () => {
