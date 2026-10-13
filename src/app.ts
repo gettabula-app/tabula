@@ -33,6 +33,8 @@ import {
 import { listLabels } from './labels';
 import { KANBAN, wipCheck } from '../shared/containers';
 import { remapObjects } from './custom-templates';
+import { h } from './ui/dom';
+import { isMacPlatform, lockKeyHeld, lockedOffset, noAxisLock, stepAxisLock, type AxisLock, type LockAxis } from './axis-lock';
 import { guidesCover, referenceRects, snapMove, snapResize, snapResizeLocked, startGuides, type Guide, type GuideSession } from './guides';
 import { defaultSize as shapeDefaultSize } from './shapes';
 import { RELATIONS, classHeight, type UmlElementDef } from './uml';
@@ -93,13 +95,13 @@ export type Tool =
 
 type Drag =
   | { mode: 'pan'; sx: number; sy: number; cx: number; cy: number }
-  | { mode: 'move'; start: Point; ids: Id[]; orig: Map<Id, Obj>; bounds: Rect; moved: boolean; guides?: GuideSession }
+  | { mode: 'move'; start: Point; ids: Id[]; orig: Map<Id, Obj>; bounds: Rect; moved: boolean; guides?: GuideSession; lock?: AxisLock }
   | { mode: 'resize'; id: Id; handle: HandleId; o0: BaseObj; guides?: GuideSession }
   | { mode: 'rotate'; id: Id; c: Point; a0: number; r0: number }
   | { mode: 'marquee'; start: Point; base: Id[]; moved: boolean }
   | { mode: 'create'; start: Point; tool: Tool }
   | { mode: 'connect'; from: End; relation?: UmlRelation; moved: boolean }
-  | { mode: 'endpoint'; id: Id; end: 'from' | 'to' }
+  | { mode: 'endpoint'; id: Id; end: 'from' | 'to'; lock?: AxisLock; last?: Point; fix?: Point }
   | { mode: 'pen'; pts: Point[] }
   // cards dragged as a ghost: nothing is written until the drop (docs/kanban.md, Decisions 4)
   // (`armed`: a touch long press started it, so it lifts at once, docs/kanban.md, Phone and touch)
@@ -786,6 +788,8 @@ export class BoardApp {
     const svg = this.r.svg;
     svg.addEventListener('pointerdown', (e) => this.onDown(e));
     svg.addEventListener('pointermove', (e) => this.onMove(e));
+    window.addEventListener('keydown', (e) => this.onLockKey(e));
+    window.addEventListener('keyup', (e) => this.onLockKey(e));
     svg.addEventListener('pointerup', (e) => this.onUp(e));
     // a cancelled pointer (the system took it, a palm, a lost capture) drops nothing: a card drag is given up
     svg.addEventListener('pointercancel', (e) => this.onCancel(e));
@@ -1775,7 +1779,20 @@ export class BoardApp {
     this.r.setOverlay({ kanban: this.r.overlay.kanban?.line ? { line: this.r.overlay.kanban.line } : null });
   }
 
+  /** The last pointer position of a pointer drag, so Cmd/Ctrl going down or up without the pointer moving still locks or unlocks (src/axis-lock.ts). */
+  private lastMove: { x: number; y: number; pointerId: number; pointerType: string } | null = null;
+  private onLockKey(ev: KeyboardEvent) {
+    const m = this.lastMove;
+    if (!m || !this.drag || (this.drag.mode !== 'move' && this.drag.mode !== 'endpoint')) return;
+    if (ev.key !== 'Meta' && ev.key !== 'Control') return;
+    this.onMove(new PointerEvent('pointermove', {
+      clientX: m.x, clientY: m.y, pointerId: m.pointerId, pointerType: m.pointerType,
+      metaKey: ev.metaKey, ctrlKey: ev.ctrlKey, shiftKey: ev.shiftKey, altKey: ev.altKey,
+    }));
+  }
+
   private onMove(e: PointerEvent) {
+    if (this.drag) this.lastMove = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, pointerType: e.pointerType };
     const lp = this.longPress;
     if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 5) this.cancelLongPress();
     const p = this.worldOf(e);
@@ -1837,7 +1854,18 @@ export class BoardApp {
         const other = d.end === 'from' ? c.to : c.from;
         const otherId = other.kind === 'bound' ? other.id : null;
         const target = this.hit(p, { connectors: false, frames: false, skip: new Set([c.id]) });
-        const end: End = CONNECTABLE(target) && target.id !== otherId ? { kind: 'bound', id: target.id, anchor: 'auto' } : { kind: 'free', ...this.snapPoint(p, e) };
+        // Cmd (Ctrl off a Mac) held: the free end moves along one axis from where it was when the key went down (src/axis-lock.ts)
+        d.lock = stepAxisLock(d.lock ?? noAxisLock(), lockKeyHeld(e, isMacPlatform()), { x: e.clientX, y: e.clientY }, { x: 0, y: 0 });
+        if (d.lock.from === null) d.fix = undefined;
+        else d.fix ??= d.last ?? p;
+        let free = this.snapPoint(p, e);
+        if (d.fix) {
+          const axis = d.lock.axis;
+          free = axis === 'x' ? { x: free.x, y: d.fix.y } : axis === 'y' ? { x: d.fix.x, y: free.y } : d.fix;
+          this.showAxisLock(d.lock, { x: d.fix.x, y: d.fix.y, w: 0, h: 0 }, d.fix, e);
+        } else this.clearAxisLock();
+        const end: End = CONNECTABLE(target) && !d.fix && target.id !== otherId ? { kind: 'bound', id: target.id, anchor: 'auto' } : { kind: 'free', ...free };
+        d.last = end.kind === 'free' ? { x: end.x, y: end.y } : p;
         this.r.setOverlay({ anchorsFor: end.kind === 'bound' ? end.id : null });
         this.queue(() => this.store.transact(() => this.store.update(c.id, { [d.end]: end })));
         return;
@@ -1913,6 +1941,10 @@ export class BoardApp {
     const first = !d.moved;
     d.moved = true;
     if (first) this.emit('drag');
+    // Cmd (Ctrl off a Mac) held: the drag moves along one axis, the one the pointer moves on first (src/axis-lock.ts)
+    const lock = (d.lock = stepAxisLock(d.lock ?? noAxisLock(), lockKeyHeld(e, isMacPlatform()), { x: e.clientX, y: e.clientY }, first ? { x: 0, y: 0 } : { x: dx, y: dy }));
+    ({ x: dx, y: dy } = lockedOffset(lock, { x: dx, y: dy }));
+    this.showAxisLock(lock, d.bounds, d.start, e);
     const guides: Guide[] = [];
     if (!e.altKey) {
       const b = d.bounds;
@@ -1922,11 +1954,13 @@ export class BoardApp {
         d.guides = startGuides(referenceRects(this.store.shown().map((o) => this.store.placed(o)), new Set(d.ids), (o) => this.flow.isHidden(o), (o) => this.store.geometry(o)), movers, vp);
       }
       const sn = snapMove(d.guides, dx, dy, this.zoom);
-      if (sn.dx !== null) dx += sn.dx;
-      else if (this.snapOn(e)) dx = snapTo(b.x + dx, this.grid()) - b.x;
-      if (sn.dy !== null) dy += sn.dy;
-      else if (this.snapOn(e)) dy = snapTo(b.y + dy, this.grid()) - b.y;
-      guides.push(...sn.guides, ...sn.gaps);
+      // a locked axis keeps the other coordinate exactly where it is: no guide or grid correction on it, and no mark that describes it
+      const free = (a: 'x' | 'y') => lock.from === null || lock.axis === a;
+      if (sn.dx !== null && free('x')) dx += sn.dx;
+      else if (this.snapOn(e) && free('x')) dx = snapTo(b.x + dx, this.grid()) - b.x;
+      if (sn.dy !== null && free('y')) dy += sn.dy;
+      else if (this.snapOn(e) && free('y')) dy = snapTo(b.y + dy, this.grid()) - b.y;
+      guides.push(...[...sn.guides, ...sn.gaps].filter((g) => lock.from === null || lock.axis === null ? lock.from === null : (g.kind === 'line' ? (g.x1 === g.x2) === (lock.axis === 'x') : g.axis === lock.axis)));
     }
     // over a lane, selected stickies would become cards there: the drop line says where, and no frame is the target
     const overLane = this.showStickyDrop(d.ids, p);
@@ -1948,6 +1982,39 @@ export class BoardApp {
         }
       }),
     );
+  }
+
+  /** The axis line, the pill and the cursor of a locked drag; nothing while the key is up (docs/guides.md, Axis lock). */
+  private axisPill: HTMLElement | null = null;
+  private axisShown: LockAxis | null = null;
+  private showAxisLock(lock: AxisLock, bounds: Rect, start: Point, e: PointerEvent) {
+    if (!lock.axis || !lock.from) {
+      this.clearAxisLock();
+      return;
+    }
+    const axis = lock.axis;
+    const at = { x: bounds.x + bounds.w / 2 + lock.from.offset.x, y: bounds.y + bounds.h / 2 + lock.from.offset.y };
+    this.r.setOverlay({ axisLock: { axis, at } });
+    this.r.svg.style.cursor = axis === 'x' ? 'ew-resize' : 'ns-resize';
+    const label = axis === 'x' ? 'Locked horizontal' : 'Locked vertical';
+    if (!this.axisPill) {
+      this.axisPill = h('div', { class: 'drag-pill', 'aria-hidden': 'true' });
+      document.body.append(this.axisPill);
+    }
+    this.axisPill.textContent = label;
+    this.axisPill.style.left = `${e.clientX + 16}px`;
+    this.axisPill.style.top = `${e.clientY + 16}px`;
+    if (this.axisShown !== axis) this.announce(label);
+    this.axisShown = axis;
+    void start;
+  }
+
+  private clearAxisLock() {
+    if (this.axisShown === null && !this.axisPill) return;
+    this.axisShown = null;
+    this.axisPill?.remove();
+    this.axisPill = null;
+    this.r.setOverlay({ axisLock: null });
   }
 
   /** A corner of a text: scales its type and its width together, the opposite corner staying where it is (src/text-resize.ts). */
@@ -2057,6 +2124,7 @@ export class BoardApp {
     const d = this.drag;
     this.drag = null;
     this.r.root.classList.remove('panning');
+    this.clearAxisLock();
     if (!d) return;
     this.flushQueue();
     this.emit('drag');

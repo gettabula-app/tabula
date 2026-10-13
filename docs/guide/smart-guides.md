@@ -24,6 +24,10 @@ Alignment and equal spacing take priority over the grid. If an alignment or spac
 
 Hold `Alt` while you drag. This turns off guides and grid snapping for that drag only. On Mac, hold Option.
 
+## Lock a drag to one axis
+
+Hold `Cmd` (`Ctrl` on Windows and Linux) while you drag to move along one direction only. Tabula picks the direction you move first, horizontal or vertical, after about 6 pixels, and keeps it until you let go of the key. A dashed line shows the axis and a small label follows the pointer. This works for objects, groups, selections, frames and the free end of a line. Let go of the key during the drag to move freely again. Guides and grid snapping still work along the locked direction, and `Alt` still turns them off.
+
 ## The Snap to grid setting
 
 The **Snap to grid** setting in **Board settings** controls only grid snapping. Guides work whether that setting is on or off, and when the grid is set to none.

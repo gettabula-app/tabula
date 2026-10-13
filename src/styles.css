@@ -1147,3 +1147,15 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 
 /* Long floating panels scroll with a thin themed scrollbar, never the platform default. */
 .chrome :is(.props, .drawer-body, .history-body, .side-tray-panel, .comment-msgs, .aireview-body) { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--tray-text) 28%, transparent) transparent; }
+
+/* the small pill that follows the pointer in a drag: the axis lock now, the size readout of a resize (docs/guides.md) */
+.drag-pill {
+  position: fixed; z-index: 60; pointer-events: none; white-space: nowrap;
+  padding: 3px 8px; font: 500 12px/1.4 var(--ui); color: var(--ink);
+  background: var(--paper); border: 1px solid color-mix(in srgb, var(--ink) 22%, var(--paper)); border-radius: var(--radius-sm, 6px);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 5%, transparent), 0 8px 24px color-mix(in srgb, var(--shade) 4%, transparent);
+}
+@media (forced-colors: active) {
+  .drag-pill { color: CanvasText; background: Canvas; border-color: CanvasText; box-shadow: none; }
+  .axis-lock-line { stroke: CanvasText; stroke-opacity: 1; }
+}

@@ -135,6 +135,12 @@ The query is skipped while the proposed width or height is below the 8 px minimu
 - **Touch** has no Alt, so guides are always on there, as they are today.
 - **Performance.** Alignment and size lookup use binary searches, `O(log n + k)` including the matching references they report. The spacing pass filters the row and column from the viewport-filtered set with one linear sweep, sorts the `m` row members, and sweeps again, so it is `O(n_view + m log m)`. With `n_view` around 1000 that is a few thousand comparisons per pointer move.
 
+## Axis lock
+
+Holding the lock key (Cmd on a Mac, Ctrl elsewhere; `lockKeyHeld`, `src/axis-lock.ts`) in a move drag or an endpoint drag keeps the movement on one axis. Cmd and Ctrl already mean other things only at the press (Cmd/Ctrl+click on a link card opens it, a Markdown link opens), so a drag started on one of those never begins; a drag that begins without the key can take it later. On a Mac Ctrl is not the lock key because Ctrl-click is the context menu.
+
+`stepAxisLock` waits for 6 screen px of pointer movement after the key went down, then picks the axis the pointer moved more on (a tie is horizontal) and keeps it until the key is released; releasing forgets it and the next press engages afresh. `lockedOffset` keeps the other coordinate where it was when the lock engaged (the object itself while the axis is undecided), so engaging and releasing never move the object, and a lock held from the press starts at the object's start point. Guides and grid snap apply along the locked axis only, and marks for the other axis are not drawn. The overlay field `axisLock` draws the 1px dashed line across the view at 40% opacity; the pill (`.drag-pill`) follows the pointer and the change is announced once. Cmd/Ctrl going down or up without the pointer moving re-runs the last move (`onLockKey`). Touch and keyboard have no equivalent.
+
 ## Rendering
 
 - The overlay field `guides` widens from line segments to a union, so the renderer and `onUp`'s reset (`guides: []`) need no new field:
