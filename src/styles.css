@@ -717,21 +717,13 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 /* z-index -1: the hint lies under everything else in the chrome (drawers, dialogs, focus cards), which it is appended after */
 .empty-hint {
   position: absolute; z-index: -1; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100% - 40px)); pointer-events: none;
-  padding: 24px 24px 34px; color: #1D1A12; text-align: left; isolation: isolate;
-  filter: drop-shadow(0 3px 5px rgba(24, 33, 43, 0.2)); rotate: -1.5deg;
+  padding: 24px; color: var(--tray-text); text-align: left;
+  background: var(--tray); border-radius: var(--radius-md); box-shadow: var(--dialog-shadow);
 }
-.empty-hint::before, .empty-hint::after { content: ''; position: absolute; z-index: -1; }
-.empty-hint::before { inset: 0; background: #FFE16B; clip-path: polygon(0 0, 100% 0, 100% calc(100% - 44px), calc(100% - 44px) 100%, 0 100%); }
-.empty-hint::after {
-  right: 0; bottom: 0; width: 44px; height: 44px;
-  background: linear-gradient(315deg, transparent 50%, #FFF0B0 50%, #FFE58A 100%);
-  filter: drop-shadow(-2px -2px 2px rgba(0, 0, 0, 0.12));
-}
-.empty-hint p { margin: 0 0 10px; }
+.empty-hint p { margin: 0 0 10px; color: var(--tray-muted); font-size: 14px; line-height: 1.5; }
 .empty-hint .btn { pointer-events: auto; }
-.empty-hint .hint-title { font: 800 24px/1.1 var(--display); margin-bottom: 8px; }
-.empty-hint .btn { background: rgba(29, 26, 18, 0.1); }
-.empty-hint .btn.primary { background: #18212B; color: #FFE16B; }
+.empty-hint .hint-title { margin: 0 0 8px; color: var(--tray-text); font: 400 21px/1.2 var(--font-serif); letter-spacing: -0.02em; }
+.empty-hint .btn-row { margin-top: 16px; }
 
 /* The centered 560px poll card overlaps the 336px right tray through 1316px; let the tray's composer take the space. */
 @media (max-width: 1320px) {

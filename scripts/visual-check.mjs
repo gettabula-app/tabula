@@ -2897,6 +2897,9 @@ const STATES = {
     await env.page.locator('.comment-msg').first().waitFor();
   },
   // TAB-124: the empty-board hint lies under every overlay
+  async 'empty-hint'(env) {
+    await openEmptyBoard(env);
+  },
   async 'empty-templates'(env) {
     await openEmptyBoard(env);
     await env.page.getByRole('button', { name: 'Start from a template' }).click();
