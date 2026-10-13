@@ -104,7 +104,7 @@ describe.skipIf(!available)('tracker element: saved views and the side panel in 
       await page.waitForFunction((n) => document.querySelectorAll('.trk-element .trk-list-row').length === n, all, { timeout: budget(15_000) });
       expect(await page.locator('.trk-element .trk-element-switch .segmented button.on').textContent()).toBe('All');
 
-      // the chosen view is kept on the object's viewId (a stand-in here: the harness has no board, so the shell reports it)
+      // the shell keeps the chosen viewId; the frame writes it to the object (frame.ts persistView), which this board-less harness does not run
       await page.click('.trk-element .trk-element-views');
       await page.click('.trk-element-menu-panel [role="menuitemradio"]:has-text("Todo only")');
       await page.waitForFunction(() => document.querySelectorAll('.trk-element .trk-list-row').length === 3, null, { timeout: budget(15_000) });
