@@ -670,8 +670,9 @@ select.input {
   height: 32px; border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text); font-size: 13px; font-weight: 500;
 }
 .modal .btn:not(:disabled):hover { background: var(--tray-hover); color: var(--tray-text); }
-.modal .btn.primary { border: 0; background: var(--ink); color: var(--paper); }
-.modal .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 86%, var(--paper)); color: var(--paper); }
+/* a dialog's primary is the dialog's own text colour as a fill with the dialog surface as its label, so it stands off the surface in every theme (--ink is dark green on Evergreen's dark tray) */
+.modal .btn.primary { border: 0; background: var(--tray-text); color: var(--tray); }
+.modal .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--tray-text) 86%, var(--tray)); color: var(--tray); }
 .modal .btn.ghost { border: 0; background: transparent; }
 .modal .btn.ghost:not(:disabled):hover { background: transparent; color: var(--tray-text); text-decoration: underline; text-underline-offset: 4px; }
 .modal .btn.armed, .modal .btn.danger { border: 0; background: var(--danger); color: var(--on-danger); }
