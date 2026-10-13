@@ -2014,9 +2014,11 @@ export class BoardApp {
   /** The small pill that follows the pointer in a drag: the axis lock label or the size of what is being resized. */
   private showPill(text: string, e: { clientX: number; clientY: number }) {
     if (!this.dragPill) {
+      if (typeof document === 'undefined' || !document.body) return; // (unit tests drive the app without a page)
       this.dragPill = h('div', { class: 'drag-pill', 'aria-hidden': 'true' });
       document.body.append(this.dragPill);
     }
+    if (!this.dragPill) return;
     this.dragPill.textContent = text;
     this.dragPill.style.left = `${e.clientX + 16}px`;
     this.dragPill.style.top = `${e.clientY + 16}px`;
