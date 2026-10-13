@@ -1,3 +1,4 @@
 section: Added
+audience: user
 
-- Cards with an owner and a due date now appear in your notifications when they are due soon, overdue, or assigned to you.
+- Kanban cards you own with a due date appear in your notifications the day before they are due, on the day, and once when they go overdue; so does a card someone assigns to you. Cards in a done lane are left alone. Dates count in UTC, so far from Greenwich a reminder can land half a day early or late.
