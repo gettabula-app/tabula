@@ -1177,20 +1177,81 @@ async function assertTicketPageLayout(page, name) {
       }
     }
     if (innerWidth <= 600) {
+      // The M reference (designer, approved by the tech lead, 2026-10-13): one column of rows. Every property row has its name on the left and its value on the right, no two rows side by
+      // side, the names are visible text with the accessible name kept as "State: To do", the title is the serif title, and nothing overflows (390 and 360).
       const primary = root.querySelector('.tk-primary-properties');
-      const columns = primary ? getComputedStyle(primary).gridTemplateColumns.trim().split(/\s+/u).length : 0;
-      if (columns !== 2) failures.push(`phone properties use ${columns} columns instead of two`);
+      const rows = primary ? [...primary.querySelectorAll('.tk-property-row')].filter((row) => row.getClientRects().length) : [];
+      if (rows.length !== 4) failures.push(`phone primary properties show ${rows.length} rows, expected the four (State, Assignee, Priority, Due) before More`);
+      const near = (a, b) => Math.abs(a - b) <= 1.5;
+      let previous = null;
+      for (const row of rows) {
+        const dt = row.querySelector('dt'), dd = row.querySelector('dd');
+        if (!dt || !dd) { failures.push('a property row has no name or no value'); continue; }
+        const label = dt.getBoundingClientRect(), value = dd.getBoundingClientRect(), box = row.getBoundingClientRect();
+        const name = dt.textContent.trim();
+        // the M reference (designer, 2026-10-13): inside a row the name is on the left and the value on the right, on the same line
+        if (!(label.right <= value.left + 1.5)) failures.push(`${name}: the name is not to the left of its value (name right ${Math.round(label.right)}, value left ${Math.round(value.left)})`);
+        if (Math.abs((label.top + label.bottom) / 2 - (value.top + value.bottom) / 2) > Math.max(label.height, value.height)) failures.push(`${name}: the name and the value are not on the same line`);
+        if (previous && !(box.top >= previous.bottom - 1.5 && near(box.left, previous.left))) failures.push(`${name}: the row sits beside another row instead of below it`);
+        previous = box;
+        // visible text, not sr-only: a real box with real text and no clipping
+        const style = getComputedStyle(dt);
+        const clipped = style.clip !== 'auto' || (style.clipPath && style.clipPath !== 'none') || (style.position === 'absolute' && label.width <= 1 && label.height <= 1);
+        if (!name || label.width < 8 || label.height < 8 || clipped || style.visibility === 'hidden' || style.opacity === '0') failures.push(`${name || 'a property name'} is not visible text`);
+        const control = dd.querySelector('button, input');
+        const accessible = control ? (control.getAttribute('aria-label') ?? '') : '';
+        if (control && control.tagName === 'BUTTON' && !new RegExp(`^${name}: .+`).test(accessible)) failures.push(`${name}: the control's accessible name is "${accessible}", expected "${name}: <value>"`);
+      }
       for (const name of ['state', 'assignee', 'priority', 'due']) {
         const property = root.querySelector(`[data-property="property-${name}"]`);
         if (!property || !property.getClientRects().length) failures.push(`${name} is missing from the phone property block`);
       }
-      const more = root.querySelector('.tk-properties-more');
-      if (more && getComputedStyle(more).display !== 'none' && more.dataset.expanded !== 'true') failures.push('phone secondary properties are not behind More');
+      const columns = primary ? getComputedStyle(primary).gridTemplateColumns.trim().split(/\s+/u).length : 0;
+      if (columns !== 1) failures.push(`phone properties use ${columns} columns instead of one`);
+      const title = root.querySelector('.tk-title');
+      if (!title) failures.push('the ticket title is missing');
+      else {
+        const family = getComputedStyle(title).fontFamily;
+        const body = getComputedStyle(document.body).fontFamily;
+        if (!/serif|newsreader/i.test(family) || family === body) failures.push(`the title is not set in the serif face (${family})`);
+      }
+      const overflow = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth;
+      if (overflow > 0) failures.push(`horizontal overflow ${overflow}px`);
     }
     return failures;
   });
-  if (result.length) throw new Error(`${name}: ${result.join('; ')}`);
+  // every phone check runs and is reported together, so one broken property does not hide the next
+  const more = (await page.evaluate(() => innerWidth <= 600)) ? await phoneMoreProperties(page) : [];
+  if (result.length || more.length) throw new Error(`${name}: ${[...result, ...more].join('; ')}`);
   await assertTrackerLayout(page);
+}
+
+/** "More properties" on a phone (the M reference): collapsed at first with aria-expanded false and nothing in it focusable, it expands and collapses and reports both. */
+async function phoneMoreProperties(page) {
+  const toggle = page.getByRole('button', { name: 'More properties', exact: true });
+  const probe = () => page.evaluate(() => {
+    const more = document.querySelector('.tk-page .tk-properties-more');
+    const button = document.querySelector('.tk-page .tk-properties-more-toggle');
+    const focusable = [...(more?.querySelectorAll('button, input, select, textarea, a[href], [tabindex]') ?? [])];
+    let reachable = 0;
+    for (const el of focusable) { el.focus({ preventScroll: true }); if (document.activeElement === el) reachable++; }
+    button?.focus({ preventScroll: true });
+    return { expanded: button?.getAttribute('aria-expanded') ?? null, shown: !!more && getComputedStyle(more).display !== 'none', focusable: focusable.length, reachable };
+  });
+  const failures = [];
+  const collapsed = await probe();
+  if (collapsed.expanded !== 'false') failures.push(`More properties starts with aria-expanded=${collapsed.expanded}, expected false`);
+  if (collapsed.shown) failures.push('the secondary properties are visible before More is pressed');
+  if (collapsed.reachable) failures.push(`${collapsed.reachable} control(s) in the collapsed secondary properties can take focus`);
+  await toggle.click();
+  const open = await probe();
+  if (open.expanded !== 'true') failures.push(`More properties reports aria-expanded=${open.expanded} after expanding, expected true`);
+  if (!open.shown) failures.push('the secondary properties do not show after More is pressed');
+  await toggle.click();
+  const closed = await probe();
+  if (closed.expanded !== 'false' || closed.shown) failures.push(`More properties does not collapse again (aria-expanded=${closed.expanded}, shown=${closed.shown})`);
+  if (closed.reachable) failures.push(`${closed.reachable} control(s) in the re-collapsed secondary properties can take focus`);
+  return failures;
 }
 
 async function addTrackerContrastProbe(page, kind) {
