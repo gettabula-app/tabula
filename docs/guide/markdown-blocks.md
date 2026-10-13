@@ -2,7 +2,7 @@
 
 A Markdown block is a place on the board for longer notes, with headings, lists, task boxes, tables and links. You write it in Markdown, a simple way of marking up text, and Tabula draws it formatted. It is an object like any other: you can move, resize, lock and comment on it, and it appears in exports.
 
-> **One person at a time.** Two people typing into the *same* Markdown block at the same moment overwrite each other: the later change wins. Different blocks can be edited at once, and one block can be edited by one person at a time. Tick boxes work the same way.
+> **One person at a time.** Two people editing the same Markdown block at the same moment overwrite each other: the later change wins. Edit different blocks at the same time instead.
 
 ## Add one
 
@@ -45,7 +45,7 @@ Select the block and choose **Copy as Markdown** in the quick-action bar (or the
 
 ## Share and export
 
-PNG and SVG exports draw the block formatted. A board file (`.drift`) keeps the text you wrote. The board's Markdown summary, which agents read, includes it. An AI agent connected with an access token can read and write Markdown blocks.
+PNG and SVG exports draw the block formatted. A board file (`.drift`) keeps the text you wrote. The board's Markdown summary, which agents read, includes it. An AI agent connected with an access token can read and write Markdown blocks. Tabula's built-in AI features only read them, through the Markdown summary; they do not write to a block.
 
 ## For screen readers
 
