@@ -19,7 +19,7 @@ describe('tracker glyphs', () => {
       expect(glyph.tagName).toBe('SVG');
       expect(glyph.getAttribute('width')).toBe('16');
       expect(glyph.getAttribute('height')).toBe('16');
-      expect(glyph.getAttribute('stroke-width')).toBe('1.5');
+      expect(glyph.getAttribute('stroke-width')).toBe('1.8');
       expect(glyph.getAttribute('stroke-linecap')).toBe('square');
       expect(glyph.getAttribute('stroke')).toBe('currentColor');
       expect(glyph.getAttribute('aria-hidden')).toBe('true');
@@ -132,7 +132,7 @@ describe('tracker primitive chips and times', () => {
     expect(dueChip('2026-10-01', now, false)?.className).toContain('trk-overdue');
     const low = priorityGlyph('low').querySelector('path')!;
     expect(low.getAttribute('d')).toBe('M3 13v-5');
-    expect(low.getAttribute('stroke-width')).toBe('2');
+    expect(low.getAttribute('stroke-width')).toBe('1.8');
   });
 });
 
