@@ -32,6 +32,14 @@
   --danger: #D41E24;
   --on-signal: #FFFFFF;
   --on-danger: #FFFFFF;
+  --tag-yellow: #FBF3DB;
+  --tag-blue: #E1F3FE;
+  --tag-green: #EDF3EC;
+  --tag-red: #FDEBEC;
+  --on-tag-yellow: #956400;
+  --on-tag-blue: #1F6C9F;
+  --on-tag-green: #346538;
+  --on-tag-red: #9F2F2D;
   --canvas-signal: #FFD23F;
   --on-canvas-signal: #18212B;
   --scrim: rgba(17, 17, 17, 0.42);
@@ -47,6 +55,8 @@
   --tray-muted: #65635F;
   --tray-hover: rgba(17, 17, 17, 0.05);
   --placeholder: color-mix(in srgb, var(--tray-muted) 90%, var(--tray-text));
+  --page-hairline: color-mix(in srgb, var(--ink) 8%, var(--paper));
+  --page-hover: color-mix(in srgb, var(--ink) 5%, var(--paper));
 
   --grid-dot: #D4D2CC;
   --grid-line: #ECEBE7;
@@ -112,6 +122,16 @@ hr { border: 0; }
 .muted { color: var(--graphite); }
 .tray .muted, .tray.muted { color: var(--tray-muted); }
 .small { font-size: 12.5px; }
+
+/* Pastel status labels use theme pairs so they stay legible across light and dark themes. */
+.tag {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: fit-content; max-width: 100%; min-height: 20px; padding: 2px 9px;
+  border: 0; border-radius: 9999px; font: 600 10px/1.4 var(--ui); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
+}
+.tag-yellow { background: var(--tag-yellow); color: var(--on-tag-yellow); }
+.tag-blue { background: var(--tag-blue); color: var(--on-tag-blue); }
+.tag-green { background: var(--tag-green); color: var(--on-tag-green); }
+.tag-red { background: var(--tag-red); color: var(--on-tag-red); }
 
 /* ------------------------------------------------------------- board */
 
@@ -1149,3 +1169,15 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 
 /* Long floating panels scroll with a thin themed scrollbar, never the platform default. */
 .chrome :is(.props, .drawer-body, .history-body, .side-tray-panel, .comment-msgs, .aireview-body) { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--tray-text) 28%, transparent) transparent; }
+
+/* the small pill that follows the pointer in a drag: the axis lock now, the size readout of a resize (docs/guides.md) */
+.drag-pill {
+  position: fixed; z-index: 60; pointer-events: none; white-space: nowrap;
+  padding: 3px 8px; font: 500 12px/1.4 var(--ui); color: var(--ink);
+  background: var(--paper); border: 1px solid color-mix(in srgb, var(--ink) 22%, var(--paper)); border-radius: var(--radius-sm, 6px);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 5%, transparent), 0 8px 24px color-mix(in srgb, var(--shade) 4%, transparent);
+}
+@media (forced-colors: active) {
+  .drag-pill { color: CanvasText; background: Canvas; border-color: CanvasText; box-shadow: none; }
+  .axis-lock-line { stroke: CanvasText; stroke-opacity: 1; }
+}

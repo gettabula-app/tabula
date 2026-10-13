@@ -121,7 +121,9 @@ describe('tracker UI styles', () => {
     expect(css).toContain('var(--radius-md, 12px)');
     expect(css).toContain('outline: 1px solid var(--trk-focus)');
     expect(css).toContain('outline-offset: 2px');
-    expect(css).toContain(".trk .trk-list-row[aria-selected='true'] { box-shadow: inset 0 0 0 1px var(--trk-focus); }");
+    // a selected row has a soft tint; the keyboard cursor row keeps the 1px focus mark
+    expect(css).toContain(".trk .trk-list-row[aria-selected='true'] { background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); }");
+    expect(css).toContain(".trk .trk-list-row[data-cursor='true'] { background: var(--trk-cursor); box-shadow: inset 0 0 0 1px var(--trk-focus); }");
     expect(css).toContain('(pointer: coarse), (max-width: 860px)');
     expect(css).toContain("grid-template-areas: 'select state key title priority' 'select state due title assignee'");
     expect(css).toMatch(/\.trk input, \.trk select, \.trk \.trk-picker-search,[\s\S]*?\.trk-filter-input \{ min-height: 44px; \}/);
@@ -143,7 +145,7 @@ describe('tracker UI styles', () => {
   });
 
   it('uses quiet text tabs, ghost tools, tracker surfaces, and one board action menu', () => {
-    expect(declarations(css, '.trk-tab.active')).toMatch(/background:\s*color-mix\(in srgb, var\(--ink\) 6%, transparent\)/);
+    expect(declarations(css, '.trk-tab.active')).toMatch(/background:\s*color-mix\(in srgb, var\(--ink\) 6%, var\(--trk-ground\)\)/);
     expect(declarations(css, '.trk .trk-filter-button, .trk .trk-selection-toggle, .trk .trk-small-button, .trk .trk-command-item-button')).toMatch(/border:\s*0/);
     expect(declarations(css, '.trk.trk-pop')).toMatch(/--trk-ground:\s*var\(--paper-hi,\s*var\(--paper\)\)/);
     expect(css).not.toContain('.trk-board-move');

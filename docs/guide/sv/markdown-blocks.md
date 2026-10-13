@@ -6,7 +6,7 @@ Ett Markdown-block är en plats på tavlan för längre anteckningar, med rubrik
 
 ## Lägg till ett
 
-Välj **Markdown block** (Markdown-block) i det vänstra verktygsfältet, under **Text** (Text), och klicka sedan på tavlan. En ruta öppnas för texten: skriv i Markdown och tryck sedan på `Esc` (eller `Ctrl+Enter`, `Cmd+Enter` på Mac) för att se den formaterad. Dra i stället för att klicka om du vill välja bredd.
+Öppna gruppen **Text**, **Markdown block** (Markdown-block) och **Link** (Länk) i det vänstra verktygsfältet, välj **Markdown block** och klicka sedan på tavlan. En ruta öppnas för texten: skriv i Markdown och tryck sedan på `Esc` (eller `Ctrl+Enter`, `Cmd+Enter` på Mac) för att se den formaterad. Dra i stället för att klicka om du vill välja bredd.
 
 ## Redigera
 
@@ -53,4 +53,4 @@ Tavlans översikt listar ett Markdown-block som ”Markdown block” tillsammans
 
 ## Gränser
 
-Ett block rymmer upp till 20 000 tecken. En agent som skriver med en åtkomsttoken kan skriva upp till 4 000 tecken i taget. Bilder från tavlans eget bibliotek kan nämnas i ett block, men ett block visar dem som en märkt ruta tills vidare.
+Ett block rymmer upp till 8 000 tecken, och ett enskilt ord eller en kodrad kapas vid 2 000 tecken. En agent som skriver med en åtkomsttoken kan skriva upp till 4 000 tecken i taget. Bilder från tavlans eget bibliotek kan nämnas i ett block, men ett block visar dem som en märkt ruta tills vidare.

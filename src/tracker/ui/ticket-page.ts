@@ -882,7 +882,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       const parentLine = h('p', { class: 'tk-parent-line' }, 'Sub-issue of ');
       const parentLink = button(`Open parent ${current.parent}`, 'tk-parent-link', false, () => opts.onNavigate(current.parent!));
       parentLink.replaceChildren(keyChip(current.parent), h('span', null, parent?.title ?? ''));
-      parentLine.replaceChildren('Sub-issue of ', parentLink, h('span', { class: 'tk-progress-ring', role: 'img', 'aria-label': `${parentDone} of ${parentChildren.length || 1} sub-issues complete` }, progressValue));
+      parentLine.replaceChildren('Sub-issue of ', parentLink, h('span', { class: 'tk-progress-count', role: 'img', 'aria-label': `${parentDone} of ${parentChildren.length || 1} sub-issues complete` }, progressValue));
       titleHeading.appendChild(parentLine);
     }
     if (current.aliases.length) {
@@ -961,6 +961,9 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     if (childTickets.length) subIssues.append(h('div', { class: 'tk-section-head' },
       h('h2', { id: 'tk-subissues-heading', class: 'tk-section-heading' }, 'Sub-issues'),
       h('span', { class: 'tk-subissue-progress' }, `${doneCount}/${childTickets.length}`),
+    ));
+    if (childTickets.length) subIssues.append(h('div', { class: 'tk-subissue-meter', role: 'progressbar', 'aria-label': 'Sub-issues complete', 'aria-valuemin': '0', 'aria-valuemax': String(childTickets.length), 'aria-valuenow': String(doneCount) },
+      h('span', { class: 'tk-subissue-meter-fill', style: { width: `${Math.round(doneCount / childTickets.length * 100)}%` } }),
     ));
     if (childTickets.length) {
       for (const child of childTickets) {
@@ -1042,7 +1045,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     const properties = h('aside', { class: 'tk-properties', 'aria-label': 'Ticket properties' });
     properties.appendChild(h('h2', { class: 'tk-section-heading' }, 'Properties'));
     const propertyRow = (name: string, value: HTMLElement, focusId: string) => h('div', { class: `tk-property-row${focusId.startsWith('property-state') || focusId.startsWith('property-assignee') || focusId.startsWith('property-priority') || focusId.startsWith('property-due') ? ' tk-primary-property' : ''} tk-property-row--${name.toLocaleLowerCase().replace(/[^a-z]+/gu, '-')}`, 'data-property': focusId },
-      h('dt', { class: 'tk-property-name tk-sr-only' }, name), h('dd', null, value),
+      h('dt', { class: 'tk-property-name' }, name), h('dd', null, value),
     );
     const data = meta();
     const primary = h('dl', { class: 'tk-property-list tk-primary-properties' });
@@ -1081,7 +1084,7 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       primary.appendChild(propertyRow('Due', control, 'property-due'));
     }
     properties.appendChild(primary);
-    const moreToggle = button('More', 'tk-properties-more-toggle', false, () => {
+    const moreToggle = button('More properties', 'tk-properties-more-toggle', false, () => {
       morePropertiesOpen = !morePropertiesOpen;
       moreToggle.setAttribute('aria-expanded', String(morePropertiesOpen));
       more.dataset.expanded = String(morePropertiesOpen);

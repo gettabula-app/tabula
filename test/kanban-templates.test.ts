@@ -191,7 +191,7 @@ describe('saving a template with a kanban', () => {
     const c = toTemplateContent(board(), [], { includeSteps: false, labels });
     const svg = thumbnailSvg(c.objects, { labels: c.labels });
     expect(svg).toContain('Task');
-    expect(svg).toContain('BUG');
+    expect(svg).toContain('>Bug</text>');
   });
 });
 

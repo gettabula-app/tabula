@@ -358,15 +358,15 @@ const K = {
   ink: 'var(--ink, #18212B)',
   danger: 'var(--danger, #D41E24)',
   stickyInk: 'var(--sticky-ink, #1D1A12)',
-  lane: 'color-mix(in srgb, var(--canvas-ink, #18212B) 5%, var(--canvas, #EEF1F4))',
-  meta: 'color-mix(in srgb, var(--canvas-ink, #18212B) 82%, var(--canvas, #EEF1F4))',
-  cardMeta: 'color-mix(in srgb, var(--ink, #18212B) 72%, var(--paper, #FFFFFF))',
+  lane: 'color-mix(in srgb, var(--ink, #18212B) 4%, var(--paper, #FFFFFF))',
+  meta: 'var(--graphite, #5B6672)',
+  cardMeta: 'var(--graphite, #5B6672)',
   linked: 'var(--canvas-ink, #18212B)',
   linkedBadge: 'color-mix(in srgb, var(--canvas-ink, #18212B) 8%, var(--paper, #FFFFFF))',
   linkedBadgeInk: 'var(--ink, #18212B)',
   unmappedBadge: 'color-mix(in srgb, var(--canvas-signal, #FFD23F) 24%, var(--paper, #FFFFFF))',
   canceledBadge: 'color-mix(in srgb, var(--danger, #D41E24) 15%, var(--paper, #FFFFFF))',
-  edge: 'color-mix(in srgb, var(--canvas-ink, #18212B) 28%, transparent)',
+  edge: 'var(--rule, #EAEAEA)',
   dash: 'color-mix(in srgb, var(--canvas-ink, #18212B) 40%, transparent)',
 };
 
@@ -394,14 +394,20 @@ function label(text: string, x: number, y: number, color: string, slug: string |
   return `<text x="${n(x)}" y="${n(y)}" font-family="${escapeXml(fontFamily(slug))}" font-size="${LBL.size}" font-weight="${LBL.weight}" letter-spacing="${LBL.spacing}" text-anchor="${anchor}" ${fillStyle(color)}>${escapeXml(text.toUpperCase())}</text>`;
 }
 
+/** Small interface text on kanban cards and lanes, kept in sentence case. */
+function uiText(text: string, x: number, y: number, color: string, slug: string | undefined, size = 13, weight = 500, anchor: 'start' | 'middle' | 'end' = 'start') {
+  return `<text x="${n(x)}" y="${n(y)}" font-family="${escapeXml(fontFamily(slug))}" font-size="${size}" font-weight="${weight}" text-anchor="${anchor}" ${fillStyle(color)}>${escapeXml(text)}</text>`;
+}
+
 /** A 24-grid stroke icon (src/ui/dom.ts) scaled to `size` at (x, y). */
 function kIcon(path: string, x: number, y: number, size: number, color: string) {
-  return `<g transform="translate(${n(x)} ${n(y)}) scale(${n(size / 24)})" style="fill:none;stroke:${escapeXml(color)}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${path}</g>`;
+  return `<g transform="translate(${n(x)} ${n(y)}) scale(${n(size / 24)})" style="fill:none;stroke:${escapeXml(color)}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</g>`;
 }
 const ICON_PLUS = '<path d="M12 5v14M5 12h14"/>';
 const ICON_CHECK = '<path d="M5 12.5l4.5 4.5L19 7.5"/>';
 const ICON_LOCK = '<rect x="5" y="10.5" width="14" height="10" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 018 0v3"/>';
 const ICON_FILTER = '<path d="M4 6h16M7 12h10M10 18h4"/>';
+const ICON_CALENDAR = '<rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M7 3.5v3M17 3.5v3M3.5 9h17"/>';
 const ICON_CLOSE = '<path d="M6 6l12 12M18 6L6 18"/>';
 const ICON_IMAGE_OFF = '<path d="M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/><circle cx="8.5" cy="9.5" r="1.4"/><path d="M3 17l5-5 4 4 3-3 6 6"/><path d="M3 3l18 18"/>';
 const ICON_DOTS = '<circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/>';
@@ -421,7 +427,7 @@ function clip(text: string, font: string, max: number): string {
 }
 
 const cardFont = (o: BaseObj) => fontCss(o.font, CARD.titleSize, 500);
-const cardPadLeft = (o: BaseObj) => (o.fill ? CARD.padAccent : CARD.padX);
+const cardPadLeft = (_o: BaseObj) => CARD.padX;
 type CardTrackerProjection = { title?: string; state?: { key?: string; name?: string; category?: string } };
 const cardProjection = (o: BaseObj): CardTrackerProjection | undefined => (o as BaseObj & { tracker?: CardTrackerProjection }).tracker;
 const cardTitle = (o: BaseObj) => o.extProvider === 'tabula' ? cardProjection(o)?.title ?? o.text ?? '' : o.text ?? '';
@@ -451,8 +457,8 @@ export interface HeaderControls {
   left: number;
   /** The ⋯ button (editors only). */
   menu: Rect | null;
-  /** The Filter button, with its text ("Filter" or "Filter · 2"); null where there is no filter (an export). */
-  filter: { rect: Rect; text: string; on: boolean } | null;
+  /** The Filter button and active-count chip; null where there is no filter (an export). */
+  filter: { rect: Rect; text: string; on: boolean; count: number } | null;
   /** The active filter chips that fit, each with its remove button. */
   chips: { key: string; text: string; rect: Rect; remove: Rect }[];
 }
@@ -475,10 +481,11 @@ export function kanbanHeaderControls(o: BaseObj, chips: FilterChip[] | null, edi
   let filter: HeaderControls['filter'] = null;
   const placed: HeaderControls['chips'] = [];
   if (chips) {
-    const text = chips.length ? `Filter · ${chips.length}` : 'Filter';
-    const fw = 10 + 16 + 6 + lblWidth(text, o.font) + 10;
+    const text = 'Filter';
+    const filterCount = chips.length;
+    const fw = 10 + 16 + 6 + measure(text, fontCss(o.font, 13, 500)) + (filterCount ? 6 + 20 : 0) + 10;
     x -= fw;
-    filter = { rect: { x, y, w: fw, h: size }, text, on: chips.length > 0 };
+    filter = { rect: { x, y, w: fw, h: size }, text, on: filterCount > 0, count: filterCount };
     const widths = chips.map((c) => 8 + lblWidth(c.text, o.font) + 2 + 30);
     const room = x - 8 - o.w / 2;
     let count = chips.length;
@@ -498,24 +505,28 @@ function headerControlsMarkup(o: BaseObj, c: HeaderControls, open: MarkupCtx['op
   let out = '';
   for (const chip of c.chips) {
     const r = chip.rect;
-    out += `<g class="k-fchip"><rect x="${n(r.x + 0.5)}" y="${n(r.y + 0.5)}" width="${n(r.w - 1)}" height="${n(r.h - 1)}" ${strokeStyle(K.canvasInk)} stroke-width="1"/>`;
-    out += label(chip.text, r.x + 8, r.y + 20, K.canvasInk, o.font);
+    out += `<g class="k-fchip"><rect x="${n(r.x + 0.5)}" y="${n(r.y + 0.5)}" width="${n(r.w - 1)}" height="${n(r.h - 1)}" rx="4" style="fill:color-mix(in srgb, var(--ink) 4%, var(--paper));stroke:${K.rule}" stroke-width="1"/>`;
+    out += uiText(chip.text, r.x + 8, r.y + 20, K.meta, o.font, 12, 500);
     out += kIcon(ICON_CLOSE, chip.remove.x + 9, chip.remove.y + 9, 12, K.canvasInk) + '</g>';
   }
   if (c.filter) {
-    const { rect: r, text, on } = c.filter;
+    const { rect: r, text, on, count = 0 } = c.filter;
     const pressed = on || (open?.id === o.id && open.kind === 'filter');
-    const ink = on ? 'var(--on-canvas-signal, #18212B)' : pressed ? K.canvas : K.canvasInk;
+    const ink = K.canvasInk;
     out += `<g class="k-filter">`;
-    out += on ? `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle('var(--canvas-signal, #FFD23F)')}/>`
-      : pressed ? `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle(K.canvasInk)}/>`
-      : `<rect x="${n(r.x + 0.5)}" y="${n(r.y + 0.5)}" width="${n(r.w - 1)}" height="${n(r.h - 1)}" ${strokeStyle(K.canvasInk)} stroke-width="1"/>`;
-    out += kIcon(ICON_FILTER, r.x + 10, r.y + 8, 16, ink) + label(text, r.x + 32, r.y + 20, ink, o.font) + '</g>';
+    if (pressed) out += `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" rx="6" style="fill:color-mix(in srgb, var(--ink) 6%, var(--paper))"/>`;
+    out += kIcon(ICON_FILTER, r.x + 10, r.y + 8, 16, ink) + uiText(text, r.x + 32, r.y + 20, ink, o.font, 13, 500);
+    if (count) {
+      const cx = r.x + r.w - 24;
+      out += `<rect x="${n(cx)}" y="${n(r.y + 7)}" width="18" height="18" rx="6" style="fill:color-mix(in srgb, var(--ink) 9%, var(--paper))"/>`;
+      out += uiText(String(count), cx + 9, r.y + 20, ink, o.font, 11, 600, 'middle');
+    }
+    out += '</g>';
   }
   if (c.menu) {
     const r = c.menu;
     const pressed = open?.id === o.id && open.kind === 'menu';
-    if (pressed) out += `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" ${fillStyle(K.canvasInk)}/>`;
+    if (pressed) out += `<rect x="${n(r.x)}" y="${n(r.y)}" width="${n(r.w)}" height="${n(r.h)}" rx="6" style="fill:color-mix(in srgb, var(--ink) 6%, var(--paper))"/>`;
     out += `<g class="k-menu" ${fillStyle(pressed ? K.canvas : K.canvasInk)} transform="translate(${n(r.x + 6)} ${n(r.y + 6)}) scale(${n(20 / 24)})">${ICON_DOTS}</g>`;
   }
   return out;
@@ -525,8 +536,8 @@ function kanbanContainerMarkup(o: BaseObj, ctx: MarkupCtx) {
   const w = o.w, h = o.h;
   const low = lowDetail(ctx.zoom ?? 1);
   const name = o.name || 'Kanban';
-  let inner = `<rect x="0.5" y="0.5" width="${n(Math.max(0, w - 1))}" height="${n(Math.max(0, h - 1))}" style="fill:${K.canvas};stroke:${K.rule}" stroke-width="1"/>`;
-  inner += `<rect x="0" y="46" width="${n(w)}" height="2" ${fillStyle(K.canvasInk)}/>`;
+  let inner = `<rect x="0.5" y="0.5" width="${n(Math.max(0, w - 1))}" height="${n(Math.max(0, h - 1))}" rx="12" style="fill:${K.paper};stroke:${K.rule}" stroke-width="1"/>`;
+  inner += `<rect x="12" y="47" width="${n(Math.max(0, w - 24))}" height="1" ${fillStyle(K.rule)}/>`;
   // the header's controls and the add-lane +, at full detail only (below 0.4 they would be a few pixels across)
   const controls = low ? null : kanbanHeaderControls(o, ctx.filterChips?.(o.id) ?? null, !!ctx.editable);
   const layout = ctx.containerLayout?.(o.id);
@@ -537,17 +548,17 @@ function kanbanContainerMarkup(o: BaseObj, ctx: MarkupCtx) {
     inner += `<g class="k-addlane"><title>Add lane</title><rect x="${n(ax + 0.5)}" y="${n(ay + 0.5)}" width="${n(a.w - 1)}" height="${n(a.h - 1)}" ${strokeStyle(K.canvasInk)} stroke-width="1"/>${kIcon(ICON_PLUS, ax + 6, ay + 6, 20, K.canvasInk)}</g>`;
   }
   if (ctx.editingId === o.id) return wrapG(o, inner, 1);
-  const size = low ? 40 : 17;
-  const font = fontCss(o.font, size, 700);
+  const size = low ? 40 : 24;
+  const font = fontCss(o.font, size, 400);
   const right = controls ? controls.left - 12 : w - 12;
   const nameText = clip(name, font, Math.max(24, right - 12));
-  inner += `<text x="12" y="${low ? 38 : 30}" font-family="${escapeXml(fontFamily(o.font))}" font-size="${size}" font-weight="700" letter-spacing="${low ? -0.4 : -0.17}" ${fillStyle(K.canvasInk)}>${escapeXml(nameText)}</text>`;
+  inner += `<text x="12" y="${low ? 38 : 31}" font-family="${low ? escapeXml(fontFamily(o.font)) : 'var(--font-serif, serif)'}" font-size="${size}" font-weight="400" letter-spacing="-0.48" ${fillStyle(K.canvasInk)}>${escapeXml(nameText)}</text>`;
   if (!low && layout) {
     const lanes = layout.lanes.length;
     const cards = [...layout.cards.values()].reduce((s, ids) => s + ids.length, 0);
     const meta = `${lanes} ${lanes === 1 ? 'lane' : 'lanes'} · ${cards} ${cards === 1 ? 'card' : 'cards'}`;
     const x = 12 + measure(nameText, font) + 12;
-    if (x + lblWidth(meta, o.font) < right) inner += label(meta, x, 28.5, K.meta, o.font);
+    if (x + measure(meta, fontCss(o.font, 12, 400)) < right) inner += uiText(meta, x, 29, K.meta, o.font, 12, 400);
   }
   return wrapG(o, inner, 1);
 }
@@ -555,48 +566,56 @@ function kanbanContainerMarkup(o: BaseObj, ctx: MarkupCtx) {
 function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
   const w = o.w, h = o.h;
   const low = lowDetail(ctx.zoom ?? 1);
-  const accent = swatch(o.fill);
   const layout = o.parent ? ctx.containerLayout?.(o.parent) : null;
   const ids = layout?.cards.get(o.id) ?? [];
   const count = laneCount(o, ids.length);
-  const body = accent ? `color-mix(in srgb, ${accent} 10%, ${K.lane})` : K.lane;
-  let inner = `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" ${fillStyle(body)}/>`;
-  if (accent) inner += `<rect x="0" y="0" width="${n(w)}" height="4" ${fillStyle(accent)}/>`;
-  if (!low && count.state === 'over') inner += `<rect x="0" y="46" width="${n(w)}" height="2" ${fillStyle(K.danger)}/>`;
+  const body = K.lane;
+  let inner = `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" rx="12" ${fillStyle(body)}/>`;
   const fam = escapeXml(fontFamily(o.font));
   if (low) {
-    const font = fontCss(o.font, 28, 600);
-    if (ctx.editingId !== o.id) inner += `<text x="12" y="38" font-family="${fam}" font-size="28" font-weight="600" ${fillStyle(K.canvasInk)}>${escapeXml(clip(o.name || 'Lane', font, w - 24))}</text>`;
+    const font = fontCss(o.font, 28, 400);
+    if (ctx.editingId !== o.id) inner += `<text x="12" y="38" font-family="var(--font-serif, serif)" font-size="28" font-weight="400" ${fillStyle(K.canvasInk)}>${escapeXml(clip(o.name || 'Lane', font, w - 24))}</text>`;
     return wrapG(o, inner, 1);
   }
-  // the ⋯ menu (editors only), then the count right-aligned before it, as a danger chip when over the limit
+  // The count stays quiet. A pastel status pill appears only when the lane reaches its WIP limit.
   const mid = 26;
-  const countW = lblWidth(count.text, o.font) + (count.block ? 16 : 0);
+  const countFont = fontCss(o.font, 12, 400);
+  const countW = measure(count.text, countFont);
   let right = w - 12;
   if (ctx.editable) {
     const m = laneMenuRect({ x: 0, y: 0, w, h });
     const pressed = ctx.openControl?.id === o.id;
-    if (pressed) inner += `<rect x="${n(m.x)}" y="${n(m.y)}" width="${m.w}" height="${m.h}" ${fillStyle(K.canvasInk)}/>`;
-    inner += `<g class="k-menu" ${fillStyle(pressed ? K.canvas : K.canvasInk)} transform="translate(${n(m.x + 5)} ${n(m.y + 5)}) scale(${n(18 / 24)})">${ICON_DOTS}</g>`;
+    if (pressed) inner += `<rect x="${n(m.x)}" y="${n(m.y)}" width="${m.w}" height="${m.h}" rx="6" style="fill:color-mix(in srgb, var(--ink) 6%, var(--paper))"/>`;
+    inner += `<g class="k-menu" ${fillStyle(K.canvasInk)} transform="translate(${n(m.x + 5)} ${n(m.y + 5)}) scale(${n(18 / 24)})">${ICON_DOTS}</g>`;
     right = m.x - 8;
   }
-  if (count.state === 'over') {
-    inner += `<rect x="${n(right - countW - 6)}" y="${mid - 10}" width="${n(countW + 12)}" height="20" ${fillStyle(K.danger)}/>`;
+  const full = count.state !== '';
+  const fullText = 'WIP full';
+  const badgeFont = fontCss(o.font, 11, 600);
+  const badgeW = measure(fullText, badgeFont) + 12;
+  const badgeLeft = right - countW - (full ? badgeW + 8 : 0) - (full && count.block ? 18 : 0);
+  const countRight = right - (full && count.block ? 18 : 0);
+  inner += `<title>${escapeXml(count.title)}</title>` + uiText(count.text, countRight, mid + 4, K.meta, o.font, 12, 400, 'end');
+  if (full) {
+    inner += `<rect x="${n(badgeLeft)}" y="${mid - 10}" width="${n(badgeW)}" height="20" rx="4" style="fill:var(--tag-yellow, #FBF3DB);"/>`;
+    inner += uiText(fullText, badgeLeft + 6, mid + 4, 'var(--on-tag-yellow, #956400)', o.font, 11, 600);
   }
-  const countColor = count.state === 'over' ? K.paper : count.state === 'at' ? K.canvasInk : K.meta;
-  inner += `<g><title>${escapeXml(count.title)}</title>${label(count.text, right, mid + 4, countColor, o.font, 'end')}`;
-  if (count.block) inner += kIcon(ICON_LOCK, right - countW, mid - 6, 12, countColor);
-  inner += '</g>';
-  // the name, then the done stage marker after it
+  if (full && count.block) inner += kIcon(ICON_LOCK, badgeLeft - 16, mid - 6, 12, K.meta);
+  // The lane name and its quiet done marker.
   const stage = o.stage === 'done' ? 'Done' : '';
-  const stageW = stage ? 14 + 2 + lblWidth(stage, o.font) : 0;
-  const nameFont = fontCss(o.font, 14, 600);
-  const room = right - countW - (count.state === 'over' ? 12 : 0) - 8 - 12 - (stage ? stageW + 8 : 0);
-  const nameText = clip(o.name || 'Lane', nameFont, Math.max(24, room));
-  if (ctx.editingId !== o.id) inner += `<text x="12" y="${mid + 5}" font-family="${fam}" font-size="14" font-weight="600" ${fillStyle(K.canvasInk)}>${escapeXml(nameText)}</text>`;
+  const stageW = stage ? 18 + measure(stage, fontCss(o.font, 12, 500)) : 0;
+  const nameFont = fontCss(o.font, 13, 500);
+  const metricLeft = full ? badgeLeft - (full && count.block ? 18 : 8) : right - countW - 8;
+  const room = metricLeft - 8 - 12 - (stage ? stageW + 8 : 0);
+  // a lane's colour is kept as a quiet 8px dot before its name (no stripe, no tint)
+  const dotColour = swatch((o as { fill?: string }).fill);
+  const dotW = dotColour ? 14 : 0;
+  const nameText = clip(o.name || 'Lane', nameFont, Math.max(24, room - dotW));
+  if (dotColour) inner += `<circle cx="16" cy="${mid}" r="4" style="fill:${dotColour};"/>`;
+  if (ctx.editingId !== o.id) inner += uiText(nameText, 12 + dotW, mid + 5, K.canvasInk, o.font, 13, 500);
   if (stage) {
-    const x = 12 + measure(nameText, nameFont) + 8;
-    inner += `<g><title>Stage: done</title>${kIcon(ICON_CHECK, x, mid - 7, 14, K.meta)}${label(stage, x + 16, mid + 4, K.meta, o.font)}</g>`;
+    const x = 12 + dotW + measure(nameText, nameFont) + 8;
+    inner += `<g><title>Stage: done</title>${kIcon(ICON_CHECK, x, mid - 7, 14, K.meta)}${uiText(stage, x + 17, mid + 4, K.meta, o.font, 12, 500)}</g>`;
   }
   // the body: an empty lane's dashed box, and the add-card row after the last card
   const local = { x: 0, y: 0, w, h };
@@ -605,7 +624,7 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
   if (!cards.length || (dropping && cards.every((_, i) => ctx.dragging?.(ids[i])))) {
     const b = emptyBox(local);
     inner += `<rect x="${n(b.x + 0.5)}" y="${n(b.y + 0.5)}" width="${n(b.w - 1)}" height="${n(b.h - 1)}" ${strokeStyle(K.dash)} stroke-width="1" stroke-dasharray="4 3"/>`;
-    inner += label(dropping ? 'Drop here' : 'No cards', b.x + b.w / 2, b.y + b.h / 2 + 4, K.meta, o.font, 'middle');
+    inner += uiText(dropping ? 'Drop here' : 'No cards', b.x + b.w / 2, b.y + b.h / 2 + 4, K.meta, o.font, 13, 400, 'middle');
   }
   if (ctx.editable && ctx.addingLane !== o.id) {
     const r = addRow(local, cards);
@@ -633,14 +652,15 @@ function cardMarkup(o: BaseObj, ctx: MarkupCtx) {
 export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' = 'hairline'): string {
   const w = o.w, h = o.h;
   const low = lowDetail(ctx.zoom ?? 1);
-  const accent = swatch(o.fill);
-  const padL = cardPadLeft(o);
-  let inner = `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" ${fillStyle(K.paper)}/>`;
-  if (accent) inner += `<rect x="0" y="0" width="${CARD.accent}" height="${n(h)}" ${fillStyle(accent)}/>`;
+  const padL = CARD.padX;
+  let inner = `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" rx="8" ${fillStyle(K.paper)}/>`;
   const linked = o.extProvider === 'tabula';
   inner += edge === 'ghost'
-    ? `<rect x="1" y="1" width="${n(w - 2)}" height="${n(h - 2)}" ${strokeStyle(K.canvasInk)} stroke-width="2"/>`
-    : `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" ${strokeStyle(K.edge)} stroke-width="1"/>`;
+    ? `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" rx="8" ${strokeStyle(K.canvasInk)} stroke-width="1"/>`
+    : `<rect class="k-card-edge" x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" rx="8" ${strokeStyle(K.edge)} stroke-width="1"/>`;
+  // a card's colour is kept as a quiet 3px bar inside its left edge (no tint)
+  const cardAccent = swatch(o.fill);
+  if (cardAccent && !low) inner += `<rect x="0" y="12" width="3" height="${n(Math.max(8, h - 24))}" rx="1.5" style="fill:${cardAccent};"/>`;
   if (isSafeHttpUrl(o.link) && edge === 'hairline') {
     const hit = 24;
     const x = w - CARD.padX - hit, y = CARD.padY - 4;
@@ -689,14 +709,14 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
     const known = o.labels.map((id) => validLabel(ctx.label?.(id))).filter((l): l is Label => !!l);
     let x = padL;
     known.slice(0, 3).forEach((l) => {
-      const text = l.name.toUpperCase();
-      const tw = measure(text, fontCss(o.font, LBL.size, LBL.weight)) + text.length * 0.44 + 10;
-      inner += `<g><title>${escapeXml(l.name)}</title><rect x="${n(x)}" y="${n(y)}" width="${n(tw)}" height="16" ${fillStyle(swatch(l.color) ?? K.cardMeta)}/>`;
-      if (!low) inner += `<text x="${n(x + 5)}" y="${n(y + 12)}" font-family="${fam}" font-size="11" font-weight="600" letter-spacing="0.44" ${fillStyle(K.stickyInk)}>${escapeXml(text)}</text>`;
+      const text = l.name;
+      const tw = measure(text, fontCss(o.font, 11, 500)) + 20;
+      inner += `<g><title>${escapeXml(l.name)}</title><rect x="${n(x)}" y="${n(y)}" width="${n(tw)}" height="18" rx="4" style="fill:color-mix(in srgb, var(--ink, #18212B) 4%, var(--paper, #FFFFFF))"/><circle cx="${n(x + 8)}" cy="${n(y + 9)}" r="3" ${fillStyle(swatch(l.color) ?? K.cardMeta)}/>`;
+      if (!low) inner += `<text x="${n(x + 15)}" y="${n(y + 13)}" font-family="${fam}" font-size="11" font-weight="500" ${fillStyle(K.ink)}>${escapeXml(text)}</text>`;
       inner += '</g>';
       x += tw + 4;
     });
-    if (known.length > 3 && !low) inner += label(`+${known.length - 3}`, x, y + 12, K.cardMeta, o.font);
+    if (known.length > 3 && !low) inner += uiText(`+${known.length - 3}`, x, y + 13, K.cardMeta, o.font, 11, 500);
     y += CARD.labelRow;
   }
   // meta row: due, then the comment count and the owner on the right
@@ -707,34 +727,32 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
       const lane = o.parent ? ctx.get(o.parent) : undefined;
       const due = dueChip(o.due, ctx.today ?? localToday(), (lane as BaseObj | undefined)?.stage === 'done');
       if (due) {
-        const tw = lblWidth(due.text, o.font);
         const titles = { normal: 'Due', soon: 'Due soon', overdue: 'Overdue', done: 'Done' };
-        let chip = `<title>${titles[due.kind]}</title>`;
-        if (due.kind === 'overdue') chip += `<rect x="${padL}" y="${n(cy - 10)}" width="${n(tw + 10)}" height="20" ${fillStyle(K.danger)}/>` + label(due.text, padL + 5, cy + 4, K.paper, o.font);
-        else if (due.kind === 'soon') chip += `<rect x="${padL + 0.5}" y="${n(cy - 9.5)}" width="${n(tw + 9)}" height="19" ${strokeStyle(K.ink)} stroke-width="1"/>` + label(due.text, padL + 5, cy + 4, K.ink, o.font);
-        else if (due.kind === 'done') chip += kIcon(ICON_CHECK, padL, cy - 7, 14, K.cardMeta) + label(due.text, padL + 17, cy + 4, K.cardMeta, o.font);
-        else chip += label(due.text, padL, cy + 4, K.cardMeta, o.font);
+        const dueInk = due.kind === 'overdue' ? K.danger : K.cardMeta;
+        let chip = `<title>${titles[due.kind]}</title>` + kIcon(ICON_CALENDAR, padL, cy - 7, 14, dueInk);
+        if (due.kind === 'done') chip += kIcon(ICON_CHECK, padL + 15, cy - 7, 14, K.cardMeta);
+        chip += uiText(due.text, padL + (due.kind === 'done' ? 34 : 19), cy + 4, dueInk, o.font, 12, 400);
         inner += `<g>${chip}</g>`;
       }
       let right = w - CARD.padX;
       if (o.ownerName || o.ownerId) {
         const ring = kanbanColor(ctx.ownerColor?.(o)) ?? undefined;
         const agent = o.ownerKind === 'agent';
-        const x = right - 24;
-        const agentPoints = `${n(x + 6)},${n(cy - 11)} ${n(x + 18)},${n(cy - 11)} ${n(x + 23)},${n(cy - 6)} ${n(x + 23)},${n(cy + 6)} ${n(x + 18)},${n(cy + 11)} ${n(x + 6)},${n(cy + 11)} ${n(x + 1)},${n(cy + 6)} ${n(x + 1)},${n(cy - 6)}`;
+        const x = right - 22;
+        const agentPoints = `${n(x + 5)},${n(cy - 10)} ${n(x + 17)},${n(cy - 10)} ${n(x + 21)},${n(cy - 6)} ${n(x + 21)},${n(cy + 6)} ${n(x + 17)},${n(cy + 10)} ${n(x + 5)},${n(cy + 10)} ${n(x + 1)},${n(cy + 6)} ${n(x + 1)},${n(cy - 6)}`;
         inner += `<g data-owner-kind="${agent ? 'agent' : 'person'}"><title>${escapeXml(o.ownerName || 'Owner')}${agent ? ' (agent)' : ring ? '' : ' (no account)'}</title>`;
         if (agent) {
           inner += `<polygon points="${agentPoints}" ${fillStyle(K.paper)}/>`;
           inner += ring
-            ? `<polygon points="${agentPoints}" ${strokeStyle(ring)} stroke-width="2"/>`
+            ? `<polygon points="${agentPoints}" ${strokeStyle(ring)} stroke-width="1.5"/>`
             : `<polygon points="${agentPoints}" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
         } else {
-          inner += `<rect x="${n(x)}" y="${n(cy - 12)}" width="24" height="24" ${fillStyle(K.paper)}/>`;
+          inner += `<circle cx="${n(x + 11)}" cy="${n(cy)}" r="10.5" ${fillStyle(K.paper)}/>`;
           inner += ring
-            ? `<rect x="${n(x + 1)}" y="${n(cy - 11)}" width="22" height="22" ${strokeStyle(ring)} stroke-width="2"/>`
-            : `<rect x="${n(x + 0.5)}" y="${n(cy - 11.5)}" width="23" height="23" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
+            ? `<circle cx="${n(x + 11)}" cy="${n(cy)}" r="10.5" ${strokeStyle(ring)} stroke-width="1.5"/>`
+            : `<circle cx="${n(x + 11)}" cy="${n(cy)}" r="10.5" ${strokeStyle(K.cardMeta)} stroke-width="1"/>`;
         }
-        inner += `<text x="${n(x + 12)}" y="${n(cy + 3.5)}" font-family="${fam}" font-size="10" font-weight="700" letter-spacing="0.2" text-anchor="middle" ${fillStyle(K.ink)}>${escapeXml(initials(o.ownerName))}</text></g>`;
+        inner += `<text x="${n(x + 11)}" y="${n(cy + 3.5)}" font-family="${fam}" font-size="9" font-weight="600" text-anchor="middle" ${fillStyle(K.ink)}>${escapeXml(initials(o.ownerName))}</text></g>`;
         right = x - 6;
       }
       const comments = ctx.commentCount?.(o.id) ?? 0;

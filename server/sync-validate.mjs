@@ -58,6 +58,7 @@ export const LIMITS = Object.freeze({
   anyString: MAX_SVG_BODY + 1000,
   /** Board text. The client caps a paste at OBJECT_TEXT_MAX (4,000), MCP too; typing and rich text allow 20,000 (docs/rich-text.md decision 8). */
   text: 20_000,
+  markdown: 8_000,
   pasteText: OBJECT_TEXT_MAX,
   /** Frame, group, layer and board names: the frame-name editor is a textarea with no cap (src/editor.ts), templates cap at 500. */
   name: 1000,
@@ -345,11 +346,23 @@ function tableCountCodes(value, only) {
   if (only && ![...only].some((k) => parseTableKey(k)?.kind === 'r' || parseTableKey(k)?.kind === 'k')) return out;
   let rows = 0;
   let cols = 0;
+  const rowRanks = new Set();
+  const colRanks = new Set();
+  let duplicate = false;
   for (const k of Object.keys(value)) {
     const p = parseTableKey(k);
-    if (p?.kind === 'r') rows++;
-    else if (p?.kind === 'k') cols++;
+    if (p?.kind === 'r') {
+      rows++;
+      if (rowRanks.has(value[k])) duplicate = true;
+      rowRanks.add(value[k]);
+    } else if (p?.kind === 'k') {
+      cols++;
+      if (colRanks.has(value[k])) duplicate = true;
+      colRanks.add(value[k]);
+    }
   }
+  // two clients inserting after the same line honestly make equal ranks (the client orders them by id and repairs), so this is reported, never refused
+  if (duplicate) out.push({ code: 'duplicate_rank', path: '', reportOnly: true });
   return [...out, ...(rows > MAX_TABLE_ROWS ? [{ code: 'too_many_rows', path: '' }] : []), ...(cols > MAX_TABLE_COLS ? [{ code: 'too_many_columns', path: '' }] : [])];
 }
 
@@ -358,7 +371,8 @@ export const FIELDS = Object.freeze({
   shape: { ...BOX, kind: oneOf(SHAPE_KINDS) },
   sticky: { ...BOX },
   text: { ...BOX },
-  markdown: { ...BOX },
+  // a Markdown block's text is capped lower than a note: every viewer lays it out
+  markdown: { ...BOX, text: str(LIMITS.markdown) },
   // a table (docs/tables.md): the header flags, and rows, columns, widths and cells as keys of their own, checked by tablePartCheck
   table: { ...BOX, headerRow: bool, headerCol: bool },
   frame: { ...BOX, name: str(LIMITS.name) },

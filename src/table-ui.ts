@@ -155,6 +155,15 @@ export class TableController {
   }
 
   /** Writes a patch to the table as one step, then fits the table to its new size. */
+  /** A patch from the model, or null when it throws (a rank the model cannot place between): the table is then left as it was. */
+  private patchOf(make: () => TablePatch | null): TablePatch | null {
+    try {
+      return make();
+    } catch {
+      return null;
+    }
+  }
+
   private write(id: Id, patch: TablePatch | null, step = true): boolean {
     if (!patch || this.app.readOnly) return false;
     const s = this.app.store;
@@ -214,7 +223,7 @@ export class TableController {
     if (!r) return;
     const id = newTableId();
     const at = above ? r.r0 - 1 : r.r1;
-    if (this.write(r.o.id, insertRowPatch(fieldsOf(r.o), at, id))) {
+    if (this.write(r.o.id, this.patchOf(() => insertRowPatch(fieldsOf(r.o), at, id)))) {
       const now = this.layoutOf(this.app.store.getPlaced(r.o.id) as BaseObj);
       this.select(r.o.id, now.model.rows.indexOf(id), r.c0);
     } else this.app.notify('A table has up to 100 rows.');
@@ -225,7 +234,7 @@ export class TableController {
     if (!r) return;
     const id = newTableId();
     const at = left ? r.c0 - 1 : r.c1;
-    if (this.write(r.o.id, insertColPatch(fieldsOf(r.o), at, id))) {
+    if (this.write(r.o.id, this.patchOf(() => insertColPatch(fieldsOf(r.o), at, id)))) {
       const now = this.layoutOf(this.app.store.getPlaced(r.o.id) as BaseObj);
       this.select(r.o.id, r.r0, now.model.cols.indexOf(id));
     } else this.app.notify('A table has up to 30 columns.');
@@ -273,7 +282,7 @@ export class TableController {
     const index = this.sel.ar;
     const to = index + step;
     if (to < 0 || to >= r.layout.model.rows.length) return;
-    if (this.write(r.o.id, moveRowPatch(fieldsOf(r.o), r.layout.model.rows[index], to))) this.select(r.o.id, to, this.sel.ac);
+    if (this.write(r.o.id, this.patchOf(() => moveRowPatch(fieldsOf(r.o), r.layout.model.rows[index], to)))) this.select(r.o.id, to, this.sel.ac);
   }
 
   moveCol(step: -1 | 1) {
@@ -282,7 +291,7 @@ export class TableController {
     const index = this.sel.ac;
     const to = index + step;
     if (to < 0 || to >= r.layout.model.cols.length) return;
-    if (this.write(r.o.id, moveColPatch(fieldsOf(r.o), r.layout.model.cols[index], to))) this.select(r.o.id, this.sel.ar, to);
+    if (this.write(r.o.id, this.patchOf(() => moveColPatch(fieldsOf(r.o), r.layout.model.cols[index], to)))) this.select(r.o.id, this.sel.ar, to);
   }
 
   /** Turns the first row or the first column into a header (bold, tinted, ruled off). */

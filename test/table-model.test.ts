@@ -129,12 +129,15 @@ describe('a damaged rank does not stop the table (review of TAB-121)', () => {
 
 describe('the table text cap', () => {
   it('refuses a cell that would take the whole table past MAX_TABLE_CHARS, and always lets a cell shrink', () => {
-    const t = fresh(1, 3) as Record<string, unknown>;
+    const t = fresh(100, 3) as Record<string, unknown>;
     const { rows, cols } = tableModel(t);
     const big = 'x'.repeat(1000);
     // fill most of the budget through the raw keys (as an import would)
-    t[`c:${rows[0]}:${cols[0]}`] = big;
-    for (let i = 0; i < 148; i++) t[`c:fill${i}:${cols[1]}`] = big; // orphan cells count too
+    for (const r of rows) t[`c:${r}:${cols[0]}`] = big;
+    for (let i = 1; i < 50; i++) t[`c:${rows[i]}:${cols[1]}`] = big;
+    expect(tableChars(t)).toBe(149 * 1000);
+    t[`c:ghost:${cols[1]}`] = big; // a cell outside the grid is not shown and does not count
+    t[`c:${rows[0]}:ghost`] = big;
     expect(tableChars(t)).toBe(149 * 1000);
     expect(setCellPatch(t, rows[0], cols[1], big)).not.toBeNull(); // 150,000 exactly
     apply(t, setCellPatch(t, rows[0], cols[1], big));
@@ -285,5 +288,52 @@ describe('table merging', () => {
     expect(t.rows).toEqual([m.rows[1]]);
     expect(t.cell(m.rows[0], m.cols[0])).toBe('');
     expect(tableModel(obj(b)).rows).toEqual(t.rows);
+  });
+});
+
+describe('equal and odd ranks (concurrent inserts, hostile writes)', () => {
+  const twins = () => {
+    const t = fresh(3, 2) as Record<string, unknown>;
+    const { rows, cols } = tableModel(t);
+    t[`r:dup`] = t[`r:${rows[0]}`]; // two clients inserted after the same row
+    t[`k:dup`] = t[`k:${cols[0]}`];
+    return { t, rows, cols };
+  };
+
+  it('inserts and moves next to an equal-rank pair without throwing, and the new line lands in a sane place', () => {
+    const { t, rows, cols } = twins();
+    const order = tableModel(t).rows;
+    expect(order).toHaveLength(4);
+    for (let at = -1; at < order.length; at++) {
+      const p = insertRowPatch(t, at, `n${at + 1}`);
+      expect(p).not.toBeNull();
+      const next = { ...t, ...p };
+      expect(tableModel(next).rows).toHaveLength(5);
+    }
+    for (const id of order) for (let at = -1; at < 3; at++) expect(() => moveRowPatch(t, id, at)).not.toThrow();
+    expect(() => insertColPatch(t, 0, 'ncol')).not.toThrow();
+    for (const id of tableModel(t).cols) expect(() => moveColPatch(t, id, 0)).not.toThrow();
+    expect(rows.length + cols.length).toBe(5);
+  });
+
+  it('accepts only base62 characters as a rank, and inserting next to a refused rank does not produce garbage', () => {
+    for (const bad of ['a\0', 'a b', 'a:b', 'a‮', 'a￿', '', 'a-b']) expect(isValidRank(bad)).toBe(false);
+    expect(isValidRank('a0')).toBe(true);
+    const t = fresh(2, 1) as Record<string, unknown>;
+    const { rows } = tableModel(t);
+    t[`r:${rows[0]}`] = 'a￿';
+    const p = insertRowPatch(t, 0, 'nx');
+    expect(String(Object.values(p ?? {})[0])).toMatch(/^[0-9A-Za-z]+$/);
+    expect(String(Object.values(p ?? {})[0])).not.toContain('undefined');
+  });
+
+  it('fillFromPatch is linear: a 500,000-row paste does not overflow the stack and is cut at the table limits', () => {
+    const t = fresh(1, 1) as Record<string, unknown>;
+    const { rows, cols } = tableModel(t);
+    let n = 0;
+    const grid = Array.from({ length: 500_000 }, () => ['']);
+    const p = fillFromPatch(t, rows[0], cols[0], grid, () => `i${n++}`);
+    expect(p).not.toBeNull();
+    expect(n).toBeLessThanOrEqual(MAX_TABLE_ROWS);
   });
 });

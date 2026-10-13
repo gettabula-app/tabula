@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { existsSync } from 'node:fs';
+import { budget } from './wait-budget';
 import { createServer, type ViteDevServer } from 'vite';
 
 let server: ViteDevServer | undefined;
@@ -53,6 +54,26 @@ describe.skipIf(!available)('the board template picker dialog', { timeout: 200_0
     expect(await opener.getAttribute('aria-haspopup')).toBe('dialog');
     expect(await opener.getAttribute('aria-expanded')).toBe('true');
     expect(await page.getByRole('dialog', { name: 'Start from a template' }).isVisible()).toBe(true);
+    await closePage(page);
+  });
+
+  it('draws thumbnails only for cards near the visible area, and the rest as they are scrolled to', async () => {
+    const page = await openBoard(1280, 520);
+    await page.getByRole('button', { name: 'Templates and team exercises' }).click();
+    await picker(page).waitFor();
+    const counts = () => page.evaluate(() => ({
+      cards: document.querySelectorAll('.template-picker-card').length,
+      drawn: document.querySelectorAll('.template-picker-preview svg').length,
+    }));
+    await page.waitForFunction(() => document.querySelectorAll('.template-picker-preview svg').length > 0);
+    const first = await counts();
+    expect(first.cards).toBeGreaterThan(first.drawn);
+    // a card far below is still empty; scrolling it into view draws it
+    const drawn = (index: number) => page.evaluate((i) => document.querySelectorAll('.template-picker-preview')[i].querySelector('svg') !== null, index);
+    const far = first.cards - 5;
+    expect(await drawn(far)).toBe(false);
+    await page.evaluate((i) => document.querySelectorAll('.template-picker-card')[i].scrollIntoView({ block: 'center' }), far);
+    await page.waitForFunction((i) => document.querySelectorAll('.template-picker-preview')[i].querySelector('svg') !== null, far, { timeout: budget(20_000) });
     await closePage(page);
   });
 

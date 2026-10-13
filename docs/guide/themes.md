@@ -17,7 +17,7 @@ Text and accent colours in every theme are chosen to stay readable.
 ## Change the theme
 
 1. Open a board and choose **Menu** at the top right.
-2. Under **Appearance**, click a theme. A check mark shows the current one.
+2. Open the **Appearance** submenu and click a theme. A check mark shows the current one.
 
 The change applies at once. Your theme choice applies to everything in the app, including the Boards and Templates pages.
 

@@ -7,9 +7,9 @@
 .signin-top {
   display: flex; align-items: center; height: 56px;
   padding: 0 max(24px, calc((100% - 1120px) / 2 + 24px));
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 1px solid var(--page-hairline);
 }
-.signin .wordmark { font: 800 20px/1 var(--display); letter-spacing: -0.03em; }
+.signin .wordmark { font: 400 20px/1 var(--font-serif); letter-spacing: -0.02em; }
 
 /* The form column starts at the 24px gutter of the 1120px grid and is never centred. */
 .signin-body { max-width: 1120px; margin: 0 auto; padding: 48px 24px; }

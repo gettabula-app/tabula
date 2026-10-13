@@ -1,4 +1,5 @@
 import { h } from '../../ui/dom';
+import { kbdHint } from '../../ui/kbd';
 import type { TrackerMeta, TrackerPriority } from '../../tracker-types';
 import { build, filterChipLabel, parse, type FilterChip, type FilterField } from './filter';
 import './tracker.css';
@@ -47,7 +48,7 @@ export function createFilterBar(options: FilterBarOptions = {}): FilterBarContro
   const suggestionsEl = h('div', {
     class: 'trk-filter-suggestions', id: `${id}-suggestions`, role: 'listbox', 'aria-label': 'Filter suggestions', hidden: true,
   });
-  const inputWrap = h('div', { class: 'trk-filter-input-wrap' }, input, suggestionsEl);
+  const inputWrap = h('div', { class: 'trk-filter-input-wrap' }, input, kbdHint('/', 'trk-filter-shortcut'), suggestionsEl);
   const errorEl = h('div', { class: 'trk-filter-error', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true', hidden: true });
   const root = h('div', { class: 'trk trk-filter-bar', role: 'search', 'aria-label': 'Tracker filters' }, chipsEl, inputWrap, errorEl);
 

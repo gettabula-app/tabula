@@ -61,6 +61,8 @@ export interface Overlay {
   anchorHot: string | null;     // `${id}:${side}` under the pointer
   marquee: Rect | null;
   guides: Guide[];
+  /** The axis line of a drag locked to one axis (src/axis-lock.ts): through `at`, along `axis`, across the view. */
+  axisLock: { axis: 'x' | 'y'; at: Point } | null;
   preview: string;              // world-space markup of an object being drawn
   remote: RemoteSel[];
   votes: Map<Id, { mine: number; total: number | null }>;
@@ -93,7 +95,7 @@ export interface KanbanDrawState {
 }
 
 export const emptyOverlay = (): Overlay => ({
-  selection: [], enteredGroup: null, hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
+  axisLock: null, selection: [], enteredGroup: null, hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
   guides: [], preview: '', remote: [], votes: new Map(), votable: new Set(), dropTarget: null, ai: '', kanban: null,
 });
 
@@ -821,7 +823,11 @@ export class Renderer {
       }
     } else {
       // a dragged card's slot is its dashed placeholder, with no selection outline over it
-      for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) out += isLine(o) ? this.lineHalo(o, px) : this.outline(o, px(1.5), 1);
+      for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) {
+        if (isLine(o)) { out += this.lineHalo(o, px); continue; }
+        const kanbanCard = o.type === 'card';
+        out += this.outline(o, px(kanbanCard ? 1 : 1.5), 1, kanbanCard ? 'var(--ink)' : undefined);
+      }
       if (sel.length > 1) {
         const b = this.contentBounds(ov.selection);
         if (b) out += `<rect x="${b.x - px(6)}" y="${b.y - px(6)}" width="${b.w + px(12)}" height="${b.h + px(12)}" fill="none" stroke="${SELECTION_WIRE}" stroke-width="${px(1)}" stroke-dasharray="${px(5)} ${px(4)}"/>`;
@@ -862,6 +868,14 @@ export class Renderer {
     for (const g of ov.guides) out += g.kind === 'line'
       ? `<path d="M${fin(g.x1)} ${fin(g.y1)}L${fin(g.x2)} ${fin(g.y2)}" stroke="${GUIDE}" stroke-width="${px(1)}"/>`
       : g.kind === 'gap' ? gapMarkup(g, px) : sizeMarkup(g, px);
+
+    // the axis line of a locked drag: dashed 4/4, 1px, faint, across the whole view
+    if (ov.axisLock) {
+      const { axis, at } = ov.axisLock;
+      const v = this.viewport();
+      const d = axis === 'x' ? `M${fin(v.x)} ${fin(at.y)}L${fin(v.x + v.w)} ${fin(at.y)}` : `M${fin(at.x)} ${fin(v.y)}L${fin(at.x)} ${fin(v.y + v.h)}`;
+      out += `<path class="axis-lock-line" d="${d}" stroke="${GUIDE}" stroke-opacity="0.4" stroke-width="${px(1)}" stroke-dasharray="${px(4)} ${px(4)}" fill="none"/>`;
+    }
 
     // drawing preview
     if (ov.preview) out += `<g opacity="0.85">${ov.preview}</g>`;
@@ -1047,6 +1061,7 @@ export class Renderer {
       const r = boxBounds(b);
       return `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}"/>`;
     }
-    return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}"/>`;
+    const radius = b.type === 'card' ? ' rx="8"' : '';
+    return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}"${radius} transform="rotate(${deg} ${c.x} ${c.y})" fill="none" stroke="${stroke}" stroke-width="${sw}" opacity="${opacity}"/>`;
   }
 }

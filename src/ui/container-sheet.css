@@ -1,41 +1,39 @@
-/* The kanban list sheet and Move to… (docs/kanban.md, Visual design, Phone). The admin pairs: ink and graphite on paper,
-   hairlines in --rule, 2px ink rules; dialog radius, no shadows. 11px uppercase labels as the admin phone tabs. Every target is
-   40px or more. Theme variables only, so all five themes work. */
+/* The phone kanban sheet and Move to… use paper surfaces, quiet controls and hairlines. */
 
 /* label chips are the sticky swatches, the same in every theme, so their text is the sticky ink */
-:root { --ks-chip-ink: var(--sticky-ink, #1D1A12); }
+:root { --ks-chip-ink: var(--ink); }
 
 .ks-sheet {
   position: fixed; left: var(--safe-left); right: var(--safe-right); top: var(--ks-top, calc(64px + var(--safe-top))); bottom: 0; z-index: 30;
-  display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink);
-  font-family: var(--ui); border-radius: var(--radius-lg); overflow: hidden;
+  display: flex; flex-direction: column; background: var(--paper); color: var(--ink); border-top: 1px solid var(--rule);
+  font-family: var(--ui); border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--dialog-shadow);
 }
 .ks-head { flex: none; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 8px 0 16px; }
 .ks-title { min-width: 0; flex: 1 1 auto; }
-.ks-name { margin: 0; font: 700 20px/24px var(--display); letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ks-name { margin: 0; font: 400 20px/24px var(--font-serif); letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ks-summary, .ks-tab, .ks-filter, .ks-end, .ks-opt, .ks-chip, .ks-due, .ks-more {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none;
 }
 .ks-summary { display: block; color: var(--graphite); line-height: 16px; }
 .ks-btn {
   display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 6px; height: 40px; min-width: 40px; padding: 0 10px;
-  border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); cursor: pointer;
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink); cursor: pointer;
 }
 .ks-btn.icon { border: 0; padding: 0; width: 40px; }
-.ks-btn.on { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
+.ks-btn.on { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); color: var(--ink); }
 .ks-btn:focus-visible, .ks-tab:focus-visible, .ks-row-title:focus-visible, .ks-add button:focus-visible, .ks-input:focus-visible,
-.ks-lane-opt:focus-visible, .ks-opt:focus-visible, .ks-bs-foot button:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
+.ks-lane-opt:focus-visible, .ks-opt:focus-visible, .ks-bs-foot button:focus-visible { outline: 1px solid var(--ink); outline-offset: 1px; }
 
-/* lane tabs: a segmented strip that scrolls sideways, the active lane underlined 2px ink */
-.ks-tabs { flex: none; display: flex; gap: 24px; padding: 0 16px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--rule); }
+/* lane tabs: softly tinted pills */
+.ks-tabs { flex: none; display: flex; gap: 4px; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: none; }
 .ks-tabs::-webkit-scrollbar { display: none; }
 .ks-tab {
-  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 48px; padding: 0; border: 0; border-bottom: 2px solid transparent;
-  border-radius: var(--radius-sm); background: none; color: var(--graphite); white-space: nowrap; cursor: pointer;
+  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px; border: 0;
+  border-radius: 999px; background: transparent; color: var(--graphite); white-space: nowrap; cursor: pointer;
 }
-.ks-tab.on { color: var(--ink); border-bottom-color: var(--ink); }
+.ks-tab.on { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); }
 .ks-n { display: inline-flex; align-items: center; gap: 3px; color: inherit; }
-.ks-n.over { padding: 0 4px; background: var(--danger); color: var(--on-danger); }
+.ks-n.over { padding: 2px 5px; border-radius: 4px; background: var(--tag-yellow); color: var(--on-tag-yellow); }
 
 /* card rows: grip, title with its chip and meta rows, ⋯; rows on hairlines */
 .ks-panel { position: relative; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
@@ -45,7 +43,7 @@
   display: grid; grid-template-columns: 32px minmax(0, 1fr) 40px; align-items: start; gap: 4px; padding: 12px 8px 12px 4px;
   border-bottom: 1px solid var(--rule); background: var(--paper);
 }
-.ks-row[style*='--fc'] { box-shadow: inset 4px 0 0 var(--fc); }
+.ks-row[style*='--fc'] { box-shadow: none; }
 .ks-row.dim { opacity: 0.35; }
 .ks-row.dragging { opacity: 0.5; }
 .ks-row.sel { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); }
@@ -54,21 +52,22 @@
 .ks-row-body { min-width: 0; }
 .ks-row-title {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; width: 100%; min-height: 40px; margin: 0;
-  padding: 10px 0 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); text-align: left;
-  font: 500 15px/20px var(--ui); overflow-wrap: anywhere; cursor: pointer;
+  padding: 4px 0 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--ink); text-align: left;
+  font: 500 13px/18px var(--ui); overflow-wrap: anywhere; cursor: pointer;
 }
 div.ks-row-title { cursor: default; }
 .ks-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-.ks-chip { display: inline-flex; align-items: center; height: 16px; padding: 0 4px; background: var(--lc, var(--rule)); color: var(--ks-chip-ink); }
+.ks-chip { display: inline-flex; align-items: center; gap: 5px; min-height: 18px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--ink) 4%, var(--paper)); color: var(--ks-chip-ink); font-size: 11px; }
+.ks-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--lc, var(--graphite)); }
 .ks-more { color: var(--graphite); line-height: 16px; }
 .ks-meta { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-top: 8px; color: var(--graphite); }
 .ks-spacer { flex: 1 1 auto; }
 .ks-due { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 4px; color: var(--graphite); }
-.ks-due.soon { color: var(--ink); outline: 1px solid var(--ink); }
-.ks-due.overdue { background: var(--danger); color: var(--on-danger); }
+.ks-due.soon { color: var(--ink); }
+.ks-due.overdue { color: var(--danger); }
 .ks-ccount { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
 .ks-owner {
-  display: inline-grid; place-items: center; width: 24px; height: 24px; box-shadow: inset 0 0 0 1px var(--rule);
+  display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1px solid var(--rule); border-radius: 50%;
   color: var(--ink); font-size: 10px; font-weight: 700;
 }
 .ks-owner.agent { display: inline-flex; gap: 3px; width: auto; min-width: 24px; padding: 0 4px; }
@@ -82,28 +81,29 @@ div.ks-row-title { cursor: default; }
 .ks-drop::after { right: 0; }
 
 /* the Add card bar: a 48px signal button on a 2px ink rule, above the home indicator */
-.ks-add { flex: none; display: flex; gap: 8px; padding: 12px 16px calc(12px + var(--safe-bottom)); border-top: 2px solid var(--ink); background: var(--paper); }
+.ks-add { flex: none; display: flex; gap: 8px; padding: 12px 16px calc(12px + var(--safe-bottom)); border-top: 1px solid var(--rule); background: var(--paper); }
 .ks-add[hidden] { display: none; }
 .ks-add-btn, .ks-add-go {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 0; border-radius: var(--radius-sm);
-  background: var(--signal); color: var(--on-signal); font: 600 15px var(--ui); cursor: pointer;
+  background: var(--ink); color: var(--paper); font: 500 14px var(--ui); cursor: pointer;
 }
 .ks-add-btn { flex: 1 1 auto; min-width: 0; }
 .ks-add-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ks-add-btn.refused { background: transparent; color: var(--graphite); box-shadow: inset 0 0 0 1px var(--rule); cursor: default; }
 .ks-add-go { flex: none; padding: 0 16px; }
 .ks-input {
-  flex: 1 1 auto; min-width: 0; height: 48px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink);
+  flex: 1 1 auto; min-width: 0; height: 48px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 -1px 0 var(--field-rule); background: color-mix(in srgb, var(--ink) 4%, var(--paper)); --placeholder: var(--ink);
   color: var(--ink); font: 500 15px var(--ui); outline: none;
 }
 .ks-input::placeholder { color: var(--placeholder); opacity: 1; }
+.ks-input:focus-visible { outline: 1px solid var(--field-edge-strong); outline-offset: 0; box-shadow: inset 0 0 0 1px var(--field-edge-strong); }
 
 /* Move to…: a bottom sheet over a tray scrim */
 .ks-move { position: fixed; inset: 0; z-index: 45; }
 .ks-scrim { position: absolute; inset: 0; background: var(--scrim); }
 .ks-bsheet {
   position: absolute; left: var(--safe-left); right: var(--safe-right); bottom: 0; max-height: 85vh; max-height: 85dvh; overflow-y: auto; display: flex; flex-direction: column;
-  background: var(--paper); color: var(--ink); border-top: 2px solid var(--ink); font-family: var(--ui); border-radius: var(--radius-lg);
+  background: var(--paper); color: var(--ink); border-top: 1px solid var(--rule); font-family: var(--ui); border-radius: var(--radius-md); box-shadow: var(--dialog-shadow);
 }
 /* wider than a phone the sheet is a panel at the right, over the board, and Move to… rises inside it */
 @media (min-width: 861px) {
@@ -111,7 +111,7 @@ div.ks-row-title { cursor: default; }
   .ks-bsheet { left: auto; width: 480px; }
 }
 .ks-bs-head { display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px 0 16px; }
-.ks-bs-head h2 { margin: 0; font: 700 20px/24px var(--display); letter-spacing: -0.02em; }
+.ks-bs-head h2 { margin: 0; font: 400 20px/24px var(--font-serif); letter-spacing: -0.02em; }
 .ks-bs-sub { margin: 0; padding: 0 16px 8px; color: var(--graphite); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ks-lane-opt {
   display: flex; align-items: center; gap: 12px; width: 100%; height: 48px; padding: 0 16px; border: 0; border-top: 1px solid var(--rule);
@@ -122,7 +122,7 @@ div.ks-row-title { cursor: default; }
 .ks-sw { flex: none; width: 4px; align-self: stretch; margin: 12px 0; background: var(--lc, transparent); }
 .ks-lane-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ks-end { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; color: var(--graphite); }
-.ks-end.over { padding: 0 6px; background: var(--danger); color: var(--on-danger); }
+.ks-end.over { padding: 2px 5px; border-radius: 4px; background: var(--tag-yellow); color: var(--on-tag-yellow); }
 .ks-lane-opt[aria-disabled='true'] { color: var(--graphite); cursor: default; }
 .ks-lane-opt[aria-disabled='true'] .ks-rd { border-color: var(--graphite); }
 .ks-pos { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--rule); }
@@ -130,17 +130,22 @@ div.ks-row-title { cursor: default; }
   flex: 1 1 0; height: 40px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); cursor: pointer;
 }
 .ks-opt[aria-pressed='true'] { background: var(--ink); color: var(--paper); }
-.ks-bs-foot { display: flex; gap: 8px; padding: 12px 16px calc(16px + var(--safe-bottom)); border-top: 2px solid var(--ink); }
+.ks-bs-foot { display: flex; gap: 8px; padding: 12px 16px calc(16px + var(--safe-bottom)); border-top: 1px solid var(--rule); }
 .ks-bs-foot button {
   flex: 1 1 0; height: 48px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink);
   font: 600 15px var(--ui); cursor: pointer;
 }
-.ks-bs-foot button.primary { border: 0; background: var(--signal); color: var(--on-signal); }
+.ks-bs-foot button.primary { border: 0; background: var(--ink); color: var(--paper); }
 
-.ks-sheet { animation: ks-in 120ms ease-out; }
-.ks-bsheet { animation: ks-up 120ms ease-out; }
-@keyframes ks-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes ks-up { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) {
+  .ks-sheet { animation: ks-in 120ms ease-out; }
+  .ks-bsheet { animation: ks-up 120ms ease-out; }
+  @keyframes ks-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes ks-up { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
 @media (prefers-reduced-motion: reduce) {
   .ks-sheet, .ks-bsheet { animation: none; }
+}
+@media (pointer: coarse) {
+  .ks-btn, .ks-tab, .ks-lane-opt, .ks-opt, .ks-add-btn, .ks-add-go, .ks-bs-foot button { min-height: 44px; }
 }
