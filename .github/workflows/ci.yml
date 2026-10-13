@@ -5,9 +5,10 @@ name: CI
 # by docs.yml. Fragment-only pushes to main are also ignored by `**.md`; main receives fragments with their code change.
 # Pull requests have no paths filter on purpose: a workflow that never starts reports nothing, so "CI passed" could wait
 # forever as a required check. Every pull request starts a run and the "changes" job decides what it needs.
+# The merge queue pushes a batch tip to a queue/<batch-id> branch first: that run is the verdict, and main is fast-forwarded only when it is green.
 on:
   push:
-    branches: [main]
+    branches: [main, 'queue/**']
     paths-ignore: ['**.md', 'docs/**', 'design/**', 'LICENSE*', '.github/dependabot.yml']
   pull_request:
   workflow_dispatch:
@@ -54,10 +55,15 @@ jobs:
     name: Changed files
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # actions: read lets the `verified` step ask whether this commit already passed on a queue branch
+    permissions:
+      contents: read
+      actions: read
     outputs:
       code: ${{ steps.classify.outputs.code }}
       guide: ${{ steps.classify.outputs.guide }}
       matrix: ${{ steps.matrix.outputs.matrix }}
+      verified: ${{ steps.verified.outputs.verified }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -102,12 +108,31 @@ jobs:
           fi
           echo "matrix=$matrix" | tee -a "$GITHUB_OUTPUT"
 
+      # A push to main whose commit already passed CI on a queue/** branch (same SHA, same tree) needs no second run of the same tests: the unit,
+      # browser, quality and image-build jobs are skipped and only the image publish and "CI passed" run. Any doubt (no match, API error) runs everything.
+      - id: verified
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          verified=false
+          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
+            hit=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&event=push&status=success&per_page=50" --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and (.head_branch | startswith("queue/")))] | length' || echo 0)
+            if [ "${hit:-0}" -gt 0 ]; then verified=true; fi
+          fi
+          echo "This commit passed CI on a queue branch: $verified"
+          echo "verified=$verified" >> "$GITHUB_OUTPUT"
+
   quality:
     name: Lint, typecheck & audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -129,7 +154,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
@@ -176,7 +201,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -220,7 +245,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [changes, quality]
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'
     permissions:
       contents: read
     steps:
@@ -258,7 +283,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [changes, quality, test, browser, docker]
-    if: needs.changes.outputs.code == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    # !failure() so that a commit already verified on a queue branch (its test jobs are skipped) is still published
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.changes.outputs.code == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
     permissions:
       contents: read
       packages: write

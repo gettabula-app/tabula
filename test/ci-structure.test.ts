@@ -42,6 +42,20 @@ describe('ci.yml structure', () => {
     expect(publish).not.toContain('push: false');
   });
 
+  it('runs on queue branches and skips the repeat run of a commit that already passed there', () => {
+    expect(ci).toContain("branches: [main, 'queue/**']");
+    const changes = job('changes');
+    expect(changes).toContain('actions: read');
+    expect(changes).toContain('verified: ${{ steps.verified.outputs.verified }}');
+    expect(changes).toContain('startswith("queue/")');
+    expect(changes).toContain('[ "$REF" = refs/heads/main ]');
+    for (const name of ['quality', 'test', 'browser', 'docker']) {
+      expect(job(name)).toContain("if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'");
+    }
+    // the publish still runs when those jobs are skipped, but never after a failure or a cancel
+    expect(job('docker-publish')).toContain("!cancelled() && !contains(needs.*.result, 'failure')");
+  });
+
   it('lets CI passed wait for every job', () => {
     expect(job('ci-ok')).toContain('needs: [changes, quality, test, browser, docker, docker-publish, docs]');
   });
