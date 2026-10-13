@@ -96,7 +96,8 @@ jobs:
   test:
     name: Test & build (${{ matrix.os }}, node ${{ matrix.node }}${{ matrix.shard && format(', shard {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # The Linux node 24 leg also installs Chromium and runs the browser tests, which add a few minutes (see docs/testing.md, "Browser tests in CI").
+    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.node == 24 && 20 || 15 }}
     needs: changes
     if: needs.changes.outputs.code == 'true'
     strategy:
@@ -119,11 +120,28 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      # Browser tests (Playwright Chromium) run on this one leg only: they skip cleanly where Chromium is absent, so every other leg stays as it was.
+      # The key holds the lockfile hash, and the lockfile pins the Playwright version, so a new Playwright downloads a new browser.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # --with-deps installs the system libraries a fresh runner lacks; the cache only saves the browser download
+      - name: Install Chromium
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
+        run: npx playwright install --with-deps chromium
       # vitest also writes a JSON report, so every job ends with its slowest test files and keeps the times (TAB-201)
       - run: npm test -- --reporter=default --reporter=json --outputFile.json=test-results.json
         if: ${{ !matrix.shard }}
       - run: npm test -- --shard=${{ matrix.shard }} --reporter=default --reporter=json --outputFile.json=test-results.json
         if: ${{ matrix.shard }}
+      # A browser test that skipped because Chromium went missing would stay green: fail this leg if any browser test file passed nothing
+      - name: Browser tests really ran
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 24 && !cancelled()
+        run: node scripts/check-browser-tests.mjs test-results.json
       - name: Slowest test files
         if: ${{ !cancelled() }}
         # On the Windows shards, the slowest platform, a single test over its limit in test/timing-budget.json fails the job
