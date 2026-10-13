@@ -871,7 +871,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
     .flowbar.vote-compact > .remove-dots-toggle { width: 44px; padding: 0; gap: 0; font-size: 0; }
     .flowbar.vote-compact > .remove-dots-toggle .ico { display: inline-block; }
   }
-  .flowbar.vote-compact > .votes-left { order: 3; height: 44px; padding: 0; gap: 0; }
+  .flowbar.vote-compact > .votes-left { order: 3; height: 44px; min-width: 44px; padding: 0; gap: 0; justify-content: center; }
   .flowbar.vote-compact > .votes-left .dot, .flowbar.vote-compact > .votes-left > span:not(.vote-compact-count) { display: none; }
   .flowbar.vote-compact > .votes-left > .ico { display: none; }
   .flowbar.vote-compact > .votes-left .vote-compact-count { display: inline-flex; margin: 0; }
