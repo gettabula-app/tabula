@@ -8,7 +8,7 @@ import zlib from 'node:zlib';
 const MiB = 1024 * 1024;
 const EXPECTED_DEMO = { base: '/demo/', ephemeral: true };
 const CHECK_ORIGIN = 'https://demo-check.invalid';
-const EXPECTED_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
+const EXPECTED_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src 'self' https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
 
 const fail = (message) => { throw new Error(message); };
 

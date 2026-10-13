@@ -1,6 +1,4 @@
-/* The layers panel, a tab of the left drawer. Swiss rules as in the admin dashboard and version history: hairlines, no
-   tray radius, no added shadow, 11px uppercase labels, an 8px grid. --signal is the selected row's left rule and the insertion line
-   and nothing else. Theme variables only. */
+/* The layers panel, a tab of the left drawer. Hairlines and soft tinted selection; the insertion line remains a signal. */
 
 .drawer-head h2 .layers-count {
   margin-left: 8px; color: var(--tray-muted); font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
@@ -21,7 +19,7 @@
   font-size: 13px; line-height: 16px; user-select: none; -webkit-user-select: none; outline: none;
 }
 .layer-row:hover { background: var(--tray-hover); }
-.layer-row[aria-selected='true'] { border-left-color: var(--signal); background: var(--tray-hover); }
+.layer-row[aria-selected='true'] { color: var(--tray-text); background: color-mix(in srgb, var(--tray-text) 8%, transparent); }
 .layer-row:focus-visible { outline: 2px solid var(--tray-text); outline-offset: -2px; }
 .layer-row.dragged { opacity: 0.5; }
 .layers-list.dragging { cursor: grabbing; }
@@ -59,9 +57,10 @@
 .layer-grip { display: none; flex: none; place-items: center; width: 32px; height: 100%; color: var(--tray-muted); touch-action: none; }
 
 .layer-edit {
-  flex: 1 1 auto; min-width: 0; height: 24px; box-sizing: border-box; padding: 0 4px; border: 1px solid var(--tray-text); border-radius: var(--radius-sm);
-  background: transparent; color: var(--tray-text); font: inherit; outline: none;
+  flex: 1 1 auto; min-width: 0; height: 24px; box-sizing: border-box; padding: 0 4px; border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--field-edge), inset 0 -1px 0 var(--field-rule);
+  background: color-mix(in srgb, var(--tray-text) 6%, var(--tray)); color: var(--tray-text); font: inherit; outline: none;
 }
+.layer-edit:focus { box-shadow: inset 0 0 0 1px var(--field-edge-strong), 0 0 0 3px color-mix(in srgb, var(--field-edge-strong) 10%, transparent); }
 
 .layer-line {
   position: absolute; right: 0; height: 2px; margin-top: -1px; background: var(--signal); pointer-events: none; z-index: 1;
@@ -70,7 +69,7 @@
 /* phones and touch screens: taller rows, the toggles always there, a grip to drag by (a finger on the row scrolls) */
 @media (max-width: 860px), (pointer: coarse) {
   .layer-row { height: 40px; }
-  .layer-tool { width: 40px; height: 40px; visibility: visible; }
+  .layer-tool { width: 44px; height: 44px; visibility: visible; }
   .layer-twist { width: 24px; height: 24px; }
   .layer-grip:not([hidden]) { display: grid; }
 }
@@ -78,4 +77,8 @@
 @media (forced-colors: active) {
   .layer-row[aria-selected='true'] { outline: 2px solid Highlight; outline-offset: -2px; }
   .layer-line { forced-color-adjust: none; background: Highlight; }
+}
+
+@media (pointer: coarse) {
+  .layer-row { height: 44px; }
 }

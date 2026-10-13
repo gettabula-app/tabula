@@ -3,7 +3,7 @@
 
 .share-people { display: grid; gap: 12px; min-width: 0; margin-bottom: 16px; }
 .share-btn .share-label { color: inherit; }
-.share-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tray-muted); }
+.share-label { font-size: 12px; font-weight: 600; color: var(--tray-muted); }
 .share-status { min-height: 18px; }
 
 .share-people .input { width: auto; max-width: 100%; min-width: 0; }
@@ -17,7 +17,7 @@
 .share-list > :first-child { border-top: 0; }
 .share-who { flex: 1 1 10rem; min-width: 0; overflow-wrap: anywhere; }
 .share-name { font-weight: 600; }
-.share-kind { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tray-muted); }
+.share-kind { font-size: 12px; font-weight: 600; color: var(--tray-muted); }
 .share-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
 
 .share-add {
@@ -34,7 +34,7 @@
 .share-join-codes { display: grid; gap: 10px; min-width: 0; padding-top: 16px; border-top: 2px solid var(--tray-text); }
 .join-code-intro { margin: 0; }
 .join-code-create { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(5.5rem, .7fr) auto; align-items: end; gap: 8px; min-width: 0; }
-.join-code-field { display: grid; gap: 4px; min-width: 0; font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tray-muted); }
+.join-code-field { display: grid; gap: 4px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--tray-muted); }
 .join-code-create .input { width: 100%; max-width: 100%; min-width: 0; }
 .join-code-create .btn { min-width: 0; align-self: end; }
 .join-code-created { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--tray-text); border-radius: var(--radius-md); background: var(--tray); }

@@ -93,7 +93,7 @@ These settings belong to the board and are shared with everyone on it.
 
 ## Board menu
 
-The **Menu** button at the top right has these sections:
+The **Menu** button at the top right has these sections. Type in **Search actions** at the top of the menu (or press `/` while the menu is open) to find an action by name. **Appearance** and **Export** open as submenus beside the menu.
 
 - **Account** (workspaces with sign-in): your name and email, **Sign out**, **Sign out everywhere**, and **Admin** for owners and admins. If your administrator turned on AI tools, **AI tool access** appears too. If they let you use your own AI key, **Your AI key** appears as well. See [Access tokens and AI tools](ai-tools.md) and [Your AI key](ai-keys.md).
 - **Board**: **Board settings**, **Save board as template** ([Templates](templates.md)), **Version history** ([Version history](version-history.md)), **Your name and colour**, **Show comments** ([Comments](comments.md)), **Import a board file into this board**, and **Import Mermaid**.

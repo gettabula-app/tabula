@@ -32,7 +32,7 @@ To start with a ready-made layout instead, choose **Start from a template**. See
 From top to bottom:
 
 - **Select** (`V`) and **Hand** (`H`).
-- **Sticky note** (`N`), **Text** (`T`), **Markdown block** (for longer notes with headings, lists and tick boxes, see [Markdown blocks](markdown-blocks.md)), **Table** (`G`, see [Tables](tables.md)), **Shapes**, **Connector** (`L`), **Pen** (`P`), **Frame** (`F`) and **Comment** (`C`). **Shapes** opens a panel with a search field. Click a shape to draw it, or drag it onto the board.
+- **Sticky note** (`N`), the **Text**, **Table**, **Markdown block** and **Link** group (Text uses `T`; Table uses `G`, see [Tables](tables.md); Markdown block is for longer notes with headings, lists and tick boxes, see [Markdown blocks](markdown-blocks.md), and has no single-key shortcut; Link opens an address field), **Shapes**, **Connector** (`L`), **Pen** (`P`), **Frame** (`F`) and **Comment** (`C`). **Shapes** opens a panel with a search field. Click a shape to draw it, or drag it onto the board.
 - Drawers for **UML**, **Icons**, **Stickers**, and **Templates and team exercises**.
 - A dot vote button and a quick poll button.
 - **Undo** and **Redo**.
@@ -45,7 +45,7 @@ Select an item and a small bar appears next to it. Depending on what you selecte
 
 ### Board menu
 
-The **Menu** button at the top right holds board-level actions: **User guide** (first in the list), **Board settings**, **Version history**, **Your name and colour**, **Show comments**, imports, the **Appearance** themes, exports, and **Keyboard shortcuts**. If your workspace uses sign-in, an **Account** section comes first, and it includes **Your AI key** when your administrator allows personal keys. See [Boards and the home screen](boards.md).
+The **Menu** button at the top right holds board-level actions, with **Search actions** at the top to find one by name: **User guide** (first in the list), **Board settings**, **Version history**, **Your name and colour**, **Show comments**, imports, the **Appearance** themes, exports, and **Keyboard shortcuts**. If your workspace uses sign-in, an **Account** section comes first, and it includes **Your AI key** when your administrator allows personal keys. See [Boards and the home screen](boards.md).
 
 ## Move around
 

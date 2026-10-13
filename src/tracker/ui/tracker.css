@@ -126,7 +126,7 @@
   --trk-focus: var(--ink);
   --trk-cursor: color-mix(in srgb, var(--canvas) 16%, var(--trk-ground));
   padding: 6px; border: 1px solid var(--trk-rule); border-radius: var(--radius-md, 12px);
-  background: var(--trk-ground); color: var(--trk-text); box-shadow: 0 10px 28px color-mix(in srgb, var(--ink) 14%, transparent);
+  background: var(--trk-ground); color: var(--trk-text); box-shadow: 0 10px 28px color-mix(in srgb, var(--shade) 14%, transparent);
 }
 .trk.trk-pop .trk-picker-option:hover, .trk.trk-pop .trk-picker-option.active,
 .trk.trk-pop .trk-command-option:hover, .trk.trk-pop .trk-command-option.active,
@@ -368,7 +368,7 @@
 .trk-route-root ~ .popover { z-index: 20001; }
 .trk-route-root ~ .modal-back { z-index: 20002; }
 
-.trk-modal.modal-back { background: color-mix(in srgb, var(--trk-text) 28%, transparent); }
+.trk-modal.modal-back { background: var(--scrim); }
 .trk-modal .modal {
   width: min(540px, calc(100vw - 32px)); max-height: min(760px, 100%);
   border: 1px solid var(--trk-rule); border-radius: var(--radius-md, 12px); background: var(--trk-ground); color: var(--trk-text);
@@ -499,7 +499,7 @@
   .trk-new-actions button { min-height: 44px; }
   .trk-modal .modal-head .icon-btn { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
   .trk-modal .modal .btn { min-height: 44px; }
-  .trk .trk-new-trigger { position: absolute; z-index: 4; right: calc(12px + var(--safe-right, env(safe-area-inset-right, 0px))); bottom: calc(64px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 16px); display: grid; width: 56px; min-width: 56px; height: 56px; min-height: 56px; padding: 0; place-items: center; overflow: hidden; border-radius: 50%; font-size: 0; box-shadow: 0 6px 18px color-mix(in srgb, var(--ink) 18%, transparent); }
+  .trk .trk-new-trigger { position: absolute; z-index: 4; right: calc(12px + var(--safe-right, env(safe-area-inset-right, 0px))); bottom: calc(64px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 16px); display: grid; width: 56px; min-width: 56px; height: 56px; min-height: 56px; padding: 0; place-items: center; overflow: hidden; border-radius: 50%; font-size: 0; box-shadow: 0 6px 18px color-mix(in srgb, var(--shade) 18%, transparent); }
   .trk .trk-new-trigger::before { content: '+'; font-size: 28px; line-height: 1; }
   .trk-command-trigger { display: none; }
   .trk-header-actions { padding-inline: 12px; }

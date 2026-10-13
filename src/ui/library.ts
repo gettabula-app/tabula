@@ -43,7 +43,7 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
     const layers = tab === 'layers' ? layersTab(app, stop.signal) : null;
     const body = layers ? layers.body : tab === 'shapes' ? shapesTab(app, () => open(null)) : tab === 'uml' ? umlTab(app) : tab === 'icons' ? iconsTab(app, stop.signal) : tab === 'stickers' ? stickersTab(app, draggable, stop.signal) : templatesTab(app, () => open(null));
     drawer.replaceChildren(
-      h('div', { class: 'drawer-head' }, h('h2', null, title, layers?.count), h('button', { class: 'icon-btn', 'aria-label': 'Close library', onclick: () => open(null) }, icon('close', 18))),
+      h('div', { class: 'drawer-head' }, h('span', { class: 'panel-grabber', 'aria-hidden': 'true' }), h('h2', null, title, layers?.count), h('button', { class: 'icon-btn', 'aria-label': 'Close library', onclick: () => open(null) }, icon('close', 18))),
       body,
     );
   };

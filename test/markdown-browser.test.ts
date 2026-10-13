@@ -3,6 +3,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
 import { budget } from './wait-budget';
+import { openRailTool } from './rail-tool-helper';
 
 // The Markdown block in the real app (TAB-140, docs/markdown-blocks.md): it renders as SVG, a task box ticks and a link opens only on a selected block,
 // a board-item link jumps, the source is edited in place, the rail tool creates one, and the SVG export draws it as plain SVG (no foreignObject).
@@ -206,7 +207,7 @@ describe.skipIf(!available)('the Markdown block', () => {
 
   it('is made with the rail tool: click, click on the board, type; the block takes the typed source', async () => {
     const page = await open();
-    await page.getByRole('button', { name: 'Markdown block' }).click();
+    await openRailTool(page, 'Markdown block');
     expect(await page.evaluate(() => (window as any).__board.tool.kind)).toBe('markdown');
     await page.mouse.click(500, 400);
     const ta = page.locator('textarea.text-editor');

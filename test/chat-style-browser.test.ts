@@ -40,7 +40,7 @@ async function open(mode: 'open' | 'compact', width = 700): Promise<Page> {
       const view = {
         meId: 'me', messages: [msg(1, { text: 'Flaky tests are mine' }), msg(2, { text: 'First sticky needs a headline' }),
           msg(3, { authorId: 'me', authorName: 'Me', text: 'On it, one minute.' }),
-          msg(4, { authorId: 'ben', authorName: 'Ben Okafor', text: 'hi @{me} can you share?', mentions: [{ id: 'me', name: 'Me' }], reactions: [{ emoji: '👍', userIds: ['ana', 'me'] }] })],
+          msg(4, { authorId: 'ben', authorName: 'Ben Okafor', text: 'hi @{me} can you share?', mentions: [{ id: 'me', name: 'Me' }], reactions: [{ emoji: '👍', userIds: ['ana', 'me'] }, { emoji: '👀', userIds: ['ana'] }] })],
         pending: [], access: { write: true, moderate: false, role: 'member', readOnly: false }, people: [], loading: false, loadingOlder: false, hasOlder: false,
         savedOnly: false, lost: false, online: true, signedOut: false, newAfter: null, unread: 0, mentions: 0, error: null,
       };
@@ -115,9 +115,46 @@ describe.skipIf(!available)('message styling in a browser', { timeout: 200_000 }
     expect(await own.locator('.chat-name').isVisible()).toBe(false);
     const mention = rows.nth(3);
     expect(await mention.evaluate((el) => getComputedStyle(el).boxShadow)).not.toBe('none');
-    // the pill for a reaction that is yours carries the signal colour as its border
+    // Your reaction has a stronger, filled cue that stays clear against its rendered background.
     const pill = mention.locator('.chat-reaction.mine');
-    expect(await pill.evaluate((el) => getComputedStyle(el).borderTopColor)).not.toBe(await mention.locator('.chat-quote, .chat-text').first().evaluate((el) => getComputedStyle(el).color));
+    const otherPill = mention.locator('.chat-reaction:not(.mine)');
+    const cue = await pill.evaluate((el) => {
+      const parse = (value: string) => {
+        const channels = value.match(/[\d.]+/g)?.map(Number) ?? [];
+        return { r: channels[0] ?? 0, g: channels[1] ?? 0, b: channels[2] ?? 0, a: channels[3] ?? 1 };
+      };
+      const layers: Element[] = [];
+      for (let node: Element | null = el; node; node = node.parentElement) layers.push(node);
+      let background = { r: 255, g: 255, b: 255 };
+      for (const layer of layers.reverse()) {
+        const color = parse(getComputedStyle(layer).backgroundColor);
+        background = {
+          r: color.r * color.a + background.r * (1 - color.a),
+          g: color.g * color.a + background.g * (1 - color.a),
+          b: color.b * color.a + background.b * (1 - color.a),
+        };
+      }
+      const border = parse(getComputedStyle(el).borderTopColor);
+      const luminance = (color: typeof background) => [color.r, color.g, color.b]
+        .map((channel) => channel / 255)
+        .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4)
+        .reduce((total, channel, index) => total + channel * [0.2126, 0.7152, 0.0722][index], 0);
+      const [high, low] = [luminance(border), luminance(background)].sort((a, b) => b - a);
+      return {
+        width: Number.parseFloat(getComputedStyle(el).borderTopWidth),
+        background: getComputedStyle(el).backgroundColor,
+        contrast: (high + 0.05) / (low + 0.05),
+      };
+    });
+    const other = await otherPill.evaluate((el) => ({
+      width: Number.parseFloat(getComputedStyle(el).borderTopWidth),
+      background: getComputedStyle(el).backgroundColor,
+    }));
+    expect(cue.width).toBe(2);
+    expect(other.width).toBe(1);
+    expect(cue.width).toBeGreaterThan(other.width);
+    expect(cue.background).not.toBe(other.background);
+    expect(cue.contrast).toBeGreaterThanOrEqual(3);
     await page.close();
   });
 

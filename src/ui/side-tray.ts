@@ -39,7 +39,7 @@ export function mountSideTray(chrome: HTMLElement): SideTray {
   const title = h('h2', { class: 'side-tray-title' });
   const tablist = h('div', { class: 'side-tray-tabs', role: 'tablist', 'aria-label': 'Comments and chat' }, tabs.comments, tabs.chat);
   const close = h('button', { class: 'icon-btn side-tray-close', 'data-tip': 'Close', onclick: () => api.hide() }, icon('close', 18));
-  const head = h('div', { class: 'side-tray-head' }, title, tablist, close);
+  const head = h('div', { class: 'side-tray-head' }, h('span', { class: 'panel-grabber', 'aria-hidden': 'true' }), title, tablist, close);
   const el = h('aside', { class: 'side-tray tray' }, head, slots.comments, slots.chat);
   chrome.appendChild(el);
 

@@ -480,7 +480,9 @@ describe('a hosted workspace', () => {
       await c.afterHints(inTalk, [listeners.editorTalk, listeners.ownerTalk]);
 
       for (const l of all) expect(l.hints).toEqual([{ readOnly: true }, { readOnly: false }]);
-      // The providers have the same sockets, and the handler y-websocket calls is the one the app registers.
+      // The providers have the same sockets, and the handler y-websocket calls is the one the app registers. The read-only switch
+      // changes who may write, not the role, so the relay's receive limits stay and no socket is closed with 4511.
+      for (const l of all) expect(l.ws.readyState).toBe(WebSocket.OPEN);
       expect(inBoard.hints.count).toBe(2);
       expect(inTalk.hints.count).toBe(2);
     });

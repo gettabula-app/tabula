@@ -102,7 +102,7 @@ describe('ghost markup', () => {
     const svg = ghostMarkup(layout, { color: null }, env());
     expect(svg.startsWith('<g pointer-events="none" aria-hidden="true">')).toBe(true);
     // the person's own: the signal wash and a canvas-ink outline
-    expect(svg).toContain('var(--signal');
+    expect(svg).toContain('var(--canvas-signal');
     expect(svg).toContain('var(--canvas-ink');
     expect(svg).toContain('stroke-opacity="0.55"');
     expect(svg).toContain('stroke-dasharray');
@@ -118,7 +118,7 @@ describe('ghost markup', () => {
     expect(svg).toContain('stroke="#7A5AF8"');
     expect(svg).toContain('fill="#7A5AF8" fill-opacity="0.08"');
     expect(svg).toContain('color-mix(in srgb, #7A5AF8 80%');
-    expect(svg).not.toContain('var(--signal');
+    expect(svg).not.toContain('var(--canvas-signal');
   });
 
   it("draws a dark under-stroke before another person's dashed area outline", () => {

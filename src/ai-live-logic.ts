@@ -116,7 +116,7 @@ function paints(tone: GhostTone): Paints {
   const mixed = c ? `color-mix(in srgb, ${c} 80%, ${CANVAS_INK})` : CANVAS_INK;
   return {
     area: c ? { color: c, opacity: 1 } : { color: CANVAS_INK, opacity: 0.55 },
-    wash: c ? { color: c, opacity: 0.08 } : { color: 'var(--signal, #FFD23F)', opacity: 0.08 },
+    wash: c ? { color: c, opacity: 0.08 } : { color: 'var(--canvas-signal, #FFD23F)', opacity: 0.08 },
     edge: c ? { color: mixed, opacity: 1 } : { color: CANVAS_INK, opacity: 0.55 },
     rule: { color: mixed, opacity: 1 },
     arrow: c ? { color: c, opacity: 0.45 } : { color: CANVAS_INK, opacity: 0.32 },
