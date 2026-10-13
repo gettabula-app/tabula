@@ -1,9 +1,9 @@
 // The notifications bell and panel on the Boards top bar (proto/designer-preview/notifications/SPEC.md): what a row says, how the
 // bell is labelled, how times read, where a row goes. Pure; the server's rows are ids and names, and the text is built here.
 
-export type NotificationKind = 'chat_mention' | 'comment_reply' | 'board_shared' | 'team_joined' | 'ticket_assigned' | 'ticket_commented' | 'ticket_status';
+export type NotificationKind = 'chat_mention' | 'comment_mention' | 'comment_reply' | 'board_shared' | 'team_joined' | 'ticket_assigned' | 'ticket_commented' | 'ticket_status';
 
-export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['chat_mention', 'comment_reply', 'board_shared', 'team_joined', 'ticket_assigned', 'ticket_commented', 'ticket_status'];
+export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['chat_mention', 'comment_mention', 'comment_reply', 'board_shared', 'team_joined', 'ticket_assigned', 'ticket_commented', 'ticket_status'];
 
 export interface NotificationItem {
   id: string;
@@ -27,8 +27,8 @@ export interface NotificationCounts {
 
 export type NotificationFilter = 'all' | 'mentions';
 
-/** Mentions are the rows the Mentions chip holds. Comments have no structured mentions yet, so in v1 it is chat mentions only. */
-export const isMention = (item: Pick<NotificationItem, 'kind'>) => item.kind === 'chat_mention';
+/** Mentions are the rows the Mentions chip holds: a chat mention, or a comment that names this person with @. */
+export const isMention = (item: Pick<NotificationItem, 'kind'>) => item.kind === 'chat_mention' || item.kind === 'comment_mention';
 
 export const badgeText = (unread: number) => (unread > 99 ? '99+' : String(Math.max(0, Math.floor(unread))));
 
@@ -69,6 +69,8 @@ export function rowText(item: NotificationItem): RowText {
       const where = place ? `${place} chat` : 'the workspace chat';
       return { who, verb: 'mentioned you in', where, after: '', context: team ? 'Team chat' : board ? 'Board chat' : 'Workspace chat', excerpt: snippet || null };
     }
+    case 'comment_mention':
+      return { who, verb: 'mentioned you in a comment on', where: board || 'a board', after: '', context: board ? `${board} · Comment` : 'Comment', excerpt: snippet || null };
     case 'comment_reply':
       return { who, verb: 'replied to your comment on', where: board || 'a board', after: '', context: board ? `${board} · Comment` : 'Comment', excerpt: snippet || null };
     case 'board_shared':

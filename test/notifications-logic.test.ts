@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyRead, badgeText, bellLabel, countOf, markLabel, parseCounts, parseItem, parsePage, rowLabel, rowText, safeTarget, shortAgo, spokenAgo,
+  applyRead, badgeText, bellLabel, countOf, isMention, markLabel, matchesFilter, parseCounts, parseItem, parsePage, rowLabel, rowText, safeTarget, shortAgo, spokenAgo,
   type NotificationItem, type NotificationKind,
 } from '../src/ui/notifications-logic';
 
@@ -34,6 +34,8 @@ describe('what a row says', () => {
   it('tolerates a missing excerpt, a missing actor and a missing place', () => {
     expect(rowText(item('chat_mention', { actor: null, snippet: null }))).toMatchObject({ who: 'Someone', excerpt: null });
     expect(rowText(item('comment_reply')).where).toBe('a board');
+    expect(rowText(item('comment_mention', { board: { id: 'b1', title: 'Spring campaign board' }, snippet: 'Ask @Ana' }))).toEqual({ who: 'Maja', verb: 'mentioned you in a comment on', where: 'Spring campaign board', after: '', context: 'Spring campaign board · Comment', excerpt: 'Ask @Ana' });
+    expect(rowText(item('comment_mention'))).toMatchObject({ verb: 'mentioned you in a comment on', where: 'a board', context: 'Comment', excerpt: null });
     expect(rowText(item('ticket_status', { snippet: null })).where).toBe('a ticket');
   });
 
@@ -107,3 +109,18 @@ describe('what the server sends', () => {
     expect(parseCounts({ unread: -1, unreadMentions: 'x' })).toEqual({ unread: 0, unreadMentions: 0 });
   });
 });
+
+describe('comment mentions in the Mentions chip', () => {
+  it('counts a comment that names you with the chat mentions, and the chip shows only mentions', () => {
+    const rows = [item('comment_mention', { id: 'c1' }), item('comment_reply', { id: 'r1' }), item('chat_mention', { id: 'm1', read: true })];
+    expect(rows.map(isMention)).toEqual([true, false, true]);
+    expect(countOf(rows)).toEqual({ unread: 2, unreadMentions: 1 });
+    expect(rows.filter((r) => matchesFilter(r, 'mentions')).map((r) => r.id)).toEqual(['c1', 'm1']);
+  });
+
+  it('parses a comment_mention row from the server', () => {
+    expect(parseItem({ id: 'n_9', kind: 'comment_mention', at: 7, read: false, actor: { id: 'u', name: 'Ana' }, board: { id: 'b', title: 'T' }, team: null, snippet: 'hi @Ben', target: '#/b/b' }))
+      .toMatchObject({ id: 'n_9', kind: 'comment_mention', snippet: 'hi @Ben' });
+  });
+});
+

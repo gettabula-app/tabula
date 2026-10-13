@@ -23,7 +23,8 @@ export interface Thread {
 /** Transaction origin for comment writes. Never LOCAL, so the board's undo history cannot reach comments. */
 export const COMMENTS_ORIGIN = 'comments';
 
-const MAX_TEXT = 4000;
+/** The longest comment text, in UTF-16 units as the document stores it (the server checks the same limit). */
+export const MAX_TEXT = 4000;
 const MAX_NAME = 80;
 
 const cleanText = (text: unknown): string | null => {

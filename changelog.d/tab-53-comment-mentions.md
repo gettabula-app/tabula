@@ -1,4 +1,4 @@
 section: Added
 audience: user
 
-- Mention a board member in a comment with @, and they find it in their notification inbox if they can open the board.
+- Type @ in a comment to name a board member: it shows as their name, and they find it in their notifications if they can open the board.

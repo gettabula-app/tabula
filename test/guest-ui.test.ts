@@ -205,7 +205,7 @@ describe('guest board UI', () => {
       r: { onCamera: () => () => undefined },
       openThreadId: null,
       onOpenComment: null as BoardAppType['onOpenComment'],
-      visibleThreads: () => comments.list(), flyToThread: () => undefined,
+      visibleThreads: () => comments.list(), flyToThread: () => undefined, participants: () => [],
       openThread: () => undefined, closeThread: () => undefined, setDraftPin: () => undefined,
       on: () => () => undefined,
     } as unknown as BoardAppType;
