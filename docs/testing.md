@@ -30,6 +30,12 @@ CI is **Linux only, everywhere** (macOS, Windows and the desktop app are frozen,
 
 About a dozen test files launch Playwright's Chromium (they look for `chromium.executablePath()`) and skip when it is absent. CI installs it on **one leg only**: `ubuntu-latest` with node 24. That leg caches `~/.cache/ms-playwright` with the key `playwright-<OS>-<hash of package-lock.json>` (the lockfile pins the Playwright version, so a new version downloads a new browser), runs `npx playwright install --with-deps chromium` (the cache saves the download, `--with-deps` installs the system libraries), and runs `npm test` as usual, so the browser tests run in the same job. Every other leg (node 22 and 26, macOS, the Windows shards) has no browser and skips them cleanly. After the tests, `scripts/check-browser-tests.mjs` reads `test-results.json` and fails the leg if any file that asks for Chromium passed no test, so a lost browser cannot hide behind skips. Run them locally with `npx playwright install chromium`, then `npm test -- test/canvas-focus.test.ts` (any of the browser files). A new browser test file needs nothing else: it is found by the `chromium.executablePath()` check.
 
+#### Flaky browser tests: retry once, report, never hide
+
+On a push or pull request CI retries a failing browser test **once** (`test/setup-retry.ts`, only for files that ask for Chromium, and only when `TABULA_BROWSER_RETRY=1`, which `ci.yml` sets). A test that passed on its retry is listed in the job summary and as a warning annotation (`scripts/flake-reporter.mjs`; vitest's JSON report does not mark retries, so a small reporter reads the per-test diagnostic). The run stays green, the flake stays visible: give it to its owner. Unit tests are never retried. A run with `full-matrix` (the release gates and nightly-style runs) sets `TABULA_BROWSER_RETRY=0`, so the release SHA has no retries. Locally nothing is retried.
+
+`workflow_dispatch` also takes `max-workers` (default 2, the number the suite is tuned for) to try another number of parallel test files on the runner without a code change.
+
 ### Windows
 
 - Build paths from `fileURLToPath(import.meta.url)` (and `path.join`), never from `new URL(...).pathname`: on Windows that gives `/D:/a/...`, which broke the AI bar availability test.

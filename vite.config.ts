@@ -117,9 +117,10 @@ export default defineConfig({
     // them all at once starves the machine and unrelated tests time out, so CI runs two files at a time and every
     // test and hook gets room to wait for a relay. Both limits stay well above RELAY_START_MS (test/relay-timing.ts), so
     // a slow start ends in the helper's error, which carries the relay's output, and not in a bare timeout.
-    maxWorkers: process.env.CI ? 2 : undefined,
+    // TABULA_MAX_WORKERS lets a CI run try another number (workflow_dispatch input max-workers) without a code change.
+    maxWorkers: process.env.CI ? Number(process.env.TABULA_MAX_WORKERS) || 2 : undefined,
     // every test file's fetch avoids reused idle sockets and retries one reset GET visibly (test/http-retry.ts)
-    setupFiles: ['./test/setup-http.ts'],
+    setupFiles: ['./test/setup-http.ts', './test/setup-retry.ts'],
     // The Windows runners are roughly 20 times slower for real restores and relays (test/wait-budget.ts scales the waits inside tests the same way).
     testTimeout: process.platform === 'win32' ? 180_000 : 60_000,
     hookTimeout: process.platform === 'win32' ? 120_000 : 60_000,
