@@ -1136,13 +1136,8 @@ async function assertTrackerLayout(page) {
         failures.push(`phone target ${Math.round(box.width)}×${Math.round(box.height)}px: ${small.getAttribute('aria-label') || small.textContent.trim()}`);
       }
     }
-    const color = (value) => {
-      const match = value.match(/rgba?\(([^)]+)\)/i);
-      if (!match) return null;
-      const values = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-      if (values.length < 3 || values.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
-      return [values[0], values[1], values[2], values.length > 3 && Number.isFinite(values[3]) ? values[3] : 1];
-    };
+    const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+    const color = (value) => toRgba(value);
     const luminance = ([r, g, b]) => {
       const linear = (n) => { const x = n / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
@@ -1253,13 +1248,8 @@ async function addTrackerContrastProbe(page, kind) {
 
 async function assertComputedTextContrast(page, name, selectors) {
   const result = await page.evaluate((requested) => {
-    const parseColor = (value) => {
-      const match = value.match(/rgba?\(([^)]+)\)/i);
-      if (!match) return null;
-      const values = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-      if (values.length < 3 || values.slice(0, 3).some((part) => !Number.isFinite(part))) return null;
-      return [values[0], values[1], values[2], values.length > 3 && Number.isFinite(values[3]) ? values[3] : 1];
-    };
+    const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+    const parseColor = (value) => toRgba(value);
     const luminance = ([r, g, b]) => {
       const linear = (channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
       return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
@@ -1687,12 +1677,8 @@ const STATES = {
     const audit = await page.evaluate((viewportWidth) => {
       const failures = [];
       const contrast = (foreground, background) => {
-        const rgb = (value) => {
-          const match = value.match(/rgba?\(([^)]+)\)/i);
-          if (!match) return null;
-          const parts = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-          return parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite) ? parts.slice(0, 3) : null;
-        };
+        const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+        const rgb = (value) => { const c = toRgba(value); return c ? c.slice(0, 3) : null; };
         const fg = rgb(foreground), bg = rgb(background);
         if (!fg || !bg) return 0;
         const luminance = ([r, g, b]) => {
@@ -1869,12 +1855,8 @@ const STATES = {
       await row.click();
       await page.waitForFunction((id) => document.documentElement.dataset.theme === id, theme.id);
       const result = await page.evaluate(() => {
-        const parse = (value) => {
-          const m = /^rgba?\(([^)]+)\)$/.exec(value);
-          if (!m) return null;
-          const parts = m[1].split(',').map((v) => Number.parseFloat(v.trim()));
-          return [parts[0], parts[1], parts[2], parts.length > 3 ? parts[3] : 1];
-        };
+        const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+        const parse = (value) => toRgba(value);
         const blend = (front, back) => {
           const a = front[3] + back[3] * (1 - front[3]);
           if (!a) return [0, 0, 0, 0];
@@ -3410,12 +3392,8 @@ const STATES = {
       const rail = document.querySelector('.rail');
       if (!people || !topRight || !topLeft || !rail) return { failures: ['people, top bars, or tool rail are missing'] };
       const box = (element) => element.getBoundingClientRect();
-      const rgb = (value) => {
-        const match = value.match(/rgba?\(([^)]+)\)/i);
-        if (!match) return null;
-        const channels = match[1].split(',').map((part) => Number.parseFloat(part.trim()));
-        return channels.length >= 3 && channels.slice(0, 3).every(Number.isFinite) ? channels.slice(0, 3) : null;
-      };
+      const toRgba = (value) => { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d', { willReadFrequently: true }); x.fillStyle = '#010203'; x.fillStyle = String(value); if (x.fillStyle === '#010203' && String(value).replace(/\s+/g, '').toLowerCase() !== '#010203') return null; x.clearRect(0, 0, 1, 1); x.fillRect(0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2], d[3] / 255]; }; // any CSS colour the browser reports (rgb(), color(srgb ...), oklab(), color-mix()), as sRGB
+      const rgb = (value) => { const c = toRgba(value); return c ? c.slice(0, 3) : null; };
       const luminance = ([r, g, b]) => {
         const linear = (channel) => { const value = channel / 255; return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4; };
         return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
