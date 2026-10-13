@@ -55,10 +55,11 @@ I arbetsytor med inloggning sitter en klocka i det övre fältet på sidan Board
 - **Chattomnämnanden**: någon nämnde dig i en tavel-, team- eller arbetsytechatt.
 - **Svar**: någon svarade på en kommentar av dig.
 - **Delningar**: någon delade en tavla direkt med dig.
+- **Kort**: ett kort som du äger förfaller i morgon, förfaller i dag eller är försenat, eller någon tilldelade dig ett kort. Om du väljer raden öppnas tavlan.
 - **Teamanslutningar**: någon du bjöd in gick med i teamet, också när personen loggade in via din inbjudningslänk.
 - **Spåraren**: ärenden som tilldelats dig, kommenterats och flyttats, om din arbetsyta har spåraren.
 
-Varje rad säger vem, vad och var, med de första orden i ett meddelande eller en kommentar, och när. Välj en rad för att gå dit. Välj bocken på en rad, eller **Mark all as read** (Markera alla som lästa), för att markera som läst. Att läsa en chatt rensar dess omnämnanden. **All** (Alla) och **Mentions** (Omnämnanden) filtrerar listan, **Show older** (Visa äldre) läser in fler, och listan går 90 dagar tillbaka. **Notification settings** (Aviseringsinställningar) öppnar dina chattaviseringsinställningar.
+Varje rad säger vem, vad och var, med de första orden i ett meddelande eller en kommentar, och när. Välj en rad för att gå dit. Välj bocken på en rad, eller **Mark all as read** (Markera alla som lästa), för att markera som läst. Att läsa en chatt rensar dess omnämnanden. **All** (Alla) och **Mentions** (Omnämnanden) filtrerar listan, **Show older** (Visa äldre) läser in fler, och listan går 90 dagar tillbaka. **Notification settings** (Aviseringsinställningar) har reglage för vad som visas här (omnämnanden, svar, kort och delningar) och för chattmejlet.
 
 Ett objekt försvinner från listan, och från räkningen, när du inte längre kan öppna det det pekar på, till exempel när en tavla inte längre delas med dig. Räkningen uppdateras direkt medan chatten är på, och varje minut när chatten är av. I öppet läge, utan inloggning, finns ingen klocka.
 
