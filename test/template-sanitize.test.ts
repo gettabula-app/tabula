@@ -11,7 +11,7 @@ const content = (objects: unknown[]) => ({ objects, steps: [], bounds: { x: 0, y
 const hostileJson = `{"objects":[
  {"id":"a","type":"sticky","x":0,"y":0,"w":100,"h":100,"z":"1","text":"hi\\u0007\\u202e!","__proto__":{"polluted":1},"ownerId":"victim","createdBy":"victim","ownerName":"Boss","tracker":{"x":1},"extUrl":"javascript:alert(1)","locked":true,"hidden":true,"link":"javascript:alert(1)","unknownBig":"${'x'.repeat(1000)}","constructor":{"prototype":{"x":1}}},
  {"id":"b","type":"markdown","x":0,"y":0,"w":100,"h":100,"z":"2","text":"[x](javascript:alert(1)) [ok](https://example.com) [d](data:text/html,1) [v](vbscript:x) [m](mailto:a@b.co) [o](#obj:abc) ![i](https://tracker/p.gif)","ownerId":"victim"},
- {"id":"c","type":"table","x":0,"y":0,"w":100,"h":100,"z":"3","r:aa":"a0","r:bb":"a1","k:aa":"a0","c:aa:aa":"=1+1\\u0000 [x](javascript:1)","c:__proto__:aa":"x","c:bb:zz":"ghost","w:aa":99999,"__proto__":{"a":1}},
+ {"id":"c","type":"table","x":0,"y":0,"w":100,"h":100,"z":"3","r:aa":"a0","r:bb":"a1","k:aa":"a0","c:aa:aa":"=1+1\\u0000 [x](javascript:1)","c:__proto__:aa":"x","c:bb:zz":"ghost","w:aa":700,"__proto__":{"a":1}},
  {"id":"d","type":"link","x":0,"y":0,"w":100,"h":100,"z":"4","url":"javascript:alert(1)","title":"t\\u202e","finalUrl":"data:text/html,x","image":"deadbeef"}
  ],"steps":[{"id":"s1","title":"t\\u0001","instructions":"i","mode":"write"}],"bounds":{"x":0,"y":0,"w":1,"h":1}}`;
 
@@ -34,7 +34,7 @@ describe('the template allow-list sanitiser', () => {
     expect(md).not.toHaveProperty('ownerId');
     expect(Object.keys(table).filter((k) => /^[rkwcf]:/.test(k)).sort()).toEqual(['c:aa:aa', 'k:aa', 'r:aa', 'r:bb', 'w:aa']);
     expect(table['c:aa:aa']).toBe('=1+1 x');
-    expect(table['w:aa']).toBeLessThanOrEqual(1000);
+    expect(table['w:aa']).toBe(700);
     expect(Object.hasOwn(table, '__proto__')).toBe(false);
     expect(link).not.toHaveProperty('url');
     expect(link).not.toHaveProperty('finalUrl');
@@ -46,6 +46,12 @@ describe('the template allow-list sanitiser', () => {
     const inst = instantiate(v, { x: 0, y: 0 }, 'me');
     for (const o of inst.objects) expect((o as { createdBy?: string }).createdBy).toBe('me');
     expect(inst.objects[0]).not.toHaveProperty('ownerId');
+  });
+
+  it('a column width out of range is clamped by the sanitiser, and refused by the validator (the validator runs first on a template)', () => {
+    const t = { id: 'c', type: 'table', ...base, z: '3', 'r:aa': 'a0', 'k:aa': 'a0', 'w:aa': 99999 };
+    expect(sanitizeTemplateObject({ ...t })['w:aa']).toBeLessThanOrEqual(800);
+    expect(() => validateContent(content([t]))).toThrow(/column width is out of range/);
   });
 
   it('a template file with the hostile content comes back through parseTemplateFile and the template store as the same safe template', () => {
