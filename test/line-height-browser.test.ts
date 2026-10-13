@@ -45,6 +45,14 @@ const seedText = (page: Page) => page.evaluate(`(async () => {
   app.setSelection(['t1']);
 })()`);
 const obj = (page: Page) => page.evaluate(() => { const o = (window as any).__board.store.get('t1'); return { h: o.h, lineHeight: o.lineHeight }; });
+// The webfont arrives after the page opens and changes how the text wraps, so a height measured at seed time can be stale (CI saw 104 -> 78).
+// Compare the stored height with a fresh measurement of the same object, taken at the same moment.
+const measured = (page: Page, lineHeight?: number) => page.evaluate(`(async () => {
+  const { textHeight } = await import('/src/markup.ts');
+  const o = { ...window.__board.store.get('t1') };
+  if (${JSON.stringify(lineHeight ?? null)} === null) delete o.lineHeight; else o.lineHeight = ${JSON.stringify(lineHeight ?? null)};
+  return textHeight(o);
+})()`) as Promise<number>;
 const openProps = async (page: Page) => {
   await page.click('[aria-label="More properties"]');
   await page.waitForSelector('[aria-label="Line height 2"]');
@@ -59,11 +67,11 @@ describe.skipIf(!available)('line height', () => {
     await openProps(page);
     await page.click('[aria-label="Line height 2"]');
     await page.waitForFunction(() => (window as any).__board.store.get('t1').lineHeight === 2);
-    const wide = await obj(page);
-    expect(wide.h).toBeGreaterThan(start.h * 1.4); // 2 / 1.3 more per line
+    await expect.poll(async () => (await obj(page)).h - (await measured(page, 2))).toBeCloseTo(0, 3);
+    expect((await obj(page)).h).toBeGreaterThan((await measured(page)) * 1.4); // 2 / 1.3 more per line
     await page.click('[aria-label="Line height 1.3"]');
     await page.waitForFunction(() => (window as any).__board.store.get('t1').lineHeight === undefined);
-    expect((await obj(page)).h).toBeCloseTo(start.h, 3);
+    await expect.poll(async () => (await obj(page)).h - (await measured(page))).toBeCloseTo(0, 3);
     await page.close();
   });
 
