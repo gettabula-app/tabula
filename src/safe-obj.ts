@@ -43,7 +43,7 @@ const FONT_RE = /^[a-z0-9-]{1,64}$/;
 /** Fields that every box has: a non-finite value becomes 0. */
 const REQUIRED_NUMBERS = ['x', 'y', 'w', 'h', 'rotation'];
 /** Optional numbers: a non-finite value is dropped, so the default applies. */
-const OPTIONAL_NUMBERS = ['strokeWidth', 'opacity', 'fontSize', 'fontWeight', 'nw', 'nh', 'laneW', 'wip', 'updatedAt', 'imageW', 'imageH', 'fetchedAt'];
+const OPTIONAL_NUMBERS = ['strokeWidth', 'opacity', 'fontSize', 'fontWeight', 'lineHeight', 'nw', 'nh', 'laneW', 'wip', 'updatedAt', 'imageW', 'imageH', 'fetchedAt'];
 /** Free text, drawn only as escaped text content or an escaped attribute: anything but a string is dropped. */
 const TEXTS = ['text', 'name', 'label', 'stereotype', 'alt', 'desc', 'ownerName', 'ownerId', 'due', 'link', 'body', 'ref', 'asset', 'mime', 'parent', 'layout', 'rank', 'createdBy', 'privateStep', 'z', 'trackerId', 'viewId', 'focusKey', 'url', 'title', 'description', 'siteName', 'image', 'icon', 'finalUrl', 'unfurlError'];
 /** Enumerations and their sets: a value outside the set is dropped. */
@@ -229,8 +229,8 @@ export function safeObj<T extends Obj>(o: T): T {
   }
   if (o.type === 'tracker') out.rotation = 0;
   if (o.type === 'tracker') {
-    out.w = Math.max(480, out.w as number);
-    out.h = Math.max(360, out.h as number);
+    out.w = Math.max(360, out.w as number);
+    out.h = Math.max(280, out.h as number);
   }
   if (o.type === 'card') {
     if (!out.ownerId && !out.ownerName) delete out.ownerKind;

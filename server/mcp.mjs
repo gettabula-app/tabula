@@ -133,7 +133,7 @@ const createItemSchema = {
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source: headings, lists, [ ] tasks, tables, code, links; no HTML), x, y, w?, h?, fontSize?. table: rows (a list of rows, each a list of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?, line?. from and to are an object id, a ref, or {x, y} points. line: a plain line (type line is the same, stored as a connector): from and to are {x, y} points; optional stroke, strokeWidth?, dash?, startHead?, endHead? (defaults: none, none, 2, solid). Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source, no HTML), x, y, w?, h?, fontSize?. table: rows (lists of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?, line?. from and to are an object id, a ref, or {x, y} points. line: a plain line (type line is the same, stored as a connector): from and to are {x, y} points; optional stroke, strokeWidth?, dash?, startHead?, endHead? (defaults: none, none, 2, solid). Any object but a connector may have parent.',
   properties: {
     type: { enum: ['sticky', 'shape', 'text', 'markdown', 'table', 'frame', 'connector', 'line', 'link'] },
     line: { type: 'boolean', description: 'true on a connector makes it a line: both ends free, straight.' },
@@ -150,6 +150,7 @@ const createItemSchema = {
     w: num('Width.'),
     h: num('Height.'),
     fontSize: num('Font size.'),
+    lineHeight: { type: 'number' },
     flipX: { type: 'boolean' }, flipY: { type: 'boolean' },
     color: { type: 'string', description: `Sticky colour: ${STICKY_COLORS.map((c) => c.name).join(', ')} or #RRGGBB.` },
     fill: { type: 'string', description: `${colourText} or none.` },
@@ -187,6 +188,7 @@ const updateItemSchema = {
     stroke: { type: ['string', 'null'] },
     strokeWidth: { type: ['number', 'null'] },
     fontSize: { type: ['number', 'null'] },
+    lineHeight: { type: ['number', 'null'] },
     textColor: { type: ['string', 'null'] },
     kind: { enum: SHAPE_KINDS },
     from: endSchema,

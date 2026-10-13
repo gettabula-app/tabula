@@ -522,7 +522,7 @@ export class Store {
 
   create(o: Obj) {
     const stored = isGroup(o) ? { ...o, x: 0, y: 0, w: 0, h: 0, rotation: 0 }
-      : o.type === 'tracker' ? { ...o, w: Math.max(480, Number.isFinite(o.w) ? o.w : 0), h: Math.max(360, Number.isFinite(o.h) ? o.h : 0), rotation: 0 }
+      : o.type === 'tracker' ? { ...o, w: Math.max(360, Number.isFinite(o.w) ? o.w : 0), h: Math.max(280, Number.isFinite(o.h) ? o.h : 0), rotation: 0 }
       : o;
     // a colour outside the grammar is left out, so the object takes its type's default (TAB-203). A kanban container,
     // lane or card keeps what it has: its fill may be a palette key, which its own drawing checks (kanbanColor).
@@ -563,7 +563,7 @@ export class Store {
       }
       // a colour outside the grammar is not written; the object keeps the colour it has (TAB-203; kanban types as in create)
       const v = type === 'tracker' && (k === 'w' || k === 'h') && typeof raw === 'number' && Number.isFinite(raw)
-        ? Math.max(k === 'w' ? 480 : 360, raw)
+        ? Math.max(k === 'w' ? 360 : 280, raw)
         : COLOR_FIELDS.has(k) && !(typeof type === 'string' && isContainerType(type)) ? cleanColor(raw) : raw;
       if (v === null) continue;
       if (FLAG_FIELDS.has(k) && typeof v !== 'boolean') continue;
@@ -575,7 +575,7 @@ export class Store {
       }
     }
     if (m.get('type') === 'tracker') {
-      for (const [key, min] of [['w', 480], ['h', 360]] as const) {
+      for (const [key, min] of [['w', 360], ['h', 280]] as const) {
         const value = m.get(key);
         if (typeof value === 'number' && Number.isFinite(value) && value < min) { m.set(key, min); wroteField = true; }
       }

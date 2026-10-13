@@ -122,7 +122,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `chat-object` | The board's Chat tab with two object chips (one that goes to a sticky, one whose object is gone) and an object attached to the message being written |
 | `chat-session` | (TAB-243) A running dot vote with the Chat tray open: the session bar waits so the message box stays on screen |
 | `chat-poll` | (TAB-243) A running poll with the Chat tray open: the poll card and facilitator bar wait in place until the tray closes |
-| `chat-notifications` | The **Chat notifications** dialog opened from the Chat page |
+| `chat-notifications` | The **Notification settings** dialog opened from the Chat page |
 
 A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause. A state whose page is longer than the window and whose point is the whole page goes in `FULL_PAGE`, which makes its shots full-page; a state that needs answers the throwaway relay cannot give routes them with Playwright (`mockBackups`). After a state the script parks the mouse in a corner and blurs the focused control; a state that must keep the mouse down or an input focused returns `{ noPark: true }`. `resize-guides-size` holds the mouse down so the overlay can be checked before pointer up. The kanban seed stores card heights with the board's fonts loaded (`window.__kanban.cardContentHeight`), as the app does.
 

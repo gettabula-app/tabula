@@ -23,6 +23,10 @@ Typing in a comment box never triggers board shortcuts, so you can use any lette
 - Click **Resolve** when the question is settled. Resolved pins fade. Click **Reopen** to bring the thread back.
 - Click outside the thread, or press `Esc`, to close it.
 
+### Name someone
+
+Type `@` in a new comment or a reply to see the people here now and everyone who has commented on the board before. Pick one with the arrow keys and `Enter`, or click a name, and it shows as their name in the comment. If they can open the board, they find your comment under the bell. People who are not signed in (guests) are not listed, because they get no notifications. Editing a comment does not notify anyone again. A comment can name up to 10 people.
+
 ## Edit and delete
 
 - **Edit** changes the text of your own comment. Nobody can edit someone else's comment, not even a board owner. Edited comments show "edited" next to the time.

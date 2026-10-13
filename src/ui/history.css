@@ -109,7 +109,7 @@
 @media (max-width: 720px) {
   /* right of the rail and above the zoom tray, which both stay usable (TAB-133) */
   .history-panel, .chrome.history-previewing > .history-panel {
-    left: 0; right: 0; top: auto; bottom: 0; width: 100%; height: min(76vh, 720px); height: min(76dvh, 720px);
+    left: var(--rail-clear); right: 0; top: auto; bottom: 0; width: auto; height: min(76vh, 720px); height: min(76dvh, 720px);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
   .chrome.history-previewing > .history-panel { display: none; }

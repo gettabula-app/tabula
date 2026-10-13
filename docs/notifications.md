@@ -1,6 +1,6 @@
 # Notifications
 
-Per-person notifications are stored in `user_notifications` in `directory.sqlite` (migration 18). The table keeps the recipient, kind, actor, board or team, source id, and timestamps. It never stores comment or chat text. The API reads snippets and current names at list time, after checking that the recipient can still open the source.
+Per-person notifications are stored in `user_notifications` in `directory.sqlite` (migration 18). Card reminders keep their index in `card_due` (migration 19, see Card reminders below). The table keeps the recipient, kind, actor, board or team, source id, and timestamps. It never stores comment or chat text. The API reads snippets and current names at list time, after checking that the recipient can still open the source.
 
 The API merges these rows with the tracker's existing `notifications` table. Tracker events are not copied, and their `read_at` remains the tracker read state. Rows with a lost or missing source are omitted from pages and counts. The unread summary counts up to the newest 200 accessible unread rows; `unreadMentions` includes chat mentions and tracker mentions.
 
@@ -12,20 +12,63 @@ All routes require a signed-in account and return `Cache-Control: no-store`.
 - `GET /api/notifications/unread` returns `{unread, unreadMentions}`.
 - `POST /api/notifications/read` accepts `{ids: [...]}` with at most 100 unified item ids, or `{all: true}`. It returns `{updated, unread, unreadMentions}`. Tracker rows are marked through the tracker's own `read_at` field.
 
-Each item is `{id, kind, at, read, actor, board, team, snippet, target}`. `actor` is `{id,name}` or `null`; `board` is `{id,title}` or `null`; `team` is `{id,name}` or `null`; `snippet` is text or `null`. Unified ids use `n_` for `user_notifications` and `t_` for tracker rows. Kinds are `chat_mention`, `comment_reply`, `board_shared`, `team_joined`, or `ticket_<tracker-kind>`.
+Each item is `{id, kind, at, read, actor, board, team, snippet, target}`. `actor` is `{id,name}` or `null`; `board` is `{id,title}` or `null`; `team` is `{id,name}` or `null`; `snippet` is text or `null`. Unified ids use `n_` for `user_notifications` and `t_` for tracker rows. Kinds are `chat_mention`, `comment_reply`, `board_shared`, `team_joined`, `card_assigned`, `card_due_soon`, `card_overdue`, or `ticket_<tracker-kind>`.
 
-Targets use the current app routes: chat channel hashes, board hashes, the home hash for team joins, and `/t/<ticket-key>` for tracker items. Chat targets open the channel; comment targets open the board.
+Targets use the current app routes: chat channel hashes, board hashes, the home hash for team joins, and `/t/<ticket-key>` for tracker items. Chat targets open the channel; comment and card targets open the board (the app has no card deep link yet).
 
 ## Writers and read state
 
 - Chat mentions create one row for each mentioned person other than the author. When that person's `chat_reads` cursor passes the message id, the row becomes read.
-- A reply to an existing comment thread creates a row for the thread author when another account writes it. The relay's comment guard observes accepted Yjs replies; the MCP comment writer reports its reply through the same room write path. Comment `@mentions` are not supported.
+- A reply to an existing comment thread creates a row for the thread author when another account writes it. The relay's comment guard observes accepted Yjs replies; the MCP comment writer reports its reply through the same room write path. 
+- A new comment or reply that names someone with `@{userId}` (the picker writes this token) creates a `comment_mention` row for each named person, up to 10, other than the author, who can open the board. A reply that names the thread author creates the mention row instead of a `comment_reply` row. Edits, imported comments and comments from before accounts do not notify. Rows hold ids only; the snippet is read when the list is built.
 - A direct user share creates a row for the shared person. Team shares and link shares do not.
 - A newly accepted team invite creates a row for the inviter. The joining person is the actor.
-- Tracker rows remain in the tracker's notification table and are merged at read time.
+- A card whose person owner changes to someone else, by a connected editor, creates `card_assigned` for the new owner. It is never sent for self-assignment and at most once per person and card in 10 minutes.
+
+## Card reminders
+
+A card with a person owner (not an agent), a `due` date and a lane that is not `done` has a row in `card_due`: the board, card id, owner, due date and the reminder flags. The table never holds card text. The board room's update hook keeps it current for every board write, including MCP and tracker writes. Only a connected editor's write names an actor for `card_assigned`.
+
+A 15-minute sweep (in SQL, in UTC dates) records `card_due_soon` for a due date of today or tomorrow, and `card_overdue` for a due date before today. Each kind is recorded once per due date, tracked by `soon_for` and `overdue_for`; changing the due date or the owner re-arms them. A person who has lost the board role gets no row, and the row is kept for when they regain it. Rows whose due date is more than 30 days old are deleted.
+
+A one-time boot pass indexes every non-deleted board and sets the settings key `card_due.indexed`. The sweep asks the per-member switches (Settings below) through `shouldNotify` in `server/card-due.mjs`.
+
+Tracker rows remain in the tracker's notification table and are merged at read time.
+
+## Settings
+
+Notification settings (the bell's **Notification settings** link, the chat page's **Notifications** button and the **Notification settings** menu item in the board menu and the account menu) holds four switches under **In your notifications**. Each is on until it is switched off, and each is saved as it is changed:
+
+- **Mentions of me in chats and comments**: `chat_mention`, `comment_mention`.
+- **Replies to my comments**: `comment_reply`.
+- **Cards that are due or assigned to me**: `card_due_soon`, `card_overdue`, `card_assigned`.
+- **Boards and teams shared with me**: `board_shared`, `team_joined`.
+
+The chat mention email is a separate switch under **Email** (docs/chat.md, Mentions). Tracker kinds (`ticket_*`) are not in any group: the tracker has its own settings, and they are never affected by these switches.
+
+The switches are stored in `user_prefs` as `notify.mentions`, `notify.replies`, `notify.cards` and `notify.shares`, with `1` or `0`; a missing key is on. The groups and the check are in `server/notification-prefs.mjs`. `GET /api/notifications/prefs` returns `{prefs: {mentions, replies, cards, shares}}`, and `PUT /api/notifications/prefs` takes any of the four as booleans and returns the same shape. An unknown field, a value that is not a boolean or an empty body returns 400 `invalid_input`. Only signed-in accounts may use them; a guest gets 403 `forbidden`. The writes are allowed in a read-only workspace, as the other personal settings are.
+
+What a switch does:
+
+- It stops new rows of its kinds. `notifications.record()` returns null for a person who has the group off, so no row is written, no count changes and no live `notify` frame is sent. The write that caused it (a share, a comment, a card edit) still succeeds.
+- A card reminder that is due while its switch is off is marked as told without a row. Turning the switch back on does not release the reminders from the time it was off; only reminders that come due afterwards are shown.
+- Rows already in the list stay listed and counted until they are read or pruned. A switch does not hide or delete them.
+- It does not change email. No notification row sends an email, and the chat mention email (docs/chat.md) keeps its own switch under **Email**. The daily digest (Digest below) has its own switch and is the only email this list can send.
+
+Not built: quiet hours. It would be a pause-until switch if push or per-event email ever exists.
 
 No new email is sent. When a row is created or marked read, connected `/chat` sockets for its recipient receive `{t:'notify', unread, unreadMentions}`. The frame contains counts only.
 
+## Digest
+
+The **Email digest** section of Notification settings (above the chat **Email** section) can send you one email a day listing what is new in your notifications. It is off until you turn it on, and nothing is sent when you turn it on: the first mail lists only what arrives after the switch-on, never a backlog.
+
+- What it holds: one line per unread notification newer than the last digest, in the words of the bell: who, what and the board or team (for example "Ana replied to your comment on Launch plan" or "A card is due soon on Sprint board"). A tracker item is named by its key only. It never holds the text of a message, comment, card or ticket, and never a card title or snippet. Ten lines at most, then "and N more".
+- Hour and zone: `GET /api/notifications/digest` and `PUT /api/notifications/digest` take `{ on?, hour?, tz? }`: `on` a boolean, `hour` a whole number from 0 to 23 (the local hour, default 8), and `tz` an IANA zone (the browser's zone is sent on every save). A strict body: an unknown field, a bad value or an empty body returns 400 `invalid_input`; a guest gets 403 `forbidden`. Both return `{ digest: { on, hour, tz } }`.
+- One mail a day: the 15-minute digest sweep sends at most one mail per person per local date, from the chosen hour on. When there is nothing unread the day is marked handled and no mail is sent; a row that arrives later that day waits for tomorrow. A failed mail is retried at a later sweep, at most three times that day, and the log names the error only. At most 200 mails go in one sweep. Disabled people, guests and people without an email are skipped.
+- Prefs in `user_prefs`: `notify.digest` (`1` on), `notify.digestHour`, `notify.tz`, `notify.digestLastAt` (the cutoff) and `notify.digestDay` (the local date already handled).
+- The mail (`notification-digest`, subject "Your Tabula notifications") carries a link to the app, the count and the lines; its plain-text version ends with a note that the digest is on in Notification settings. The relay's file mail mode records only the subject and text.
+
 ## Retention and schema
 
-An hourly relay sweep deletes personal and tracker notification rows older than 90 days and caps each user's combined inbox at 500 rows. Unread rows are kept ahead of read rows when enforcing the cap. Migration 18 is additive and declares `minReader: 11`, so the existing rollback floor is unchanged. `test/tracker-rewind.ts` removes the table when tests rewind the tracker schema.
+An hourly relay sweep deletes personal and tracker notification rows older than 90 days and caps each user's combined inbox at 500 rows. Unread rows are kept ahead of read rows when enforcing the cap. Migrations 18 and 19 are additive and declare `minReader: 11`, so the existing rollback floor is unchanged. `test/tracker-rewind.ts` removes both tables when tests rewind the schema. `TABULA_TEST_CARD_DUE_SWEEP_MS` shortens the card sweep for tests.

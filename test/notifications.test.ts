@@ -28,6 +28,7 @@ const open = () => {
       team_id TEXT REFERENCES teams(id) ON DELETE CASCADE, ref TEXT, created_at INTEGER NOT NULL, read_at INTEGER
     );
     CREATE INDEX user_notifications_inbox ON user_notifications(user_id, read_at, created_at DESC, id);
+    CREATE TABLE user_prefs (user_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (user_id, key));
     CREATE TABLE ticket_states (id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL);
     CREATE TABLE tickets (
       id TEXT PRIMARY KEY, key TEXT NOT NULL, title TEXT NOT NULL, priority TEXT NOT NULL DEFAULT 'normal',
@@ -83,6 +84,12 @@ const open = () => {
     },
     unshareBoard(boardId: string, principalType: string, principalId: string) {
       db.prepare('DELETE FROM board_shares WHERE board_id = ? AND principal_type = ? AND principal_id = ?').run(boardId, principalType, principalId);
+    },
+    getPref(userId: string, key: string) {
+      return db.prepare('SELECT value FROM user_prefs WHERE user_id = ? AND key = ?').get(userId, key)?.value ?? null;
+    },
+    setPref(userId: string, key: string, value: string) {
+      db.prepare('INSERT INTO user_prefs (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value').run(userId, key, String(value));
     },
   };
   directories.push(directory);
@@ -162,14 +169,14 @@ describe('per-user notifications', () => {
     ).run(member.id, ticketRecord.id);
 
     const page1 = notifications.list({ user: member, limit: 2 });
-    expect(page1.items.map((item: any) => item.id)).toEqual([`n_${latest.id}`, 't_tracker-row']);
+    expect(page1.items.map((item: any) => item.id)).toEqual([`n_${latest!.id}`, 't_tracker-row']);
     expect(page1.items.map((item: any) => item.at)).toEqual([102, 101]);
     expect(page1.items[1]).toMatchObject({ id: 't_tracker-row', kind: 'ticket_assigned', target: `/t/${ticketRecord.key}`, read: false });
     expect(page1.nextCursor).toEqual(expect.any(String));
 
     const page2 = notifications.list({ user: member, limit: 2, before: page1.nextCursor });
     expect(page2.items).toHaveLength(1);
-    expect(page2.items[0]).toMatchObject({ id: `n_${first.id}`, kind: 'board_shared', at: 100 });
+    expect(page2.items[0]).toMatchObject({ id: `n_${first!.id}`, kind: 'board_shared', at: 100 });
     expect(page2.nextCursor).toBeNull();
     expect(page2.unread).toBe(3);
   });
@@ -192,7 +199,7 @@ describe('per-user notifications', () => {
     const saved = notifications.record({ userId: member.id, kind: 'chat_mention', actorId: owner.id, boardId: board.id, ref: String(inserted.message.id), createdAt: 260 });
     const page = notifications.list({ user: member });
     expect(page.items[0]).toMatchObject({
-      id: `n_${saved.id}`,
+      id: `n_${saved!.id}`,
       kind: 'chat_mention',
       at: 260,
       actor: { id: owner.id, name: owner.name },
@@ -221,10 +228,10 @@ describe('per-user notifications', () => {
        VALUES ('tracker-read', ?, ?, 'assigned', 'tracker-read-dedupe', 10, 20)`,
     ).run(member.id, ticketRecord.id);
 
-    expect(notifications.markRead({ user: member, ids: [`n_${own.id}`, 't_tracker-read'] })).toMatchObject({ updated: 2, unread: 0 });
-    expect(directory.db.prepare('SELECT read_at FROM user_notifications WHERE id = ?').get(own.id).read_at).toBe(500);
+    expect(notifications.markRead({ user: member, ids: [`n_${own!.id}`, 't_tracker-read'] })).toMatchObject({ updated: 2, unread: 0 });
+    expect(directory.db.prepare('SELECT read_at FROM user_notifications WHERE id = ?').get(own!.id).read_at).toBe(500);
     expect(directory.db.prepare("SELECT read_at, next_email_at FROM notifications WHERE id = 'tracker-read'").get()).toEqual({ read_at: 500, next_email_at: null });
-    expect(directory.db.prepare('SELECT read_at FROM user_notifications WHERE id = ?').get(otherRow.id).read_at).toBeNull();
+    expect(directory.db.prepare('SELECT read_at FROM user_notifications WHERE id = ?').get(otherRow!.id).read_at).toBeNull();
 
     const allRow = notifications.record({ userId: member.id, kind: 'board_shared', actorId: owner.id, boardId: board.id }, { notify: false });
     directory.db.prepare(
@@ -232,7 +239,7 @@ describe('per-user notifications', () => {
        VALUES ('tracker-all', ?, ?, 'assigned', 'tracker-all-dedupe', 11)`,
     ).run(member.id, ticketRecord.id);
     expect(notifications.markRead({ user: member, all: true })).toMatchObject({ updated: 2, unread: 0 });
-    expect(directory.db.prepare('SELECT read_at FROM user_notifications WHERE id = ?').get(allRow.id).read_at).toBe(500);
+    expect(directory.db.prepare('SELECT read_at FROM user_notifications WHERE id = ?').get(allRow!.id).read_at).toBe(500);
     expect(directory.db.prepare("SELECT read_at FROM notifications WHERE id = 'tracker-all'").get().read_at).toBe(500);
   });
 
@@ -286,17 +293,17 @@ describe('per-user notifications', () => {
       userId: member.id, kind: 'board_shared', actorId: owner.id, boardId: board.id,
       snippet: 'private notification canary', body: 'private notification canary',
     } as any, { notify: false });
-    const row = directory.db.prepare('SELECT * FROM user_notifications WHERE id = ?').get(result.id);
+    const row = directory.db.prepare('SELECT * FROM user_notifications WHERE id = ?').get(result!.id);
     const columns = directory.db.prepare('PRAGMA table_info(user_notifications)').all().map((column: any) => column.name);
     expect(columns).toEqual(['id', 'user_id', 'kind', 'actor_id', 'board_id', 'team_id', 'ref', 'created_at', 'read_at']);
     expect(JSON.stringify(row)).not.toContain('private notification canary');
   });
 
-  it('upgrades migration 18 and recreates it when rewound to schema 17', () => {
+  it('upgrades migrations 18 and 19 and recreates them when rewound to schema 17', () => {
     const root = fs.mkdtempSync(fileURLToPath(new URL('./notifications-migration-', import.meta.url)));
     roots.push(root);
     const file = path.join(root, 'directory.sqlite');
-    expect(MIGRATIONS).toHaveLength(18);
+    expect(MIGRATIONS).toHaveLength(19);
     expect(MIGRATIONS[17]).toMatchObject({ minReader: 11 });
     const raw = new DatabaseSync(file);
     raw.exec(`
@@ -308,13 +315,15 @@ describe('per-user notifications', () => {
       PRAGMA user_version = 17;
     `);
     migrate(raw, MIGRATIONS, 'directory');
-    expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(18);
+    expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(19);
     expect(raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'user_notifications_inbox'").get()!.sql)
       .toContain('(user_id, read_at, created_at DESC, id)');
-    raw.exec('DROP TABLE user_notifications; PRAGMA user_version = 17;');
+    expect(raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'card_due_due'").get()!.sql).toContain('(due)');
+    raw.exec('DROP TABLE card_due; DROP TABLE user_notifications; PRAGMA user_version = 17;');
     migrate(raw, MIGRATIONS, 'directory');
-    expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(18);
+    expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(19);
     expect(raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_notifications'").get()).toBeDefined();
+    expect(raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_due'").get()).toBeDefined();
     raw.close();
     expect(REMOVE_TRACKER_MIGRATION).toContain('DROP TABLE IF EXISTS user_notifications');
   });

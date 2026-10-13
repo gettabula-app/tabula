@@ -69,6 +69,7 @@ export interface StyleFields {
   font: string;        // Fontshare slug, or 'system'
   fontWeight: number;
   fontSize: number;
+  lineHeight: number;
   textColor: string;
   align: Align;
   valign: VAlign;

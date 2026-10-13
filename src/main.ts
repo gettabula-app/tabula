@@ -26,8 +26,9 @@ import { CUSTOM_PREFIX, TEMPLATES, insertCustomTemplate, insertTemplate } from '
 import { getTemplate } from './template-store';
 import { mayChange } from './template-share';
 import type { CustomTemplate } from './custom-templates';
-import { applyImported, type ImportedBoard } from './exporters';
+import { importBoard, undoImport, type ImportManifest, type ImportOutcome, type ImportedBoard } from './exporters';
 import { toast } from './ui/common';
+import type { BoardConn } from './sync';
 import { trackerEnabled } from './tracker-gate';
 import { currentChatDock, syncChatDock } from './ui/chat-dock';
 import { dockHiddenOn } from './ui/chat-dock-state';
@@ -302,6 +303,28 @@ async function isDeletedBoard(id: string, auth: AuthState, role: ServerBoard['ro
 /** The page being shown, for the chat dock: it stays away from sign-in, consent and the Chat page. */
 let routeName = '';
 
+/** Says plainly what happened to an import and, where something may be left over, offers to take it away. */
+function reportImport(conn: BoardConn, message: string, manifest: ImportManifest) {
+  toast(message, 30_000, {
+    label: 'Remove imported content',
+    onClick: () => {
+      const r = undoImport(conn.store, conn.comments, manifest);
+      toast(`Removed ${r.removed + r.restored + r.comments} imported items${r.left ? `; left ${r.left} you have changed since` : ''}.`);
+    },
+  });
+}
+
+/** Follows an import that was written: tells the person if the relay took part of it back or could not be reached. */
+function watchImport(conn: BoardConn, outcome: Extract<ImportOutcome, { ok: true }>) {
+  if (outcome.pending) {
+    toast('The imported board is saved on this device and will be sent when you are back online.', 8000);
+  }
+  void outcome.final.then((f) => {
+    if (f.state === 'refused') reportImport(conn, `Part of the imported board did not arrive (${f.missing.join(', ')}). What was imported can be removed.`, outcome.manifest);
+    else if (f.state === 'unconfirmed') reportImport(conn, 'The server has not confirmed the imported board yet (are you offline?). It is saved on this device and is sent when you are back online; if it does not arrive, you can remove it.', outcome.manifest);
+  });
+}
+
 async function route() {
   if (DEMO) {
     if (location.hash !== '#/b/demo') {
@@ -490,6 +513,24 @@ async function route() {
     conn.destroy();
     return;
   }
+  const job = pending?.id === id ? pending : null;
+  pending = null;
+  if (job?.imported) {
+    // The importer owns the new board, so the comments in the file are marked imported by the account (or device) that opens it.
+    // Written before the access watchers below attach: the board's access is decided from what the import wrote (its feature flags).
+    // A board larger than one message goes in several, each read back before the next (src/exporters.ts importBoard).
+    const outcome = await importBoard(conn, job.imported, auth.mode === 'signed-in' ? auth.me.user.id : user.id, {
+      confirm: (ms, room) => conn.roundTrip(ms, room),
+      // the page says what it is doing while the import is prepared in slices
+      slicing: { onProgress: (done, total) => { const el = root.querySelector('.loading'); if (el) el.textContent = `Importing… ${done.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`; } },
+    });
+    if (seq !== routeSeq) {
+      conn.destroy();
+      return;
+    }
+    if (!outcome.ok) reportImport(conn, `The board import stopped: the ${outcome.failed} did not arrive. What was imported can be removed.`, outcome.manifest);
+    else watchImport(conn, outcome);
+  }
   // When a locked workspace becomes writable again the board reconnects, so what was typed while the relay dropped it is sent.
   const watchUnlock = createUnlockWatcher(() => conn.resync());
   // The role and, on a hosted workspace, the workspace's read-only switch decide together; a new /api/me re-decides.
@@ -509,13 +550,6 @@ async function route() {
   // A feature this client lacks can arrive with a remote change, an import or a restore: the board turns read-only then too.
   // Watching starts before the import below, which writes the board's meta.
   const unwatchFeatures = watchFeatureGate(conn.store, applyAccess);
-  const job = pending?.id === id ? pending : null;
-  pending = null;
-
-  if (job?.imported) {
-    // The importer owns the new board, so the comments in the file are marked imported by the account (or device) that opens it.
-    applyImported(conn, job.imported, auth.mode === 'signed-in' ? auth.me.user.id : user.id);
-  }
 
   root.replaceChildren();
   const app = new BoardApp(conn, user, root, isHostedWorkspace(auth));

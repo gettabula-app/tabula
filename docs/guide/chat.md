@@ -106,7 +106,7 @@ Everyone with an account who can open the board can read the chat; people who jo
 
 ## Notifications
 
-Under **Chat notifications** in the board menu (or **Notifications** at the bottom of the channel list on the Chat page) you can choose whether to get an email when you are mentioned. It is on until you turn it off.
+Under **Notification settings** in the board menu (or **Notifications** at the bottom of the channel list on the Chat page) you can choose whether to get an email when you are mentioned. It is on until you turn it off.
 
 The email says who mentioned you, in which board, team or workspace, and the first words of the message, with a link. It is sent only if you have not had Tabula open for 10 minutes, and not for a message you have read, or that was deleted or edited so it no longer mentions you. You get at most one email per conversation every 10 minutes and 20 a day, and editing a message never sends it again.
 

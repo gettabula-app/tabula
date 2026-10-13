@@ -93,6 +93,14 @@ describe('toTemplateContent', () => {
     expect(validateContent(c)).toBeTruthy();
   });
 
+  it('round-trips lineHeight through template export, validation and instantiation', () => {
+    const source = box('source', 40, 60, { type: 'sticky', lineHeight: 1.15 });
+    const template = toTemplateContent([source], [], { includeSteps: false });
+    expect((template.objects[0] as BaseObj).lineHeight).toBe(1.15);
+    expect((validateContent(template).objects[0] as BaseObj).lineHeight).toBe(1.15);
+    expect((instantiate(template, { x: 100, y: 200 }, 'u1').objects[0] as BaseObj).lineHeight).toBe(1.15);
+  });
+
   it('moves the bounds to the origin and keeps relative geometry', () => {
     const { objs, outside, steps } = fixture();
     const c = toTemplateContent(objs, steps, { includeSteps: true }, lookup(outside));

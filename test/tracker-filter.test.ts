@@ -151,4 +151,23 @@ describe('tracker one-row filter bar', () => {
     expect(bar.suggestionsOpen()).toBe(false);
     expect(bar.el.querySelector('.trk-filter-editor')).toBeNull();
   });
+
+  it('clears the typed text on the first Escape and lets the second one through', () => {
+    browser = installTrackerUiBrowser();
+    const searches: string[] = [];
+    const bar = createFilterBar({ onSearch: (query) => searches.push(query) });
+    browser.mount().appendChild(bar.el as unknown as FakeElement);
+    const input = bar.el.querySelector('.trk-filter-input') as unknown as FakeElement;
+    input.value = 'layout';
+    input.dispatchEvent(uiEvent('input'));
+    const first = uiEvent('keydown', { key: 'Escape' });
+    input.dispatchEvent(first);
+    expect(input.value).toBe('');
+    expect(searches.at(-1)).toBe('');
+    expect(first.defaultPrevented).toBe(true);
+    // with nothing left to clear, Escape is not taken: the tracker's own Escape (back) gets it
+    const second = uiEvent('keydown', { key: 'Escape' });
+    input.dispatchEvent(second);
+    expect(second.defaultPrevented).toBe(false);
+  });
 });

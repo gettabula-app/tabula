@@ -54,6 +54,7 @@ import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
+import { sanitizeImportedObjects, tableProblem } from './import-sanitize';
 import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from './tracker/linked-lane';
 
 /** A finger, not a mouse: the pointer that targets are sized for (handles and line hit areas grow). */
@@ -2170,8 +2171,8 @@ export class BoardApp {
       if (h.includes('n') && sy === null) t = snapTo(o0.y + t, g) - o0.y;
       if (h.includes('s') && sy === null) b = snapTo(o0.y + b, g) - o0.y;
     }
-    const minW = o0.type === 'tracker' ? 480 : o0.type === 'markdown' ? 120 : 8;
-    const minH = o0.type === 'tracker' ? 360 : 8;
+    const minW = o0.type === 'tracker' ? 360 : o0.type === 'markdown' ? 120 : 8;
+    const minH = o0.type === 'tracker' ? 280 : 8;
     if (r - l < minW) {
       if (h.includes('w')) l = r - minW;
       else r = l + minW;
@@ -2651,7 +2652,9 @@ export class BoardApp {
     window.addEventListener('keydown', (e) => {
       this.links.noteKey(e);
       const tgt = e.target as HTMLElement;
-      const typing = !!tgt?.closest?.('[data-card-link]') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
+      // a key pressed inside the live tracker (a ticket row, its menus) belongs to the tracker: Backspace archives a ticket there and
+      // must not also delete the selected tracker frame, and a letter must not switch the board's tool
+      const typing = !!tgt?.closest?.('[data-card-link], .trk') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
       const k = e.key.toLowerCase();
       // Cmd/Ctrl+Enter on a selected link card opens it, like Enter (shortcuts with a modifier are handled below)
       if (k === 'enter' && (e.ctrlKey || e.metaKey) && !typing && this.selection.length === 1 && this.store.get(this.selection[0])?.type === 'link') {
@@ -3024,17 +3027,28 @@ export class BoardApp {
 
   /** Insert copies of objects with fresh ids, remapping parents and bindings. */
   insertObjects(objs: Obj[], offset: Point) {
+    // a table past the limits of the editor would be taken back by the relay: leave it out and say so
+    const tooBig = objs.filter((o) => tableProblem(o as unknown as Record<string, unknown>));
+    if (tooBig.length) {
+      this.notify(`Left out ${tooBig.length === 1 ? 'a table' : `${tooBig.length} tables`} that ${tooBig.length === 1 ? 'is' : 'are'} bigger than a table may be (${tableProblem(tooBig[0] as unknown as Record<string, unknown>)}).`);
+      const gone = new Set(tooBig.map((o) => o.id));
+      objs = objs.filter((o) => !gone.has(o.id));
+    }
     if (!objs.length) return [];
     const map = new Map<Id, Id>();
     for (const o of objs) map.set(o.id, newId());
-    const out = remapObjects(objs, map, offset, (id) => {
+    const remapped = remapObjects(objs, map, offset, (id) => {
       const src = this.store.get(id);
       return src && isBox(src) ? center(src) : null;
     });
+    // the relay checks the people an object names (server/sync-validate.mjs): authored by me, and a card owner stays only if
+    // this board already shows that person on a card (a paste from another board must not name a stranger)
+    const owners = new Set<string>();
+    for (const o of this.store.cache.values()) if ((o as BaseObj).ownerId) owners.add((o as BaseObj).ownerId!);
+    const out = sanitizeImportedObjects(remapped, this.user.id, (id) => owners.has(id), { proposedBy: 'keep' });
     const zs = this.store.topZs(objs.length);
     out.forEach((o, i) => {
       o.z = zs[i];
-      o.createdBy = this.user.id;
     });
     this.store.undo.stopCapturing();
     this.store.transact(() => out.forEach((o) => this.store.create(o)));
@@ -3195,12 +3209,12 @@ export class BoardApp {
     });
   }
 
-  updateSelectedLeaves(patch: Record<string, unknown>, filter?: (o: Obj) => boolean) {
+  updateSelectedLeaves(patch: Record<string, unknown> | ((o: Obj) => Record<string, unknown>), filter?: (o: Obj) => boolean) {
     this.store.undo.stopCapturing();
     this.store.transact(() => {
       for (const o of this.selectedLeaves()) {
         if (filter && !filter(o)) continue;
-        this.writeStyle(o, patch);
+        this.writeStyle(o, typeof patch === 'function' ? patch(o) : patch);
       }
     });
   }
@@ -3208,10 +3222,10 @@ export class BoardApp {
   /** One object's style change, with the size it implies: a text box's height, a class's header. */
   private writeStyle(o: Obj, patch: Record<string, unknown>) {
     this.store.update(o.id, patch);
-    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'lineHeight' in patch)) {
       this.store.update(o.id, { h: textHeight({ ...o, ...patch } as BaseObj) });
     }
-    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'lineHeight' in patch)) {
       this.store.update(o.id, { h: markdownBoxHeight({ ...o, ...patch } as BaseObj) });
     }
     if (o.type === 'table' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'headerRow' in patch || 'headerCol' in patch)) {

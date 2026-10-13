@@ -244,8 +244,8 @@ describe('the list', () => {
   it('greys out an unreadable backup with its reason and gives it no way to be opened', async () => {
     await open();
     const [, , lost, damaged] = rows();
-    expect(textOf(lost.querySelector('.backups-note'))).toBe('Unreadable: the encryption key is not available');
-    expect(textOf(damaged.querySelector('.backups-note'))).toBe('Unreadable: it failed its integrity check');
+    expect(textOf(lost.querySelector('.backups-note'))).toBe('Unreadable the encryption key is not available');
+    expect(textOf(damaged.querySelector('.backups-note'))).toBe('Unreadable it failed its integrity check');
     for (const row of [lost, damaged]) {
       expect(row.classList.contains('unreadable')).toBe(true);
       expect(row.getAttribute('aria-disabled')).toBe('true');
