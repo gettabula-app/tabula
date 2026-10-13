@@ -183,6 +183,14 @@ hr { border: 0; }
 /* A Markdown block is edited as its source, in a monospace face on the canvas colour with the selection's outline (docs/markdown-blocks.md). */
 .text-editor[data-kind='markdown'] { background: var(--canvas); color: var(--ink); box-shadow: 0 0 0 2px var(--wire); border-radius: var(--radius-xs); overflow: auto; tab-size: 2; }
 .text-editor[data-kind='markdown']::placeholder { color: var(--graphite, currentColor); opacity: 0.7; }
+/* A code block is typed in place (docs/code-blocks.md): the textarea is the code area itself, the same box, face, size and line height as the drawn code, on the
+   card (no fill, no border, no ring: the block's own selection outline stays). Highlighting is off while it is open; the line numbers and the header stay. */
+.text-editor[data-kind='code'] {
+  background: transparent; color: var(--ink); box-shadow: none; outline: 0; resize: none; overflow: hidden; tab-size: 2; -moz-tab-size: 2;
+  font-family: var(--font-mono); white-space: pre; overflow-wrap: normal; word-break: normal; font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0; caret-color: var(--ink);
+}
+.text-editor[data-kind='code'][data-wrap='true'] { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; }
+.text-editor[data-kind='code']::placeholder { color: var(--graphite, currentColor); opacity: 0.7; }
 
 /* ------------------------------------------------------------- trays */
 
@@ -935,6 +943,15 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 
 /* Windows high contrast: colours the page sets are replaced by the system's, which would blank the colour swatches and drop
    every selection drawn with a box-shadow or a fill. Swatches keep their colour; selected things get an outline. */
+/* A code block in Windows high contrast: the card's edge is a 1px line in the text colour, the code is CanvasText on Canvas and highlighting is off (these rules win over
+   the colours the drawing sets as attributes). */
+@media (forced-colors: active) {
+  .code-block .code-card { fill: Canvas !important; stroke: CanvasText !important; stroke-width: 1px; filter: none; }
+  .code-block .code-rule { stroke: CanvasText !important; }
+  .code-block .code-text, .code-block .code-text text, .code-block .code-text tspan, .code-block .code-nums, .code-block .code-nums text, .code-block .code-note { fill: CanvasText !important; font-weight: 400 !important; font-style: normal !important; }
+  .text-editor[data-kind='code'] { color: CanvasText; background: Canvas; }
+}
+
 @media (forced-colors: active) {
   .swatch, .sticky-swatch .note, .theme-preview, .avatar, .remote-cursor-name, .remote-cursor-guest, .comment-avatar { forced-color-adjust: none; }
   .swatch.on, .tile.on, .font-row.on, .segmented button.on, .chip.on, .icon-btn.on, .rail-btn.on, .dot-presets button.on,
@@ -970,6 +987,8 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
     outline: 2px solid Highlight !important;
     outline-offset: 1px !important;
   }
+  /* the code block is edited in place: the block's selection outline is the focus, not a field ring */
+  .text-editor[data-kind='code']:focus, .text-editor[data-kind='code']:focus-visible { outline: none !important; }
 }
 
 .phone-people[hidden] { display: none !important; }

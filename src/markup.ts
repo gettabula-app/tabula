@@ -22,6 +22,7 @@ import { layoutMarkdown, type MdStyle } from './markdown-layout';
 import { mdItemsMarkup } from './markdown-svg';
 import { codeBoxHeight, layoutCode } from './code-layout';
 import { codeMarkup, getCodeTokens } from './code-markup';
+import { codeScroll } from './code-view';
 import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
 import type { TrackerPriority, TrackerStateCategory } from './tracker-types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
@@ -301,7 +302,9 @@ export function fittedBoxHeight(o: BaseObj, width = o.w): number {
 /** A code block (docs/code-blocks.md): the card, header, gutter and code as SVG text; tokens from the highlighter's cache, plain ink without. */
 function codeBlockMarkup(o: BaseObj, ctx: MarkupCtx) {
   const layout = layoutCode(o);
-  return wrapG(o, codeMarkup(o, layout, ctx.editingId === o.id ? null : getCodeTokens(o), { editing: ctx.editingId === o.id }), styleOf(o).opacity);
+  const editing = ctx.editingId === o.id;
+  // how far the block is scrolled sideways is the screen's: a file or a print shows it from the start
+  return wrapG(o, codeMarkup(o, layout, editing ? null : getCodeTokens(o), { editing, scrollX: ctx.still ? 0 : codeScroll(o.id) }), styleOf(o).opacity);
 }
 
 /** What a table lays its cells out with: the object's own font, size and weight (the defaults of DEFAULTS.table without them). */

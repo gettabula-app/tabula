@@ -45,6 +45,11 @@ import { guestMark } from './ui/guest-mark';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
 import { watchMarkdownHeights } from './markdown-heal';
+import { CODE, codeBoxHeight, layoutCode, newCodeFields } from './code-layout';
+import { setCodeRepaint } from './code-markup';
+import { codeMaxScroll, codeWrapDefault, defaultCodeLang } from './code-ui-logic';
+import { codeScroll, setCodeScroll } from './code-view';
+import { initCodeHighlight } from './code-highlight-glue';
 import { watchTableSizes } from './table-heal';
 import { cellAt, layoutTable } from './table-layout';
 import { TableController, newTableId } from './table-ui';
@@ -85,6 +90,7 @@ export type Tool =
   | { kind: 'sticky' }
   | { kind: 'text' }
   | { kind: 'markdown' }
+  | { kind: 'code' }
   | { kind: 'table' }
   | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'connector'; relation?: UmlRelation }
@@ -301,6 +307,7 @@ export class BoardApp {
     this.disposers.push(this.watchCardHeights());
     this.disposers.push(this.watchMarkdownHeights());
     this.disposers.push(this.watchTableSizes());
+    this.disposers.push(this.wireCode());
 
     this.bindPointer();
     this.bindKeys();
@@ -344,6 +351,19 @@ export class BoardApp {
         || this.flow.isHidden(card)
         || Boolean(card.privateStep && !this.store.getFlow().reveal),
     });
+  }
+
+  /**
+   * The code block's two seams (src/code-markup.ts): what a repaint of code blocks is (the renderer draws them again, which asks the token source for what it
+   * has now), and the highlighter's glue (src/code-highlight-glue.ts, the integrator's), started for this board.
+   */
+  private wireCode(): () => void {
+    setCodeRepaint(() => this.r.invalidateObjects([...this.store.cache.values()].filter((o) => o.type === 'code').map((o) => o.id)));
+    const stop = initCodeHighlight(this);
+    return () => {
+      stop();
+      setCodeRepaint(null);
+    };
   }
 
   /** Keeps a Markdown block's stored height equal to its rendered content after remote edits, agent writes and on load. */
@@ -2292,6 +2312,7 @@ export class BoardApp {
       case 'sticky': return { w: 192, h: 192 };
       case 'text': return { w: 240, h: 28 };
       case 'markdown': return { w: 360, h: 120 };
+      case 'code': { const f = newCodeFields(); return { w: f.w, h: f.h }; }
       case 'table': return { w: DEFAULT_COL_WIDTH * 3, h: 3 * 40 };
       case 'frame': return { w: 960, h: 600 };
       case 'shape': return shapeDefaultSize(t.shape);
@@ -2306,6 +2327,13 @@ export class BoardApp {
       case 'sticky': return this.makeObj('sticky', rect);
       case 'text': return this.makeObj('text', { ...rect, h: Math.max(rect.h, 28) });
       case 'markdown': return this.makeObj('markdown', { ...rect, w: Math.max(rect.w, 160), h: Math.max(rect.h, 60) });
+      case 'code': {
+        // a code block's height is its rows (a drag only sets the width); it starts in the language last used on this board, wrapped on a phone or tablet
+        const w = Math.max(rect.w, CODE.MIN_W);
+        const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+        const fields = { ...newCodeFields(), lang: defaultCodeLang(this.conn.id), wrap: codeWrapDefault(coarse), w };
+        return this.makeObj('code', { x: rect.x, y: rect.y, w, h: codeBoxHeight({ ...fields, w }) }, fields as Partial<BaseObj>);
+      }
       case 'table': {
         // a dragged box asks for as many columns and rows as fit it; a click makes 3 x 3
         const cols = Math.min(MAX_TABLE_COLS, Math.max(1, Math.round(rect.w / DEFAULT_COL_WIDTH)));
@@ -2369,7 +2397,7 @@ export class BoardApp {
     this.createObject(o);
     if (o.type === 'frame') this.adoptInto(o);
     this.setTool({ kind: 'select' });
-    if (o.type === 'sticky' || o.type === 'text' || o.type === 'shape' || o.type === 'markdown') this.editor.start(o.id);
+    if (o.type === 'sticky' || o.type === 'text' || o.type === 'shape' || o.type === 'markdown' || o.type === 'code') this.editor.start(o.id);
     if (o.type === 'table') this.startFirstCell(o.id);
   }
 
@@ -2532,6 +2560,18 @@ export class BoardApp {
     this.editor.start(o.id);
   }
 
+  /** A sideways wheel (or Shift+wheel) over a code block that does not wrap and has more to show scrolls its code, not the board; at either end the board moves again. */
+  private scrollCodeByWheel(e: WheelEvent): boolean {
+    if (!(e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY))) return false;
+    const o = this.hit(this.worldOf(e)) as BaseObj | undefined;
+    if (!o || o.type !== 'code' || o.wrap === true) return false;
+    const max = codeMaxScroll(layoutCode(o), false);
+    if (max <= 0) return false;
+    const unit = e.deltaMode === 1 ? 16 : 1;
+    const d = (e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX) * unit / this.zoom;
+    return setCodeScroll(o.id, codeScroll(o.id) + d, max);
+  }
+
   private onWheel(e: WheelEvent) {
     e.preventDefault();
     const s = this.r.size();
@@ -2539,6 +2579,8 @@ export class BoardApp {
     if (e.ctrlKey || e.metaKey) {
       const k = e.deltaMode === 1 ? 0.05 : 0.0025;
       this.r.zoomAt(sp, Math.exp(-e.deltaY * k * (e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 50 ? 3 : 1)));
+    } else if (this.scrollCodeByWheel(e)) {
+      return;
     } else {
       const k = e.deltaMode === 1 ? 16 : 1;
       const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
@@ -3123,6 +3165,10 @@ export class BoardApp {
     this.store.update(o.id, patch);
     if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
       this.store.update(o.id, { h: textHeight({ ...o, ...patch } as BaseObj) });
+    }
+    // a code block's height is its rows: a title adds the header, wrapping and the width change the row count
+    if (o.type === 'code' && ('title' in patch || 'wrap' in patch || 'lines' in patch || 'w' in patch)) {
+      this.store.update(o.id, { h: codeBoxHeight({ ...o, ...patch } as BaseObj) });
     }
     if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
       this.store.update(o.id, { h: markdownBoxHeight({ ...o, ...patch } as BaseObj) });

@@ -44,6 +44,7 @@ export const ICONS = {
   text: '<path d="M5 6V4.5h14V6M12 4.5v15M9 19.5h6"/>',
   code: '<path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/>',
   markdown: '<path d="M3 17V7l4 5 4-5v10M17 7v8m-3-3 3 3 3-3"/>',
+  wrap: '<path d="M4 6h16M4 12h11a3.5 3.5 0 010 7h-4m0 0l2.2-2.2M11 19l2.2 2.2M4 18h3"/>',
   table: '<rect x="4" y="5" width="16" height="14" style="rx:var(--radius-xs)"/><path d="M4 10h16M4 14.5h16M10 5v14"/>',
   rect: '<rect x="4" y="5" width="16" height="14" style="rx:var(--radius-xs)"/>',
   ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="7"/>',

@@ -33,6 +33,7 @@ import { mountComments } from './comments';
 import { mountChat } from './board-chat';
 import { currentChatDock } from './chat-dock';
 import { mountCanvasFocus } from './canvas-focus';
+import { mountCodeControls } from './code-controls';
 import { mountSideTray } from './side-tray';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
@@ -285,6 +286,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     { id: 'markdown', label: 'Markdown block', icon: 'markdown' as IconName, key: '', tool: { kind: 'markdown' } as Tool },
     // Link cards open an address popover instead of arming a tool, and are not offered in the demo
     ...(demo ? [] : [{ id: 'link', label: 'Link', icon: 'link' as IconName, key: '', tool: null as Tool | null }]),
+    // last in the flyout and without a key: the group's name, its stored choice and its other items stay as they were
+    { id: 'code', label: 'Code block', icon: 'code' as IconName, key: '', tool: { kind: 'code' } as Tool },
   ];
   const railGroupState: RailToolChoice[] = railGroupChoices.map(({ id, tool }) => ({ id, toolKind: tool?.kind }));
   const railGroupStorageKey = 'driftboard:rail-tool-group:text-markdown-link';
@@ -657,6 +660,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // the canvas is one tab stop, after the tool rail and before what acts on a selection (docs/canvas-keyboard.md)
   const canvasFocus = mountCanvasFocus(app, rail);
   app.onDestroy(() => canvasFocus.destroy());
+  // the focusable code areas and the Wrap and Copy buttons over code blocks (docs/code-blocks.md)
+  app.onDestroy(mountCodeControls(app));
   trackPanelTop(chrome, [topLeft, topRight]);
   const updatePanelTop = () => {
     const origin = chrome.getBoundingClientRect().top;

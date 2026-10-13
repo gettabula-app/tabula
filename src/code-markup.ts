@@ -77,13 +77,13 @@ function runs(row: readonly CodeToken[]): string {
 }
 
 /** The inner markup of a code block in its own box frame (the caller adds the translate/rotate group). `tokens` null draws plain ink. */
-export function codeMarkup(o: BaseObj, layout: CodeLayout = layoutCode(o), tokens: CodeLines | null = null, opts: { editing?: boolean } = {}): string {
+export function codeMarkup(o: BaseObj, layout: CodeLayout = layoutCode(o), tokens: CodeLines | null = null, opts: { editing?: boolean; scrollX?: number } = {}): string {
   const L = layout;
   const w = n(o.w);
   const family = escapeXml(CODE_MONO);
   const ui = escapeXml(fontFamily(o.font));
-  let out = `<g role="group" aria-label="${escapeXml(codeAccessibleName(o))}">`;
-  out += `<rect x="0.5" y="0.5" width="${n(o.w - 1)}" height="${n(o.h - 1)}" rx="12" fill="${PAPER}" stroke="${EDGE}" stroke-width="1" filter="url(#code-shadow)"/>`;
+  let out = `<g class="code-block" role="region" aria-label="${escapeXml(codeAccessibleName(o))}">`;
+  out += `<rect class="code-card" x="0.5" y="0.5" width="${n(o.w - 1)}" height="${n(o.h - 1)}" rx="12" fill="${PAPER}" stroke="${EDGE}" stroke-width="1" filter="url(#code-shadow)"/>`;
   if (L.hasHeader) {
     const title = typeof o.title === 'string' ? o.title.trim() : '';
     const chip = codeLangLabel(typeof o.lang === 'string' ? o.lang : 'plaintext');
@@ -95,8 +95,8 @@ export function codeMarkup(o: BaseObj, layout: CodeLayout = layoutCode(o), token
     out += `<rect x="${n(chipX)}" y="${(L.headerH - 20) / 2}" width="${chipW}" height="20" rx="6" fill="color-mix(in srgb, var(--ink, #111111) 6%, var(--paper, #FFFFFF))"/>`;
     out += `<text x="${n(chipX + chipW / 2)}" y="${L.headerH / 2 + 4}" font-family="${ui}" font-size="11" fill="${GRAPHITE}" text-anchor="middle">${escapeXml(chip)}</text>`;
   }
-  if (opts.editing) return `${out}</g>`;
-  if (L.showLines) out += `<line x1="${L.gutterW - 0.5}" y1="${L.headerH}" x2="${L.gutterW - 0.5}" y2="${n(o.h - 1)}" stroke="${RULE}" stroke-width="1"/>`;
+  // while the code is typed (a textarea sits over it) the card, the header and the numbers stay and only the code itself is left out
+  if (L.showLines) out += `<line class="code-rule" x1="${L.gutterW - 0.5}" y1="${L.headerH}" x2="${L.gutterW - 0.5}" y2="${n(o.h - 1)}" stroke="${RULE}" stroke-width="1"/>`;
   const empty = L.lines.length === 1 && L.lines[0] === '';
   const toks = L.long || empty ? null : usable(tokens, L.lines);
   let nums = '';
@@ -105,19 +105,23 @@ export function codeMarkup(o: BaseObj, layout: CodeLayout = layoutCode(o), token
     const y = n(L.top + r.y + (L.lineH - CODE.FONT) / 2 + CODE.FONT * 0.8);
     if (L.showLines && r.first) nums += `<text x="${L.gutterW - 10}" y="${y}" text-anchor="end">${r.line + 1}</text>`;
     const row = toks ? sliceTokens(toks[r.line], r.col, r.col + r.len) : [{ t: r.text, c: null } as CodeToken];
-    if (row.every((t) => !t.t)) continue;
+    if (opts.editing || row.every((t) => !t.t)) continue;
     body += `<text x="${n(L.textX + r.indent * L.charW)}" y="${y}">${runs(row)}</text>`;
   }
-  // long lines (wrap off) are clipped at the card's edge, inside its padding
+  // long lines (wrap off) are clipped inside the card, right of the numbers, and slide under that edge when the block is scrolled sideways
+  const scroll = opts.editing || L.long ? 0 : Math.max(0, opts.scrollX ?? 0);
   out += `<svg x="0" y="${L.headerH}" width="${w}" height="${n(Math.max(0, o.h - L.headerH - 1))}" overflow="hidden"><g transform="translate(0 ${-L.headerH})">`;
-  if (L.showLines) out += `<g font-family="${family}" font-size="${CODE.GUTTER_NUM}" fill="${GRAPHITE}" style="font-variant-numeric: tabular-nums" xml:space="preserve">${nums}</g>`;
-  out += `<g font-family="${family}" font-size="${CODE.FONT}" fill="${INK}" style="font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0; tab-size: ${CODE.TAB}" xml:space="preserve">`;
-  out += empty
-    ? `<text x="${L.textX}" y="${n(L.top + (L.lineH - CODE.FONT) / 2 + CODE.FONT * 0.8)}" fill="${GRAPHITE}" opacity="0.7">${escapeXml(CODE_STRINGS.empty)}</text>`
-    : body;
-  out += '</g>';
+  if (L.showLines) out += `<g class="code-nums" font-family="${family}" font-size="${CODE.GUTTER_NUM}" fill="${GRAPHITE}" style="font-variant-numeric: tabular-nums" xml:space="preserve">${nums}</g>`;
+  if (!opts.editing) {
+    out += `<svg x="${L.gutterW}" y="${L.headerH}" width="${n(Math.max(0, o.w - L.gutterW))}" height="${n(Math.max(0, o.h - L.headerH - 1))}" overflow="hidden"><g transform="translate(${n(-L.gutterW - scroll)} ${-L.headerH})">`;
+    out += `<g class="code-text" font-family="${family}" font-size="${CODE.FONT}" fill="${INK}" style="font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0; tab-size: ${CODE.TAB}" xml:space="preserve">`;
+    out += empty
+      ? `<text class="code-empty" x="${L.textX}" y="${n(L.top + (L.lineH - CODE.FONT) / 2 + CODE.FONT * 0.8)}" fill="${GRAPHITE}" opacity="0.7">${escapeXml(CODE_STRINGS.empty)}</text>`
+      : body;
+    out += '</g></g></svg>';
+  }
   if (L.long && L.noteY !== null) {
-    out += `<text x="${L.textX}" y="${n(L.noteY + CODE.FONT)}" font-family="${ui}" font-size="12" fill="${GRAPHITE}">${escapeXml(CODE_STRINGS.longNote)}</text>`;
+    out += `<text class="code-note" x="${L.textX}" y="${n(L.noteY + CODE.FONT)}" font-family="${ui}" font-size="12" fill="${GRAPHITE}">${escapeXml(CODE_STRINGS.longNote)}</text>`;
   }
   return `${out}</g></svg></g>`;
 }

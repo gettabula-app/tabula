@@ -11,3 +11,8 @@ export function copyTable(table: Record<string, unknown>, as: 'tsv' | 'markdown'
   const text = as === 'tsv' ? toTsv(table) : toMarkdownTable(table);
   navigator.clipboard.writeText(text).then(() => toast(as === 'tsv' ? 'Table copied for a spreadsheet' : 'Table copied as Markdown'), () => toast('Clipboard is not available'));
 }
+
+/** "Copy code": the plain source of a code block, exactly as it is stored (never highlighted markup, never line numbers). */
+export function copyCodeSource(source: string): void {
+  navigator.clipboard.writeText(source).then(() => toast('Code copied to the clipboard'), () => toast('Clipboard is not available'));
+}

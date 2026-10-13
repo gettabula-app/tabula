@@ -14,7 +14,13 @@ import { DEFAULTS, styleOf } from '../markup';
 import { fontName, getCatalogue, nearestWeight } from '../fonts';
 import { openFontPicker } from './fontpicker';
 import { CUSTOM_SIZE, FRAME_MAX, FRAME_MIN, FRAME_PRESETS, presetFor } from './frame-sizes';
-import { closeOpenCombo, combo, numberField } from './controls';
+import { closeOpenCombo, combo, numberField, switchRow } from './controls';
+import { CODE } from '../code-layout';
+import { CODE_STRINGS } from '../code-strings';
+import { rememberCodeLang } from '../code-ui-logic';
+import { openCodeLangPicker } from './code-lang-picker';
+import { copyCodeSource } from './markdown-actions';
+import { MAX_CODE_TITLE, codeLangLabel } from '../../shared/code-langs.mjs';
 import { toMermaid } from '../mermaid';
 import { toast } from './common';
 import { safeColor } from '../../shared/colors';
@@ -25,7 +31,7 @@ import { proposedLine } from '../ai-review';
 import { kanbanSwatch } from '../markup';
 
 const TYPE_LABEL: Record<string, string> = {
-  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', frame: 'Frame', group: 'Group', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
+  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', code: CODE_STRINGS.heading, frame: 'Frame', group: 'Group', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
   'uml-class': 'Class', 'uml-actor': 'Actor', 'uml-usecase': 'Use case', 'uml-lifeline': 'Lifeline', 'uml-note': 'Note',
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',
 };
@@ -134,6 +140,27 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       appearance.push(field('Shape', combo<ShapeKind>({
         label: 'Shape', options: kinds, value: shared((o) => (o as BaseObj).kind ?? 'rect'),
         ...live((v) => ({ kind: v }), (o) => o.type === 'shape'),
+      })));
+    }
+    if (same && first.type === 'code' && sel.length === 1) {
+      // Language (a searchable list), Title, then the two switches; the theme is not a setting (docs/code-blocks.md)
+      const code = first as BaseObj;
+      const lang = typeof code.lang === 'string' ? code.lang : 'plaintext';
+      const langBtn = h('button', { class: 'input combo code-lang-btn', type: 'button', 'aria-label': `${CODE_STRINGS.language}: ${codeLangLabel(lang)}`, 'aria-haspopup': 'dialog' },
+        h('span', { class: 'combo-value' }, codeLangLabel(lang)), icon('chevron', 16));
+      langBtn.addEventListener('click', () => openCodeLangPicker(langBtn, lang, (id) => {
+        rememberCodeLang(app.conn.id, id);
+        up({ lang: id });
+      }));
+      appearance.push(field(CODE_STRINGS.language, langBtn));
+      const title = h('input', { class: 'input', value: code.title ?? '', 'aria-label': CODE_STRINGS.title, placeholder: CODE_STRINGS.untitled, maxlength: String(MAX_CODE_TITLE), autocomplete: 'off', spellcheck: 'false' });
+      title.addEventListener('change', () => up({ title: title.value.trim() ? title.value.slice(0, MAX_CODE_TITLE) : undefined }));
+      appearance.push(field(CODE_STRINGS.title, title));
+      appearance.push(switchRow(CODE_STRINGS.lines, code.lines === true, (on) => up({ lines: on })));
+      appearance.push(switchRow(CODE_STRINGS.wrap, code.wrap === true, (on) => up({ wrap: on })));
+      arrange.push(field('Width', numberField({
+        label: 'Width', value: Math.round(code.w), min: CODE.MIN_W, max: 2400, step: 1, big: 10,
+        ...live((v: number) => ({ w: v }), (o) => o.type === 'code'),
       })));
     }
     if (same && first.type === 'frame' && sel.length === 1) {
@@ -266,6 +293,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       btn('backward', 'Send backward', () => void app.sendBackward(), '', 'mod+['),
       btn('back', 'Send to back', () => app.sendToBack(), '', '['),
       sel.length === 1 && sel[0].type === 'markdown' ? btn('copy', 'Copy as Markdown', () => copyMarkdownSource((sel[0] as BaseObj).text ?? '')) : null,
+      sel.length === 1 && sel[0].type === 'code' ? btn('copy', CODE_STRINGS.copy, () => copyCodeSource((sel[0] as BaseObj).text ?? '')) : null,
       sel.length === 1 && sel[0].type === 'table' ? btn('copy', 'Copy for a spreadsheet', () => copyTable(sel[0] as unknown as Record<string, unknown>, 'tsv')) : null,
       sel.length === 1 && sel[0].type === 'table' ? btn('copy', 'Copy as Markdown', () => copyTable(sel[0] as unknown as Record<string, unknown>, 'markdown')) : null,
       btn('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
