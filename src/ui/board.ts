@@ -37,6 +37,7 @@ import { mountSideTray } from './side-tray';
 import { mountHistory } from './history';
 import { canSeeHistory } from '../history';
 import { openFontPicker } from './fontpicker';
+import { openPrint } from './print';
 import { csvKanbans, download, downloadCardsCsv, exportPng, exportSvgFile, insertImported, readBoardFile, safeName, toDrift, toJson } from '../exporters';
 import { toMermaid } from '../mermaid';
 
@@ -904,6 +905,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
       }
     }),
     item('download', 'SVG vector', async () => download(await exportSvgFile(app, sel), `${name()}.svg`, 'image/svg+xml')),
+    item('download', 'Print or save as PDF…', () => openPrint(app), 'Through your browser’s print dialog'),
     item('download', 'Board file (.drift)', async () => download(await toDrift(app, { leaveOutWithheld: true }), `${name()}.drift`, 'application/zip'), 'Board with its sync data and pictures'),
     item('download', 'JSON snapshot', () => download(JSON.stringify(toJson(app, sel, undefined, { leaveOutWithheld: true }), null, 2), `${name()}.json`, 'application/json')),
     item('download', 'Markdown summary', () => download(app.flow.summaryMarkdown(), `${name()}-summary.md`, 'text/markdown')),
