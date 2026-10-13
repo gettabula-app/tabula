@@ -52,6 +52,7 @@ function mountThread(commentAuthor: Author = author, focusCanvas = false) {
     get openThreadId() { return openThreadId; },
     onOpenComment: null as BoardApp['onOpenComment'],
     visibleThreads: () => comments.list(),
+    participants: () => [],
     flyToThread: () => undefined,
     openThread(id: string | null) {
       openThreadId = id;

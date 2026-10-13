@@ -101,7 +101,7 @@ export function openAccountMenu(anchor: HTMLElement, me: Me) {
     canChangeProfile(authState().mode) ? item('Your name and colour', () => openProfileDialog(getUser(), (u) => saveUser(u))) : null,
     aiToolsAvailable(me) ? item('AI tool access', () => openTokensDialog(me)) : null,
     me.ai?.personalKeys ? item('Your AI key', () => openAiKeyDialog()) : null,
-    me.chat ? item('Chat notifications', () => openChatNotifications()) : null,
+    item('Notification settings', () => openChatNotifications()),
     h('hr', { class: 'menu-sep' }),
     item('Sign out', () => { void signOutAndLeave(); }),
   ), { side: 'bottom', label: 'Account menu' });

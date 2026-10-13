@@ -8,6 +8,8 @@ import { h, icon } from './dom';
 import { announce } from './announce';
 import { guestMark } from './guest-mark';
 import { fmtAgo, segmented, toast } from './common';
+import { mentionLabel, type Person } from './chat-logic';
+import { choosePerson, commentSegments, editableText, knownPeople, offerable, mentionState, plainText, storedText, withinLimit, MAX_TEXT } from './comment-mentions-logic';
 import type { SideTray } from './side-tray';
 import { safeInsets } from './safe-area';
 
@@ -42,11 +44,20 @@ function avatar(name: string, color: string): HTMLSpanElement {
   return a;
 }
 
+/** Who a comment can name: the people on this board the client knows (comment authors and the people here now). */
+function peopleOf(app: BoardApp): Person[] {
+  return knownPeople(app.comments.list(), app.participants().map((p) => ({ id: p.user.id, name: p.user.name })));
+}
+
+/** The `@` list of a comment field. `onKey` runs first on every key; it returns true when it has used the key. */
+interface MentionKeys { onKey: (e: KeyboardEvent) => boolean }
+
 /** Enter posts, Shift+Enter adds a line, Escape calls onEscape. Keys never reach the board's shortcuts. */
-function textArea(label: string, onEnter: () => void, onEscape: () => void): HTMLTextAreaElement {
+function textArea(label: string, onEnter: () => void, onEscape: () => void, mention?: MentionKeys): HTMLTextAreaElement {
   const ta = h('textarea', { class: 'input comment-input', 'aria-label': label, placeholder: label, maxlength: '4000', rows: 2 });
   ta.addEventListener('keydown', (e) => {
     e.stopPropagation();
+    if (mention?.onKey(e)) return;
     if (e.key === 'Escape') {
       e.preventDefault();
       onEscape();
@@ -58,6 +69,116 @@ function textArea(label: string, onEnter: () => void, onEscape: () => void): HTM
   ta.addEventListener('keyup', (e) => e.stopPropagation());
   ta.addEventListener('paste', (e) => e.stopPropagation());
   return ta;
+}
+
+let listSeq = 0;
+
+/**
+ * The people list under a comment field, with chat's rules: typing `@` offers the people here, Up and Down move, Enter picks,
+ * Escape closes the list only, and Tab leaves the field as it does without a list (focus is never held). A pick shows
+ * `@Name` in the field and is stored as the token when the comment is posted (storedText).
+ */
+function mentionPicker(ta: HTMLTextAreaElement, people: () => Person[], meId: string, changed: () => void) {
+  const id = `comment-suggest-${++listSeq}`;
+  const el = h('ul', { class: 'comment-suggest', id, role: 'listbox', 'aria-label': 'People', hidden: true });
+  ta.setAttribute('role', 'combobox');
+  ta.setAttribute('aria-multiline', 'true');
+  ta.setAttribute('aria-autocomplete', 'list');
+  ta.setAttribute('aria-controls', id);
+  ta.setAttribute('aria-expanded', 'false');
+  let options: Person[] = [];
+  let active = 0;
+  let picked: Person[] = [];
+
+  function close() {
+    options = [];
+    el.hidden = true;
+    el.replaceChildren();
+    ta.setAttribute('aria-expanded', 'false');
+    ta.removeAttribute('aria-activedescendant');
+  }
+
+  function paint() {
+    el.replaceChildren(...options.map((p, i) => {
+      const li = h('li', { class: `comment-option${i === active ? ' on' : ''}`, role: 'option', id: `${id}-${i}`, 'aria-selected': String(i === active) }, p.name);
+      li.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        choose(i);
+      });
+      return li;
+    }));
+    el.hidden = options.length === 0;
+    ta.setAttribute('aria-expanded', String(options.length > 0));
+    if (options.length) ta.setAttribute('aria-activedescendant', `${id}-${active}`);
+    else ta.removeAttribute('aria-activedescendant');
+  }
+
+  function update() {
+    const state = ta.selectionStart === ta.selectionEnd ? mentionState(ta.value, ta.selectionStart, people(), meId, picked) : null;
+    if (!state) return close();
+    if (state.options.map((p) => p.id).join() !== options.map((p) => p.id).join()) active = 0;
+    options = state.options;
+    paint();
+  }
+
+  function choose(i: number) {
+    const person = options[i];
+    const next = person ? choosePerson(ta.value, ta.selectionStart, person, picked) : null;
+    if (!next) return close();
+    ta.value = next.text;
+    ta.setSelectionRange(next.caret, next.caret);
+    picked = next.picked;
+    close();
+    changed();
+    ta.focus();
+  }
+
+  const onKey = (e: KeyboardEvent): boolean => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') requestAnimationFrame(update);
+    if (!options.length) return false;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length;
+      paint();
+      return true;
+    }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      choose(active);
+      return true;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+      return true;
+    }
+    if (e.key === 'Tab') close();
+    return false;
+  };
+
+  ta.addEventListener('input', update);
+  ta.addEventListener('click', update);
+  ta.addEventListener('blur', () => close());
+
+  return {
+    el,
+    onKey,
+    picked: () => picked,
+    reset() {
+      picked = [];
+      close();
+    },
+  };
+}
+
+/** A text as DOM for a comment: plain text, and each mention as a chip with the person's name (never innerHTML). */
+function textNodes(text: string, people: Person[], meId: string): Node[] {
+  return commentSegments(text, people).map((s) => {
+    if (s.type !== 'mention') return document.createTextNode(s.type === 'link' ? s.url : s.text);
+    const chip = h('span', { class: `comment-mention${s.id === meId ? ' me' : ''}` });
+    chip.textContent = mentionLabel(s, people.some((p) => p.id === s.id));
+    return chip;
+  });
 }
 
 function focusSoon(ta: HTMLTextAreaElement) {
@@ -110,13 +231,13 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     app.onOpenComment?.({ threadId: t.id, screen: { x: window.innerWidth / 2, y: window.innerHeight / 2 } });
   }
 
-  function row(t: Thread) {
+  function row(t: Thread, people: Person[]) {
     const n = t.replies.length;
     return h('button', { class: 'comment-row', onclick: () => openRow(t) },
       avatar(t.authorName, t.authorColor),
       h('span', { class: 'comment-row-body' },
         t.authorId.startsWith('guest_') ? h('span', { class: 'comment-row-author' }, t.authorName, ' ', guestMark('comment-badge comment-guest')) : null,
-        h('span', { class: 'comment-row-text' }, t.text.trim().split('\n')[0]),
+        h('span', { class: 'comment-row-text' }, plainText(t.text.trim().split('\n')[0], people)),
         h('span', { class: 'comment-row-meta' }, `${n} repl${n === 1 ? 'y' : 'ies'} · ${fmtAgo(t.createdAt)}`)));
   }
 
@@ -147,6 +268,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     button.setAttribute('aria-label', open.length ? `Comments, ${open.length} open ${open.length === 1 ? 'comment' : 'comments'}` : 'Comments');
     if (!panelOpen) return;
     const shown = (filter === 'open' ? open : resolved).sort((a, b) => b.createdAt - a.createdAt);
+    const people = peopleOf(app);
     // Rebuild only when something shown changed: a row removed under the pointer would swallow its click.
     const key = JSON.stringify([filter, open.length, resolved.length, shown.map((t) => [t.id, t.authorId, t.text, t.replies.length, t.resolved, t.createdAt, t.authorName, t.authorColor])]);
     if (key === painted) return;
@@ -160,7 +282,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
         render();
       }, 'Filter comments'),
       shown.length
-        ? h('div', { class: 'comments-list' }, ...shown.map(row))
+        ? h('div', { class: 'comments-list' }, ...shown.map((t) => row(t, people)))
         : h('p', { class: 'comment-muted comments-empty' }, filter === 'open' ? 'No open comments.' : 'No resolved comments.'),
     );
   }
@@ -186,17 +308,29 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     const el = h('div', { class: 'comment-card tray', role: 'dialog', 'aria-label': 'Comment' }, head, body);
     const closeBtn = h('button', { class: 'icon-btn', 'aria-label': 'Close', onclick: () => close(true) }, icon('close', 18));
 
-    const composeArea = textArea('Add a comment', () => post(), () => close(true));
+    const mine = authorOf(app).id;
     const composeSubmit = h('button', { class: 'btn primary', disabled: true, onclick: () => post() }, 'Comment');
+    const composeHook: MentionKeys = { onKey: () => false };
+    const composeArea = textArea('Add a comment', () => post(), () => close(true), composeHook);
+    const composePicker = mentionPicker(composeArea, () => offerable(peopleOf(app)), mine, () => {
+      composeSubmit.disabled = !composeArea.value.trim();
+    });
+    composeHook.onKey = composePicker.onKey;
     composeArea.addEventListener('input', () => {
       composeSubmit.disabled = !composeArea.value.trim();
     });
     const composeBody = h('div', { class: 'comment-compose' },
+      composePicker.el,
       composeArea,
       h('div', { class: 'comment-actions' }, h('button', { class: 'btn', onclick: () => close(true) }, 'Cancel'), composeSubmit));
 
-    const replyArea = textArea('Reply', () => postReply(), () => close(true));
     const replyBtn = h('button', { class: 'btn primary', disabled: true, onclick: () => postReply() }, 'Reply');
+    const replyHook: MentionKeys = { onKey: () => false };
+    const replyArea = textArea('Reply', () => postReply(), () => close(true), replyHook);
+    const replyPicker = mentionPicker(replyArea, () => offerable(peopleOf(app)), mine, () => {
+      replyBtn.disabled = !replyArea.value.trim();
+    });
+    replyHook.onKey = replyPicker.onKey;
     replyArea.addEventListener('input', () => {
       replyBtn.disabled = !replyArea.value.trim();
     });
@@ -229,13 +363,18 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     }
 
     function post() {
-      const text = composeArea.value.trim();
-      if (!anchor || !text) return;
+      const text = storedText(composeArea.value, composePicker.picked());
+      if (!anchor || !composeArea.value.trim()) return;
+      if (!withinLimit(text)) {
+        toast(`A comment can be at most ${MAX_TEXT} characters.`);
+        return;
+      }
       const id = app.comments.addThread(authorOf(app), anchor, text);
       if (id === null) {
         toast('Could not add the comment.');
         return;
       }
+      composePicker.reset();
       app.setDraftPin(null);
       threadId = id;
       app.openThread(id);
@@ -246,13 +385,18 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
 
     function postReply() {
       const id = threadId;
-      const text = replyArea.value.trim();
-      if (id === null || !text) return;
+      const text = storedText(replyArea.value, replyPicker.picked());
+      if (id === null || !replyArea.value.trim()) return;
+      if (!withinLimit(text)) {
+        toast(`A comment can be at most ${MAX_TEXT} characters.`);
+        return;
+      }
       if (!app.comments.reply(id, authorOf(app), text)) {
         toast('Could not add the reply.');
         return;
       }
       replyArea.value = '';
+      replyPicker.reset();
       replyBtn.disabled = true;
       renderThread();
     }
@@ -263,10 +407,14 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
       renderThread();
     }
 
+    let editPicked: Person[] = [];
+
     function startEdit(m: Msg) {
       editing = m.id;
       confirming = null;
-      editArea.value = m.text;
+      const editable = editableText(m.text, peopleOf(app));
+      editArea.value = editable.text;
+      editPicked = editable.picked;
       editSave.disabled = !m.text.trim();
       renderThread();
       editArea.focus();
@@ -280,8 +428,12 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
     function saveEdit() {
       const id = threadId;
       const mid = editing;
-      const text = editArea.value.trim();
+      const text = storedText(editArea.value, editPicked);
       if (id === null || mid === null || !text) return;
+      if (!withinLimit(text)) {
+        toast(`A comment can be at most ${MAX_TEXT} characters.`);
+        return;
+      }
       const ok = mid === id ? app.comments.editThread(id, text) : app.comments.editReply(id, mid, text);
       if (!ok) {
         toast('Could not save the comment.');
@@ -310,7 +462,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
       renderThread();
     }
 
-    function messageEl(m: Msg, ro: boolean, mine: string, mod: boolean, othersReplied: boolean): HTMLElement {
+    function messageEl(m: Msg, ro: boolean, mine: string, mod: boolean, othersReplied: boolean, people: Person[]): HTMLElement {
       const meta = h('div', { class: 'comment-meta' },
         avatar(m.authorName, m.authorColor),
         h('span', { class: 'comment-name' }, m.authorName),
@@ -330,7 +482,7 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
         if (armed) acts.push(h('span', { class: 'comment-muted' }, 'Delete this comment?'));
         acts.push(h('button', { class: `btn ghost small${armed ? ' armed' : ''}`, onclick: () => onDelete(m) }, armed ? 'Click again to delete' : 'Delete'));
       }
-      return h('div', { class: 'comment-msg' }, meta, h('p', { class: 'comment-text' }, m.text), acts.length ? h('div', { class: 'comment-actions' }, ...acts) : null);
+      return h('div', { class: 'comment-msg' }, meta, h('p', { class: 'comment-text' }, ...textNodes(m.text, people, mine)), acts.length ? h('div', { class: 'comment-actions' }, ...acts) : null);
     }
 
     function renderThread() {
@@ -355,10 +507,11 @@ export function mountComments(app: BoardApp, chrome: HTMLElement, tray: SideTray
       if (!list.some((m) => m.id === confirming)) confirming = null;
       const hadFocus = document.activeElement === editArea;
       head.replaceChildren(...(t.resolved ? [h('span', { class: 'comment-badge' }, 'Resolved')] : []), closeBtn);
-      msgs.replaceChildren(...list.map((m) => messageEl(m, ro, mine, mod, list.some((x) => !x.root && x.authorId !== mine))));
+      const people = peopleOf(app);
+      msgs.replaceChildren(...list.map((m) => messageEl(m, ro, mine, mod, list.some((x) => !x.root && x.authorId !== mine), people)));
       if (ro !== footRo) {
         footRo = ro;
-        foot.replaceChildren(...(ro ? [readonlyLine] : [replyArea, replyRow]));
+        foot.replaceChildren(...(ro ? [readonlyLine] : [replyPicker.el, replyArea, replyRow]));
       }
       if (!ro) resolveBtn.replaceChildren(icon('check', 16), t.resolved ? 'Reopen' : 'Resolve');
       // The relay undoes a resolve by anyone else: the author, or whoever may edit the board, may resolve.

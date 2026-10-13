@@ -884,7 +884,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       })
     : null;
   const notificationRoutes = notificationStore
-    ? createNotificationRoutes({ notifications: notificationStore, compile, errors: { badRequest } })
+    ? createNotificationRoutes({ notifications: notificationStore, compile, errors: { badRequest, forbidden, invalidInput: (message) => new HttpError(400, 'invalid_input', message) } })
     : [];
   const chatRoutes = chatOn
     ? createChatRoutes({
@@ -1313,12 +1313,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       directory.transaction(() => {
         directory.shareBoard(board.id, { principalType, principalId, role });
         if (principalType === 'user' && principalId !== user.id && !wasShared) {
+          // null when the recipient has switched shares off (docs/notifications.md, Settings): no row, no ping.
           notificationCreated = notificationStore?.record({
             userId: principalId,
             kind: 'board_shared',
             actorId: user.id,
             boardId: board.id,
-          }, { notify: false }).created === true;
+          }, { notify: false })?.created === true;
         }
         audit(user, 'board.share', { boardId: board.id, principalType, principalId, role });
       });
