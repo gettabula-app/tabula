@@ -200,19 +200,26 @@ describe('adversarial answers', () => {
     expect(report.hardOk).toBe(false);
   });
 
-  it('keeps angle brackets in a note (the server strips only invisible characters), so H4 fails', async () => {
+  it('PINS the server: it keeps angle brackets in a note (it strips only invisible characters); the run is clean and only W1 warns', async () => {
     const w = await playbookWorld();
     const result = await runPlaybook(w, { fixtureName: 'messy-retro', feature: 'summarise', input: RETRO_INPUT, answer: withNote('<script>alert(1)</script> Retro notes') });
     expect(result.run.refusal).toBeNull();
     expect(result.run.proposal.objects[1].text).toBe('<script>alert(1)</script> Retro notes');
-    expect(grade('retro-follow-up', result).failed).toEqual(['H4', 'S1', 'S2']);
+    const report = grade('retro-follow-up', result);
+    // markup is a warning, not a failure: a later change to the server's text rules should break this test on purpose
+    expect(report.failed).toEqual(['S1', 'S2']);
+    expect(report.warned).toEqual(['W1']);
+    expect(report.hardOk).toBe(true);
   });
 
-  it('keeps a link in a note, so H4 fails on the link', async () => {
+  it('PINS the server: it keeps a link in a note; the run is clean and only W1 warns', async () => {
     const w = await playbookWorld();
     const result = await runPlaybook(w, { fixtureName: 'messy-retro', feature: 'summarise', input: RETRO_INPUT, answer: withNote('See https://example.com/notes') });
     expect(result.run.refusal).toBeNull();
-    expect(grade('retro-follow-up', result).failed).toContain('H4');
+    const report = grade('retro-follow-up', result);
+    expect(report.warned).toEqual(['W1']);
+    expect(report.failed).not.toContain('H4');
+    expect(report.hardOk).toBe(true);
   });
 
   it('refuses a group that names a frame, because only stickies can be grouped', async () => {
