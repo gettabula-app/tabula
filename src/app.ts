@@ -2551,6 +2551,11 @@ export class BoardApp {
 
   // ---------------------------------------------------------------- keyboard
 
+  /** Focus fell to the page body while a tracker frame is selected (a control of the live tracker went away): that is not the canvas asking to delete the frame or undo its creation. */
+  private strayTrackerFocus(): boolean {
+    return document.activeElement === document.body && this.selection.some((id) => this.store.get(id)?.type === 'tracker');
+  }
+
   private bindKeys() {
     const signal = this.lifetime.signal;
     window.addEventListener('keydown', (e) => {
@@ -2624,7 +2629,7 @@ export class BoardApp {
       }
       if (mod && k === 'z') {
         e.preventDefault();
-        if (ro) return;
+        if (ro || this.strayTrackerFocus()) return;
         if (e.shiftKey) this.store.undo.redo();
         else this.store.undo.undo();
         return;
@@ -2648,9 +2653,7 @@ export class BoardApp {
       if (e.shiftKey && e.code === 'Digit0') return this.zoomTo(1);
       if (k === 'delete' || k === 'backspace') {
         e.preventDefault();
-        // focus lost to the page body (a control of a live tracker went away) is not the canvas asking to delete its tracker frame
-        const strayFocus = document.activeElement === document.body && this.selection.some((id) => this.store.get(id)?.type === 'tracker');
-        if (!ro && !strayFocus) this.deleteSelection();
+        if (!ro && !this.strayTrackerFocus()) this.deleteSelection();
         return;
       }
       if (k === 'escape') {

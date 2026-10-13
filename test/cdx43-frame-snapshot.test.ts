@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clearTrackerSnapshots, renderTrackerSnapshot, publishTrackerSnapshot } from '../src/tracker/ui/frame-snapshot';
-import { setTrackerGuest } from '../src/tracker-frame';
+import { setTrackerGuest, setTrackerMember } from '../src/tracker-frame';
 import type { BaseObj } from '../src/types';
 import type { TrackerStateCategory, TrackerTicket } from '../src/tracker-types';
 
@@ -64,6 +64,17 @@ describe('tracker frame snapshots', () => {
 
   it('asks for a sign-in when no snapshot exists', () => {
     expect(renderTrackerSnapshot(frame('frame-never-published'))).toContain('>Sign in to a workspace to see tickets.</text>');
+  });
+
+  it('does not ask a signed-in member to sign in when a frame has no snapshot yet', () => {
+    setTrackerMember(true);
+    try {
+      const svg = renderTrackerSnapshot(frame('frame-over-cap'));
+      expect(svg).toContain('>Zoom in or select this tracker to load its tickets.</text>');
+      expect(svg).not.toContain('Sign in to a workspace');
+    } finally {
+      setTrackerMember(false);
+    }
   });
 
   it('tells a guest that tickets are for workspace members, not to sign in', () => {

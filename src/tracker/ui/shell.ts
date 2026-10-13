@@ -634,8 +634,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       if (field === 'state') {
         const picked = await openPicker<string>(anchor, { label: 'State', options: info.states.map((item) => ({ value: item.key, label: item.name })), value: ticket.state.key });
         if (typeof picked === 'string' && picked !== ticket.state.key) {
+          const previous = ticket.state.key; // read before the store updates the cached ticket this row holds
           const next = await options.store.transitionTicket(ticket.key, picked);
-          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, ticket.state.key));
+          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, previous));
           announce(`${next.key} moved to ${next.state.name}`);
         }
       } else if (field === 'assignee') {
@@ -688,6 +689,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const doBulk = async (patch: { state?: string; assignee?: string | null; priority?: TrackerPriority; labels?: string[]; due?: string | null; archived?: boolean }, anchor?: HTMLElement) => {
     if (readOnly || !state.selectedKeys.length) return;
+    const count = state.selectedKeys.length; // read before the awaits: the store's update redraws the list, which may drop the selection
     try {
       let undoBatch: Awaited<ReturnType<TrackerStore['bulk']>> | undefined;
       if (patch.state) {
@@ -710,10 +712,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         undoBatch = await options.store.bulk(state.selectedKeys, patch);
         const batch = undoBatch;
         lastUndoAction = () => options.store.undo(batch);
-        const count = state.selectedKeys.length;
         toast(patch.archived ? `${count} issues archived` : `${count} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
       }
-      if (patch.state) toast(`${state.selectedKeys.length} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
+      if (patch.state) toast(`${count} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
       state.selectedKeys = [];
       announce('Selection cleared');
       drawRows(currentCache);

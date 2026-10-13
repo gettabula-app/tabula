@@ -8,7 +8,12 @@ let guestAudience = false;
 export function setTrackerGuest(guest: boolean): void {
   guestAudience = guest;
 }
-export const trackerNoTicketsLine = (): string => (guestAudience ? 'Tickets are for workspace members.' : 'Sign in to a workspace to see tickets.');
+let memberAudience = false;
+/** Set by the board: the person is signed in to a workspace with a tracker. A frame with no snapshot yet (past the live cap) is then not asking for a sign-in. */
+export function setTrackerMember(member: boolean): void {
+  memberAudience = member;
+}
+export const trackerNoTicketsLine = (): string => (guestAudience ? 'Tickets are for workspace members.' : memberAudience ? 'Zoom in or select this tracker to load its tickets.' : 'Sign in to a workspace to see tickets.');
 const escapeLine = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
 
 

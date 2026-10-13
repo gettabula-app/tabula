@@ -233,6 +233,99 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     await page.close();
   });
 
+  it('Ctrl+Z after a ticket move is never the board undo: the frame stays, and the tracker undoes the move', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    await page.locator('.trk-frame-wrap.is-work .trk-element-switch').getByText('Board', { exact: true }).click();
+    const cards = page.locator('.trk-frame-wrap.is-work .trk-board-card');
+    await cards.first().waitFor();
+    const key = (await cards.first().getAttribute('data-key'))!;
+    const laneOf = () => page.evaluate((k) => document.querySelector(`.trk-frame-wrap.is-work .trk-board-card[data-key="${k}"]`)?.closest('.trk-board-lane')?.getAttribute('data-state') ?? '', key);
+    const before = await laneOf();
+    const box = (await cards.first().boundingBox())!;
+    const lanes = await page.locator('.trk-frame-wrap.is-work .trk-board-lane').evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 80 }; }));
+    const target = lanes.find((l) => Math.abs(l.x - (box.x + box.width / 2)) > 60)!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(target.x, target.y, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForFunction(([k, b]) => {
+      const c = document.querySelector(`.trk-frame-wrap.is-work .trk-board-card[data-key="${k}"]`);
+      const l = c?.closest('.trk-board-lane');
+      return !!c && (l?.getAttribute('data-state') ?? '') !== b;
+    }, [key, before] as const, { timeout: budget(10_000) });
+    await page.keyboard.press('Control+z');
+    await page.keyboard.press('Meta+z');
+    expect(await frameExists(page, id)).toBe(true);
+    await page.waitForFunction(([k, b]) => {
+      const l = document.querySelector(`.trk-frame-wrap.is-work .trk-board-card[data-key="${k}"]`)?.closest('.trk-board-lane');
+      return (l?.getAttribute('data-state') ?? '') === b;
+    }, [key, before] as const, { timeout: budget(10_000) });
+    await page.close();
+  });
+
+  it('the Undo button of the State changed toast puts the ticket back in its lane', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    await page.locator('.trk-frame-wrap.is-work .trk-element-switch').getByText('Board', { exact: true }).click();
+    const cards = page.locator('.trk-frame-wrap.is-work .trk-board-card');
+    await cards.first().waitFor();
+    const key = (await cards.first().getAttribute('data-key'))!;
+    const laneOf = () => page.evaluate((k) => document.querySelector(`.trk-frame-wrap.is-work .trk-board-card[data-key="${k}"]`)?.closest('.trk-board-lane')?.getAttribute('data-state') ?? '', key);
+    const before = await laneOf();
+    const box = (await cards.first().boundingBox())!;
+    const lanes = await page.locator('.trk-frame-wrap.is-work .trk-board-lane').evaluateAll((els) => els.map((el) => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 80 }; }));
+    const target = lanes.find((l) => Math.abs(l.x - (box.x + box.width / 2)) > 60)!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(target.x, target.y, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForFunction(([k, b]) => {
+      const c = document.querySelector(`.trk-frame-wrap.is-work .trk-board-card[data-key="${k}"]`);
+      const l = c?.closest('.trk-board-lane');
+      return !!c && (l?.getAttribute('data-state') ?? '') !== b;
+    }, [key, before] as const, { timeout: budget(10_000) });
+    await page.locator('.toast button', { hasText: 'Undo' }).click();
+    expect(await frameExists(page, id)).toBe(true);
+    await page.waitForFunction(([k, b]) => {
+      const l = document.querySelector(`.trk-frame-wrap.is-work .trk-board-card[data-key="${k}"]`)?.closest('.trk-board-lane');
+      return (l?.getAttribute('data-state') ?? '') === b;
+    }, [key, before] as const, { timeout: budget(10_000) });
+    await page.close();
+  });
+
+  it('the Undo button of the State changed toast from the list state picker puts the state back', async () => {
+    const page = await open();
+    await enterWork(page);
+    const row = page.locator('.trk-frame-wrap.is-work .trk-list-row').first();
+    const key = (await row.getAttribute('data-key'))!;
+    const stateOf = (k: string) => page.evaluate((x) => document.querySelector(`.trk-frame-wrap.is-work .trk-list-row[data-key="${x}"] .trk-state-value`)?.getAttribute('aria-label') ?? '', k);
+    const before = await stateOf(key);
+    await row.locator('.trk-state-value').click();
+    await page.locator('.trk-picker-option').first().waitFor();
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(([k, b]) => (document.querySelector(`.trk-frame-wrap.is-work .trk-list-row[data-key="${k}"] .trk-state-value`)?.getAttribute('aria-label') ?? b) !== b, [key, before] as const, { timeout: budget(10_000) });
+    await page.locator('.toast button', { hasText: 'Undo' }).click();
+    await page.waitForFunction(([k, b]) => document.querySelector(`.trk-frame-wrap.is-work .trk-list-row[data-key="${k}"] .trk-state-value`)?.getAttribute('aria-label') === b, [key, before] as const, { timeout: budget(10_000) });
+    expect(await stateOf(key)).toBe(before);
+    await page.close();
+  });
+
+  it('Backspace on a focused row archives that one ticket, says so with the right count, and keeps the frame', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    const row = page.locator('.trk-frame-wrap.is-work .trk-list-row').first();
+    const key = (await row.getAttribute('data-key'))!;
+    await row.focus();
+    await page.keyboard.press('Backspace');
+    await page.locator('.toast', { hasText: 'archived' }).waitFor();
+    expect(await page.locator('.toast', { hasText: 'archived' }).first().textContent()).toMatch(/^1 issue/);
+    expect(await page.locator(`.trk-frame-wrap.is-work .trk-list-row[data-key="${key}"]`).count()).toBe(0);
+    expect(await frameExists(page, id)).toBe(true);
+    await page.close();
+  });
+
   it('a key typed inside the tracker is not a canvas shortcut (Space does not pan, a tool key does not switch the tool)', async () => {
     const page = await open();
     await enterWork(page);
