@@ -2017,8 +2017,8 @@ export class BoardApp {
       if (h.includes('n') && sy === null) t = snapTo(o0.y + t, g) - o0.y;
       if (h.includes('s') && sy === null) b = snapTo(o0.y + b, g) - o0.y;
     }
-    const minW = o0.type === 'tracker' ? 480 : o0.type === 'markdown' ? 120 : 8;
-    const minH = o0.type === 'tracker' ? 360 : 8;
+    const minW = o0.type === 'tracker' ? 360 : o0.type === 'markdown' ? 120 : 8;
+    const minH = o0.type === 'tracker' ? 280 : 8;
     if (r - l < minW) {
       if (h.includes('w')) l = r - minW;
       else r = l + minW;

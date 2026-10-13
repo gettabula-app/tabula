@@ -19,6 +19,15 @@ const LINE_MIN = 16;
 
 const ARROWS: Record<string, NavDirection> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
 let serial = 0;
+/** The tab stop of the canvas that is mounted now (one per board), for focusCanvas. */
+let canvasTarget: HTMLElement | null = null;
+
+/** Puts keyboard focus on the canvas's one tab stop, as Tab would. False when no canvas is mounted. */
+export function focusCanvas(): boolean {
+  if (!canvasTarget?.isConnected) return false;
+  canvasTarget.focus();
+  return true;
+}
 
 export interface CanvasFocus {
   el: HTMLElement;
@@ -46,6 +55,7 @@ export function mountCanvasFocus(app: BoardApp, anchor: HTMLElement): CanvasFocu
   }, list);
   const ring = h('div', { class: 'canvas-ring', 'aria-hidden': 'true', hidden: true });
   const host = anchor.parentNode;
+  canvasTarget = target;
   host?.insertBefore(target, anchor.nextSibling);
   host?.insertBefore(help, target.nextSibling);
   const root = app.r.root as HTMLElement | undefined;
@@ -258,6 +268,7 @@ export function mountCanvasFocus(app: BoardApp, anchor: HTMLElement): CanvasFocu
       window.clearTimeout(timer);
       offs.forEach((off) => off());
       root?.removeEventListener('pointerdown', onPointer, true);
+      if (canvasTarget === target) canvasTarget = null;
       target.remove();
       help.remove();
       ring.remove();

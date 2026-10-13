@@ -360,8 +360,13 @@
 .trk-frame-overlay { position: absolute; z-index: 6; inset: 0; overflow: hidden; pointer-events: none; }
 .trk-frame-wrap { position: absolute; overflow: visible; pointer-events: none; }
 .trk-frame-work-host { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.trk-frame-wrap.is-work .trk-frame-work-host { pointer-events: auto; }
-.trk-frame-wrap.is-work .trk-shell { overflow: auto; border: 1px solid var(--trk-rule); }
+.trk-frame-wrap.is-work .trk-frame-work-host { pointer-events: none; }
+.trk-frame-wrap.is-work .trk-shell { overflow: auto; border: 1px solid var(--trk-rule); pointer-events: none; }
+/* the live parts take the pointer; the empty parts of the shell (its header strip, its gaps) pass it to the canvas, which moves the object */
+.trk-frame-wrap.is-work .trk-shell > * { pointer-events: auto; }
+/* the header's empty strip lets a drag fall through to the canvas, so the element moves; its buttons and tabs stay live */
+.trk-frame-wrap.is-work .trk-header { pointer-events: none; }
+.trk-frame-wrap.is-work .trk-header button, .trk-frame-wrap.is-work .trk-header [role="tab"] { pointer-events: auto; }
 .trk-frame-open, .trk-frame-expand { position: absolute; z-index: 3; top: 9px; min-height: 32px; padding: 0 10px; border: 1px solid var(--ink); border-radius: var(--radius-sm, 8px); background: var(--paper-hi, var(--paper)); color: var(--ink); font: 500 13px var(--ui); pointer-events: auto; }
 .trk-frame-open { right: 124px; }
 .trk-frame-expand { right: 10px; }

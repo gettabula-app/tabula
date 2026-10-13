@@ -756,7 +756,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const tickets = currentCache.tickets.slice(0, 12);
     const facets = facetsForGroup(state.group, currentCache.facets)?.[state.group];
     const count = facets?.reduce((sum, facet) => sum + facet.count, 0) ?? currentCache.tickets.length;
-    publishTrackerSnapshot(options.trackerId, state.tab, tickets, count);
+    // keyed by the element's object id (windowId), so two elements on one tracker do not share a snapshot
+    publishTrackerSnapshot(options.windowId ?? options.trackerId, state.tab, tickets, count);
     options.onSnapshot?.();
   };
 

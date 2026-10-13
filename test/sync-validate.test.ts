@@ -595,3 +595,14 @@ describe('the other board maps', () => {
     expect(one({ kind: 'label', key: 'b1', value: { id: 'b1', name: 'Bug', color: 'url(//evil)', order: 0 } }).ok).toBe(false);
   });
 });
+
+describe('tracker frame size and view', () => {
+  const tracker = (extra: Record<string, unknown> = {}) => ({
+    id: 'trk1', type: 'tracker', x: 0, y: 0, w: 720, h: 480, rotation: 0, z: 'a0', trackerId: 'ws-1', view: 'all',
+    createdBy: 'u1', updatedAt: 1_700_000_000_000, ...extra,
+  });
+  it('accepts the 360 x 280 minimum and the 720 x 480 default, and the all view', () => {
+    expect(check(tracker({ w: 360, h: 280 }))).toEqual({ ok: true });
+    expect(check(tracker())).toEqual({ ok: true });
+  });
+});

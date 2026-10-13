@@ -110,34 +110,37 @@ Tracker links use path routes, so they can be opened directly, refreshed, and ha
 
 ### 3.1 What it is
 
-A tracker frame is a box on the canvas, default **1440 × 900 board units** (a laptop screen; it appears in the new frame Size menu as a preset family), resizable like any frame, never rotated, always above its own board objects in z-order only when selected for typing (it participates in z-order like a frame, so ink and notes can be placed over it if someone wants to annotate).
+A tracker frame is a box on the canvas, default **720 × 480 board units** (minimum 360 × 280; it appears in the new frame Size menu as a preset family), and it shows **All issues** until a person picks another tab, resizable like any frame, never rotated, always above its own board objects in z-order only when selected for typing (it participates in z-order like a frame, so ink and notes can be placed over it if someone wants to annotate).
 
 Object type `tracker`; a frame in every other respect (selection handles, move, copy, lock, layers panel, export as an image of the current view). It is **not** a container for other objects: dropping a sticky on it does not adopt it. Connectors may attach to the frame itself or to a **ticket row** (6.3).
 
 Duplicating a tracker frame makes a second window on the same tracker, with its own tab and filter. It does not copy tickets.
 
-### 3.2 Zoom and pan: two modes
+### 3.2 Live or snapshot
 
-The frame has two modes. The mode is the single most important rule of this surface.
+The element is **live where it sits**: its list shows as soon as it is on the board, and a person lists, opens and creates tickets in it without clicking an Open chip. Whether it is live is decided by the element's size on screen, the zoom, the other live elements and the phone, not by focus. The rule is `trackerPresentation` and `pickLive` in `src/tracker/ui/frame.ts`.
 
-| Mode | When | What the pointer does inside the frame |
+| Presentation | When | What the pointer does inside the frame |
 |---|---|---|
-| **Overview** (frame is small on screen) | The frame is under about **560 px wide on screen**, or it is not focused | It behaves like any object: drag moves it, wheel and pinch zoom/pan the canvas, double-click enters Work mode. Contents are drawn as a **snapshot**: tab bar, the first rows of the current view, a count. No live hit targets inside. |
-| **Work** (frame is focused) | Double-click, `Enter`, clicking the tab bar while the frame is large enough, or the **Open** chip | The frame's interior is live: clicks, typing, scroll inside lists. Wheel scrolls the **list**, not the canvas, while the pointer is over a scroll area that can still scroll; at the end of the list or over non-scroll areas, wheel passes through to canvas pan. `Ctrl/Cmd + wheel` and pinch **always** zoom the canvas. Dragging on empty frame background pans the canvas. |
+| **Live** | Zoom 40 % or more, the frame is at least 240 px tall on screen, it is not a phone, and it is one of the **3 live frames** on the board (the cap) | The interior is real DOM: clicks, typing and scroll work in it. A click inside selects the frame and gives its tracker the keys. Wheel scrolls the **list** while it can scroll; at the end of the list, and over non-scroll areas, wheel passes to canvas pan. `Ctrl/Cmd + wheel` and pinch **always** zoom the canvas. Dragging on the interior pans the canvas. Dragging the empty middle of the tab bar moves the frame. |
+| **Snapshot** | Zoom under 40 %, under 240 px tall on screen, off screen, over the cap, or on a phone | It behaves like any object: drag moves it, wheel and pinch zoom or pan the canvas, double-click makes it live where it fits. Contents are drawn as a **snapshot**: the tab name, the first rows of the element's own view, a count (or "No issues in this view"). No live hit targets inside. |
 
 Rules:
 
-1. **Entering Work mode never moves the camera.** A tracker half off-screen stays half off-screen; to get the whole tracker, the user zooms to it (`Shift+2`, "zoom to selection") or presses Full screen.
-2. **Leaving Work mode**: `Esc` (first press: closes an open popover or ticket peek; second: leaves Work mode and selects the frame), or click on the canvas outside the frame. `Esc` never closes the tracker's full screen unless nothing else is open.
-3. **Scaling**: the interior is real DOM, scaled with the canvas (a CSS transform on a screen-sized surface) down to **40 %** on screen, below that it falls back to the snapshot. Text under 9 px on screen is never drawn live. At 40 to 100 % it is fully live (small but exact); above 100 % it re-lays out at 100 % scale and the extra size becomes sharper text, not a bigger UI (so zooming in to 200 shows the same layout with crisp type, and the user can read it without the UI reflowing).
-4. **Frame resize** changes the available layout width (list columns collapse by the breakpoints in 5.1), not the scale.
-5. **Snapshot** is cheap and shared: drawn by the board renderer as SVG from a small per-view summary (tab name, up to 12 row summaries, counts) that the tracker publishes; it works for viewers whose tracker panel has not loaded yet, in exports, and in thumbnails.
-6. **Presence**: other people's cursors inside a tracker in Work mode appear as the normal named cursors, positioned in frame coordinates. A person's open ticket shows as a small initials badge on that row ("Mara is here").
-7. **Multiplayer**: tab, filter and open ticket are **per viewer** (not stored on the object) so that one person's filtering does not change everyone's screen. Only `trackerId`, size and position are shared. `view` and `focusKey` on the object are the **default** for a viewer who has not chosen yet, and what an export or snapshot shows.
+1. **The cap is 3.** Live frames are ranked: selected first, then hovered, then by the largest part of the frame that is on screen (its rectangle intersected with the viewport). Ties go to the lower object id. A frame that is entirely off screen is never live.
+2. **Hysteresis.** A live element that leaves the live set shows its snapshot at once, and its shell is destroyed 500 ms later. Coming back creates it again. Its tab, filter, cursor and open ticket are per viewer and per object, so they survive the remount.
+3. **Entering live never moves the camera.** A tracker half off-screen stays half off-screen; to get the whole tracker, the user zooms to it (`Shift+2`, "zoom to selection") or presses Full screen.
+4. **Leaving live**: `Esc` closes an open popover, then an open ticket (back to the list), then hands keyboard focus back to the canvas (the frame stays selected). A click on the canvas outside the frame also leaves it.
+5. **Scaling**: the element is laid out at the object's size and scaled with the canvas, down to **40 %** on screen. Text under 9 px on screen is never drawn live, and below 40 % the snapshot takes over. Above 100 % the layout does not change; the element is scaled.
+6. **Frame resize** changes the available layout width (list columns collapse by the breakpoints in 5.1), not the scale.
+7. **Snapshot** is cheap and per element: drawn by the board renderer as SVG from the rows that element last showed (tab name, up to 12 row summaries, counts), keyed by the object id so two elements on one tracker never share one. It works for viewers whose tracker panel has not loaded yet, in exports, and in thumbnails. It is cleared on sign-out and when the store reports that access to the tracker was lost.
+8. **Presence**: other people's cursors inside a tracker that is live appear as the normal named cursors, positioned in frame coordinates. A person's open ticket shows as a small initials badge on that row ("Mara is here").
+9. **Multiplayer**: tab, filter and open ticket are **per viewer** (not stored on the object) so that one person's filtering does not change everyone's screen. Only `trackerId`, size and position are shared. `view` and `focusKey` on the object are the **default** for a viewer who has not chosen yet, and what an export or snapshot shows.
 
 ### 3.3 Open full screen
 
-- **Open** chip on the frame's top-right corner (visible when selected or hovered, always visible in Work mode), `F` with the frame selected, `Shift+Enter` in Work mode, or the **expand** icon in the tracker's own header.
+- **No Open chip on the desktop.** The element is live in place (3.2). Full screen is reached by the **expand** button in the element's corner (visible when the frame is selected, hovered or live), `F` with the frame selected, or the expand icon in the tracker's own header. On a phone the **Open** chip (and a tap on the snapshot) opens full screen.
+- `Enter` with the frame selected focuses the element (when it is live); double-click does the same.
 - Full screen is the board's chrome replaced by the tracker: it fills the viewport, below the board's top bar (which collapses to a thin strip with the board name and a **Back to board** button). It is a route state (`/t/...`) so the browser Back button leaves it, and a refresh returns to it.
 - It is the **same component and state** as the frame: tab, filter, scroll position, open ticket. Closing returns to the canvas **exactly where the camera was**, with the frame selected; nothing is re-fitted.
 - In full screen the tracker has room for the ticket page as a right-hand **side panel** (list stays visible) on screens over 1100 px, otherwise as a full page.
@@ -394,7 +397,7 @@ Every error message says what happened, what still works, and the one thing to d
 
 ## 8. Phone
 
-At 360 to 600 px wide the tracker is **always full screen** (the canvas frame is only a snapshot card that says "Open tracker"); the on-canvas Work mode does not exist on a phone, because a screen-sized frame at phone zoom has no usable interior. Tapping the snapshot opens full screen; Back returns to the board with the same camera.
+At 360 to 600 px wide the tracker is **always full screen** (the canvas frame is only a snapshot card, with an Open chip that opens it); the on-canvas Work mode does not exist on a phone, because a screen-sized frame at phone zoom has no usable interior. Tapping the snapshot opens full screen; Back returns to the board with the same camera.
 
 - **Navigation**: a bottom tab bar with five icons and labels (Inbox, Mine, All, Board, Projects), each 56 px tall minimum with the safe-area inset; the top strip shows the tab name, a search button and **+** (New issue). Hidden when the keyboard is open.
 - **Lists**: rows become two lines: line 1 priority glyph, key, title; line 2 state glyph + name, assignee badge, due, PR chip; 64 px tall, full-width tap target. Group headers stick. Pull-down refreshes only when offline sync is pending (never as the only way).
