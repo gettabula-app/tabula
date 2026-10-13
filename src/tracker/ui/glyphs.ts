@@ -99,7 +99,7 @@ export function priorityGlyph(priority: Priority): SVGSVGElement {
     return el;
   }
   const level = priority === 'low' ? 1 : priority === 'medium' ? 2 : 3;
-  // Bars grow from the baseline (5, 8 and 11 px high), two px wide, so Low is still a readable bar.
+  // Bars grow from the baseline (5, 8 and 11 px high), 1.8 px wide (the M icon stroke), so Low is still a readable bar.
   for (let i = 0; i < level; i++) {
     const x = 3 + i * 4;
     part(el, 'path', { d: `M${x} 13v${-(5 + i * 3)}`, 'stroke-width': '1.8' });
