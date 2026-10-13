@@ -97,6 +97,8 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
       initialViewId: typeof obj.viewId === 'string' ? obj.viewId : undefined,
       initialTicketKey: mount.obj.trackerId === options.initialTrackerId ? options.initialTicketKey ?? obj.focusKey : obj.focusKey,
       boardName: app.store.getMeta().name, layoutWidth: obj.w,
+      // a person who can only view this board only views its tracker too (read again at every refresh, so it follows a role change)
+      get readOnly() { return app.readOnly; },
       onFullscreenChange: (value) => onFullscreenChange(mount, value),
       onSnapshot: () => app.r.invalidateAll(),
       onWorkExit: () => { mount.requestedWork = false; reposition(mount); },
@@ -300,6 +302,7 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
   const offCamera = app.r.onCamera(() => frames.forEach(reposition));
   const offSelection = app.on('selection', () => frames.forEach(reposition));
   const offObjects = app.on('objects', syncFrames);
+  const offReadOnly = app.store.onReadOnly(() => frames.forEach(reposition));
   const onDoubleBound = onDoubleClick as EventListener;
   app.r.svg.addEventListener('dblclick', onDoubleBound, true);
   app.r.svg.addEventListener('pointermove', hoveredFrame, true);
@@ -310,7 +313,7 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
   syncFrames();
 
   return () => {
-    offCamera(); offSelection(); offObjects();
+    offCamera(); offSelection(); offObjects(); offReadOnly();
     stopTrackerRoute();
     app.r.svg.removeEventListener('dblclick', onDoubleBound, true);
     app.r.svg.removeEventListener('pointermove', hoveredFrame, true);

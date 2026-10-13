@@ -2423,7 +2423,9 @@ export class BoardApp {
     window.addEventListener('keydown', (e) => {
       this.links.noteKey(e);
       const tgt = e.target as HTMLElement;
-      const typing = !!tgt?.closest?.('[data-card-link]') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
+      // a key pressed inside the live tracker (a ticket row, its menus) belongs to the tracker: Backspace archives a ticket there and
+      // must not also delete the selected tracker frame, and a letter must not switch the board's tool
+      const typing = !!tgt?.closest?.('[data-card-link], .trk') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
       const k = e.key.toLowerCase();
       // Cmd/Ctrl+Enter on a selected link card opens it, like Enter (shortcuts with a modifier are handled below)
       if (k === 'enter' && (e.ctrlKey || e.metaKey) && !typing && this.selection.length === 1 && this.store.get(this.selection[0])?.type === 'link') {
