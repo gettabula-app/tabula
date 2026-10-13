@@ -39,12 +39,12 @@ const outsideVars = (svg: string) => svg.replace(/var\([^)]*\)/g, '');
 const HEX = /#[\da-f]{3,8}\b|rgba?\(|\b(?:white|black)\b/i;
 
 describe('the container', () => {
-  it('draws its name, its lane and card counts and the 2px rule under its header', () => {
+  it('draws its name, its lane and card counts and the 1px rule under its header', () => {
     const { store, container } = board();
     const svg = draw(store, container);
     expect(svg).toContain('>Kanban</text>');
-    expect(svg).toContain('3 LANES · 2 CARDS');
-    expect(svg).toContain('y="46" width="');
+    expect(svg).toContain('3 lanes · 2 cards');
+    expect(svg).toMatch(/<rect x="12" y="47" width="[\d.]+" height="1"/);
     expect(outsideVars(svg)).not.toMatch(HEX);
   });
 
@@ -75,14 +75,14 @@ describe('a lane', () => {
 
   it('says No cards when empty, and Drop here while a card is dragged over it', () => {
     const { store, lanes } = board();
-    expect(draw(store, lanes[1])).toContain('NO CARDS');
-    expect(draw(store, lanes[1], { dropLane: lanes[1] })).toContain('DROP HERE');
-    expect(draw(store, lanes[0])).not.toContain('NO CARDS');
+    expect(draw(store, lanes[1])).toContain('>No cards</text>');
+    expect(draw(store, lanes[1], { dropLane: lanes[1] })).toContain('>Drop here</text>');
+    expect(draw(store, lanes[0])).not.toContain('No cards');
   });
 
   it('marks a done lane, and only a done lane', () => {
     const { store, lanes } = board();
-    expect(draw(store, lanes[2])).toContain('>DONE</text>');
+    expect(draw(store, lanes[2])).toContain('>Done</text>');
     expect(draw(store, lanes[1])).not.toContain('>DONE</text>');
   });
 
@@ -96,15 +96,23 @@ describe('a lane', () => {
     svg = draw(store, lanes[0]);
     expect(svg).toContain('>2 / 1</text>');
     expect(svg).toContain('Over the limit');
-    expect(svg).toContain('y="46" width="280" height="2" style="fill:var(--danger');
+    // over the limit is the yellow "WIP full" pill, not a danger rule
+    expect(svg).toContain('>WIP full</text>');
+    expect(svg).toMatch(/<rect x="[\d.]+" y="16" width="[\d.]+" height="20" rx="4" style="fill:var\(--tag-yellow/);
+    // a block-mode lane that is over its limit still shows its lock
+    store.transact(() => store.update(lanes[0], { wipMode: 'block' }));
+    expect(draw(store, lanes[0])).toMatch(/<rect x="5" y="10.5" width="14" height="10"/);
   });
 
-  it('tints its body and draws a 4px bar in its colour', () => {
+  it('keeps its body neutral, and draws its colour as a dot before its name', () => {
     const { store, lanes } = board();
+    const plain = draw(store, lanes[1]);
     store.transact(() => store.update(lanes[1], { fill: 'blue' }));
     const svg = draw(store, lanes[1]);
-    expect(svg).toContain('height="4" style="fill:var(--s-blue');
-    expect(svg).toContain('color-mix(in srgb, var(--s-blue, #A3D2FF) 10%');
+    expect(svg).toContain('<circle cx="16" cy="26" r="4" style="fill:var(--s-blue, ');
+    expect(svg).not.toContain('color-mix(in srgb, var(--s-blue');
+    expect(svg).not.toContain('height="4" style="fill:var(--s-blue');
+    expect(svg.match(/<rect x="0" y="0" width="280" height="208" rx="12" style="([^"]*)"/)?.[1]).toBe(plain.match(/<rect x="0" y="0" width="280" height="208" rx="12" style="([^"]*)"/)?.[1]);
   });
 
   it('keeps only its name, larger, below zoom 0.4', () => {
@@ -129,8 +137,8 @@ describe('a card', () => {
     const { store, ids } = board();
     store.transact(() => store.update(ids[1], { labels: ['bug', 'ui', 'gone', 'doc', 'ch'] }));
     const svg = draw(store, ids[1]);
-    for (const name of ['BUG', 'FRONTEND', 'DOCS']) expect(svg).toContain(`>${name}</text>`);
-    expect(svg).not.toContain('>CHORE</text>');
+    for (const name of ['Bug', 'Frontend', 'Docs']) expect(svg).toContain(`>${name}</text>`);
+    expect(svg).not.toContain('>Chore</text>');
     expect(svg).toContain('>+1</text>');
     expect(svg).toContain('var(--s-pink, #FFA3C4)');
   });
@@ -138,10 +146,10 @@ describe('a card', () => {
   it('draws the due chip from the lane stage: overdue, soon, and plain with a check when done', () => {
     const { store, lanes, ids } = board();
     store.transact(() => store.update(ids[0], { due: '2026-10-06' }));
-    expect(draw(store, ids[0])).toContain('>3 DAYS AGO</text>');
+    expect(draw(store, ids[0])).toContain('>3 days ago</text>');
     expect(draw(store, ids[0])).toContain('<title>Overdue</title>');
     store.transact(() => store.update(ids[0], { due: '2026-10-10' }));
-    expect(draw(store, ids[0])).toContain('>TOMORROW</text>');
+    expect(draw(store, ids[0])).toContain('>Tomorrow</text>');
     store.transact(() => store.update(ids[0], { due: '2026-10-06', parent: lanes[2], rank: `a0@${lanes[2]}` }));
     expect(draw(store, ids[0])).toContain('<title>Done</title>');
   });
@@ -226,7 +234,7 @@ describe('a card', () => {
   it('stores a height that grows with the title lines and rows, up to three lines', () => {
     const base: BaseObj = { id: 'k', type: 'card', x: 0, y: 0, w: 264, h: 0, rotation: 0, z: 'a0', text: 'Short' };
     expect(cardContentHeight(base, 264)).toBe(34);
-    expect(cardContentHeight({ ...base, labels: ['x'], ownerName: 'A' }, 264)).toBe(90);
+    expect(cardContentHeight({ ...base, labels: ['x'], ownerName: 'A' }, 264)).toBe(94);
     const long = { ...base, text: 'word '.repeat(200) };
     expect(cardContentHeight(long, 264)).toBe(8 + 3 * 18 + 8);
     expect(objectMarkup(long, { get: () => undefined }).match(/<tspan/g)).toHaveLength(3);
@@ -279,7 +287,7 @@ describe('colours from the board', () => {
       store.labels.set('evil', { id: 'evil', name: 'Evil', color: bad, order: 9 });
       for (const id of [lanes[0], ids[0]]) expect(leaks(draw(store, id))).toBe(false);
       // the label stays, in the default colour
-      expect(draw(store, ids[0])).toContain('>EVIL</text>');
+      expect(draw(store, ids[0])).toContain('>Evil</text>');
       expect(draw(store, ids[0])).toContain('var(--s-grey, #E2E6EB)');
     }
   });
@@ -292,7 +300,7 @@ describe('colours from the board', () => {
         store.update(ids[0], { fill: key, labels: ['k'] });
       });
       store.labels.set('k', { id: 'k', name: 'K', color: key, order: 0 });
-      expect(draw(store, lanes[0])).toContain(`height="4" style="fill:var(--s-${key}, `);
+      expect(draw(store, lanes[0])).toContain(`<circle cx="16" cy="26" r="4" style="fill:var(--s-${key}, `);
       expect(draw(store, ids[0]).match(new RegExp(`var\\(--s-${key}, `, 'g'))!.length).toBeGreaterThanOrEqual(2);
     }
   });
@@ -303,8 +311,13 @@ describe('colours from the board', () => {
       store.update(lanes[0], { fill: '#336699' });
       store.update(ids[0], { fill: 'Teal', labels: ['bug'] });
     });
-    expect(draw(store, lanes[0])).toContain('style="fill:#336699"');
+    // a lane's hex colour is its dot; the lane body stays neutral
+    const lane = draw(store, lanes[0]);
+    expect(lane).toContain('<circle cx="16" cy="26" r="4" style="fill:#336699;"/>');
+    expect(lane).toContain('style="fill:color-mix(in srgb, var(--ink, #18212B) 4%, var(--paper, #FFFFFF))"');
+    // a card's teal colour is its 3px bar, and the bug label keeps its own dot
     expect(draw(store, ids[0]).toUpperCase()).toContain('#8FE3CA');
+    expect(draw(store, ids[0])).toContain('<circle cx="20" cy="43" r="3" style="fill:var(--s-pink, #FFA3C4)"/>');
   });
 
   it('does not ring an owner badge in a colour that is not one', () => {
@@ -374,22 +387,24 @@ describe('slice 4: header controls, the lane ⋯, the add-lane + and dimming', (
     expect(file).not.toContain('k-filter');
   });
 
-  it('an active filter: chips with remove buttons and Filter · n; none of it below zoom 0.4', () => {
+  it('an active filter: chips with remove buttons, Filter and its count chip; none of it below zoom 0.4', () => {
     const { store, container } = board();
     const svg = draw(store, container, { filterChips: () => chips });
-    expect(svg).toContain('FILTER · 2');
+    expect(svg).toContain('>Filter</text>');
+    expect(svg).toContain('>2</text>');
     expect(svg.match(/k-fchip/g)).toHaveLength(2);
-    expect(svg).toContain('>MINE<');
+    expect(svg).toContain('>Mine<');
     expect(draw(store, container, { filterChips: () => chips, zoom: 0.3 })).not.toContain('k-filter');
   });
 
-  it('chips that do not fit are left out, Filter still counts them; the name stops before the controls', () => {
+  it('chips that do not fit are left out, the Filter count still counts them; the name stops before the controls', () => {
     const { store, container } = board();
     const o = store.getPlaced(container) as BaseObj;
     const many = Array.from({ length: 12 }, (_, i) => ({ key: `label:${i}`, text: `A long label name ${i}` }));
     const c = kanbanHeaderControls(o, many, true);
     expect(c.chips.length).toBeLessThan(12);
-    expect(c.filter!.text).toBe('Filter · 12');
+    expect(c.filter!.text).toBe('Filter');
+    expect(c.filter!.count).toBe(12);
     expect(c.left).toBeGreaterThanOrEqual(o.w / 2);
     for (const chip of c.chips) expect(chip.rect.x + chip.rect.w).toBeLessThanOrEqual(c.filter!.rect.x);
     expect(c.menu!.x + c.menu!.w).toBe(o.w - 12);

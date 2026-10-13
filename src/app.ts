@@ -2826,7 +2826,7 @@ export class BoardApp {
   textBoxAt(content: string, at: Point): BaseObj {
     const font = this.store.getMeta().bodyFont;
     const css = fontCss(font, 20, 400);
-    const naturalWidth = Math.max(...content.split('\n').map((line) => measure(line.trimEnd(), css)));
+    const naturalWidth = content.split('\n').reduce((n, line) => Math.max(n, measure(line.trimEnd(), css)), 0);
     const w = Math.min(360, Math.max(8, Math.ceil(naturalWidth)));
     const probe = { id: '', type: 'text', x: 0, y: 0, w, h: 0, rotation: 0, z: '', text: content, font } as BaseObj;
     return this.makeObj('text', { x: at.x, y: at.y, w, h: textHeight(probe) }, { text: content });
@@ -2837,7 +2837,7 @@ export class BoardApp {
     const lines = text.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.trim() !== '');
     if (lines.length === 0 || !lines.every((l) => l.includes('\t'))) return false;
     const grid = parseGrid(text);
-    if (!grid.length || Math.max(...grid.map((r) => r.length)) < 2) return false;
+    if (!grid.length || grid.reduce((n, r) => Math.max(n, r.length), 0) < 2) return false;
     if (gridChars(grid) > MAX_TABLE_CHARS) { this.notify(`That is too much text for one table (up to ${MAX_TABLE_CHARS.toLocaleString('en-US')} characters).`); return true; }
     const fields = tableFromGrid(grid, newTableId);
     if (!fields) return false;
@@ -2888,7 +2888,7 @@ export class BoardApp {
     const at = pointInRect(this.lastPointer, this.r.viewport()) ? this.lastPointer : center(this.r.viewport());
     const font = this.store.getMeta().bodyFont;
     const css = fontCss(font, 20, 400);
-    const naturalWidth = Math.max(...content.split('\n').map((line) => measure(line.trimEnd(), css)));
+    const naturalWidth = content.split('\n').reduce((n, line) => Math.max(n, measure(line.trimEnd(), css)), 0);
     const w = Math.min(360, Math.max(8, Math.ceil(naturalWidth)));
     const probe = { id: '', type: 'text', x: 0, y: 0, w, h: 0, rotation: 0, z: '', text: content, font } as BaseObj;
     const h = textHeight(probe);
@@ -3067,7 +3067,9 @@ export class BoardApp {
   rename(id: Id, name: string | undefined) {
     if (this.readOnly || !this.store.get(id)) return;
     this.store.undo.stopCapturing();
-    this.store.transact(() => this.store.update(id, { name }));
+    // a frame keeps an emptied name as empty (it then draws no title); undefined would bring the default "Frame" back
+    const keepEmpty = this.store.get(id)?.type === 'frame' && name === undefined;
+    this.store.transact(() => this.store.update(id, { name: keepEmpty ? '' : name }));
   }
 
   /** Writes stacking keys from the layers panel as one undo step. */

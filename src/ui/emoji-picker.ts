@@ -126,10 +126,15 @@ export async function openEmojiPicker(app: BoardApp, anchor: HTMLElement) {
       const items = recent.map((emoji) => all.find((item) => item.e === emoji)).filter((item): item is EmojiItem => !!item);
       results.append(h('section', { class: 'emoji-section' }, h('h3', { class: 'list-label' }, 'Recent'), makeGrid('Recent emoji', items)));
     }
-    for (const group of groups) {
-      const found = group.items.filter((item) => matching.has(item.e));
-      if (!found.length) continue;
-      results.append(h('section', { class: 'emoji-section' }, h('h3', { class: 'list-label' }, group.name), makeGrid(group.name, found)));
+    if (query.trim()) {
+      // a search is one list of matches named Emoji, not the groups they happen to fall in
+      if (matched.length) results.append(h('section', { class: 'emoji-section' }, h('h3', { class: 'list-label' }, 'Emoji'), makeGrid('Emoji', matched)));
+    } else {
+      for (const group of groups) {
+        const found = group.items.filter((item) => matching.has(item.e));
+        if (!found.length) continue;
+        results.append(h('section', { class: 'emoji-section' }, h('h3', { class: 'list-label' }, group.name), makeGrid(group.name, found)));
+      }
     }
     const visible = cells();
     const active = visible.find((cell) => cell.dataset.emoji === rovingEmoji) ?? visible[0];

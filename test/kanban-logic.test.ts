@@ -37,7 +37,8 @@ describe('card height', () => {
   it('is padding plus title lines, plus the label and meta rows when there are any', () => {
     expect(cardHeight({ lines: 1, labels: false, meta: false })).toBe(34);
     expect(cardHeight({ lines: 2, labels: false, meta: false })).toBe(52);
-    expect(cardHeight({ lines: 1, labels: true, meta: true })).toBe(34 + 24 + 32);
+    // the label row is 20 (a chip of 18 with room), the meta row 24
+    expect(cardHeight({ lines: 1, labels: true, meta: true })).toBe(34 + (8 + 20) + (8 + 24));
   });
 
   it('counts at most three title lines and at least one', () => {
