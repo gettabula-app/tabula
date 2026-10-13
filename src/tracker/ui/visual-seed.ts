@@ -1,5 +1,6 @@
-import type { TrackerMeta, TrackerTicket } from '../../tracker-types';
+import { TrackerError, type TrackerMeta, type TrackerTicket } from '../../tracker-types';
 import type { TrackerMockSeed } from '../../tracker-mock';
+import type { TrackerApi } from '../../tracker-data';
 
 const states = [
   { id: 'state-todo', key: 'todo', name: 'To do', category: 'unstarted' as const, position: 0 },
@@ -64,4 +65,19 @@ function ticket(index: number, now: number): TrackerTicket {
 export function createTrackerVisualSeed(): TrackerMockSeed {
   const now = Date.UTC(2026, 9, 1, 12, 0, 0);
   return { meta, tickets: titles.map((_, index) => ticket(index, now)), now: () => now };
+}
+
+/**
+ * The visual harness's tracker states (`?debug&trackerMock=board&trackerState=empty|denied|error`, visual mode only): a tracker with no tickets,
+ * one the person may not read, and one whose list fails to load.
+ */
+export function visualTrackerState(api: TrackerApi, state: string | null): { seedTickets: boolean; api: TrackerApi } {
+  if (state === 'empty') return { seedTickets: false, api };
+  if (state === 'denied' || state === 'error') {
+    const fail = () => Promise.reject(state === 'denied'
+      ? new TrackerError('forbidden', 'forbidden', { status: 403 })
+      : new Error('The server did not answer.'));
+    return { seedTickets: true, api: { ...api, listTickets: fail } as TrackerApi };
+  }
+  return { seedTickets: true, api };
 }

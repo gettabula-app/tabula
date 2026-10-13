@@ -793,8 +793,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
           void Promise.all([import('../tracker-mock'), import('../tracker/ui/visual-seed')]).then(([mock, seed]) => {
             trackerVisualInit = false;
             if (app.lifetime.signal.aborted || !trackerBoardMockVisual) return;
-            const api = mock.createMockTrackerApi(seed.createTrackerVisualSeed());
-            mountTracker(createTrackerStore(api), api, 'visual-user');
+            const state = new URLSearchParams(location.search).get('trackerState');
+            const visual = seed.createTrackerVisualSeed();
+            const wanted = seed.visualTrackerState(mock.createMockTrackerApi(state === 'empty' ? { ...visual, tickets: [] } : visual), state);
+            mountTracker(createTrackerStore(wanted.api), wanted.api, 'visual-user');
           }).catch((error: unknown) => console.error('Tracker visual mock failed to initialize.', error));
         }
       } else if (auth.mode === 'signed-in' || auth.mode === 'offline') {

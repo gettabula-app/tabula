@@ -177,4 +177,19 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     await page.waitForFunction(() => document.querySelector<HTMLElement>('.trk-frame-wrap.is-work .trk-new-trigger')?.hidden === false, null, { timeout: budget(10_000) });
     await page.close();
   });
+
+  it('a selected tracker element shows no text edit bar (the emoji button belongs to text editing only)', async () => {
+    const page = await open();
+    const id = await frameId(page);
+    await page.evaluate((i) => (window as any).__board.setSelection([i]), id);
+    await page.waitForFunction(() => document.querySelector('.trk-frame-wrap.is-work') !== null, null, { timeout: budget(10_000) });
+    const state = await page.evaluate(() => ({
+      active: (window as any).__board.editor.active as boolean,
+      shown: document.querySelector('.edit-bar')?.classList.contains('show') ?? false,
+      emojiVisible: (() => { const e = document.querySelector<HTMLElement>('.edit-emoji'); return !!e && e.getClientRects().length > 0 && getComputedStyle(e.closest('.edit-bar') as Element).visibility !== 'hidden'; })(),
+    }));
+    expect(state.active).toBe(false);
+    expect(state.shown).toBe(false);
+    await page.close();
+  });
 });
