@@ -81,7 +81,6 @@ interface FrameMount {
   wrapper: HTMLElement;
   workHost: HTMLElement;
   open: HTMLButtonElement;
-  expand: HTMLButtonElement;
   /** Whether the last refresh put this frame in the live set. Only a live frame shows its shell. */
   live: boolean;
   /** When the frame left the live set while its shell was up; null while live or without a shell. */
@@ -209,8 +208,6 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     const hovered = mount.wrapper.dataset.hovered === 'true';
     // the Open chip is the phone's gateway to the full-screen route; on the desktop the element is live where it is
     mount.open.hidden = !(isPhone() && (selected(obj.id) || hovered));
-    // on the desktop the live element carries the full-screen button; on the phone the Open chip is that button
-    mount.expand.hidden = isPhone() || !(selected(obj.id) || hovered || live);
     if (mount.shell) {
       const shell = mount.shell.el;
       shell.hidden = !live;
@@ -273,12 +270,9 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
     const workHost = h('div', { class: 'trk-frame-work-host' });
     // phone only: the chip opens the full-screen route (on the desktop the element is live in place)
     const open = h('button', { class: 'trk-frame-open', type: 'button', 'aria-label': 'Open tracker', onclick: () => openFullscreenRoute(mount) }, 'Open');
-    // the label gives way to a glyph when the frame is narrow (tracker.css, container query); the accessible name stays
-    const expand = h('button', { class: 'trk-frame-expand', type: 'button', 'aria-label': 'Open full screen', onclick: () => openFullscreenRoute(mount) },
-      h('span', { class: 'trk-frame-expand-label' }, 'Open full screen'), h('span', { class: 'trk-frame-expand-glyph', 'aria-hidden': 'true' }, '↗'));
-    const actions = h('div', { class: 'trk-frame-actions' }, open, expand);
+    const actions = h('div', { class: 'trk-frame-actions' }, open);
     const mount: FrameMount = {
-      obj, wrapper, workHost, open, expand, live: false, leftAt: null, layoutWidth: obj.w, shell: null,
+      obj, wrapper, workHost, open, live: false, leftAt: null, layoutWidth: obj.w, shell: null,
       drag: null, pinchPoints: new Map(), pinch: null,
     };
     wrapper.append(workHost, actions);
