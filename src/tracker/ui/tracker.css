@@ -38,7 +38,7 @@
 }
 .trk .trk-avatar {
   display: inline-grid; width: 22px; height: 22px; flex: none; place-items: center; overflow: hidden;
-  border: 1px solid var(--trk-rule); border-radius: 50%; background: var(--trk-ground); color: var(--trk-text); font-size: 12px; font-weight: 500;
+  border: 1px solid var(--trk-rule); border-radius: 50%; background: var(--trk-ground); color: var(--trk-text); font-size: 10px; font-weight: 600;
 }
 .trk .trk-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .trk .trk-actor-badge {
@@ -579,4 +579,9 @@
   .trk-narrow-frame .trk-tab-name-short { display: inline; }
   .trk-narrow-frame .trk-tab.active .trk-tab-name-full { display: none; }
   .trk-narrow-frame .trk-tab.active .trk-tab-name-short { display: inline; }
+}
+
+/* initials circles, as everywhere else in the app (styles.css): capitals centred by their cap height, line height 1, no stray tracking */
+.trk .trk-avatar, .trk .trk-avatar-mark, .trk .trk-avatar-button, .trk-avatar-mark, .trk-avatar-button {
+  line-height: 1; letter-spacing: 0; text-align: center; text-box: trim-both cap alphabetic;
 }

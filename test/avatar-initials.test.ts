@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // Initials in a circle: capitals centred by cap height, line height 1, and a letter size that leaves even room for two letters.
-const CIRCLES = ['avatar', 'phone-avatar', 'phone-person-avatar', 'comment-avatar', 'chat-avatar', 'chat-here-avatar', 'here-sq'];
+const CIRCLES = ['trk-avatar', 'trk-avatar-mark', 'avatar', 'phone-avatar', 'phone-person-avatar', 'comment-avatar', 'chat-avatar', 'chat-here-avatar', 'here-sq'];
 
 function cssFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

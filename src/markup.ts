@@ -607,10 +607,14 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
   const nameFont = fontCss(o.font, 13, 500);
   const metricLeft = full ? badgeLeft - (full && count.block ? 18 : 8) : right - countW - 8;
   const room = metricLeft - 8 - 12 - (stage ? stageW + 8 : 0);
-  const nameText = clip(o.name || 'Lane', nameFont, Math.max(24, room));
-  if (ctx.editingId !== o.id) inner += uiText(nameText, 12, mid + 5, K.canvasInk, o.font, 13, 500);
+  // a lane's colour is kept as a quiet 8px dot before its name (no stripe, no tint)
+  const dotColour = swatch((o as { fill?: string }).fill);
+  const dotW = dotColour ? 14 : 0;
+  const nameText = clip(o.name || 'Lane', nameFont, Math.max(24, room - dotW));
+  if (dotColour) inner += `<circle cx="16" cy="${mid}" r="4" style="fill:${dotColour};"/>`;
+  if (ctx.editingId !== o.id) inner += uiText(nameText, 12 + dotW, mid + 5, K.canvasInk, o.font, 13, 500);
   if (stage) {
-    const x = 12 + measure(nameText, nameFont) + 8;
+    const x = 12 + dotW + measure(nameText, nameFont) + 8;
     inner += `<g><title>Stage: done</title>${kIcon(ICON_CHECK, x, mid - 7, 14, K.meta)}${uiText(stage, x + 17, mid + 4, K.meta, o.font, 12, 500)}</g>`;
   }
   // the body: an empty lane's dashed box, and the add-card row after the last card
@@ -654,6 +658,9 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
   inner += edge === 'ghost'
     ? `<rect x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" rx="8" ${strokeStyle(K.canvasInk)} stroke-width="1"/>`
     : `<rect class="k-card-edge" x="0.5" y="0.5" width="${n(w - 1)}" height="${n(h - 1)}" rx="8" ${strokeStyle(K.edge)} stroke-width="1"/>`;
+  // a card's colour is kept as a quiet 3px bar inside its left edge (no tint)
+  const cardAccent = swatch(o.fill);
+  if (cardAccent && !low) inner += `<rect x="0" y="12" width="3" height="${n(Math.max(8, h - 24))}" rx="1.5" style="fill:${cardAccent};"/>`;
   if (isSafeHttpUrl(o.link) && edge === 'hairline') {
     const hit = 24;
     const x = w - CARD.padX - hit, y = CARD.padY - 4;
