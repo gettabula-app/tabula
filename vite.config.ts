@@ -106,6 +106,8 @@ export default defineConfig({
     },
   },
   build: { target: 'es2022', sourcemap: true },
+  // Module workers (the code highlighter) keep their dynamic imports as separate chunks; the default 'iife' would inline every grammar and theme.
+  worker: { format: 'es' },
   test: {
     // agent worktrees live under .claude/worktrees; never collect their tests. The restore drill (test/drill,
     // `npm run drill:local`, vitest.drill.config.ts) is not part of `npm test` or CI: test/drill-config.test.ts checks it.
