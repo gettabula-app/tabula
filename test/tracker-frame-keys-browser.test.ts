@@ -176,6 +176,63 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     await page.close();
   });
 
+  // Backspace and Delete after a real interaction with a ticket: the control that had focus may be gone after a re-render, and the
+  // keys must still belong to the tracker, never to the board (which would delete the selected tracker frame).
+  const keysKeepFrame = async (page: Page, id: string) => {
+    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Delete');
+    return frameExists(page, id);
+  };
+
+  it('Backspace and Delete keep the frame after a click on a ticket row in the list', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    await page.locator('.trk-frame-wrap.is-work .trk-list-row').first().click();
+    // the control that had focus went away with the re-render: the tracker takes the focus back
+    await page.waitForFunction(() => document.activeElement?.closest('.trk') !== null, null, { timeout: budget(10_000) });
+    expect(await keysKeepFrame(page, id)).toBe(true);
+    await page.close();
+  });
+
+  it('Backspace and Delete keep the frame after a ticket opened from the keyboard', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    await page.locator('.trk-frame-wrap.is-work .trk-list-row').first().focus();
+    await page.keyboard.press('Enter');
+    expect(await keysKeepFrame(page, id)).toBe(true);
+    await page.close();
+  });
+
+  it('Backspace and Delete keep the frame after a click and after a drag on a card in the Board tab', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    await page.locator('.trk-frame-wrap.is-work .trk-element-switch').getByText('Board', { exact: true }).click();
+    const cards = page.locator('.trk-frame-wrap.is-work .trk-board-card');
+    await cards.first().waitFor();
+    await cards.first().click();
+    expect(await keysKeepFrame(page, id)).toBe(true);
+    await page.keyboard.press('Escape'); // back from the opened ticket to the board
+    await cards.first().waitFor();
+    const box = (await cards.first().boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 120, box.y + box.height / 2 + 10, { steps: 8 });
+    await page.mouse.up();
+    expect(await keysKeepFrame(page, id)).toBe(true);
+    await page.close();
+  });
+
+  it('Backspace and Delete keep the frame after a click on a row in the full-screen route', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    await page.locator('.trk-frame-wrap.is-work .trk-element-expand').click();
+    const row = page.locator('.trk-route-root .trk-list-row, .trk-fullscreen-portal .trk-list-row').first();
+    await row.waitFor();
+    await row.click();
+    expect(await keysKeepFrame(page, id)).toBe(true);
+    await page.close();
+  });
+
   it('a key typed inside the tracker is not a canvas shortcut (Space does not pan, a tool key does not switch the tool)', async () => {
     const page = await open();
     await enterWork(page);

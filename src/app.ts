@@ -1,3 +1,4 @@
+import { keyInTracker } from './tracker-key-scope';
 import { watchFirstFit } from './first-fit';
 import { planStep } from './z-order';
 import { gatherCopyObjects, gatherObjects, isWithheld, selectableIds } from './private-select';
@@ -2557,7 +2558,7 @@ export class BoardApp {
       const tgt = e.target as HTMLElement;
       // a key pressed inside the live tracker (a ticket row, its menus) belongs to the tracker: Backspace archives a ticket there and
       // must not also delete the selected tracker frame, and a letter must not switch the board's tool
-      const typing = !!tgt?.closest?.('[data-card-link], .trk') || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
+      const typing = !!tgt?.closest?.('[data-card-link]') || keyInTracker(e) || (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable));
       const k = e.key.toLowerCase();
       // Cmd/Ctrl+Enter on a selected link card opens it, like Enter (shortcuts with a modifier are handled below)
       if (k === 'enter' && (e.ctrlKey || e.metaKey) && !typing && this.selection.length === 1 && this.store.get(this.selection[0])?.type === 'link') {
@@ -2645,7 +2646,13 @@ export class BoardApp {
       if (e.shiftKey && e.code === 'Digit1') return this.zoomToFit();
       if (e.shiftKey && e.code === 'Digit2') return this.zoomToSelection();
       if (e.shiftKey && e.code === 'Digit0') return this.zoomTo(1);
-      if (k === 'delete' || k === 'backspace') { e.preventDefault(); if (!ro) this.deleteSelection(); return; }
+      if (k === 'delete' || k === 'backspace') {
+        e.preventDefault();
+        // focus lost to the page body (a control of a live tracker went away) is not the canvas asking to delete its tracker frame
+        const strayFocus = document.activeElement === document.body && this.selection.some((id) => this.store.get(id)?.type === 'tracker');
+        if (!ro && !strayFocus) this.deleteSelection();
+        return;
+      }
       if (k === 'escape') {
         this.cancelLongPress();
         this.cancelCardDrag();

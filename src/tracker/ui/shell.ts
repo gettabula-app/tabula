@@ -295,6 +295,20 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const root = h('section', { class: 'trk trk-shell', tabindex: '0', 'aria-label': 'Tracker', 'data-fullscreen': String(fullScreen) });
   if (elementMode) root.classList.add('trk-element');
+  // When the focused control is removed or hidden by a re-render (a row, once its ticket opens), the browser drops focus on the
+  // body, and the next key would reach the board. The tracker takes the focus back. The listener is on the document because a
+  // removed node's focusout no longer bubbles to the shell.
+  let lastFocused: EventTarget | null = null;
+  root.addEventListener('focusin', (event) => { lastFocused = event.target; });
+  const rescueFocus = (event: FocusEvent) => {
+    if (event.target !== lastFocused || event.relatedTarget) return;
+    const lost = event.target as Node;
+    requestAnimationFrame(() => {
+      const gone = !lost.isConnected || (lost instanceof HTMLElement && !lost.checkVisibility());
+      if (gone && root.isConnected && !root.hidden && document.activeElement === document.body) root.focus({ preventScroll: true });
+    });
+  };
+  document.addEventListener('focusout', rescueFocus, true);
   const routeMode = options.routeMode === true;
   const menuButton = h('button', {
     class: 'trk-menu-button', type: 'button', 'aria-label': 'Menu', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
@@ -1774,6 +1788,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      document.removeEventListener('focusout', rescueFocus, true);
       endDrag(); stopList?.(); stopBoardWatch(); stopStore?.(); stopKeyListener?.();
       destroyInbox(); destroyTicketPage();
       if (debounce !== undefined) clearTimeout(debounce);
