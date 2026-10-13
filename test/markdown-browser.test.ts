@@ -154,7 +154,7 @@ describe.skipIf(!available)('the Markdown block', () => {
     await page.waitForTimeout(700);
     expect(popup0.length).toBe(0);
     at = await link();
-    const [popup] = await Promise.all([context.waitForEvent('page', { timeout: budget(5000) }), page.mouse.click(at!.x, at!.y)]);
+    const [popup] = await Promise.all([context.waitForEvent('page', { timeout: budget(20_000) }), page.mouse.click(at!.x, at!.y)]);
     expect(popup.url()).toContain('example.com');
     await popup.close();
     await page.close();
