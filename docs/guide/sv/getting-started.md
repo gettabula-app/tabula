@@ -45,7 +45,7 @@ Markera ett objekt så visas ett litet fält bredvid det. Beroende på vad du ma
 
 ### Tavlans meny
 
-Knappen **Menu** längst upp till höger innehåller åtgärder för hela tavlan: **User guide** (Användarguide) först i listan, **Board settings** (Tavleinställningar), **Version history** (Versionshistorik), **Your name and colour** (Ditt namn och din färg), **Show comments** (Visa kommentarer), import, teman under **Appearance** (Utseende), export och **Keyboard shortcuts** (Kortkommandon). Om din arbetsyta kräver inloggning visas avsnittet **Account** (Konto) först. Där finns **Your AI key** (Din AI-nyckel) när administratören tillåter personliga nycklar. Se [Tavlor och startsidan](boards.md).
+Knappen **Menu** längst upp till höger innehåller åtgärder för hela tavlan, med **Search actions** (Sök åtgärder) överst för att hitta en åtgärd med namn: **User guide** (Användarguide) först i listan, **Board settings** (Tavleinställningar), **Version history** (Versionshistorik), **Your name and colour** (Ditt namn och din färg), **Show comments** (Visa kommentarer), import, teman under **Appearance** (Utseende), export och **Keyboard shortcuts** (Kortkommandon). Om din arbetsyta kräver inloggning visas avsnittet **Account** (Konto) först. Där finns **Your AI key** (Din AI-nyckel) när administratören tillåter personliga nycklar. Se [Tavlor och startsidan](boards.md).
 
 ## Förflytta dig
 
