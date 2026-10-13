@@ -8,6 +8,7 @@
 //
 // Node contract (docs/groups.md, "The layers panel"): a container node has `expandable`, `expanded` and `childCount`; its
 // children follow it with `depth + 1`. Groups will be one more container type: `CONTAINERS` is the hook.
+import { markdownTitle } from './markdown';
 import { generateNKeysBetween } from 'fractional-indexing';
 import type { Id, Obj } from './types';
 import type { ZPatch } from './z-order';
@@ -16,7 +17,7 @@ import type { ZPatch } from './z-order';
 export const CONTAINERS = new Set<string>(['frame', 'container', 'lane']);
 
 export const TYPE_LABEL: Record<string, string> = {
-  shape: 'Shape', sticky: 'Sticky note', text: 'Text', frame: 'Frame', tracker: 'Tracker', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
+  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', frame: 'Frame', tracker: 'Tracker', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
   container: 'Board', lane: 'Lane', card: 'Card', group: 'Group',
   'uml-class': 'Class', 'uml-actor': 'Actor', 'uml-usecase': 'Use case', 'uml-lifeline': 'Lifeline', 'uml-note': 'Note',
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',
@@ -58,7 +59,8 @@ export function layerLabel(o: Obj): string {
   const named = typeof (o as { name?: unknown }).name === 'string' ? oneLine((o as { name: string }).name) : '';
   if (named) return named.slice(0, NAME_MAX);
   const raw = (o as { text?: unknown }).text;
-  const text = typeof raw === 'string' ? oneLine(raw) : '';
+  // a Markdown block is named by its first heading or line, not by its marks
+  const text = typeof raw === 'string' ? (o.type === 'markdown' ? markdownTitle(raw, LABEL_MAX) : oneLine(raw)) : '';
   if (text) return text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1)}…` : text;
   return TYPE_LABEL[o.type] ?? 'Object';
 }

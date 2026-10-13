@@ -18,7 +18,7 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'link' | 'path' | 'connector' | 'container' | 'lane' | 'card' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'link' | 'path' | 'connector' | 'container' | 'lane' | 'card' | 'markdown' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';

@@ -18,7 +18,7 @@ import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, objBounds, pointInRect, rectContains, rectOfPoints, rectsIntersect,
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
-import { cardBody, kanbanHeaderControls, objectMarkup, styleOf, textHeight } from './markup';
+import { cardBody, kanbanHeaderControls, markdownBoxHeight, objectMarkup, styleOf, textHeight } from './markup';
 import { cornerBox, cornerFactor, isCorner, keyResize, scaledText, type Corner, type TextKey } from './text-resize';
 import {
   addLane, addLaneRefusal, moveLaneRefusal, laneReorderRefusal, moveLaneTo, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
@@ -42,12 +42,19 @@ import { TOOL_KEYS } from './shortcuts';
 import { guestMark } from './ui/guest-mark';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
+import { watchMarkdownHeights } from './markdown-heal';
+import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from './tracker/linked-lane';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
+/** A link or a task box of a Markdown block under the pointer (src/markdown-svg.ts): the block's id, or null. */
+const markdownTargetOf = (target: EventTarget | null): string | null => {
+  const el = target as unknown as { closest?: (selector: string) => { getAttribute(name: string): string | null } | null } | null;
+  return el?.closest?.('[data-md-owner]')?.getAttribute('data-md-owner') ?? null;
+};
 const isCardLinkTarget = (target: EventTarget | null) => {
   const el = target as unknown as { closest?: (selector: string) => unknown } | null;
   return !!el?.closest?.('[data-card-link]');
@@ -70,6 +77,7 @@ export type Tool =
   | { kind: 'hand' }
   | { kind: 'sticky' }
   | { kind: 'text' }
+  | { kind: 'markdown' }
   | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'connector'; relation?: UmlRelation }
   | { kind: 'pen' }
@@ -278,6 +286,7 @@ export class BoardApp {
       this.emitSelection();
     });
     this.disposers.push(this.watchCardHeights());
+    this.disposers.push(this.watchMarkdownHeights());
 
     this.bindPointer();
     this.bindKeys();
@@ -320,6 +329,16 @@ export class BoardApp {
       hidden: (card) => !this.store.isShown(card)
         || this.flow.isHidden(card)
         || Boolean(card.privateStep && !this.store.getFlow().reveal),
+    });
+  }
+
+  /** Keeps a Markdown block's stored height equal to its rendered content after remote edits, agent writes and on load. */
+  private watchMarkdownHeights(): () => void {
+    return watchMarkdownHeights({
+      store: this.store,
+      role: () => this.role,
+      busy: () => Boolean(this.drag || this.editor.active || this.cardInput.active),
+      hidden: (o) => !this.store.isShown(o) || this.flow.isHidden(o),
     });
   }
 
@@ -741,6 +760,7 @@ export class BoardApp {
     // a cancelled pointer (the system took it, a palm, a lost capture) drops nothing: a card drag is given up
     svg.addEventListener('pointercancel', (e) => this.onCancel(e));
     svg.addEventListener('dblclick', (e) => this.onDblClick(e));
+    svg.addEventListener('click', (e) => this.onMarkdownClick(e));
     svg.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
     svg.addEventListener('contextmenu', (e) => {
       e.preventDefault();
@@ -864,6 +884,15 @@ export class BoardApp {
   private onDown(e: PointerEvent) {
     // The inline SVG link owns pointer activation; let the browser open it without starting a card drag or selection.
     if (isCardLinkTarget(e.target)) return;
+    // A link or a task box of a Markdown block does its thing only on a block that is already selected (or with Ctrl/Cmd), and not on the second click of
+    // a double click (which edits): the pointer then goes to the browser and onMarkdownClick, not to a selection or a drag.
+    const mdOwner = e.button === 0 && this.tool.kind === 'select' ? markdownTargetOf(e.target) : null;
+    if (mdOwner) {
+      const at = performance.now();
+      const second = this.mdDown !== null && this.mdDown.owner === mdOwner && at - this.mdDown.at < 450;
+      this.mdDown = { owner: mdOwner, at };
+      if (!second && (this.selection.includes(mdOwner) || e.ctrlKey || e.metaKey)) return;
+    } else this.mdDown = null;
     // another pointer going down (a pinch, a second device) gives up a lane drag, overlay and all
     if (this.drag?.mode === 'lane') this.cancelCardDrag();
     this.cancelLongPress();
@@ -1955,7 +1984,7 @@ export class BoardApp {
       if (h.includes('n') && sy === null) t = snapTo(o0.y + t, g) - o0.y;
       if (h.includes('s') && sy === null) b = snapTo(o0.y + b, g) - o0.y;
     }
-    const minW = o0.type === 'tracker' ? 480 : 8;
+    const minW = o0.type === 'tracker' ? 480 : o0.type === 'markdown' ? 120 : 8;
     const minH = o0.type === 'tracker' ? 360 : 8;
     if (r - l < minW) {
       if (h.includes('w')) l = r - minW;
@@ -1972,6 +2001,10 @@ export class BoardApp {
     const patch: Partial<BaseObj> = { x: c.x - w / 2, y: c.y - hh / 2, w, h: hh };
     if (o0.type === 'text') {
       patch.h = textHeight({ ...o0, w });
+      patch.y = o0.y;
+    }
+    if (o0.type === 'markdown') {
+      patch.h = markdownBoxHeight({ ...o0, w });
       patch.y = o0.y;
     }
     if (o0.type === 'path' && o0.points) {
@@ -2115,6 +2148,7 @@ export class BoardApp {
     switch (t.kind) {
       case 'sticky': return { w: 192, h: 192 };
       case 'text': return { w: 240, h: 28 };
+      case 'markdown': return { w: 360, h: 120 };
       case 'frame': return { w: 960, h: 600 };
       case 'shape': return shapeDefaultSize(t.shape);
       case 'uml': return { w: t.def.w, h: t.def.h };
@@ -2127,6 +2161,7 @@ export class BoardApp {
     switch (t.kind) {
       case 'sticky': return this.makeObj('sticky', rect);
       case 'text': return this.makeObj('text', { ...rect, h: Math.max(rect.h, 28) });
+      case 'markdown': return this.makeObj('markdown', { ...rect, w: Math.max(rect.w, 160), h: Math.max(rect.h, 60) });
       case 'frame': return this.makeObj('frame', rect, { name: 'Frame' });
       case 'shape': return this.makeObj('shape', rect, { kind: t.shape });
       case 'uml': return this.makeObj(t.def.type, rect, structuredClone(t.def.defaults || {}));
@@ -2161,7 +2196,7 @@ export class BoardApp {
     this.createObject(o);
     if (o.type === 'frame') this.adoptInto(o);
     this.setTool({ kind: 'select' });
-    if (o.type === 'sticky' || o.type === 'text' || o.type === 'shape') this.editor.start(o.id);
+    if (o.type === 'sticky' || o.type === 'text' || o.type === 'shape' || o.type === 'markdown') this.editor.start(o.id);
   }
 
   /** A new frame drawn over existing objects takes them as children. */
@@ -2194,6 +2229,49 @@ export class BoardApp {
         if ((f?.id ?? undefined) !== o.parent) this.store.update(id, { parent: f?.id });
       }
     });
+  }
+
+  private mdDown: { owner: Id; at: number } | null = null;
+
+  /** A click that reached a link or a task box of a Markdown block (onDown let it through): a task is ticked, a board-item link jumps there; a web link is the browser's. */
+  private onMarkdownClick(e: MouseEvent) {
+    const owner = markdownTargetOf(e.target);
+    if (!owner) return;
+    const o = this.store.get(owner);
+    if (!o || o.type !== 'markdown') return;
+    const el = (e.target as Element).closest('[data-md-owner]')!;
+    const task = el.getAttribute('data-md-task');
+    if (task !== null) {
+      e.preventDefault();
+      if (!this.readOnly && !o.locked) this.toggleMarkdownTask(owner, Number(task));
+      return;
+    }
+    if (el.getAttribute('data-md-kind') === 'obj') {
+      e.preventDefault();
+      this.goToObject((el.getAttribute('href') ?? '').slice('#obj:'.length));
+    }
+  }
+
+  /** Ticks or unticks the task box on one source line of a Markdown block: one undo step. The block's source is one value, so two people ticking at once keep the later write. */
+  toggleMarkdownTask(id: Id, line: number) {
+    const o = this.store.get(id);
+    if (!o || o.type !== 'markdown' || this.readOnly) return;
+    const next = toggleTask(o.text ?? '', line);
+    if (next === (o.text ?? '')) return;
+    this.store.undo.stopCapturing();
+    this.store.transact(() => this.store.update(id, { text: next }));
+    this.store.undo.stopCapturing();
+  }
+
+  /** A link to a board item (#obj:<id>) from a Markdown block: select it and fly there. */
+  private goToObject(id: Id) {
+    const target = this.store.get(id);
+    if (!target || !this.store.isShown(target) || this.flow.isHidden(target as BaseObj)) {
+      this.notify('That item is not on this board.');
+      return;
+    }
+    this.setSelection([id]);
+    this.zoomToSelection();
   }
 
   private onDblClick(e: MouseEvent) {
@@ -2820,6 +2898,9 @@ export class BoardApp {
     this.store.update(o.id, patch);
     if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
       this.store.update(o.id, { h: textHeight({ ...o, ...patch } as BaseObj) });
+    }
+    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+      this.store.update(o.id, { h: markdownBoxHeight({ ...o, ...patch } as BaseObj) });
     }
     if (o.type === 'uml-class' && 'stereotype' in patch) {
       this.store.update(o.id, { h: classHeight({ ...o, ...patch } as BaseObj) });

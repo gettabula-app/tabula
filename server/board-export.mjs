@@ -52,6 +52,11 @@ export function exportBoardMarkdown(doc, titleOverride = undefined) {
       return '- ' + endpoint(object.from) + ' -> ' + endpoint(object.to) + label;
     }
     if (object.type === 'card') return '- ' + objectLabel(object);
+    if (object.type === 'markdown') {
+      // the block's own Markdown, quoted so its headings and lists do not become the summary's: one line each, cleaned like every board-authored string
+      const lines = cleanForModel(object.text, 4_000).text.split(/\r?\n/u).map((line) => line.replace(/\s+$/u, ''));
+      return lines.length && lines.some(Boolean) ? lines.map((line) => (line ? '> ' + line : '>')).join('\n') : null;
+    }
     if (object.type === 'sticky' || object.type === 'text' || object.type === 'shape') {
       const text = typeof object.text === 'string' && object.text ? inline(object.text) : '';
       const description = text || (object.type === 'shape' ? 'Shape (' + inline(object.kind || 'unknown', 80) + ')' : object.type);

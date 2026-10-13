@@ -115,6 +115,9 @@ hr { border: 0; }
 /* A label is edited in place, in the same paper pill it is drawn in; the caret takes the label's colour. */
 .text-editor[data-mode='label'] { background: #fff; color: var(--editor-fallback-ink); caret-color: currentColor; border-radius: var(--radius-xs); overflow: hidden; }
 .text-editor[data-mode='frame'] { background: var(--canvas); }
+/* A Markdown block is edited as its source, in a monospace face on the canvas colour with the selection's outline (docs/markdown-blocks.md). */
+.text-editor[data-kind='markdown'] { background: var(--canvas); color: var(--ink); box-shadow: 0 0 0 2px var(--wire); border-radius: var(--radius-xs); overflow: auto; tab-size: 2; }
+.text-editor[data-kind='markdown']::placeholder { color: var(--graphite, currentColor); opacity: 0.7; }
 
 /* ------------------------------------------------------------- trays */
 
