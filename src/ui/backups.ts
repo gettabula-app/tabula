@@ -351,7 +351,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
           updateSubmit();
         },
       }),
-      h('label', { class: 'backups-readiness-checkbox' },
+      h('label', { class: 'check backups-readiness-checkbox' },
         h('input', {
           type: 'checkbox', checked: cutoverAccepted,
           onchange: (event: Event) => {
@@ -558,7 +558,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       } else if (!list.length) {
         rows.replaceChildren(kit.emptyLine(`Nothing matches “${query.trim()}”.`));
       } else {
-        rows.replaceChildren(...list.map((b) => h('label', { class: 'admin-row backups-pick-row', 'data-id': b.id },
+        rows.replaceChildren(...list.map((b) => h('label', { class: 'check admin-row backups-pick-row', 'data-id': b.id },
           h('input', {
             type: 'radio', name: 'backup-board', value: b.id, checked: picked === b.id, 'aria-label': `${b.title}, ${b.teamName ?? 'Personal'}${b.deleted ? ', deleted' : ''}`,
             onchange: () => {

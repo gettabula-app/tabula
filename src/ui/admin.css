@@ -3,9 +3,9 @@
 .admin-root { min-height: 100%; background: var(--canvas); }
 .admin { min-height: 100vh; color: var(--ink); }
 .admin .small { font-size: 13px; }
-.admin :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.admin :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-/* Label style: 11px uppercase meta for nav, column heads, tile labels, filters, badges and the count. */
+/* Admin labels stay sentence case; the shared component styles carry the M type scale. */
 .admin .admin-me,
 .admin .admin-kicker,
 .admin .admin-count,
@@ -15,7 +15,7 @@
 .admin .admin-fact dt,
 .admin .admin-chip,
 .admin .admin-badge {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none;
 }
 .admin .admin-me,
 .admin .admin-kicker,
@@ -97,7 +97,6 @@
 .admin .admin-search .input { padding-left: 34px; }
 .admin .admin-search .ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--graphite); pointer-events: none; }
 .admin-check { display: inline-flex; align-items: center; gap: 8px; color: var(--graphite); }
-.admin-check input { width: 16px; height: 16px; accent-color: var(--ink); }
 .admin-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
 .admin .admin-chip { height: 32px; padding: 0 12px; border: 1px solid var(--field-edge-strong); border-radius: var(--radius-xs); background: var(--paper); color: var(--graphite); }
 .admin .admin-chip:hover { border-color: var(--ink); color: var(--ink); }
@@ -147,8 +146,6 @@
 }
 .admin .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
 .admin .btn:disabled { opacity: 0.5; }
-.admin .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
-.admin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }
 .admin .btn[aria-disabled='true'] { opacity: 0.5; }
 /* A button that changes its label (armable, Enable/Disable) keeps the width of its longest label. */
 .admin .btn.btn-slot { display: inline-grid; place-items: center; }
@@ -158,7 +155,7 @@
 .admin .btn.armed:not(:disabled):hover { background: var(--danger); color: var(--on-danger); }
 
 .admin .input {
-  height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink);
+  height: 34px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink);
 }
 .admin .input[type='search'] { min-width: 0; width: 100%; }
 .admin .icon-btn { border-radius: var(--radius-sm); }
@@ -246,7 +243,7 @@
 }
 .admin .admin-chip:hover,
 .admin .admin-chip.on { border: 0; background: var(--page-hover); color: var(--ink); }
-.admin .admin-badge.tag { margin-left: 8px; padding: 2px 9px; border: 0; border-radius: 9999px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.4; }
+.admin .admin-badge.tag { margin-left: 8px; padding: 2px 9px; border: 0; border-radius: 9999px; font-size: 10px; font-weight: 600; letter-spacing: normal; text-transform: none; line-height: 1.4; }
 .admin .admin-actions .btn {
   height: 32px; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--graphite);
   font-size: 12px; font-weight: 500;
@@ -254,9 +251,9 @@
 .admin .admin-actions .btn:not(:disabled):hover { background: var(--page-hover); color: var(--ink); }
 .admin .btn.primary { border: 0; background: var(--ink); color: var(--paper); }
 .admin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 88%, var(--paper)); color: var(--paper); }
-.admin .admin-select .admin-role-select.tag {
-  min-height: 24px; height: 24px; width: auto; padding: 0 28px 0 9px; border: 0; border-radius: 9999px;
-  box-shadow: none; font: 600 10px/1.2 var(--ui); letter-spacing: 0.05em; text-transform: uppercase;
+.admin .admin-select .admin-role-select {
+  min-height: 34px; height: 34px; width: auto; padding: 0 28px 0 9px; border: 0; border-radius: var(--radius-sm);
+  box-shadow: inset 0 -1px 0 var(--field-rule); font: 600 12px/1.2 var(--ui); letter-spacing: normal; text-transform: none;
 }
 .admin .admin-select .admin-role-select.tag-yellow { background: var(--tag-yellow); color: var(--on-tag-yellow); }
 .admin .admin-select .admin-role-select.tag-blue { background: var(--tag-blue); color: var(--on-tag-blue); }
@@ -302,5 +299,5 @@
   .admin .admin-check { min-height: 44px; height: 44px; }
   .admin-top > .icon-btn { width: 44px; height: 44px; }
   .updates-toggle { min-height: 44px; }
-  .admin .admin-select .admin-role-select.tag { min-height: 44px; height: 44px; }
+  .admin .admin-select .admin-role-select { min-height: 44px; height: 44px; }
 }

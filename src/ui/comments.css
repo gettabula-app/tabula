@@ -4,7 +4,7 @@
   display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--tray-line); border-radius: var(--radius-md);
   box-shadow: 0 4px 24px color-mix(in srgb, var(--shade) 5%, transparent);
 }
-.comment-card :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+.comment-card :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .comment-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .comment-head > .icon-btn { margin-left: auto; }
 .comment-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }

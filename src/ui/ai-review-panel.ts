@@ -102,12 +102,12 @@ function openPanel(app: BoardApp, runId: string, actions: ReviewActions): void {
     }
   }
 
-  function checkbox(label: string, checked: boolean, onChange: (v: boolean) => void, disabled = false): HTMLInputElement {
+  function checkbox(label: string, checked: boolean, onChange: (v: boolean) => void, disabled = false): HTMLLabelElement {
     const box = h('input', { type: 'checkbox', 'aria-label': label });
     box.checked = checked;
     box.disabled = disabled;
     box.addEventListener('change', () => onChange(box.checked));
-    return box;
+    return h('label', { class: 'check aireview-check' }, box);
   }
 
   function createList(r: Extract<Review, { kind: 'create' }>): HTMLElement {

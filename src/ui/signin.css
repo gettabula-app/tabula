@@ -1,7 +1,7 @@
 /* Sign-in, verify and invite: the admin's Swiss type, rules and buttons on a flush-left page grid. Theme variables only. */
 
 .signin { min-height: 100vh; background: var(--canvas); color: var(--ink); }
-.signin :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.signin :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* Top bar: wordmark flush left on the 1120px column, a 2px ink rule beneath, as in the admin. */
 .signin-top {
@@ -18,13 +18,13 @@
 .signin h1 { margin: 0; font: 800 40px/1 var(--display); letter-spacing: -0.03em; overflow-wrap: anywhere; }
 .signin-lede { margin: 0; font-size: 14px; color: var(--graphite); overflow-wrap: anywhere; }
 
-/* Label style as in the admin: 11px uppercase meta in graphite. */
+/* Labels use the same sentence-case scale as the other forms. */
 .signin-field {
-  display: flex; flex-direction: column; gap: 8px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--graphite);
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; color: var(--graphite);
 }
 
-.signin-form { display: flex; flex-direction: column; gap: 24px; margin: 0; }
+.signin-form { display: flex; flex-direction: column; gap: 16px; margin: 0; }
 
 .signin-notice {
   margin: 0; padding: 16px 16px 16px 20px; border-left: 4px solid var(--signal); background: var(--paper); color: var(--ink);
@@ -34,9 +34,8 @@
   font-size: 13px;
 }
 
-/* Inputs sit inside the 11px label, so the field resets the label's type. */
 .signin .input {
-  height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink);
+  height: 34px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink);
   font-size: 14px; font-weight: 400; letter-spacing: normal; text-transform: none;
 }
 .signin .signin-recovery-email { display: inline-block; width: min(100%, 320px); margin: 8px 0; }
@@ -48,8 +47,8 @@
 }
 .signin .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
 .signin .btn:disabled { opacity: 0.5; }
-.signin .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
-.signin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }
+.signin .btn.primary { border: 0; background: var(--ink); color: var(--paper); }
+.signin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 88%, var(--paper)); color: var(--paper); }
 
 /* Ghost: a text action, underlined on hover. */
 .signin .btn.ghost { width: auto; align-self: flex-start; padding: 0; border: 0; background: transparent; color: var(--ink); }

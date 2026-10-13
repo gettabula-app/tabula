@@ -31,7 +31,7 @@
 .combo-opt.active { background: var(--tray-hover); }
 .combo-opt[aria-selected='true'] { box-shadow: inset 4px 0 0 var(--signal); }
 .combo-group {
-  padding: 10px 12px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 10px 12px 4px; font-size: 12px; font-weight: 600; text-transform: none; letter-spacing: normal;
   color: var(--tray-muted);
 }
 
