@@ -196,10 +196,13 @@ export class TextEditor {
     this.app.store.undo.stopCapturing();
     this.reposition();
     this.unsubCam = this.app.r.onCamera(() => this.reposition());
+    // The opening selection is set now, while the box is already on screen and can be typed in; the deferred step below only
+    // takes focus. Setting it there put it after anything the person did in the first frame (select all, a first keystroke).
+    if (markdown) this.ta.setSelectionRange(this.original.length, this.original.length);
+    else this.ta.select();
     requestAnimationFrame(() => {
-      this.ta.focus();
-      if (markdown) this.ta.setSelectionRange(this.original.length, this.original.length);
-      else this.ta.select();
+      if (this.id !== id) return;
+      if (document.activeElement !== this.ta) this.ta.focus();
       this.rememberSelection();
     });
     this.app.emit('editing');
