@@ -618,13 +618,12 @@ describe('new issue dialog', () => {
 });
 
 describe('frame interaction thresholds', () => {
-  it('selects snapshot or work presentation from focus, screen width, zoom, and phone mode', () => {
-    expect(trackerPresentation(0.39, 900, true)).toBe('snapshot');
-    expect(trackerPresentation(0.4, 559, true)).toBe('snapshot');
-    expect(trackerPresentation(0.4, 560, true)).toBe('work');
-    expect(trackerPresentation(1.4, 1200, true)).toBe('work');
-    expect(trackerPresentation(1, 1440, true, true)).toBe('snapshot');
-    expect(trackerPresentation(1, 1440, false)).toBe('snapshot');
+  it('selects live or snapshot presentation from zoom and on-screen height, never from focus', () => {
+    expect(trackerPresentation(0.39, 900, 480, false)).toBe('snapshot');
+    expect(trackerPresentation(0.4, 559, 240, false)).toBe('work');
+    expect(trackerPresentation(1, 1440, 239, false)).toBe('snapshot');
+    expect(trackerPresentation(1.4, 1200, 700, false)).toBe('work');
+    expect(trackerPresentation(1, 1440, 480, true)).toBe('snapshot');
   });
 
   it('lets list scroll through, pans at either end, and always zooms for a modified wheel', () => {

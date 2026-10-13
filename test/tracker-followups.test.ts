@@ -36,11 +36,11 @@ describe('Escape in the tracker filter field', () => {
   });
 });
 
-describe('the buttons on a tracker frame', () => {
-  it('are one flex group with a gap, equal heights, and the second collapses to a glyph in a narrow frame', () => {
+describe('the button on a tracker frame', () => {
+  it('is the phone Open chip in a flex group at the top right; the live element carries its own full-screen icon', () => {
     expect(css).toMatch(/\.trk-frame-actions \{[^}]*display: flex;[^}]*gap: 8px;/);
-    expect(css).toMatch(/\.trk-frame-open, \.trk-frame-expand \{[^}]*height: 32px;/);
-    expect(css).toMatch(/@container \(max-width: 360px\) \{[^}]*\.trk-frame-expand \{ width: 32px; padding: 0; \}/);
+    expect(css).toMatch(/\.trk-frame-open \{[^}]*height: 32px;/);
+    expect(css).not.toContain('.trk-frame-expand');
     expect(css).not.toMatch(/\.trk-frame-open \{ right: 124px; \}/);
   });
 });

@@ -226,8 +226,8 @@ export function safeObj<T extends Obj>(o: T): T {
   }
   if (o.type === 'tracker') out.rotation = 0;
   if (o.type === 'tracker') {
-    out.w = Math.max(480, out.w as number);
-    out.h = Math.max(360, out.h as number);
+    out.w = Math.max(360, out.w as number);
+    out.h = Math.max(280, out.h as number);
   }
   if (o.type === 'card') {
     if (!out.ownerId && !out.ownerName) delete out.ownerKind;
