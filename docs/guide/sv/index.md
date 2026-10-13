@@ -16,6 +16,7 @@ Tabula är en whiteboard som du delar med ditt team: rita, skriv och organisera 
 - [Lager](layers.md)
 - [Bilder](images.md)
 - [Länkkort](link-cards.md)
+- [Markdown-block](markdown-blocks.md)
 - [Klistermärken](stickers.md)
 - [Mallar](templates.md)
 - [Teman](themes.md)

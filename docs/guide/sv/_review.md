@@ -112,6 +112,10 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | Admin > Privacy | Administratör > Integritet | Menyvägen glosas med det svenska ordet för Admin och Privacy; kontrollera att menyn heter så i appen. |
 | Loading preview… / No preview / Address only / Add this link? | Läser in förhandsvisning… / Ingen förhandsvisning / Endast adress / Lägg till den här länken? | Meddelanden i kortet och dialogen; glosorna är översättningar och bör jämföras med appens texter när de finns på svenska. |
 | Drop (drag a link onto the board) | Släpp | Används som rubrik i punktlistan; ”Släpp” är kort men kan vara otydligt jämfört med ”Dra och släpp”. |
+| Markdown block | Markdown-block | Ny term; UI-namnet står kvar på engelska och glosan är i praktiken samma ord. Kontrollera om glosan ska behållas eller utelämnas vid första förekomsten. |
+| task box (tick box in a block) | uppgiftsruta | Ny UI-term för kryssrutan i ett Markdown-block; kontrollera om ”kryssruta” eller ”checkruta” är bättre. |
+| board outline (screen reader) | tavlans översikt | Ny term för skärmläsarens lista över objekt på tavlan; kontrollera mot appens formulering. |
+| source (of a block) | källtext | Ny term för texten i redigeringsrutan innan den formateras; kontrollera om ”Markdown-källa” är tydligare. |
 
 ## Övriga anmärkningar från översättarna
 
