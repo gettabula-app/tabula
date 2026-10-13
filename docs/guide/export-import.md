@@ -33,7 +33,7 @@ Images use the light default colours on white whatever theme you are using. Comm
 
 Then choose the paper (A4 or Letter), the orientation (automatic follows most of the pages) and whether each page gets a title: the frame's name, or the board's name for the whole board and a selection. Each picture is fitted to its page.
 
-Tabula does not make the PDF itself. **The PDF goes through your browser's print dialog**: press **Continue**, then choose **Save as PDF** as the destination there to get a file, or pick a printer. Text stays text in the PDF and pictures stay sharp at any zoom. Soft shadows behind notes are left out of the print. Like the other exports, a print uses the light default colours on white and leaves out comment pins and hidden objects.
+Tabula does not make the PDF itself. **The PDF goes through your browser's print dialog**: press **Continue**, then choose **Save as PDF** as the destination there to get a file, or pick a printer. Text stays text in the PDF. Tested in Chrome and Edge; other browsers' print dialogs differ, and a frame larger than a page is scaled down. Soft shadows behind notes are left out of the print. Like the other exports, a print uses the light default colours on white and leaves out comment pins and hidden objects.
 
 ### Board file (.drift)
 
