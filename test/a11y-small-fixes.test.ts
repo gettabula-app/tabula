@@ -78,8 +78,8 @@ describe('accessibility audit follow-ups', () => {
     const boardName = styles.match(/\.board-name\s*\{([^}]*)\}/)?.[1] ?? '';
     const fieldFocus = styles.match(/\.input:focus,\s*select:focus,\s*textarea:not\(\.text-editor\):focus\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(boardName).not.toMatch(/outline\s*:\s*none/);
-    expect(fieldFocus).toMatch(/box-shadow:\s*inset 0 0 0 1px var\(--tray-text\),\s*0 0 0 3px color-mix\(in srgb, var\(--tray-text\) 10%, transparent\)/);
-    const focusRingReplacesOutline = /box-shadow:\s*[^;]*inset 0 0 0 1px var\(--tray-text\)[^;]*0 0 0 3px/.test(fieldFocus);
+    expect(fieldFocus).toMatch(/box-shadow:\s*inset 0 0 0 1px var\(--field-edge-strong\),\s*0 0 0 3px color-mix\(in srgb, var\(--field-edge-strong\) 16%, transparent\)/);
+    const focusRingReplacesOutline = /box-shadow:\s*[^;]*inset 0 0 0 1px var\(--field-edge-strong\)[^;]*0 0 0 3px/.test(fieldFocus);
     const outlineRemoved = /outline:\s*(?:0|none)\s*;/.test(fieldFocus);
     const outlineDeclared = /outline:\s*[^;]+;/.test(fieldFocus);
     expect(!outlineRemoved || focusRingReplacesOutline).toBe(true);
@@ -105,7 +105,7 @@ describe('accessibility audit follow-ups', () => {
     // Forced-colors Highlight outlines for shared fields and controls are asserted in test/forced-colors-focus.test.ts.
     expect(read('src/ui/admin.css')).not.toMatch(/\.admin \.input:focus-visible\s*\{[^}]*outline\s*:\s*none/);
     expect(read('src/ui/tokens.css')).not.toMatch(/\.tokens-dialog \.input:focus-visible\s*\{[^}]*outline\s*:\s*none/);
-    expect(read('src/ui/comments.css')).toMatch(/\.comment-card :focus-visible\s*\{[^}]*outline:\s*2px solid var\(--tray-text\)/);
+    expect(read('src/ui/comments.css')).toMatch(/\.comment-card :focus-visible(?::not\([^)]*\))*\s*\{[^}]*outline:\s*2px solid var\(--tray-text\)/);
   });
 
   it('keeps the token-name example in the accessible input name', () => {

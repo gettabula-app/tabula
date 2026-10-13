@@ -104,10 +104,10 @@ describe.skipIf(!available)('the Link previews admin row', () => {
     await page.close();
   });
 
-  it('is a 40 by 24 switch', async () => {
+  it('is the shared 28 by 16 switch', async () => {
     const { page } = await open(false);
     const box = await page.locator('.lp-switch').boundingBox();
-    expect([box!.width, box!.height]).toEqual([40, 24]);
+    expect([box!.width, box!.height]).toEqual([28, 16]);
     await page.close();
   });
 });
