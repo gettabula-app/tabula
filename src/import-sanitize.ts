@@ -158,7 +158,7 @@ function cleanLinkFields(o: Record<string, unknown>): void {
 // ---------------------------------------------------------------- templates
 
 const T_COMMON = ['id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'parent', 'flipX', 'flipY', 'text', 'name', 'fill', 'stroke', 'textColor', 'strokeWidth', 'dash', 'opacity', 'font', 'fontWeight', 'fontSize', 'align', 'valign', 'lineHeight'];
-const T_CONNECTOR = ['id', 'type', 'z', 'from', 'to', 'route', 'startHead', 'endHead', 'relation', 'label', 'stroke', 'strokeWidth', 'dash', 'opacity', 'parent', 'name', 'x', 'y', 'w', 'h', 'rotation', 'font', 'fontSize', 'fontWeight', 'textColor', 'align', 'valign'];
+const T_CONNECTOR = ['id', 'type', 'z', 'from', 'to', 'route', 'startHead', 'endHead', 'line', 'relation', 'label', 'stroke', 'strokeWidth', 'dash', 'opacity', 'parent', 'name', 'x', 'y', 'w', 'h', 'rotation', 'font', 'fontSize', 'fontWeight', 'textColor', 'align', 'valign'];
 const TEMPLATE_KEYS: Record<string, ReadonlySet<string>> = {
   shape: new Set([...T_COMMON, 'kind']),
   icon: new Set([...T_COMMON, 'ref', 'body', 'viewBox', 'sticker']),
