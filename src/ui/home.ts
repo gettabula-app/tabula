@@ -184,7 +184,7 @@ async function fetchAccount(me: Me): Promise<AccountData | null> {
   }
 }
 
-function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
+export function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
   const { nav, me, down } = v;
   const admin = me.user.role === 'owner' || me.user.role === 'admin';
   const fileInput = boardFileInput(nav);
@@ -208,9 +208,8 @@ function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
       toolbar),
     groups, templates, footer, fileInput);
   const paintGroups = () => {
+    // With no boards the page keeps its title and toolbar (Import file and New team stay reachable); the empty state sits under them.
     const empty = data?.boards.length === 0;
-    toolbar.hidden = empty;
-    main.classList.toggle('empty', empty);
     templates.hidden = empty;
     footer.hidden = empty;
     groups.replaceChildren(...accountGroups(v, data));
