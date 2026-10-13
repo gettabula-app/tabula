@@ -590,15 +590,19 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
     right = m.x - 8;
   }
   const full = count.state !== '';
-  const fullText = 'WIP full';
+  // at the limit: a quiet yellow "At limit" pill; over it: a red "Over limit" pill (the words differ, not only the colour)
+  const over = count.state === 'over';
+  const fullText = over ? 'Over limit' : 'At limit';
   const badgeFont = fontCss(o.font, 11, 600);
   const badgeW = measure(fullText, badgeFont) + 12;
   const badgeLeft = right - countW - (full ? badgeW + 8 : 0) - (full && count.block ? 18 : 0);
   const countRight = right - (full && count.block ? 18 : 0);
   inner += `<title>${escapeXml(count.title)}</title>` + uiText(count.text, countRight, mid + 4, K.meta, o.font, 12, 400, 'end');
   if (full) {
-    inner += `<rect x="${n(badgeLeft)}" y="${mid - 10}" width="${n(badgeW)}" height="20" rx="4" style="fill:var(--tag-yellow, #FBF3DB);"/>`;
-    inner += uiText(fullText, badgeLeft + 6, mid + 4, 'var(--on-tag-yellow, #956400)', o.font, 11, 600);
+    inner += over
+      ? `<rect x="${n(badgeLeft)}" y="${mid - 10}" width="${n(badgeW)}" height="20" rx="4" style="fill:var(--tag-red, #FDEBEC);"/>`
+      : `<rect x="${n(badgeLeft)}" y="${mid - 10}" width="${n(badgeW)}" height="20" rx="4" style="fill:var(--tag-yellow, #FBF3DB);"/>`;
+    inner += uiText(fullText, badgeLeft + 6, mid + 4, over ? 'var(--on-tag-red, #9F2F2D)' : 'var(--on-tag-yellow, #956400)', o.font, 11, 600);
   }
   if (full && count.block) inner += kIcon(ICON_LOCK, badgeLeft - 16, mid - 6, 12, K.meta);
   // The lane name and its quiet done marker.
