@@ -4,6 +4,7 @@ import type { BoardApp } from '../app';
 import { h, icon } from './dom';
 import { popover } from './common';
 import { tableMenuChildren } from './table-menu';
+import { kbdHint } from './kbd';
 
 export type ContextAction = 'front' | 'forward' | 'backward' | 'back' | 'group' | 'ungroup' | 'flipHorizontal' | 'flipVertical' | 'duplicate' | 'lock' | 'delete';
 
@@ -89,7 +90,7 @@ export function openContextMenu(app: BoardApp, x: number, y: number, touch = fal
           pop.close();
           RUN[item.action](app);
         },
-      }, icon(item.icon, 18), h('span', null, item.label), item.hint ? h('span', { class: 'menu-hint' }, item.hint) : null),
+      }, icon(item.icon, 16), h('span', null, item.label), item.hint ? h('span', { class: 'menu-hint' }, kbdHint(item.hint)) : null),
     ]),
   );
   const pop = popover(anchor, menu, { side: 'bottom', className: 'ctx-pop', avoidAnchor: touch, onClose: () => anchor.remove() });

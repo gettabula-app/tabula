@@ -115,7 +115,7 @@ describe('tooltip warm group', () => {
   it('keeps the cool-down inside the 300 to 500 ms the design asks for', () => {
     expect(COOL_DELAY).toBeGreaterThanOrEqual(300);
     expect(COOL_DELAY).toBeLessThanOrEqual(500);
-    expect(SHOW_DELAY).toBe(500);
+    expect(SHOW_DELAY).toBe(400);
   });
 });
 

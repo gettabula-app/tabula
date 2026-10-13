@@ -67,13 +67,13 @@
 /* quick poll popover and step editor composer */
 .popover.poll-pop {
   width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; overflow: hidden;
-  padding: 0; box-sizing: border-box; border-radius: var(--radius-md) !important; box-shadow: none !important;
-  background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-top: 2px solid var(--ink);
+  padding: 0; box-sizing: border-box; border-radius: var(--radius-md);
+  background: var(--tray); color: var(--tray-text);
 }
-.poll-compose { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 16px; background: var(--paper); color: var(--ink); }
+.poll-compose { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 16px; }
 .poll-compose .field { margin-top: 0; }
 .poll-options { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.poll-compose .field-label { margin: 0 0 8px; font-size: 11px; font-weight: 600; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--graphite); }
+.poll-compose .field-label { margin: 0 0 8px; color: var(--tray-muted); font-size: 12px; font-weight: 600; line-height: 16px; }
 .poll-compose .input { height: 40px; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink); }
 .poll-compose .input::placeholder { color: var(--placeholder); opacity: 1; }
 .poll-compose-list { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -82,13 +82,10 @@
 .poll-compose-options li { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .poll-compose-options .input { flex: 1; min-width: 0; }
 .poll-compose .icon-btn { width: 40px; height: 40px; border-radius: var(--radius-sm); color: var(--ink); }
-.poll-compose .icon-btn:hover { background: var(--canvas); }
+.poll-compose .icon-btn:hover { background: var(--tray-hover); }
 .poll-compose .btn {
-  height: 40px; padding: 0 16px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font-weight: 600;
+  height: 40px; padding: 0 16px;
 }
-.poll-compose .btn:hover { background: var(--canvas); }
-.poll-compose .btn.primary { background: var(--signal); color: var(--on-signal); }
-.poll-compose .btn.primary:hover { background: var(--signal); }
 .poll-check { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; font-size: 14px; }
 .poll-check input { flex: none; margin: 0; width: 16px; height: 16px; accent-color: var(--ink); }
 .poll-compose-actions { flex: none; justify-content: flex-end; gap: 8px; }

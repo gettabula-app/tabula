@@ -10,7 +10,7 @@ const visibleHeight = () => Math.min(window.innerHeight, window.visualViewport ?
 let openPop: { el: HTMLElement; close: () => void } | null = null;
 
 /** Floating panel anchored to an element; closes on outside click or Escape. */
-export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; fitBelow?: boolean; className?: string; label?: string; onClose?: () => void; avoidAnchor?: boolean; trap?: boolean } = {}) {
+export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?: 'right' | 'bottom' | 'top' | 'left'; fitBelow?: boolean; getAnchorRect?: () => Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width' | 'height'>; className?: string; label?: string; onClose?: () => void; onKeyDown?: (event: KeyboardEvent) => boolean; avoidAnchor?: boolean; trap?: boolean } = {}) {
   closePopover();
   const label = opts.label ?? (anchor.getAttribute('aria-label') || anchor.textContent?.trim() || 'Options');
   const trackerSurface = opts.className?.split(/\s+/u).includes('trk-pop') === true;
@@ -38,7 +38,7 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     const side = opts.side ?? 'bottom';
     // the session bar is drawn again when its steps change, which detaches the button the panel opened from: the bar itself is then the anchor
     const bar = side === 'top' ? (anchor.closest<HTMLElement>('.flowbar.show') ?? document.querySelector<HTMLElement>('.flowbar.show')) : null;
-    const a = anchor.isConnected || !bar ? anchor.getBoundingClientRect() : bar.getBoundingClientRect();
+    const a = opts.getAnchorRect?.() ?? (anchor.isConnected || !bar ? anchor.getBoundingClientRect() : bar.getBoundingClientRect());
     if (!anchor.isConnected && !bar) return;
     const avoidAbove = bar?.getBoundingClientRect();
     const pos = placePopover(a, r, { width: window.innerWidth, height: visibleHeight() }, safe, side, avoidAbove, opts.fitBelow);
@@ -60,6 +60,11 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     if (!el.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
   };
   const onKey = (e: KeyboardEvent) => {
+    if (opts.onKeyDown?.(e)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     if (e.key === 'Escape') {
       e.stopPropagation();
       close();

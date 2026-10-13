@@ -1,5 +1,6 @@
 import './tooltip.css';
 import { h } from './dom';
+import { kbdHint } from './kbd';
 import { shortcutKeys } from '../shortcuts';
 import { addToken, createTipController, placeTip, removeToken, tipContent, type TipContent } from '../tooltip';
 import { safeInsets, type Insets } from './safe-area';
@@ -8,10 +9,10 @@ const ID = 'tabula-tooltip';
 // Anything with a data-tip, plus icon buttons that have no caption but their aria-label.
 const TARGET = '[data-tip], .icon-btn[aria-label], .rail-btn[aria-label]';
 // While a tooltip is open: a change to these on its target redraws it, and the target leaving the page closes it.
-const WATCHED = ['data-tip', 'data-tip-key', 'aria-label'];
+const WATCHED = ['data-tip', 'data-tip-key', 'data-tip-keys', 'aria-label'];
 
 function contentOf(el: HTMLElement): TipContent | null {
-  return tipContent({ tip: el.getAttribute('data-tip'), ariaLabel: el.getAttribute('aria-label'), keyId: el.getAttribute('data-tip-key') }, shortcutKeys);
+  return tipContent({ tip: el.getAttribute('data-tip'), ariaLabel: el.getAttribute('aria-label'), keyId: el.getAttribute('data-tip-key'), keys: el.getAttribute('data-tip-keys') }, shortcutKeys);
 }
 
 const targetOf = (node: EventTarget | null): HTMLElement | null => (node instanceof Element ? node.closest<HTMLElement>(TARGET) : null);
@@ -42,7 +43,7 @@ export function installTooltips(): void {
       return;
     }
     label.textContent = content.label;
-    keys.textContent = content.keys ?? '';
+    keys.replaceChildren(content.keys ? kbdHint(content.keys, 'tip-keycaps') : document.createDocumentFragment());
     keys.hidden = !content.keys;
     const box = el.getBoundingClientRect();
     const size = tip.getBoundingClientRect();

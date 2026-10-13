@@ -2,6 +2,17 @@
    tokens by role (8px controls, 12px bubbles and pills), hairlines, 11px uppercase labels, an 8px grid. --signal marks Send, the
    New messages line, a message that mentions you, your own bubbles and the reactions you gave. */
 
+.chat-prefs-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; color: var(--tray-text); font-weight: 600; line-height: 1.4; cursor: pointer; }
+.chat-switch-control { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none; width: 48px; height: 44px; }
+.chat-switch-control input { position: absolute; inset: 0; z-index: 1; width: 48px; height: 44px; margin: 0; opacity: 0; cursor: pointer; }
+.chat-switch-track { position: relative; display: block; width: 40px; height: 24px; border: 1px solid var(--field-edge-strong); border-radius: 999px; background: var(--tray-2); }
+.chat-switch-thumb { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--tray-muted); }
+.chat-switch-control input:checked ~ .chat-switch-track { border-color: var(--ink); background: var(--ink); }
+.chat-switch-control input:checked ~ .chat-switch-track .chat-switch-thumb { background: var(--paper); transform: translateX(16px); }
+.chat-switch-control input:focus-visible ~ .chat-switch-track { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .chat-switch-thumb { transition: transform 120ms ease-out; } }
+@media (prefers-reduced-motion: reduce) { .chat-switch-thumb { transition: none; } }
+
 /* the Chat button and its unread badge (a red outline when someone mentions you) */
 .chat-toggle { position: relative; }
 .chat-count {

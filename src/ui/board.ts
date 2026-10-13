@@ -56,6 +56,8 @@ import { CANVAS_INK, STICKY_COLORS, colorName } from '../palette';
 import { boxBounds } from '../geometry';
 import { formatShortcutLabel, SHORTCUTS } from '../shortcuts';
 import { themeRadioGroup } from './theme-menu';
+import { getStoredTheme, onThemeChange, THEMES } from '../themes';
+import { kbdHint } from './kbd';
 import { openProfileDialog } from './profile-dialog';
 import { trackerEnabled as trackerAllowed } from '../tracker-gate';
 import { navigateTrackerPath } from '../route';
@@ -813,13 +815,32 @@ function minimap(app: BoardApp) {
 // ---------------------------------------------------------------- menus & dialogs
 
 function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) | null, scratch: boolean, demo: boolean, openLayers: () => void) {
-  const item = (ic: IconName, label: string, fn: () => void, hint?: string) =>
-    h('button', { class: 'menu-item', onclick: () => { pop.close(); fn(); } }, icon(ic, 18), h('span', null, label), hint ? h('span', { class: 'menu-hint' }, hint) : null);
-  // Items that change the board are disabled while it is view only.
-  const writeItem = (ic: IconName, label: string, fn: () => void) => {
-    const b = item(ic, label, fn);
-    b.disabled = app.readOnly;
-    return b;
+  let pop: ReturnType<typeof popover>;
+  let activeSubmenu: 'export' | 'theme' | null = null;
+  let stopTheme: () => void = () => {};
+
+  const isPhone = () => typeof window.matchMedia === 'function'
+    ? window.matchMedia('(max-width: 500px)').matches
+    : window.innerWidth <= 500;
+  const isShortcutHint = (value: string) => /^(?:(?:Alt|Ctrl|Cmd|Shift|Ctrl\/Cmd)\+|[⌘⌥⇧⌃])/.test(value);
+  const actionItem = (leading: HTMLElement, label: string, fn: () => unknown, hint?: string, cls = '') => {
+    const trailing = hint
+      ? h('span', { class: 'menu-hint' }, isShortcutHint(hint) ? kbdHint(hint) : hint)
+      : null;
+    const row = h('button', {
+      class: 'menu-item' + (cls ? ' ' + cls : ''),
+      type: 'button',
+      onclick: () => { pop.close(); void fn(); },
+    }, leading, h('span', { class: 'board-menu-label' }, label), trailing);
+    row.dataset.menuLabel = label;
+    return row;
+  };
+  const item = (ic: IconName, label: string, fn: () => unknown, hint?: string, cls = '') =>
+    actionItem(icon(ic, 16), label, fn, hint, cls);
+  const writeItem = (ic: IconName, label: string, fn: () => unknown) => {
+    const row = item(ic, label, fn);
+    row.disabled = app.readOnly;
+    return row;
   };
   const name = () => safeName(app.store.getMeta().name);
   const fileInput = h('input', { type: 'file', accept: '.drift,.json,application/json', hidden: true });
@@ -830,10 +851,9 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   const sel = app.selection.length ? app.selection : undefined;
   const auth = authState();
   const account = auth.mode === 'signed-in' ? [
-    h('div', { class: 'list-label' }, 'Account'),
-    h('div', { style: 'display:flex;align-items:center;gap:10px;padding:8px 10px' },
-      icon('user', 18),
-      h('div', { style: 'min-width:0;overflow-wrap:anywhere' },
+    h('div', { class: 'board-menu-account' },
+      icon('user', 16),
+      h('div', { class: 'board-menu-account-text' },
         h('div', null, auth.me.user.name),
         h('div', { class: 'muted small' }, auth.me.user.email))),
     item('user', 'Sign out', async () => {
@@ -857,53 +877,41 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     auth.me.chat ? item('chat', 'Chat notifications', () => openChatNotifications()) : null,
     auth.me.ai?.personalKeys ? item('lock', 'Your AI key', () => openAiKeyDialog()) : null,
   ] : [];
-  const themeGroup = themeRadioGroup();
   const showComments = item('comment', 'Show comments', () => app.setCommentsVisible(!app.commentsVisible));
-  if (app.commentsVisible) showComments.append(icon('check', 16));
-  // First in the menu: it is not a board action, and the person who is lost looks at the top. A quiet accent (the icon and a heavier label) in styles.css marks it.
-  const guide = !DEMO && !demo
-    ? h('button', { class: 'menu-item guide-item', onclick: () => { pop.close(); window.open('/docs/', '_blank', 'noopener'); } },
-      icon('link', 18), h('span', null, 'User guide'), h('span', { class: 'menu-hint' }, 'Opens in a new tab'))
+  if (app.commentsVisible) showComments.append(h('span', { class: 'menu-hint' }, icon('check', 14)));
+  const chatNarrow = app.toggleChat
+    ? item('chat', 'Chat', () => app.toggleChat?.(), undefined, 'menu-chat-narrow')
     : null;
-  // Below 380px the Chat button leaves the top bar (styles.css) so the board name keeps room; the menu carries it, and a dot on the menu button shows unread
-  const chatNarrow = app.toggleChat ? h('button', { class: 'menu-item menu-chat-narrow', onclick: () => { pop.close(); app.toggleChat?.(); } }, icon('chat', 18), h('span', null, 'Chat')) : null;
-  // The tracker is a workspace screen: not for the demo, a scratch board or a guest, and only when /api/me says the workspace has it.
   const tracker = !DEMO && !demo && !scratch && trackerAllowed(auth)
     ? item('layers', 'Tracker', () => { navigateTrackerPath({ kind: 'view', view: 'all' }); })
     : null;
-  const pop = popover(anchor, h('div', { class: 'menu' },
-    guide,
+
+  const boardRows = [
     tracker,
-    tracker ? h('hr', { class: 'menu-sep' }) : null,
     chatNarrow,
-    account,
-    h('div', { class: 'list-label' }, 'Board'),
+    ...account,
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
-    // The demo opens as a plain board; voting is something the visitor starts.
     demo ? writeItem('vote', 'Try dot voting', () => startVote(app, { kind: 'stickies' })) : null,
     scratch || demo || !canSaveTemplate(auth.mode) ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
-    demo ? [
-      h('div', { class: 'list-label' }, 'Workspace features'),
-      demoWorkspaceItems(),
-    ] : openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
+    demo
+      ? demoWorkspaceItems()
+      : openHistory && canSeeHistory(app.role) ? item('history', 'Version history', openHistory) : null,
     item('layers', 'Layers', openLayers, 'Alt+L'),
     demo || !canChangeProfile(auth.mode) ? null : item('user', 'Your name and colour', () => openProfile(app)),
-    mutedCount(app) ? item('user', `Muted people (${mutedCount(app)})`, () => openMuted(app)) : null,
+    mutedCount(app) ? item('user', 'Muted people (' + mutedCount(app) + ')', () => openMuted(app)) : null,
     scratch ? null : showComments,
+    aiBarFor(app) ? actionItem(glyph('spark', 16), 'Summarise', () => aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }), 'The whole board') : null,
+    item('menu', 'Keyboard shortcuts', () => openShortcuts(app.toggleChat !== null)),
+  ];
+  const importRows = [
     writeItem('upload', 'Import a board file into this board', () => fileInput.click()),
     writeItem('mermaid', 'Import Mermaid', () => openMermaidImport(app)),
-    aiBarFor(app) ? [
-      h('div', { class: 'list-label' }, 'AI'),
-      h('button', { class: 'menu-item', onclick: () => { pop.close(); aiBarFor(app)?.open({ arm: 'summarise', context: 'board' }); } },
-        glyph('spark', 18), h('span', null, 'Summarise'), h('span', { class: 'menu-hint' }, 'The whole board')),
-    ] : null,
-    h('div', { class: 'list-label' }, 'Appearance'),
-    themeGroup,
-    h('div', { class: 'list-label' }, sel ? 'Export selection' : 'Export'),
+  ];
+  const exportRows = [
     item('download', 'PNG image', async () => {
       toast('Preparing image…');
       try {
-        download(await exportPng(app, sel, 2), `${name()}.png`);
+        download(await exportPng(app, sel, 2), name() + '.png');
       } catch (e) {
         toast((e as Error).message);
       }
@@ -916,14 +924,223 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
     // cards of the selected kanbans, or of every kanban (docs/kanban.md, Export and import)
     csvKanbans(app).length ? item('download', 'Cards as CSV', () => downloadCardsCsv(app), 'One row per card, for spreadsheets') : null,
     item('mermaid', 'Copy as Mermaid', () => {
-      // never the words of a note private writing hides from this person
       const objs = leaveOutWithheld(sel ? [...app.store.cache.values()].filter((o) => sel.includes(o.id) || o.type === 'connector') : [...app.store.cache.values()], app.flow);
       navigator.clipboard.writeText(toMermaid(objs)).then(() => toast('Mermaid copied to the clipboard'), () => toast('Clipboard is not available'));
     }),
-    h('div', { class: 'list-label' }, 'Help'),
-    item('menu', 'Keyboard shortcuts', () => openShortcuts(app.toggleChat !== null)),
-    fileInput,
-  ), { side: 'bottom' });
+  ];
+
+  const themeCurrent = h('span', { class: 'board-theme-name' }, '');
+  const updateThemeName = () => {
+    themeCurrent.textContent = THEMES.find((t) => t.id === getStoredTheme())?.name ?? THEMES[0].name;
+  };
+  updateThemeName();
+  const themeOptions = themeRadioGroup();
+  themeOptions.classList.add('board-theme-options');
+  for (const row of themeOptions.querySelectorAll<HTMLButtonElement>('.theme-item')) {
+    row.dataset.menuLabel = row.textContent?.trim() ?? '';
+  }
+
+  const exportPanel = h('div', { class: 'menu board-menu-submenu board-export-submenu', hidden: true }, ...exportRows);
+  const themePanel = h('div', { class: 'menu board-menu-submenu board-theme-submenu', hidden: true }, themeOptions);
+  const exportTrigger = h('button', {
+    class: 'menu-item board-menu-sub-trigger',
+    type: 'button',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    onclick: () => toggleSubmenu('export', true),
+  }, icon('download', 16), h('span', { class: 'board-menu-label' }, sel ? 'Export selection' : 'Export'), icon('chevron', 14));
+  exportTrigger.dataset.menuLabel = sel ? 'Export selection' : 'Export';
+  const themeTrigger = h('button', {
+    class: 'menu-item board-menu-sub-trigger',
+    type: 'button',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+    onclick: () => toggleSubmenu('theme', true),
+  }, glyph('spark', 16), h('span', { class: 'board-theme-label' }, 'Theme'), themeCurrent, icon('chevron', 14));
+  themeTrigger.dataset.menuLabel = 'Theme';
+
+  type MenuChild = HTMLElement | null | MenuChild[];
+  const section = (className: string, ...children: MenuChild[]) =>
+    h('section', { class: 'board-menu-group ' + className }, children);
+  const boardGroup = section('board-menu-board', boardRows);
+  const importGroup = section('board-menu-import', ...importRows);
+  const exportGroup = section('board-menu-export', exportTrigger, exportPanel);
+  const themeGroup = section('board-menu-appearance', themeTrigger, themePanel);
+
+  const search = h('input', {
+    class: 'input board-menu-search-input',
+    type: 'search',
+    placeholder: 'Search actions',
+    'aria-label': 'Search actions',
+    oninput: () => filterMenu(),
+  });
+  const searchField = h('label', { class: 'board-menu-search' }, icon('search', 16), search, kbdHint('/', 'board-menu-slash'));
+  const guide = !DEMO && !demo
+    ? item('link', 'User guide', () => { window.open('/docs/', '_blank', 'noopener'); }, 'Opens in a new tab', 'guide-item')
+    : null;
+  const footer = h('div', { class: 'board-menu-footer' }, guide, fileInput);
+  const menu = h('div', { class: 'menu board-menu' }, searchField,
+    h('div', { class: 'board-menu-groups' }, boardGroup, importGroup, exportGroup, themeGroup),
+    footer);
+  const panels = { export: exportPanel, theme: themePanel };
+  const triggers = { export: exportTrigger, theme: themeTrigger };
+
+  function setSubmenu(key: 'export' | 'theme' | null, moveFocus: boolean): void {
+    const previous = activeSubmenu;
+    activeSubmenu = key;
+    for (const submenu of ['export', 'theme'] as const) {
+      const active = submenu === key;
+      panels[submenu].hidden = !active;
+      triggers[submenu].setAttribute('aria-expanded', String(active));
+      if (!active) {
+        panels[submenu].style.removeProperty('left');
+        panels[submenu].style.removeProperty('top');
+        panels[submenu].style.removeProperty('position');
+        panels[submenu].style.removeProperty('z-index');
+      }
+    }
+    if (!key) {
+      if (moveFocus) triggers[previous ?? 'export'].focus();
+      return;
+    }
+    const panel = panels[key];
+    if (isPhone()) {
+      panel.style.removeProperty('left');
+      panel.style.removeProperty('top');
+      panel.style.removeProperty('position');
+      panel.style.removeProperty('z-index');
+      if (moveFocus) {
+        const selected = panel.querySelector<HTMLElement>('[aria-checked="true"]');
+        (selected ?? panel.querySelector<HTMLElement>('.menu-item:not(:disabled)'))?.focus();
+      }
+      return;
+    }
+    panel.style.position = 'fixed';
+    panel.style.zIndex = '51';
+    const anchorRect = triggers[key].getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const panelWidth = panelRect.width || 280;
+    const panelHeight = panelRect.height || 240;
+    const fitsRight = anchorRect.right + panelWidth + 8 <= window.innerWidth;
+    const left = fitsRight ? anchorRect.right + 4 : Math.max(8, anchorRect.left - panelWidth - 4);
+    const top = Math.max(8, Math.min(anchorRect.top, window.innerHeight - panelHeight - 8));
+    panel.style.left = Math.round(left) + 'px';
+    panel.style.top = Math.round(top) + 'px';
+    if (moveFocus) {
+      const selected = panel.querySelector<HTMLElement>('[aria-checked="true"]');
+      (selected ?? panel.querySelector<HTMLElement>('.menu-item:not(:disabled)'))?.focus();
+    }
+  }
+
+  function toggleSubmenu(key: 'export' | 'theme', moveFocus: boolean): void {
+    setSubmenu(activeSubmenu === key ? null : key, moveFocus);
+  }
+
+  function filterMenu(): void {
+    const query = search.value.trim().toLocaleLowerCase();
+    const optionRows = (panel: HTMLElement) => Array.from(panel.querySelectorAll<HTMLButtonElement>('.menu-item[data-menu-label]'));
+    const childMatches = (panel: HTMLElement) => optionRows(panel).some((row) => row.dataset.menuLabel?.toLocaleLowerCase().includes(query));
+    const exportMatches = query !== '' && childMatches(exportPanel);
+    const themeMatches = query !== '' && childMatches(themePanel);
+    if (query) {
+      if (exportTrigger.dataset.menuLabel?.toLocaleLowerCase().includes(query) || exportMatches) setSubmenu('export', false);
+      else if (themeTrigger.dataset.menuLabel?.toLocaleLowerCase().includes(query) || themeMatches) setSubmenu('theme', false);
+      else if (activeSubmenu) setSubmenu(null, false);
+    }
+    const rows = Array.from(menu.querySelectorAll<HTMLButtonElement>('.menu-item[data-menu-label]'));
+    for (const row of rows) {
+      const label = row.dataset.menuLabel?.toLocaleLowerCase() ?? '';
+      const panel = row.closest<HTMLElement>('.board-menu-submenu');
+      const parentMatches = panel?.classList.contains('board-export-submenu')
+        ? exportTrigger.dataset.menuLabel?.toLocaleLowerCase().includes(query) === true
+        : panel?.classList.contains('board-theme-submenu')
+          ? themeTrigger.dataset.menuLabel?.toLocaleLowerCase().includes(query) === true
+          : false;
+      const childMatch = row === exportTrigger ? exportMatches
+        : row === themeTrigger ? themeMatches
+          : false;
+      row.hidden = query !== '' && !label.includes(query) && !parentMatches && !childMatch;
+    }
+    for (const group of [boardGroup, importGroup, exportGroup, themeGroup]) {
+      group.hidden = query !== '' && !group.querySelector('.menu-item:not([hidden])');
+    }
+    footer.hidden = query !== '' && !footer.querySelector('.menu-item:not([hidden])');
+  }
+
+  function menuKeyDown(event: KeyboardEvent): boolean {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (event.key === '/' && target !== search && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      search.focus();
+      return true;
+    }
+    if (event.key === 'Escape') {
+      if (search.value.trim()) {
+        search.value = '';
+        filterMenu();
+        if (activeSubmenu) setSubmenu(null, false);
+        search.focus();
+        return true;
+      }
+      if (activeSubmenu) {
+        toggleSubmenu(activeSubmenu, true);
+        return true;
+      }
+      return false;
+    }
+    if (event.key === 'ArrowLeft' && activeSubmenu) {
+      const submenu = activeSubmenu;
+      setSubmenu(null, false);
+      triggers[submenu].focus();
+      return true;
+    }
+    if (event.key === 'ArrowRight' && target === exportTrigger) {
+      setSubmenu('export', true);
+      return true;
+    }
+    if (event.key === 'Enter' && target === exportTrigger) {
+      setSubmenu('export', true);
+      return true;
+    }
+    if (event.key === 'ArrowRight' && target === themeTrigger) {
+      setSubmenu('theme', true);
+      return true;
+    }
+    if (event.key === 'Enter' && target === themeTrigger) {
+      setSubmenu('theme', true);
+      return true;
+    }
+    if (activeSubmenu === 'theme' && target?.closest('.board-theme-options') && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) return false;
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Home' && event.key !== 'End') return false;
+
+    const activePanel = target?.closest<HTMLElement>('.board-menu-submenu');
+    const rows = Array.from((activePanel ?? menu).querySelectorAll<HTMLButtonElement>('.menu-item[data-menu-label]:not(:disabled):not([hidden])'))
+      .filter((row) => !row.closest('[hidden]') && (!!activePanel || row.closest('.board-menu-submenu') === null));
+    if (!rows.length) return false;
+    const current = rows.indexOf(target as HTMLButtonElement);
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? rows.length - 1
+        : current < 0 ? (event.key === 'ArrowDown' ? 0 : rows.length - 1)
+          : (current + (event.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length;
+    rows[next].focus();
+    return true;
+  }
+
+  pop = popover(anchor, menu, {
+    side: 'bottom',
+    className: 'board-menu-pop',
+    label: 'Board actions',
+    onKeyDown: menuKeyDown,
+    onClose: () => stopTheme(),
+  });
+  menu.addEventListener('keydown', (event: KeyboardEvent) => {
+    if (activeSubmenu !== 'theme' || event.key !== 'ArrowLeft' || !(event.target instanceof HTMLElement) || !event.target.closest('.board-theme-options')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSubmenu(null, false);
+    themeTrigger.focus();
+  }, true);
+  stopTheme = onThemeChange(updateThemeName);
+  setSubmenu('export', false);
 }
 
 function openShare(app: BoardApp) {
