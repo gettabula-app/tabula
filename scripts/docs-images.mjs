@@ -333,6 +333,21 @@ const screenRect = (page, id) =>
     return { x: a.x + s.left, y: a.y + s.top, width: b.x - a.x, height: b.y - a.y };
   }, id);
 
+/** The rectangle that holds everything visible on the page (text, controls, pictures, drawn surfaces) plus `pad` px, within the viewport: a crop to the content. */
+const contentClip = (page, pad = 24) => page.evaluate((margin) => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (r) => { if (r.width > 0 && r.height > 0) { x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom); } };
+  for (const el of document.body.querySelectorAll('*')) {
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+    const surface = el.matches('button, input, select, textarea, img, svg.canvas, [role="dialog"], .modal, .card, .notice, .board-row, .tray') && el.getBoundingClientRect().width < innerWidth * 0.98;
+    if (own || surface) add(el.getBoundingClientRect());
+  }
+  const x = Math.max(0, Math.floor(x0 - margin)), y = Math.max(0, Math.floor(y0 - margin));
+  return { x, y, width: Math.min(innerWidth, Math.ceil(x1 + margin)) - x, height: Math.min(innerHeight, Math.ceil(y1 + margin)) - y };
+}, pad);
+
 const save = (page, name, clip) => page.screenshot({ path: path.join(outDir, `${name}.png`), clip, animations: 'disabled', caret: 'hide' });
 
 // ---------------------------------------------------------------- the images
@@ -394,7 +409,10 @@ const SHOTS = {
     await drawer.waitFor();
     await park(page);
     await settle(page);
-    await drawer.screenshot({ path: path.join(outDir, 'shapes-panel.png'), animations: 'disabled' });
+    // the panel from its top to just above the closing hint (which the drawer's own scroll box cuts), so no sentence is cut off
+    const panel = await boxOf(drawer);
+    const hint = await boxOf(drawer.getByText('Hover a shape on the board').first());
+    await save(page, 'shapes-panel', { x: panel.x, y: panel.y, width: panel.width, height: Math.min(panel.height, hint.y - panel.y - 8) });
     await context.close();
   },
 
@@ -435,6 +453,8 @@ const SHOTS = {
     await page.evaluate(() => window.__board.store.setMeta({ name: 'Strategy workshop' }));
     await page.waitForFunction(() => !document.querySelector('.toast.show'), null, { timeout: 12_000 });
     await sleep(500);
+    // the board as large as the window allows, between the rail and the bottom bar, so its text reads at the width the guide shows it
+    await page.evaluate(() => { const app = window.__board; app.r.fit(app.r.contentBounds(), 20, 1); });
     await park(page);
     await settle(page);
     await save(page, 'template-business-model-canvas');
@@ -448,7 +468,7 @@ const SHOTS = {
     await page.evaluate(() => document.activeElement?.blur());
     await park(page);
     await settle(page);
-    await save(page, 'signin');
+    await save(page, 'signin', await contentClip(page, 28));
     await context.close();
   },
 
@@ -459,7 +479,7 @@ const SHOTS = {
     await page.waitForFunction(() => document.querySelectorAll('.board-row').length >= 5);
     await park(page);
     await settle(page);
-    await save(page, 'teams-home');
+    await save(page, 'teams-home', await contentClip(page, 28));
     await context.close();
   },
 
@@ -482,7 +502,7 @@ const SHOTS = {
     await page.getByText('Your access to this board was removed').waitFor({ timeout: 15_000 });
     await park(page);
     await settle(page);
-    await save(page, 'access-removed', { x: 0, y: 0, width: W, height: 310 });
+    await save(page, 'access-removed', await contentClip(page, 24));
     await context.close();
   },
 
@@ -505,7 +525,8 @@ const SHOTS = {
     }, stableOrigin);
     await park(page);
     await settle(page);
-    await dialog.screenshot({ path: path.join(outDir, 'share-roles.png'), animations: 'disabled' });
+    const box = await boxOf(dialog);
+    await save(page, 'share-roles', { x: Math.ceil(box.x), y: Math.ceil(box.y), width: Math.floor(box.width) - 2, height: Math.floor(box.height) - 2 }); // 2 px inside the box edge: no edge line in the shot
     await context.close();
   },
 
@@ -602,8 +623,9 @@ const SHOTS = {
     // the clip ends on the bottom edge of the last listed row and is as wide as the other dialog crops (560 px), with the board beside the panel
     const head = await boxOf(drawer.locator('.drawer-head'));
     const last = await boxOf(drawer.locator('.layer-row', { hasText: 'Make onboarding simpler' }));
-    const x = Math.max(0, head.x - 12), y = Math.max(0, head.y - 12);
-    const clip = { x, y, width: Math.min(560, W - x), height: last.y + last.height - y };
+    const panel = await boxOf(drawer);
+    const x = Math.max(0, panel.x), y = Math.max(0, head.y - 12);
+    const clip = { x, y, width: Math.min(panel.width, W - x), height: last.y + last.height + 12 - y }; // the panel alone: no half-cut note of the board beside it
     await save(page, 'layers-panel', clip);
     await context.close();
   },

@@ -4421,7 +4421,8 @@ const STATES = {
   // The two halves of docs/images/readme-hero.png (scripts/readme-hero.mjs puts them side by side): the board with nothing but the canvas around it
   async 'readme-hero-retro'(env) {
     await openSeedBoard(env);
-    await env.page.evaluate(() => window.__board.setSelection([]));
+    await env.page.evaluate(() => { const app = window.__board; app.setSelection([]); app.r.fit(app.r.contentBounds(), 36, 1.2); });
+    await settle(env.page);
     await bareCanvas(env.page);
   },
   async 'readme-hero-kanban'(env) {
@@ -4430,7 +4431,7 @@ const STATES = {
       const app = window.__board;
       app.store.remove(['k-frame', 'k-note-1', 'k-note-2']);
       app.setSelection([]);
-      app.r.fit(app.r.contentBounds(['k-box']), 60, 1);
+      app.r.fit(app.r.contentBounds(['k-box']), 28, 1.4);
     });
     await settle(env.page);
     await bareCanvas(env.page);
