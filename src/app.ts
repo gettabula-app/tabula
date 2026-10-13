@@ -53,6 +53,7 @@ import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
+import { sanitizeImportedObjects, tableProblem } from './import-sanitize';
 import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from './tracker/linked-lane';
 
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
@@ -2925,17 +2926,28 @@ export class BoardApp {
 
   /** Insert copies of objects with fresh ids, remapping parents and bindings. */
   insertObjects(objs: Obj[], offset: Point) {
+    // a table past the limits of the editor would be taken back by the relay: leave it out and say so
+    const tooBig = objs.filter((o) => tableProblem(o as unknown as Record<string, unknown>));
+    if (tooBig.length) {
+      this.notify(`Left out ${tooBig.length === 1 ? 'a table' : `${tooBig.length} tables`} that ${tooBig.length === 1 ? 'is' : 'are'} bigger than a table may be (${tableProblem(tooBig[0] as unknown as Record<string, unknown>)}).`);
+      const gone = new Set(tooBig.map((o) => o.id));
+      objs = objs.filter((o) => !gone.has(o.id));
+    }
     if (!objs.length) return [];
     const map = new Map<Id, Id>();
     for (const o of objs) map.set(o.id, newId());
-    const out = remapObjects(objs, map, offset, (id) => {
+    const remapped = remapObjects(objs, map, offset, (id) => {
       const src = this.store.get(id);
       return src && isBox(src) ? center(src) : null;
     });
+    // the relay checks the people an object names (server/sync-validate.mjs): authored by me, and a card owner stays only if
+    // this board already shows that person on a card (a paste from another board must not name a stranger)
+    const owners = new Set<string>();
+    for (const o of this.store.cache.values()) if ((o as BaseObj).ownerId) owners.add((o as BaseObj).ownerId!);
+    const out = sanitizeImportedObjects(remapped, this.user.id, (id) => owners.has(id), { proposedBy: 'keep' });
     const zs = this.store.topZs(objs.length);
     out.forEach((o, i) => {
       o.z = zs[i];
-      o.createdBy = this.user.id;
     });
     this.store.undo.stopCapturing();
     this.store.transact(() => out.forEach((o) => this.store.create(o)));
