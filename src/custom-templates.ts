@@ -247,6 +247,7 @@ const OBJ_TYPES: Record<ObjType, true> = {
 };
 // A template never holds an image: its bytes are readable only through the board that has them (docs/images.md, Templates).
 const TYPE_NAMES = new Set<string>(Object.keys(OBJ_TYPES).filter((t) => t !== 'image' && t !== 'tracker'));
+const LINE_HEIGHT_TYPES = new Set(['text', 'sticky', 'shape', 'markdown']);
 
 /** How many of these objects a template would leave out because they are images. */
 export const imagesLeftOut = (objs: Obj[]) => objs.filter((o) => o.type === 'image').length;
@@ -292,6 +293,10 @@ export function validateContent(c: unknown, opts: { stored?: boolean } = {}): Te
     ids.add(o.id);
     if (typeof o.type !== 'string' || !TYPE_NAMES.has(o.type)) fail(`Object "${o.id}" has an unknown type.`);
     if (typeof o.z !== 'string') fail(`Object "${o.id}" has no z order.`);
+    if (o.lineHeight !== undefined) {
+      if (!LINE_HEIGHT_TYPES.has(o.type)) fail(`Object "${o.id}" cannot have lineHeight.`);
+      if (!isNum(o.lineHeight) || o.lineHeight < 0.8 || o.lineHeight > 3) fail(`Object "${o.id}" lineHeight must be a number from 0.8 to 3.`);
+    }
     // the board's one colour grammar (shared/colors.mjs, TAB-203), as the server checks it
     for (const key of ['flipX', 'flipY']) {
       if (o[key] !== undefined && typeof o[key] !== 'boolean') fail(`Object "${o.id}" has an invalid ${key}; it must be a boolean.`);

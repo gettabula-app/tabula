@@ -445,6 +445,7 @@ select.input {
 .props-fold { display: none; }
 .field { margin-top: 12px; }
 .field-label { margin-bottom: 6px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
+.line-height-custom { margin-top: 4px; color: var(--tray-muted); font-size: 12px; line-height: 1.3; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .row2 .field { margin-top: 12px; }
 .swatches { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -1169,6 +1170,9 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 
 /* Long floating panels scroll with a thin themed scrollbar, never the platform default. */
 .chrome :is(.props, .drawer-body, .history-body, .side-tray-panel, .comment-msgs, .aireview-body) { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--tray-text) 28%, transparent) transparent; }
+
+/* Text on the board is measured by the canvas (src/text.ts), which has no tabular figures: draw and edit it with proportional digits, as the measure and the SVG exports do, so a line never comes out wider than the box it was wrapped for. */
+svg.canvas text, .text-editor { font-variant-numeric: normal; }
 
 /* the small pill that follows the pointer in a drag: the axis lock now, the size readout of a resize (docs/guides.md) */
 .drag-pill {

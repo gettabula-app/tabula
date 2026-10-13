@@ -3108,12 +3108,12 @@ export class BoardApp {
     });
   }
 
-  updateSelectedLeaves(patch: Record<string, unknown>, filter?: (o: Obj) => boolean) {
+  updateSelectedLeaves(patch: Record<string, unknown> | ((o: Obj) => Record<string, unknown>), filter?: (o: Obj) => boolean) {
     this.store.undo.stopCapturing();
     this.store.transact(() => {
       for (const o of this.selectedLeaves()) {
         if (filter && !filter(o)) continue;
-        this.writeStyle(o, patch);
+        this.writeStyle(o, typeof patch === 'function' ? patch(o) : patch);
       }
     });
   }
@@ -3121,10 +3121,10 @@ export class BoardApp {
   /** One object's style change, with the size it implies: a text box's height, a class's header. */
   private writeStyle(o: Obj, patch: Record<string, unknown>) {
     this.store.update(o.id, patch);
-    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+    if (o.type === 'text' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'lineHeight' in patch)) {
       this.store.update(o.id, { h: textHeight({ ...o, ...patch } as BaseObj) });
     }
-    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch)) {
+    if (o.type === 'markdown' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'lineHeight' in patch)) {
       this.store.update(o.id, { h: markdownBoxHeight({ ...o, ...patch } as BaseObj) });
     }
     if (o.type === 'table' && ('fontSize' in patch || 'font' in patch || 'fontWeight' in patch || 'headerRow' in patch || 'headerCol' in patch)) {

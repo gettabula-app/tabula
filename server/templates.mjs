@@ -222,6 +222,9 @@ function box(o, what, ids, labels) {
   }
   if (o.fontWeight !== undefined) out.fontWeight = number(o.fontWeight, `${what} fontWeight`, 1, 1000);
   if (o.fontSize !== undefined) out.fontSize = number(o.fontSize, `${what} fontSize`, 1, 1000);
+  if (o.lineHeight !== undefined && ['text', 'sticky', 'shape', 'markdown'].includes(o.type)) {
+    out.lineHeight = number(o.lineHeight, `${what} lineHeight`, 0.8, 3);
+  }
   if (o.textColor !== undefined) out.textColor = paint(o.textColor, `${what} textColor`);
   if (o.align !== undefined) out.align = oneOf(o.align, ALIGNS, `${what} align`);
   if (o.valign !== undefined) out.valign = oneOf(o.valign, VALIGNS, `${what} valign`);
