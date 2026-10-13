@@ -1,11 +1,10 @@
 // The contrast clamp for code colours (docs/code-blocks.md): a Shiki theme's token colours are checked against the block's surface (the app's `--paper`)
-// and any under 4.5:1 (WCAG AA for text) is lifted by linear mixing in small steps until it passes: on a light surface toward the app's `--ink` (dark),
-// on a dark surface toward a neutral light (never the ink, which on Matrix is bright green and would flatten every hue into it). Pure functions, no DOM,
+// and any under 4.5:1 (WCAG AA for text) is lifted until it passes by changing only its OKLCH lightness (up on a dark surface, down on a light one), so
+// each token keeps its hue and as much chroma as fits sRGB (mixing toward the ink turned every Matrix token green, mixing toward white turned them grey). Pure functions, no DOM,
 // so the worker, the main thread and the tests all run the same code.
 
 export const MIN_CODE_CONTRAST = 4.5;
-const STEP = 0.04;
-/** The colour dim tokens are lifted toward on a dark surface: a neutral near-white, so each token keeps its hue. */
+/** What a colour falls back to on a dark surface when even full lightness does not reach the ratio. */
 export const NEUTRAL_LIGHT = '#F2F2F2';
 
 type Rgb = [number, number, number];
@@ -40,24 +39,80 @@ export function contrastRgb(a: Rgb, b: Rgb): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+const lin = (v: number) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const unlin = (c: number) => 255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+
+/** sRGB (0-255) to OKLab [L, a, b]. */
+export function rgbToOklab(rgb: Rgb): [number, number, number] {
+  const [r, g, b] = rgb.map(lin);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+}
+
+/** OKLab to linear sRGB (may leave 0..1). */
+function oklabToLinear(L: number, a: number, b: number): Rgb {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+}
+
+/** OKLCH [L, C, h in degrees] of a hex colour (alpha composited over `over`), or null. */
+export function hexToOklch(hex: string, over?: Rgb): [number, number, number] | null {
+  const rgb = parseHexColour(hex, over);
+  if (!rgb) return null;
+  const [L, a, b] = rgbToOklab(rgb);
+  return [L, Math.hypot(a, b), ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360];
+}
+
+/** Euclidean distance of two hex colours in OKLab (0 = identical, about 1 = black to white). */
+export function oklabDistance(a: string, b: string): number {
+  const x = parseHexColour(a);
+  const y = parseHexColour(b);
+  if (!x || !y) return 1;
+  const p = rgbToOklab(x), q = rgbToOklab(y);
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+
+/** The colour with this lightness and hue and the most chroma up to `c` that fits sRGB (chroma is reduced just enough), as rounded RGB. */
+function fitOklch(L: number, c: number, h: number): Rgb {
+  const rad = (h * Math.PI) / 180;
+  const inGamut = (k: number) => oklabToLinear(L, k * Math.cos(rad), k * Math.sin(rad)).every((v) => v >= -0.0005 && v <= 1.0005);
+  let k = c;
+  if (!inGamut(k)) {
+    let lo = 0, hi = c;
+    for (let i = 0; i < 20; i++) { const mid = (lo + hi) / 2; if (inGamut(mid)) lo = mid; else hi = mid; }
+    k = lo;
+  }
+  return oklabToLinear(L, k * Math.cos(rad), k * Math.sin(rad)).map((v) => unlin(Math.max(0, Math.min(1, v)))) as Rgb;
+}
+
 /**
- * The colour to draw `colour` with on `surface`: the same string when it already reaches `min`, else the colour mixed toward `ink` on a light surface, toward a neutral light on a dark one (4% steps, checked on
- * the rounded hex) until it does, or that target itself. Not a hex colour (named, rgb(), var()) gives null, the block's plain ink.
+ * The colour to draw `colour` with on `surface`: the same string when it already reaches `min`, else the same colour with only its OKLCH lightness moved
+ * (up on a dark surface, down on a light one) in small steps, checked on the rounded hex, until it does. Hue and chroma are kept; chroma is reduced only when
+ * the colour would leave sRGB at that lightness. If even white (or black) does not reach `min` the result is the `ink` (light surfaces) or a near-white
+ * (dark ones). Not a hex colour (named, rgb(), var()) gives null, the block's plain ink.
  */
 export function clampCodeColour(colour: string | null | undefined, surface: string, ink: string, min = MIN_CODE_CONTRAST): string | null {
   if (!colour) return null;
   const bg = parseHexColour(surface);
-  const dark = bg ? luminance(bg) < 0.18 : false;
-  const fg = parseHexColour(dark ? NEUTRAL_LIGHT : ink);
-  if (!bg || !fg) return null;
+  const fallback = parseHexColour(ink);
+  if (!bg || !fallback) return null;
   const rgb = parseHexColour(colour, bg);
   if (!rgb) return null;
   if (contrastRgb(rgb, bg) >= min) return colour;
-  for (let t = STEP; t < 1; t += STEP) {
-    const mixed = rgb.map((c, i) => Math.round(c * (1 - t) + fg[i] * t)) as Rgb;
-    if (contrastRgb(mixed, bg) >= min) return toHex(mixed);
+  const dark = luminance(bg) < 0.18;
+  const [L0, a, b] = rgbToOklab(rgb);
+  const c = Math.hypot(a, b);
+  const h = ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360;
+  for (let t = 1; t <= 100; t++) {
+    const L = dark ? L0 + (1 - L0) * (t / 100) : L0 * (1 - t / 100);
+    const out = fitOklch(L, c, h).map(Math.round) as Rgb;
+    if (contrastRgb(out, bg) >= min) return toHex(out);
   }
-  return toHex(fg);
+  return toHex(dark ? parseHexColour(NEUTRAL_LIGHT)! : fallback);
 }
 
 /** Largest per-channel difference, 0 to 255. */

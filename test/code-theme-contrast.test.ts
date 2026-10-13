@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CODE_THEMES, SHIKI_THEME_IDS, themeTokenColours } from '../src/code-themes';
-import { MIN_CODE_CONTRAST, clampCodeColour, contrastRgb, parseHexColour, rgbDistance } from '../src/code-contrast';
+import { MIN_CODE_CONTRAST, clampCodeColour, contrastRgb, hexToOklch, oklabDistance, parseHexColour, rgbDistance } from '../src/code-contrast';
 import { THEME_LOADERS } from '../src/code-tokenize';
 
 const load = async (id: string) => ((await THEME_LOADERS[id]()).default as Parameters<typeof themeTokenColours>[0]);
@@ -32,7 +32,7 @@ describe('clampCodeColour', () => {
     expect(clampCodeColour('#333344', '#2A2A37', '#DCD7BA')).toMatch(/^#[0-9a-f]{6}$/);
   });
 
-  it('lifts on a dark surface toward a neutral light, not the ink, so the hue stays', () => {
+  it('lifts on a dark surface by lightness only, not toward the ink or grey, so the hue and the chroma stay', () => {
     const out = clampCodeColour('#2f6f9f', '#0B140C', '#3DFF70')!; // a dim blue on the Matrix surface, ink is bright green
     const [r, g, b] = parseHexColour(out)!;
     expect(ratio(out, '#0B140C')).toBeGreaterThanOrEqual(MIN_CODE_CONTRAST);
@@ -98,5 +98,33 @@ describe.each(CODE_THEMES.map((t) => [t.id, t] as const))('hues on the %s theme'
     console.info(`[code-theme-hues] ${theme.id}/${theme.shiki}: ${before.size} hue buckets raw, ${buckets.size} after the clamp`);
     for (const c of after) expect(ratio(c, theme.surface)).toBeGreaterThanOrEqual(MIN_CODE_CONTRAST);
     expect(buckets.size).toBeGreaterThanOrEqual(5);
+  });
+});
+
+describe.each(CODE_THEMES.map((t) => [t.id, t] as const))('lifted colours on the %s theme keep their hue and stay apart', (_id, theme) => {
+  it('lifted colours keep their hue (12 degrees) and most pairs involving one are at least 0.04 apart in OKLab', async () => {
+    const bg = parseHexColour(theme.surface)!;
+    const raw = [...new Set(themeTokenColours(await load(theme.shiki)).filter((c) => parseHexColour(c)).map((c) => `#${rgb(c, theme.surface).map((v) => v.toString(16).padStart(2, '0')).join('')}`))];
+    const after = raw.map((c) => clampCodeColour(c, theme.surface, theme.ink)!);
+    const lifted = raw.map((c, i) => i).filter((i) => after[i] !== raw[i]);
+    const hueShifts = lifted.map((i) => {
+      const [, c0, h0] = hexToOklch(raw[i], bg)!;
+      const [, c1, h1] = hexToOklch(after[i], bg)!;
+      const d = Math.abs(h0 - h1);
+      return c0 > 0.03 && c1 > 0.02 && Math.min(d, 360 - d) > 12 ? `${raw[i]} -> ${after[i]}` : null;
+    }).filter(Boolean);
+    expect(hueShifts).toEqual([]);
+    const distinct = [...new Set(after)];
+    const liftedSet = new Set(lifted.map((i) => after[i]));
+    let pairs = 0, far = 0, minLifted = Infinity;
+    for (let i = 0; i < distinct.length; i++) for (let j = i + 1; j < distinct.length; j++) {
+      const d = oklabDistance(distinct[i], distinct[j]);
+      if (liftedSet.has(distinct[i]) && liftedSet.has(distinct[j])) minLifted = Math.min(minLifted, d);
+      if (!liftedSet.has(distinct[i]) && !liftedSet.has(distinct[j])) continue;
+      pairs++;
+      if (d >= 0.04) far++;
+    }
+    console.info(`[code-theme-oklch] ${theme.id}: ${raw.length} raw, ${distinct.length} distinct after, ${lifted.length} lifted, min OKLab distance among lifted ${Number.isFinite(minLifted) ? minLifted.toFixed(3) : 'n/a'}, ${far}/${pairs} pairs involving a lifted colour are >= 0.04 apart`);
+    expect(pairs === 0 ? 1 : far / pairs).toBeGreaterThanOrEqual(0.8);
   });
 });

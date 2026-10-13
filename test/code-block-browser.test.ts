@@ -167,6 +167,7 @@ describe.skipIf(!available)('creating and typing code', { timeout: 200_000 }, ()
     // emptied: gone
     await page.evaluate(() => (window as any).__board.editor.start('c1'));
     await ta.waitFor({ state: 'visible' });
+    await typing(page);
     await ta.fill('');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !(window as any).__board.store.get('c1'));

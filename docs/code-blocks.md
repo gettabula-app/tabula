@@ -11,6 +11,7 @@ An unknown `lang` is read as Plain text and refused on write. The theme (the col
 ## Limits
 
 - Up to **20,000 characters** per block. The typing box stops there, a longer paste is cut and says so, and a longer text written by an agent or an import is stored but drawn as plain text with a quiet note ("Highlighting off for long code").
+- Stored code text is clamped to **100,000 characters for drawing** (5 times the 20,000 cap; `CODE.DRAW_MAX_CHARS`): a defence for oversized data. The validator's cap is report-only, and the hard 256 KiB object rule still applies.
 - A title is plain text, up to 100 characters.
 - The width is at least 160 and the height follows the rows: you can resize the sides, never the top and bottom.
 
