@@ -18,7 +18,7 @@ export type UmlType =
   | 'uml-class' | 'uml-actor' | 'uml-usecase' | 'uml-lifeline' | 'uml-note'
   | 'uml-package' | 'uml-state' | 'uml-initial' | 'uml-final' | 'uml-component';
 
-export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'link' | 'path' | 'connector' | 'container' | 'lane' | 'card' | 'markdown' | 'table' | UmlType;
+export type ObjType = 'shape' | 'sticky' | 'text' | 'frame' | 'tracker' | 'group' | 'icon' | 'image' | 'link' | 'path' | 'connector' | 'container' | 'lane' | 'card' | 'markdown' | 'table' | 'code' | UmlType;
 
 export type Dash = 'solid' | 'dashed' | 'dotted';
 export type Align = 'left' | 'center' | 'right';
@@ -137,6 +137,10 @@ export interface BaseObj extends Partial<StyleFields> {
   // link card (docs/link-cards.md): the address, and what the relay read from the page once
   url?: string;
   title?: string;
+  /** A code block (docs/code-blocks.md): the language id (shared/code-langs.mjs), line numbers on, long lines wrapped. The code is `text`. */
+  lang?: string;
+  lines?: boolean;
+  wrap?: boolean;
   description?: string;
   siteName?: string;
   /** Asset hashes of the preview image and the site icon (stored as this board's assets, never hot-linked). */

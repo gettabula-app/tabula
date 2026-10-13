@@ -20,6 +20,8 @@ import { linkMarkup } from './link-markup';
 import { layoutTable } from './table-layout';
 import { layoutMarkdown, type MdStyle } from './markdown-layout';
 import { mdItemsMarkup } from './markdown-svg';
+import { codeBoxHeight, layoutCode } from './code-layout';
+import { codeMarkup, getCodeTokens } from './code-markup';
 import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
 import type { TrackerPriority, TrackerStateCategory } from './tracker-types';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
@@ -83,6 +85,7 @@ export const DEFAULTS = {
   text: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 20, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   frame: { fill: '#FFFFFF', stroke: 'var(--canvas-rule, #C9D1DA)', strokeWidth: 1, textColor: 'var(--graphite, #5B6672)', fontSize: 14, fontWeight: 600, align: 'left' as const, valign: 'top' as const },
   markdown: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
+  code: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 13, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   table: { fill: 'none', stroke: 'none', strokeWidth: 0, textColor: CANVAS_INK, fontSize: 15, fontWeight: 400, align: 'left' as const, valign: 'top' as const },
   uml: { fill: '#FFFFFF', stroke: INK, strokeWidth: 1.5, textColor: INK, fontSize: 14, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
   path: { fill: 'none', stroke: CANVAS_INK, strokeWidth: 3, textColor: CANVAS_INK, fontSize: 16, fontWeight: 400, align: 'center' as const, valign: 'middle' as const },
@@ -93,6 +96,7 @@ export function defaultsFor(o: Obj) {
   if (o.type === 'sticky') return DEFAULTS.sticky;
   if (o.type === 'text') return DEFAULTS.text;
   if (o.type === 'markdown') return DEFAULTS.markdown;
+  if (o.type === 'code') return DEFAULTS.code;
   if (o.type === 'table') return DEFAULTS.table;
   if (o.type === 'frame') return DEFAULTS.frame;
   if (o.type === 'tracker') return DEFAULTS.frame;
@@ -287,6 +291,17 @@ function markdownMarkup(o: BaseObj, ctx: MarkupCtx) {
   const { items } = layoutMarkdown(o.text || '', o.w, markdownStyle(o));
   const body = mdItemsMarkup(items, { color: s.textColor, family: fontFamily(s.font), owner: o.id });
   return wrapG(o, `${background}<svg x="0" y="0" width="${n(o.w)}" height="${n(o.h)}" overflow="hidden">${body}</svg>`, s.opacity);
+}
+
+/** The height a block needs for its content at its width: a Markdown block's laid-out source, a code block's rows (the height heals use it for both). */
+export function fittedBoxHeight(o: BaseObj, width = o.w): number {
+  return o.type === 'code' ? codeBoxHeight(o, width) : markdownBoxHeight(o, width);
+}
+
+/** A code block (docs/code-blocks.md): the card, header, gutter and code as SVG text; tokens from the highlighter's cache, plain ink without. */
+function codeBlockMarkup(o: BaseObj, ctx: MarkupCtx) {
+  const layout = layoutCode(o);
+  return wrapG(o, codeMarkup(o, layout, ctx.editingId === o.id ? null : getCodeTokens(o), { editing: ctx.editingId === o.id }), styleOf(o).opacity);
 }
 
 /** What a table lays its cells out with: the object's own font, size and weight (the defaults of DEFAULTS.table without them). */
@@ -1060,6 +1075,7 @@ export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
     case 'sticky': return stickyMarkup(o, ctx);
     case 'text': return textMarkup(o, ctx);
     case 'markdown': return markdownMarkup(o, ctx);
+    case 'code': return codeBlockMarkup(o, ctx);
     case 'table': return tableMarkup(o, ctx);
     case 'frame': return frameMarkup(o);
     case 'tracker': return wrapG(o, renderTrackerFrame(o), styleOf(o).opacity);
@@ -1077,6 +1093,7 @@ export function objectMarkup(raw: Obj, rawCtx: MarkupCtx): string {
 }
 
 export const SVG_DEFS =
+  `<filter id="code-shadow" x="-5%" y="-5%" width="110%" height="120%"><feDropShadow dx="0" dy="1" stdDeviation="3" flood-color="#18212B" flood-opacity="0.08"/></filter>` +
   `<filter id="sticky-shadow" x="-10%" y="-10%" width="130%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#18212B" flood-opacity="0.16"/></filter>` +
   // adhesive strip slightly darker at the top, paper catching light lower down
   `<linearGradient id="sticky-sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0.05"/><stop offset="0.2" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#FFF" stop-opacity="0.06"/></linearGradient>` +

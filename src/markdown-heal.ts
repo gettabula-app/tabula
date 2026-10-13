@@ -1,11 +1,13 @@
 import type { BoardRole } from './api';
 import { CARD_HEIGHT_HEAL_ORIGIN, needsCardHeightHeal } from './card-height-heal';
-import { markdownBoxHeight } from './markup';
+import { fittedBoxHeight } from './markup';
 import { LOCAL, type Store } from './store';
 import type { BaseObj, Id } from './types';
 
 const INITIAL = Symbol('initial-markdown-heights');
 const MAX_PER_FRAME = 40;
+/** The blocks whose height follows their content: Markdown blocks and code blocks (src/code-layout.ts). */
+const isFitted = (type: unknown) => type === 'markdown' || type === 'code';
 
 interface MarkdownHeightHealOptions {
   store: Store;
@@ -32,7 +34,7 @@ export function watchMarkdownHeights({ store, role, busy, hidden }: MarkdownHeig
   const enqueue = (ids: Iterable<Id>, origin: unknown, fields?: ReadonlyMap<Id, ReadonlySet<string>>) => {
     if (origin === CARD_HEIGHT_HEAL_ORIGIN) return;
     for (const id of ids) {
-      if (store.get(id)?.type !== 'markdown') continue;
+      if (!isFitted(store.get(id)?.type)) continue;
       const changed = fields?.get(id);
       if (changed?.size === 1 && changed.has('h')) {
         pending.delete(id);
@@ -45,7 +47,7 @@ export function watchMarkdownHeights({ store, role, busy, hidden }: MarkdownHeig
   };
   const offChange = store.onChange((changed, origin, fields) => enqueue(changed, origin, fields));
   const offReadOnly = store.onReadOnly((readOnly) => { if (!readOnly) schedule(); });
-  for (const o of store.cache.values()) if (o.type === 'markdown') pending.set(o.id, INITIAL);
+  for (const o of store.cache.values()) if (isFitted(o.type)) pending.set(o.id, INITIAL);
   schedule();
 
   function run() {
@@ -68,8 +70,8 @@ export function watchMarkdownHeights({ store, role, busy, hidden }: MarkdownHeig
         break;
       }
       const o = store.get(id) as BaseObj | undefined;
-      if (o?.type !== 'markdown' || hidden(o)) continue;
-      const height = markdownBoxHeight(o);
+      if (!o || !isFitted(o.type) || hidden(o)) continue;
+      const height = fittedBoxHeight(o);
       if (needsCardHeightHeal({ storedHeight: o.h, measuredHeight: height, role: role(), origin, locked: o.locked === true, hidden: false })) updates.push({ id, height });
     }
     if (updates.length) {

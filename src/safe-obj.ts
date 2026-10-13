@@ -9,6 +9,7 @@
 import type { Obj, ProposedBy } from './types';
 import { HEADS, SHAPE_KINDS } from './shapes';
 import { RELATIONS } from './uml';
+import { DEFAULT_CODE_LANG, MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs.mjs';
 import { LIMITS as CONTAINER_LIMITS, OWNER_KINDS, STAGES, isSafeHttpUrl, kanbanColor } from '../shared/containers';
 
 export { CARD_LINK_MAX, isSafeHttpUrl } from '../shared/containers';
@@ -233,6 +234,20 @@ export function safeObj<T extends Obj>(o: T): T {
     if (!out.ownerId && !out.ownerName) delete out.ownerKind;
     // Free-text owners are people. A racing kind-only write must not make one look like a token-owned agent.
     else if (out.ownerKind === 'agent' && !out.ownerId) delete out.ownerKind;
+  }
+  if (o.type === 'code') {
+    // a code block (docs/code-blocks.md): the code is drawn as text only; control, zero-width and bidirectional characters are not drawn (they can make code read differently than it runs)
+    if (typeof out.text === 'string') {
+      const t = out.text.length > MAX_CODE_CHARS * 5 ? out.text.slice(0, MAX_CODE_CHARS * 5) : out.text;
+      out.text = visibleText(t);
+    }
+    out.lang = normaliseCodeLang(out.lang) ?? DEFAULT_CODE_LANG;
+    if (typeof out.title === 'string') Object.assign(out, { title: [...visibleText(out.title).replace(/\s+/g, ' ').trim()].slice(0, MAX_CODE_TITLE).join('') });
+    for (const k of ['lines', 'wrap']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
+  } else {
+    delete out.lang;
+    delete out.lines;
+    delete out.wrap;
   }
   if ('proposedBy' in out) {
     const clean = cleanProposedBy(out.proposedBy);

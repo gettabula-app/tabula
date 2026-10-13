@@ -11,6 +11,7 @@ import {
   layoutContainer, planInsert, ranksBetween, sortedChildren, validLabel, validLabelColor, wipCheck, isSafeHttpUrl,
 } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
+import { MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 import { DEFAULT_COL_WIDTH, MAX_CELL_CHARS, MAX_TABLE_CHARS, gridChars, isTableKey, MAX_TABLE_COLS, MAX_TABLE_ROWS, tableFromGrid, tableModel } from '../shared/tables.mjs';
 
@@ -51,7 +52,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table', 'code',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -405,6 +406,13 @@ export function summarise(o, textMax, detail = false) {
     if (text.truncated) out.textTruncated = true;
   }
   if (typeof o.name === 'string' && o.name) out.name = cleanForModel(o.name, 200).text;
+  if (o.type === 'code') {
+    // a code block: its language id, optional title and the two display switches (the code is `text`)
+    out.lang = typeof o.lang === 'string' && normaliseCodeLang(o.lang) ? normaliseCodeLang(o.lang) : 'plaintext';
+    if (typeof o.title === 'string' && o.title) out.title = cleanForModel(o.title, MAX_CODE_TITLE).text;
+    if (typeof o.lines === 'boolean') out.lines = o.lines;
+    if (typeof o.wrap === 'boolean') out.wrap = o.wrap;
+  }
   if (o.type === 'group' && Number.isInteger(o.members) && o.members >= 0) out.members = o.members;
   if (o.type === 'tracker') {
     if (typeof o.trackerId === 'string' && TRACKER_FIELD_RE.test(o.trackerId)) out.trackerId = o.trackerId;
@@ -1214,6 +1222,26 @@ function markdownHeightEstimate(content, w, fontSize) {
   return r2(Math.max(LIMITS.sizeMin, 20 + lines * fontSize * 1.45));
 }
 
+/** A first height for a code block: its rows at 19.5px plus the padding (and the 36px header when titled). The app measures the real glyph width and corrects it. */
+function codeHeightEstimate(content, w, { title = false, wrap = false, lines = false } = {}) {
+  const rows = content.split('\n');
+  const cols = Math.max(1, Math.floor((w - 32 - (lines ? 40 : 0)) / 7.8));
+  const count = wrap ? rows.reduce((sum, row) => sum + Math.max(1, Math.ceil(row.length / cols)), 0) : rows.length;
+  return r2(Math.max(LIMITS.sizeMin, (title ? 36 : 0) + 28 + count * 19.5));
+}
+
+/** The stored language id for a value an agent sent: ids and the usual aliases (ts, py, typescript...); anything else is refused with the list. */
+function codeLang(v, path) {
+  const id = normaliseCodeLang(v);
+  if (id === null) throw invalid(path, 'Not a language Tabula highlights. Use one of: plaintext, ts, tsx, js, jsx, json, html, css, scss, python, rust, go, java, c, cpp, csharp, bash, sql, yaml, toml, markdown, diff, php, ruby, swift, kotlin (aliases such as typescript, py, sh work)');
+  return id;
+}
+
+/** The title, lines and wrap fields of a code block, as parsed from a create item or an update patch. */
+function codeTitle(v, path) {
+  return text(v, path, 0, MAX_CODE_TITLE).replace(/\s+/g, ' ').trim();
+}
+
 function textHeight(content, w, fontSize) {
   const newlines = content.match(/\n/g)?.length ?? 0;
   const lines = Math.max(1, Math.ceil((content.length * fontSize * 0.52) / w) + newlines);
@@ -1236,6 +1264,7 @@ const CREATE_KEYS = {
   shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent', 'flipX', 'flipY'],
   text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent', 'flipX', 'flipY'],
   markdown: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'fontSize', 'parent', 'flipX', 'flipY'],
+  code: ['type', 'ref', 'text', 'lang', 'title', 'lines', 'wrap', 'x', 'y', 'w', 'h', 'parent', 'flipX', 'flipY'],
   table: ['type', 'ref', 'rows', 'headerRow', 'headerCol', 'x', 'y', 'fontSize', 'parent', 'flipX', 'flipY'],
   frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
   connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
@@ -1350,6 +1379,20 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
         const w = item.w === undefined ? 360 : size(item.w, at(path, 'w'));
         const fontSize = item.fontSize === undefined ? undefined : num(item.fontSize, at(path, 'fontSize'), LIMITS.fontMin, LIMITS.fontMax);
         Object.assign(fields, { w, h: item.h === undefined ? markdownHeightEstimate(content, w, fontSize ?? 16) : size(item.h, at(path, 'h')), text: content, fontSize });
+      } else if (type === 'code') {
+        // a code block (docs/code-blocks.md): the code is `text` (at most 20,000 characters), the language an id or alias; the height is a first estimate the app corrects
+        const content = text(item.text ?? '', at(path, 'text'), 0, MAX_CODE_CHARS);
+        const w = item.w === undefined ? 520 : size(item.w, at(path, 'w'));
+        const title = item.title === undefined ? '' : codeTitle(item.title, at(path, 'title'));
+        for (const key of ['lines', 'wrap']) {
+          if (item[key] !== undefined && typeof item[key] !== 'boolean') throw invalid(at(path, key), 'Must be a boolean');
+        }
+        Object.assign(fields, {
+          w, text: content, lang: item.lang === undefined ? 'plaintext' : codeLang(item.lang, at(path, 'lang')),
+          lines: item.lines === true, wrap: item.wrap === true,
+          ...(title ? { title } : {}),
+        });
+        fields.h = item.h === undefined ? codeHeightEstimate(content, w, { title: Boolean(title), wrap: fields.wrap, lines: fields.lines }) : size(item.h, at(path, 'h'));
       } else if (type === 'table') {
         // a table (docs/tables.md): `rows` is a grid of cell texts (inline Markdown); the size is an estimate that the app corrects when the board opens
         const grid = tableGrid(required(item, 'rows', path), at(path, 'rows'));
@@ -1421,6 +1464,7 @@ const UPDATABLE = {
   shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth'],
   text: [...BOX_FIELDS, 'text', 'fontSize', 'textColor'],
   markdown: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'fill'],
+  code: [...BOX_FIELDS, 'text', 'lang', 'title', 'lines', 'wrap'],
   // a table's size follows its columns and rows, so w and h are not set here; `rows` replaces every cell (docs/tables.md)
   table: ['x', 'y', 'rotation', 'parent', 'flipX', 'flipY', 'headerRow', 'headerCol', 'fontSize', 'rows'],
   frame: [...BOX_FIELDS, 'name', 'fill'],
@@ -1448,6 +1492,7 @@ const KNOWN_UPDATE_FIELDS = new Set([
   ...BOX_FIELDS, 'id', 'type', 'text', 'color', 'kind', 'fill', 'stroke', 'strokeWidth', 'name', 'fontSize', 'textColor',
   'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'rank', 'title', 'description', 'due', 'labels', 'link',
   'ownerId', 'ownerName', 'ownerKind', 'stage', 'wip', 'wipMode', 'laneW', 'layout', 'rows', 'headerRow', 'headerCol',
+  'lang', 'lines', 'wrap',
 ]);
 const CLEARABLE = new Set(['parent', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'textColor', 'dash', 'label']);
 const GROUP_NAME_MAX = 80;
@@ -1520,7 +1565,13 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
           sets.set('h', grid.length * 40);
           break;
         }
-        case 'text': sets.set(key, text(v, fieldPath, current.type === 'text' || current.type === 'markdown' ? 1 : 0, LIMITS.text)); break;
+        case 'text': sets.set(key, current.type === 'code' ? text(v, fieldPath, 0, MAX_CODE_CHARS) : text(v, fieldPath, current.type === 'text' || current.type === 'markdown' ? 1 : 0, LIMITS.text)); break;
+        case 'lang': sets.set(key, codeLang(v, fieldPath)); break;
+        case 'title': sets.set(key, codeTitle(v, fieldPath)); break;
+        case 'lines': case 'wrap':
+          if (typeof v !== 'boolean') throw invalid(fieldPath, 'Must be a boolean');
+          sets.set(key, v);
+          break;
         case 'name': sets.set(key, text(v, fieldPath, 1, current.type === 'group' ? GROUP_NAME_MAX : LIMITS.name)); break;
         case 'label': sets.set(key, text(v, fieldPath, 0, LIMITS.label)); break;
         case 'color': sets.set('fill', colour(v, fieldPath, { names: true })); break;
@@ -1573,6 +1624,12 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
     if (current.type === 'markdown' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize'))) {
       const fontSize = unsets.has('fontSize') ? 16 : (sets.get('fontSize') ?? current.fontSize ?? 16);
       sets.set('h', markdownHeightEstimate(sets.get('text') ?? current.text ?? '', sets.get('w') ?? current.w, fontSize));
+    }
+
+    // a code block's height follows its code until a person sets one
+    if (current.type === 'code' && !sets.has('h') && ['text', 'w', 'title', 'lines', 'wrap'].some((k) => sets.has(k) || unsets.has(k))) {
+      const pick = (k, d) => (sets.has(k) ? sets.get(k) : current[k] ?? d);
+      sets.set('h', codeHeightEstimate(pick('text', ''), pick('w', current.w), { title: Boolean(pick('title', '')), wrap: pick('wrap', false) === true, lines: pick('lines', false) === true }));
     }
 
     let changed = false;

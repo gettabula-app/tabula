@@ -18,7 +18,7 @@ import {
   boxBounds, center, connectorGeom, distToPolyline, hitBox, objBounds, pointInRect, rectContains, rectOfPoints, rectsIntersect,
   freeSpotInDirection, neighborInDirection, rotate, sideAnchor, snapTo, toLocal,
 } from './geometry';
-import { cardBody, kanbanHeaderControls, markdownBoxHeight, objectMarkup, styleOf, tableBoxSize, tableStyle, textHeight } from './markup';
+import { cardBody, fittedBoxHeight, kanbanHeaderControls, markdownBoxHeight, objectMarkup, styleOf, tableBoxSize, tableStyle, textHeight } from './markup';
 import { cornerBox, cornerFactor, isCorner, keyResize, scaledText, type Corner, type TextKey } from './text-resize';
 import {
   addLane, addLaneRefusal, moveLaneRefusal, laneReorderRefusal, moveLaneTo, editLane, laneDeleteIds, laneEditRefusal, moveLane, structureRefusal, wipRefusal, type LanePatch,
@@ -2124,7 +2124,7 @@ export class BoardApp {
       if (h.includes('n') && sy === null) t = snapTo(o0.y + t, g) - o0.y;
       if (h.includes('s') && sy === null) b = snapTo(o0.y + b, g) - o0.y;
     }
-    const minW = o0.type === 'tracker' ? 480 : o0.type === 'markdown' ? 120 : 8;
+    const minW = o0.type === 'tracker' ? 480 : o0.type === 'markdown' ? 120 : o0.type === 'code' ? 160 : 8;
     const minH = o0.type === 'tracker' ? 360 : 8;
     if (r - l < minW) {
       if (h.includes('w')) l = r - minW;
@@ -2144,8 +2144,8 @@ export class BoardApp {
       patch.h = textHeight({ ...o0, w });
       patch.y = o0.y;
     }
-    if (o0.type === 'markdown') {
-      patch.h = markdownBoxHeight({ ...o0, w });
+    if (o0.type === 'markdown' || o0.type === 'code') {
+      patch.h = fittedBoxHeight({ ...o0, w });
       patch.y = o0.y;
     }
     if (o0.type === 'path' && o0.points) {

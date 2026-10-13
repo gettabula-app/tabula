@@ -23,6 +23,7 @@
   --paper: #FFFFFF;
   --ink: #111111;
   --graphite: #65635F;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --rule: #EAEAEA;
   --signal: #111111;
   --wire: #2A64D6;
