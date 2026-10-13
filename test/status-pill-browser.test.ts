@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser } from 'playwright';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
 
@@ -70,11 +70,13 @@ describe.skipIf(!available)('status pills', { timeout: 120_000 }, () => {
       // the pill hugs its content with equal padding on both sides
       expect(Math.abs(pill.left - pill.right)).toBeLessThanOrEqual(1);
       expect(pill.left).toBeGreaterThanOrEqual(9);
-      if (pill.gap !== null) {
-        expect(Math.abs(pill.gap - 6)).toBeLessThanOrEqual(1);
-        expect(pill.iconSize).toBe(12);
-        expect(pill.iconCentre).toBeLessThanOrEqual(1.5);
-      }
+    }
+    const withIcon = pills.filter((pill) => pill.gap !== null);
+    expect(withIcon.length).toBe(3);
+    for (const pill of withIcon) {
+      expect(Math.abs((pill.gap ?? 0) - 6)).toBeLessThanOrEqual(1);
+      expect(pill.iconSize).toBe(12);
+      expect(pill.iconCentre ?? 99).toBeLessThanOrEqual(1.5);
     }
     expect(new Set(pills.map((pill) => pill.height)).size).toBe(1);
     await page.close();
