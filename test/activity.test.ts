@@ -153,7 +153,7 @@ describe('the log', () => {
     for (let i = 0; i < MAX_ENTRIES + 20; i++) { clock += 1000; record(store, i); }
     expect(store.list('b1', 500)).toHaveLength(MAX_ENTRIES);
     store = createActivity({ dataDir: dir, now: tick }); // a fresh process reads the file
-    expect(store.list('b1', 3).map((e) => e.ids[0])).toEqual([`o${MAX_ENTRIES + 19}`, `o${MAX_ENTRIES + 18}`, `o${MAX_ENTRIES + 17}`]);
+    expect(store.list('b1', 3).map((e: { ids: string[] }) => e.ids[0])).toEqual([`o${MAX_ENTRIES + 19}`, `o${MAX_ENTRIES + 18}`, `o${MAX_ENTRIES + 17}`]);
     clock += MAX_AGE_MS + 1;
     expect(store.list('b1')).toHaveLength(0);
   });

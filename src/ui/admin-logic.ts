@@ -87,7 +87,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'team.create', 'team.update', 'team.member.role', 'team.leave', 'team.member.remove',
   'invite.create', 'invite.revoke', 'invite.accept',
   'board.create', 'board.update', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
-  'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore',
+  'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore', 'board.activity.revert',
   'template.create', 'template.update', 'template.delete',
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
@@ -290,6 +290,8 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} deleted a version of ${boardLabel}`;
     case 'board.version.restore':
       return `${who} restored a version of ${boardLabel}`;
+    case 'board.activity.revert':
+      return `${who} reverted an agent change on ${boardLabel}`;
     case 'template.create':
     case 'template.update':
     case 'template.delete': {

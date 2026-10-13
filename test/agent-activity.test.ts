@@ -85,7 +85,7 @@ describe('reverting a call', () => {
   it('leaves what a person changed since, and says what it left', async () => {
     const made = await h.tool(writer, 'create_objects', { boardId: board, objects: [sticky('mine')] });
     const id = (made.data.created as { id: string }[])[0].id;
-    await until(() => objects()[id]);
+    await until(() => !!objects()[id]);
     await h.tool(writer, 'update_objects', { boardId: board, updates: [{ id, text: 'agent edit' }] });
     await until(() => objects()[id]?.text === 'agent edit');
     const entry = (await log(alice)).body.entries[0];
@@ -102,7 +102,7 @@ describe('reverting a call', () => {
   it('authorises at revert time: an editor whose access was withdrawn is refused, whatever the entry says', async () => {
     const made = await h.tool(writer, 'create_objects', { boardId: board, objects: [sticky('late')] });
     const id = (made.data.created as { id: string }[])[0].id;
-    await until(() => objects()[id]);
+    await until(() => !!objects()[id]);
     const entry = (await log(alice)).body.entries[0];
     const unshared = await h.api(alice.cookie, 'DELETE', `/api/boards/${board}/shares/user/${bob.user.id}`);
     expect([200, 204]).toContain(unshared.status);
