@@ -702,4 +702,55 @@
 @media (forced-colors: active) {
   .trk.trk-element.trk-shell { border: 1px solid CanvasText; box-shadow: none; }
 }
+/* the element's board (slice 2): quiet tinted lanes, the element's own cards, a drag as a ghost and a lane outline; tokens only */
+.trk.trk-element { position: relative; }
+.trk.trk-element .trk-board-view { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.trk.trk-element .trk-board-lanes {
+  gap: 12px; padding: 10px 12px; scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--trk-text) 28%, transparent) transparent;
+}
+.trk.trk-element .trk-board-lane {
+  width: var(--trk-lane-width, 224px); min-width: var(--trk-lane-width, 224px); flex: 0 0 var(--trk-lane-width, 224px);
+  max-height: 100%; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--trk-text) 4%, var(--trk-ground));
+}
+.trk.trk-element .trk-board-lane.is-drop-target {
+  outline: 1px solid color-mix(in srgb, var(--trk-text) 20%, transparent); outline-offset: -1px;
+  background: color-mix(in srgb, var(--trk-text) 8%, var(--trk-ground));
+}
+.trk.trk-element .trk-board-lane-header { min-height: 34px; gap: 6px; padding: 0 6px 0 10px; }
+.trk.trk-element .trk-board-lane-header h2 { color: var(--trk-text); font-size: 13px; font-weight: 500; }
+.trk.trk-element .trk-board-lane-count { font-size: 11px; }
+.trk.trk-element .trk-board-add { width: 28px; min-width: 28px; height: 28px; min-height: 28px; color: var(--trk-muted); font-size: 16px; }
+.trk.trk-element .trk-board-add:hover { background: var(--tray-hover); color: var(--ink); }
+.trk.trk-element .trk-board-lane-cards { gap: 6px; padding: 2px 6px 8px; }
+.trk.trk-element .trk-board-lane-empty { font-size: 12px; }
+.trk.trk-element .trk-board-card {
+  position: relative; gap: 4px; padding: 8px 9px; border: 1px solid var(--tray-line); border-radius: 6px;
+  background: var(--trk-ground); cursor: pointer; user-select: none;
+}
+.trk.trk-element .trk-board-card.is-draggable { cursor: grab; }
+.trk.trk-element .trk-board-card:hover { background: var(--tray-hover); }
+.trk.trk-element .trk-board-card.is-dragging { opacity: 0.35; }
+.trk.trk-element .trk-board-card-menu { position: absolute; top: 2px; right: 2px; }
+.trk.trk-element .trk-board-menu-button { width: 28px; min-width: 28px; height: 28px; min-height: 28px; font-size: 16px; }
+.trk.trk-element .trk-board-card-title { padding-right: 26px; color: var(--ink); font-size: 12.5px; line-height: 1.4; }
+.trk.trk-element .trk-board-card-key { color: var(--graphite); font-size: 11px; line-height: 1.2; }
+.trk.trk-element .trk-board-card-key .trk-key-chip { font-size: 11px; }
+.trk.trk-element .trk-board-card-meta { font-size: 11px; }
+.trk.trk-element .trk-board-card-meta .trk-avatar { width: 18px; height: 18px; font-size: 8px; }
+.trk.trk-element .trk-board-card-meta .trk-due-chip { min-height: 18px; font-size: 11px; }
+.trk.trk-element .trk-board-labels { display: none; }
+.trk.trk-element .trk-board-ghost {
+  position: absolute; z-index: 5; margin: 0; pointer-events: none; cursor: grabbing;
+  box-shadow: var(--object-shadow); opacity: 0.95;
+}
+.trk.trk-element.is-dragging, .trk.trk-element.is-dragging * { cursor: grabbing !important; }
+@media (pointer: coarse) {
+  .trk.trk-element .trk-board-menu-button, .trk.trk-element .trk-board-add { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+}
+@media (forced-colors: active) {
+  .trk.trk-element .trk-board-lane.is-drop-target { outline-color: CanvasText; }
+  .trk.trk-element .trk-board-card { border-color: CanvasText; }
+  .trk.trk-element .trk-board-ghost { border: 1px solid CanvasText; }
+}
 /* element-look:end */

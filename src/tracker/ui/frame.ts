@@ -158,6 +158,8 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
       onFullscreenChange: (value) => onFullscreenChange(mount, value),
       onSnapshot: () => app.r.invalidateAll(),
       onWorkExit: leaveToCanvas,
+      // a press on a card selects the element and focuses it, as a press on the element does (the card stops the press from panning)
+      onPointerPress: () => { if (mount.shell) { app.setSelection([mount.obj.id]); mount.shell.focus(); } },
     });
     reposition(mount);
   };
@@ -418,7 +420,10 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
   const offCamera = app.r.onCamera(refresh);
   const offSelection = app.on('selection', refresh);
   const offObjects = app.on('objects', syncFrames);
-  const offReadOnly = app.store.onReadOnly(refresh);
+  const offReadOnly = app.store.onReadOnly(() => {
+    refresh();
+    for (const mount of frames.values()) mount.shell?.refreshAccess();
+  });
   // a snapshot is what an element last showed: it goes when the person signs out or loses access to the tracker
   const offStore = store.subscribe((snapshot) => {
     const lost = (error?: { code: string }) => error?.code === 'forbidden' || error?.code === 'not_found';

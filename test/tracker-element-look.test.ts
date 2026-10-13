@@ -32,6 +32,27 @@ describe('tracker element look: CSS', () => {
     expect(block).toContain('font: 400 16px/1.2 var(--font-serif)');
   });
 
+  it('keeps the element board rules (lanes, cards, drag ghost and drop outline) inside the marked block, with no colour literal', () => {
+    const boardRules = css.split('\n').filter((line) => line.includes('.trk-element .trk-board-') || line.includes('.trk.trk-element .trk-board-'));
+    expect(boardRules.length).toBeGreaterThan(20);
+    for (const rule of boardRules) {
+      expect(block).toContain(rule);
+      expect(rule).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+      expect(rule).not.toMatch(/\b(?:rgba?|hsla?|hwb|lab|lch|oklch|oklab)\s*\(/i);
+    }
+    expect(block).toContain('.trk.trk-element .trk-board-ghost');
+    expect(block).toContain('outline: 1px solid color-mix(in srgb, var(--trk-text) 20%, transparent); outline-offset: -1px;');
+  });
+
+  it('draws the drop outline and the dragged card in forced colours', () => {
+    // each rule sits after the forced-colors query that opens its block
+    for (const rule of ['.trk.trk-element .trk-board-lane.is-drop-target { outline-color: CanvasText; }', '.trk.trk-element .trk-board-ghost { border: 1px solid CanvasText; }']) {
+      const at = block.indexOf(rule);
+      expect(at).toBeGreaterThan(-1);
+      expect(block.lastIndexOf('@media (forced-colors: active)', at)).toBeGreaterThan(-1);
+    }
+  });
+
   it('no longer carries the old full-screen text button in the frame', () => {
     expect(css).not.toContain('.trk-frame-expand');
   });

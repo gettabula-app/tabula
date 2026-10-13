@@ -14,6 +14,7 @@ import { buildListModel, moveCursor, moveCursorTo, selectAll, toggleSelection, e
 import { buildCommandItems, openCommandBox, type CommandItem } from './command-box';
 import { isNativeActivationTarget, resolveKey, SHORTCUTS, type KeyboardLayer, type TrackerAction } from './keys';
 import { openPicker, type PickerResult } from './picker';
+import { autoScrollDelta, AUTO_SCROLL_EDGE_PX, clipRect, DRAG_THRESHOLD_PX, laneAtPoint, laneWidthFor, LONG_PRESS_MS, scaleOf, type BoardLane, type BoardPoint } from './board-drag';
 import { openNewIssueDialog } from './new-issue';
 import { publishTrackerSnapshot } from './frame-snapshot';
 import { mountTicketPage } from './ticket-page';
@@ -61,6 +62,25 @@ export interface TrackerViewerState {
   scrollTop: number;
   ticketKey: string | null;
   mySubtab: 'active' | 'created';
+}
+
+/** A card press on the element's board: pending until the pointer moves (or a touch rests), then a drag until it is dropped or cancelled. */
+interface BoardDrag {
+  pointerId: number;
+  pointerType: string;
+  ticket: TrackerTicket;
+  card: HTMLElement;
+  start: BoardPoint;
+  last: BoardPoint;
+  /** The press point in the card's own layout units, so the ghost keeps the grip. */
+  grab: BoardPoint;
+  scale: number;
+  ghost: HTMLElement | null;
+  active: boolean;
+  /** The lane under the pointer (null outside every lane). */
+  over: string | null;
+  timer: number | undefined;
+  frame: number | undefined;
 }
 
 const viewerStates = new WeakMap<TrackerStore, Map<string, TrackerViewerState>>();
@@ -131,6 +151,8 @@ export interface TrackerShellOptions {
   onTicketChange?: (key: string | null) => void;
   onTabChange?: (tab: TrackerView, viewId?: string) => void;
   onWorkExit?: () => void;
+  /** A mouse press on a board card in the element (the frame selects itself and focuses, as it does for a press on a row). */
+  onPointerPress?: () => void;
   /** The element (a frame on a board), not the full-screen route: a compact header with All and My, and no tabs or filters. */
   element?: boolean;
   /** Element only: the expand button opens the full-screen route. */
@@ -148,6 +170,8 @@ export interface TrackerShellController {
   setFullscreen(value: boolean): void;
   setTicket(key: string | null): void;
   updateLayout(width: number): void;
+  /** The person's access changed (the board went read-only or back): the header and the board's buttons follow it. */
+  refreshAccess(): void;
   destroy(): void;
   state: TrackerViewerState;
 }
@@ -229,8 +253,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   state.viewId = options.initialViewId ?? state.viewId;
   state.ticketKey = options.initialTicketKey ?? state.ticketKey;
   const elementMode = options.element === true;
-  // an element shows All or My only in this slice; a view stored from before (inbox, board, projects) reads as All
-  if (elementMode && state.tab !== 'all' && state.tab !== 'my') state.tab = 'all';
+  // an element shows All, My or Board; a view stored from before (inbox, projects) reads as All
+  if (elementMode && state.tab !== 'all' && state.tab !== 'my' && state.tab !== 'board') state.tab = 'all';
   let fullScreen = options.fullScreen === true;
   let elementEmpty = false;
   let elementDenied = false;
@@ -339,7 +363,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
   const active = () => !destroyed && (options.active?.() ?? (root === document.activeElement || root.contains(document.activeElement) || fullScreen));
   const updateActions = () => {
+    const wasReadOnly = readOnly;
     readOnly = options.readOnly === true || options.store.snapshot().readOnly || meta?.me.canWrite === false;
+    if (wasReadOnly !== readOnly && state.tab === 'board' && !state.ticketKey && meta && boardLanesHost) renderBoardContents();
     newButton.hidden = readOnly || (elementMode && (elementDenied || elementEmpty));
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
     offlineLine.hidden = !offline;
@@ -403,7 +429,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     listLoadMore.textContent = cache.loadingMore ? 'Loading…' : 'Load more';
   };
 
-  /** The element header: All and My (the shared segmented control), Back while a ticket is open, New ticket, expand, and the menu. */
+  const elementTab = (): TrackerView => (state.tab === 'my' || state.tab === 'board' ? state.tab : 'all');
+  const elementTabLabel = () => ({ all: 'All', my: 'My', board: 'Board' } as const)[elementTab() as 'all' | 'my' | 'board'];
+  /** The element header: All, My and Board (the shared segmented control), Back while a ticket is open, New ticket, expand, and the menu. */
   const renderElementHeader = () => {
     const width = layoutWidth;
     const ticketOpen = Boolean(state.ticketKey);
@@ -412,12 +440,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     // the switch hides while the unfiltered All view is empty, and when the person has no access; at under 360px it moves into the menu
     const showSwitch = !ticketOpen && !elementDenied && !elementEmpty && width >= 360;
     if (showSwitch && !elementSwitcher) {
-      elementSwitcher = segmented<'all' | 'my'>([{ value: 'all', label: 'All' }, { value: 'my', label: 'My' }], state.tab === 'my' ? 'my' : 'all',
+      elementSwitcher = segmented<TrackerView>([{ value: 'all', label: 'All' }, { value: 'my', label: 'My' }, { value: 'board', label: 'Board' }], elementTab(),
         (value) => switchTab(value), 'Tickets');
       elementSwitchHost.replaceChildren(elementSwitcher);
     }
     if (elementSwitcher) for (const button of elementSwitcher.querySelectorAll<HTMLButtonElement>('button')) {
-      const on = button.getAttribute('aria-label') === (state.tab === 'my' ? 'My' : 'All');
+      const on = button.getAttribute('aria-label') === elementTabLabel();
       button.classList.toggle('on', on);
       button.setAttribute('aria-checked', String(on));
     }
@@ -443,7 +471,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     }, label);
     const items: HTMLElement[] = [item('Copy link', copyElementLink)];
     if (layoutWidth < 360) {
-      items.push(item('View: All', () => switchTab('all')), item('View: My', () => switchTab('my')));
+      items.push(item('View: All', () => switchTab('all')), item('View: My', () => switchTab('my')), item('View: Board', () => switchTab('board')));
     }
     popover(anchor, h('div', { class: 'trk-element-menu-panel', role: 'menu' }, ...items), { className: 'trk trk-pop trk-element-menu', label: 'Tracker menu' });
   };
@@ -1126,12 +1154,33 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       label: `Move ${ticket.key} to`, options: meta?.states.map((item) => ({ value: item.key, label: item.name })) ?? [], value: ticket.state.key,
     }).then((picked) => { if (typeof picked === 'string') void moveBoardTicket(ticket, picked, anchor); });
   };
+  // The element's board drag. A card dropped on another lane is moved there at once (pendingMoves) and the store's answer confirms or
+  // reverts it. The element is transform-scaled, so the ghost is placed in layout units (client pixels divided by the scale).
+  const pendingMoves = new Map<string, { ticket: TrackerTicket; stateKey: string; settled: boolean }>();
+  let boardDrag: BoardDrag | null = null;
   const renderBoardContents = () => {
     if (!boardLaneStrip || !boardLanesHost || !meta) return;
     const lanes = boardStates();
-    const phone = layoutWidth <= 600 || (typeof window !== 'undefined' && window.innerWidth <= 600);
+    const phone = !elementMode && (layoutWidth <= 600 || (typeof window !== 'undefined' && window.innerWidth <= 600));
     if (!lanes.some((item) => item.key === boardLaneKey)) boardLaneKey = lanes[0]?.key ?? null;
-    const countFor = (item: TrackerState) => boardCaches.get(item.key)?.cache.tickets.length ?? 0;
+    // each lane's tickets as the store has them, with a drop in flight moved to its target lane
+    const laneRows = new Map<string, TrackerTicket[]>();
+    for (const item of lanes) {
+      const cache = boardCaches.get(item.key)?.cache ?? options.store.list(boardQuery(item));
+      laneRows.set(item.key, cache.tickets.map((row) => ticketFromListRow(row as unknown as TrackerRow, meta!, options.trackerId)));
+    }
+    for (const [key, move] of pendingMoves) {
+      // a settled move ends when the lanes show it, or when the store holds another state (offline, the lanes may not refresh)
+      const landed = (laneRows.get(move.stateKey) ?? []).some((ticket) => ticket.key === key);
+      if (move.settled && (landed || options.store.ticket(key).ticket?.state.key !== move.stateKey)) { pendingMoves.delete(key); continue; }
+      for (const rows of laneRows.values()) {
+        const at = rows.findIndex((ticket) => ticket.key === key);
+        if (at >= 0) rows.splice(at, 1);
+      }
+      const target = lanes.find((item) => item.key === move.stateKey);
+      if (target) laneRows.get(target.key)?.push({ ...move.ticket, state: { ...move.ticket.state, id: target.id, key: target.key, name: target.name, category: target.category } });
+    }
+    const countFor = (item: TrackerState) => laneRows.get(item.key)?.length ?? 0;
     boardLaneStrip.hidden = !phone;
     boardLaneStrip.replaceChildren(...(phone ? lanes.map((item) => h('button', {
       class: `trk-board-state-tab${item.key === boardLaneKey ? ' active' : ''}`, type: 'button', role: 'tab',
@@ -1140,19 +1189,21 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     }, stateGlyph(item.category, item.key), h('span', null, item.name), h('span', { class: 'trk-board-lane-count' }, String(countFor(item))))) : []));
     const visibleLanes = phone ? lanes.filter((item) => item.key === boardLaneKey) : lanes;
     boardLanesHost.classList.toggle('is-phone-lane', phone);
+    if (elementMode) boardLanesHost.style.setProperty('--trk-lane-width', `${laneWidthFor(layoutWidth)}px`);
     boardLanesHost.replaceChildren(...visibleLanes.map((item) => {
       const entry = boardCaches.get(item.key);
       const cache = entry?.cache ?? options.store.list(boardQuery(item));
-      const count = `${cache.tickets.length}${cache.nextCursor ? '+' : ''}`;
-      const normalized = cache.tickets.map((row) => ticketFromListRow(row as unknown as TrackerRow, meta!, options.trackerId));
+      const normalized = laneRows.get(item.key) ?? [];
       const sortedRows = buildListModel({
         pages: [normalized as unknown as TrackerRow[]], group: 'none', sort: { field: 'priority', direction: 'asc' },
       }).visibleRows;
       const tickets = sortedRows.map((row) => ticketFromListRow(row, meta!, options.trackerId));
+      const count = `${tickets.length}${cache.nextCursor ? '+' : ''}`;
+      const noun = elementMode ? 'tickets' : 'issues';
       const header = h('header', { class: 'trk-board-lane-header' },
         stateGlyph(item.category, item.key), h('h2', null, item.name), h('span', { class: 'trk-board-lane-count' }, count),
         readOnly ? null : h('button', {
-          class: 'trk-board-add', type: 'button', 'aria-label': `New issue in ${item.name}`,
+          class: 'trk-board-add', type: 'button', 'aria-label': elementMode ? `New ticket in ${item.name}` : `New issue in ${item.name}`,
           onclick: () => openCreate(item.key),
         }, '+'),
       );
@@ -1163,6 +1214,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         }, '⋯');
         const labels = ticket.labels.slice(0, 2).map((label) => labelChip(label.name, label.color));
         if (ticket.labels.length > 2) labels.push(h('span', { class: 'trk-board-label-count' }, `+${ticket.labels.length - 2}`));
+        const title = h('button', { class: 'trk-board-card-title', type: 'button', onclick: (event: Event) => { event.stopPropagation(); openTicket(ticket.key); } }, ticket.title);
         const card = h('article', {
           class: 'trk-board-card', tabindex: '0', 'data-key': ticket.key,
           'aria-label': `${ticket.key}: ${ticket.title}`,
@@ -1176,8 +1228,11 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
             else if ((event.key === 'Enter' || event.key === ' ') && event.target === event.currentTarget) { event.preventDefault(); openTicket(ticket.key); }
           },
         },
-          h('div', { class: 'trk-board-card-top' }, keyChip(ticket.key), menuButton),
-          h('button', { class: 'trk-board-card-title', type: 'button', onclick: (event: Event) => { event.stopPropagation(); openTicket(ticket.key); } }, ticket.title),
+          elementMode
+            ? (menuButton ? h('div', { class: 'trk-board-card-menu' }, menuButton) : null)
+            : h('div', { class: 'trk-board-card-top' }, keyChip(ticket.key), menuButton),
+          title,
+          elementMode ? h('div', { class: 'trk-board-card-key' }, keyChip(ticket.key)) : null,
           h('div', { class: 'trk-board-card-meta' },
             h('span', { class: 'trk-board-priority', 'aria-label': priorityLabel(ticket.priority) }, priorityGlyph(ticket.priority)),
             ticket.assignee ? avatar({ kind: 'person', name: ticket.assignee.name }) : null,
@@ -1185,27 +1240,208 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           ),
           labels.length ? h('div', { class: 'trk-board-labels' }, ...labels) : null,
         );
+        if (elementMode) {
+          card.classList.toggle('is-draggable', !readOnly);
+          card.addEventListener('pointerdown', (event) => beginCardPointer(event, ticket, card));
+          if (boardDrag?.active && boardDrag.ticket.key === ticket.key) card.classList.add('is-dragging');
+        }
         return card;
       });
       const laneBody = h('div', { class: 'trk-board-lane-cards' }, ...cards,
-        cards.length === 0 && !cache.nextCursor ? h('p', { class: 'trk-board-lane-empty' }, 'No issues') : null,
+        cards.length === 0 && !cache.nextCursor ? h('p', { class: 'trk-board-lane-empty' }, elementMode ? 'No tickets' : 'No issues') : null,
         cache.nextCursor ? h('button', {
           class: 'trk-load-more', type: 'button', disabled: cache.loadingMore,
-          onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showBoardError(error instanceof Error ? error.message : 'Could not load more issues.', entry?.query ?? boardQuery(item))),
+          onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showBoardError(error instanceof Error ? error.message : `Could not load more ${noun}.`, entry?.query ?? boardQuery(item))),
         }, cache.loadingMore ? 'Loading…' : 'Load more') : null,
       );
-      return h('section', { class: 'trk-board-lane', 'data-state': item.key, 'aria-label': `${item.name}, ${cache.tickets.length} issues` }, header, laneBody);
+      const lane = h('section', { class: 'trk-board-lane', 'data-state': item.key, 'aria-label': `${item.name}, ${tickets.length} ${noun}` }, header, laneBody);
+      lane.classList.toggle('is-drop-target', boardDrag?.active === true && boardDrag.over === item.key);
+      return lane;
     }));
     if (boardErrorHost) {
       const entry = [...boardCaches.values()].find((value) => value.cache.error);
       boardErrorHost.hidden = !entry?.cache.error;
       if (entry?.cache.error) {
-        boardErrorHost.replaceChildren(h('span', null, entry.cache.error.message), h('button', {
+        boardErrorHost.replaceChildren(h('span', null, elementMode ? 'Could not load tickets' : entry.cache.error.message), h('button', {
           class: 'trk-small-button', type: 'button', onclick: () => void options.store.loadList(entry.query, { force: true }).catch((error: unknown) =>
             showBoardError(error instanceof Error ? error.message : 'Could not load board issues.', entry.query)),
         }, 'Retry'));
       } else boardErrorHost.replaceChildren();
     }
+  };
+
+  /** The lanes as the pointer sees them: each lane's box clipped to the strip that scrolls it. */
+  const boardLaneRects = (): BoardLane[] => {
+    if (!boardLanesHost) return [];
+    const strip = boardLanesHost.getBoundingClientRect();
+    return [...boardLanesHost.querySelectorAll<HTMLElement>('.trk-board-lane')].map((lane) => ({
+      key: lane.dataset.state ?? '', rect: clipRect(lane.getBoundingClientRect(), strip),
+    }));
+  };
+  const placeGhost = (drag: BoardDrag) => {
+    if (!drag.ghost) return;
+    const bounds = root.getBoundingClientRect();
+    const originX = bounds.left + root.clientLeft * drag.scale;
+    const originY = bounds.top + root.clientTop * drag.scale;
+    drag.ghost.style.left = `${(drag.last.x - originX) / drag.scale - drag.grab.x}px`;
+    drag.ghost.style.top = `${(drag.last.y - originY) / drag.scale - drag.grab.y}px`;
+  };
+  const updateDropLane = (drag: BoardDrag) => {
+    const over = laneAtPoint(drag.last, boardLaneRects());
+    if (over === drag.over) return;
+    drag.over = over;
+    for (const lane of boardLanesHost?.querySelectorAll<HTMLElement>('.trk-board-lane') ?? []) {
+      lane.classList.toggle('is-drop-target', drag.active && over !== null && over !== drag.ticket.state.key && lane.dataset.state === over);
+    }
+  };
+  /** Each frame while dragging: the strip scrolls when the pointer is at its edge, and the lane under the pointer follows the scroll. */
+  const dragFrame = () => {
+    const drag = boardDrag;
+    if (!drag?.active) return;
+    if (boardLanesHost) {
+      const strip = boardLanesHost.getBoundingClientRect();
+      if (drag.last.y >= strip.top && drag.last.y <= strip.bottom) {
+        const delta = autoScrollDelta(drag.last.x, strip, AUTO_SCROLL_EDGE_PX);
+        if (delta !== 0) boardLanesHost.scrollLeft += delta / drag.scale;
+      }
+    }
+    updateDropLane(drag);
+    drag.frame = requestAnimationFrame(dragFrame);
+  };
+  const startDrag = (drag: BoardDrag) => {
+    if (drag.active || boardDrag !== drag || readOnly) return;
+    drag.active = true;
+    if (drag.timer !== undefined) clearTimeout(drag.timer);
+    drag.timer = undefined;
+    const ghost = drag.card.cloneNode(true) as HTMLElement;
+    ghost.classList.add('trk-board-ghost');
+    ghost.classList.remove('is-dragging');
+    ghost.removeAttribute('tabindex');
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.style.width = `${drag.card.getBoundingClientRect().width / drag.scale}px`;
+    root.appendChild(ghost);
+    drag.ghost = ghost;
+    drag.card.classList.add('is-dragging');
+    root.classList.add('is-dragging');
+    window.addEventListener('keydown', onDragKey, true);
+    window.addEventListener('touchmove', onDragTouchMove, { passive: false });
+    placeGhost(drag);
+    updateDropLane(drag);
+    drag.frame = requestAnimationFrame(dragFrame);
+  };
+  /** The click that the release of a drag makes (on the lane or the card) must not also open the card; it is the only click in the lanes that is blocked. */
+  const suppressDragClick = () => {
+    const done = () => {
+      window.removeEventListener('click', block, true);
+      window.removeEventListener('pointerdown', done, true);
+    };
+    const block = (event: Event) => {
+      done();
+      if (!boardLanesHost?.contains(event.target as Node)) return;
+      event.stopPropagation();
+      event.preventDefault();
+    };
+    window.addEventListener('click', block, true);
+    window.addEventListener('pointerdown', done, true);
+    window.setTimeout(done, 400);
+  };
+  const endDrag = (suppressClick = false) => {
+    const drag = boardDrag;
+    boardDrag = null;
+    window.removeEventListener('pointermove', onDragPointerMove);
+    window.removeEventListener('pointerup', onDragPointerUp);
+    window.removeEventListener('pointercancel', onDragCancel);
+    window.removeEventListener('keydown', onDragKey, true);
+    window.removeEventListener('touchmove', onDragTouchMove);
+    if (!drag) return;
+    if (drag.timer !== undefined) clearTimeout(drag.timer);
+    if (drag.frame !== undefined) cancelAnimationFrame(drag.frame);
+    drag.ghost?.remove();
+    drag.card.classList.remove('is-dragging');
+    root.classList.remove('is-dragging');
+    for (const lane of boardLanesHost?.querySelectorAll('.trk-board-lane.is-drop-target') ?? []) lane.classList.remove('is-drop-target');
+    if (suppressClick && drag.active) suppressDragClick();
+  };
+  function onDragPointerMove(event: PointerEvent) {
+    const drag = boardDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    drag.last = { x: event.clientX, y: event.clientY };
+    if (!drag.active) {
+      if (Math.hypot(event.clientX - drag.start.x, event.clientY - drag.start.y) <= DRAG_THRESHOLD_PX) return;
+      // a touch that moves before its long press is a scroll of the lanes, not a drag
+      if (drag.pointerType === 'touch') { endDrag(); return; }
+      startDrag(drag);
+    }
+    placeGhost(drag);
+    updateDropLane(drag);
+  }
+  function onDragPointerUp(event: PointerEvent) {
+    const drag = boardDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (!drag.active) { endDrag(); return; } // a press without a drag is a click on the card
+    const target = laneAtPoint({ x: event.clientX, y: event.clientY }, boardLaneRects());
+    const ticket = drag.ticket;
+    endDrag(true);
+    // releasing over the lane it came from, or outside every lane, cancels
+    if (target && target !== ticket.state.key) void dropTicket(ticket, target);
+  }
+  function onDragCancel(event: PointerEvent) {
+    if (boardDrag && event.pointerId === boardDrag.pointerId) endDrag();
+  }
+  function onDragKey(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !boardDrag?.active) return;
+    event.preventDefault();
+    event.stopPropagation();
+    endDrag(true);
+  }
+  function onDragTouchMove(event: TouchEvent) {
+    if (boardDrag?.active) event.preventDefault();
+  }
+  const beginCardPointer = (event: PointerEvent, ticket: TrackerTicket, card: HTMLElement) => {
+    // a press on the card is the card's: it never reaches the wrapper (which would pan the board) and never starts a canvas gesture
+    if ((event.target as HTMLElement | null)?.closest('.trk-board-menu-button')) return;
+    if (event.pointerType !== 'touch') options.onPointerPress?.();
+    event.stopPropagation();
+    if (event.button !== 0 || boardDrag || readOnly || destroyed) return;
+    const rect = card.getBoundingClientRect();
+    const scale = scaleOf(root.getBoundingClientRect(), root.offsetWidth);
+    const drag: BoardDrag = {
+      pointerId: event.pointerId, pointerType: event.pointerType, ticket, card,
+      start: { x: event.clientX, y: event.clientY }, last: { x: event.clientX, y: event.clientY },
+      grab: { x: (event.clientX - rect.left) / scale, y: (event.clientY - rect.top) / scale }, scale,
+      ghost: null, active: false, over: null, timer: undefined, frame: undefined,
+    };
+    boardDrag = drag;
+    if (event.pointerType === 'touch') drag.timer = window.setTimeout(() => { if (boardDrag === drag) startDrag(drag); }, LONG_PRESS_MS);
+    window.addEventListener('pointermove', onDragPointerMove);
+    window.addEventListener('pointerup', onDragPointerUp);
+    window.addEventListener('pointercancel', onDragCancel);
+  };
+  /** A drop: the card moves to the lane at once, then the store confirms it (one undo) or the move is reverted with a message. */
+  const dropTicket = async (ticket: TrackerTicket, stateKey: string) => {
+    const from = ticket.state.key;
+    if (readOnly || !meta?.states.some((item) => item.key === stateKey)) return;
+    const move = { ticket, stateKey, settled: false };
+    pendingMoves.set(ticket.key, move);
+    renderBoardContents();
+    let moved: TrackerTicket;
+    try {
+      moved = await options.store.transitionTicket(ticket.key, stateKey);
+    } catch {
+      pendingMoves.delete(ticket.key);
+      renderBoardContents();
+      toast('Could not move the ticket.');
+      return;
+    }
+    move.settled = true;
+    recordUndo('State changed', async () => {
+      await options.store.transitionTicket(ticket.key, from);
+      await refreshBoard();
+    });
+    announce(`${moved.key} moved to ${moved.state.name}`);
+    // the lanes reload first, so the card does not flash back to its old lane; the copy in the lanes ends once they show the move
+    await refreshBoard().catch(() => undefined);
+    renderBoardContents();
   };
   const startBoardWatch = () => {
     stopList?.();
@@ -1226,17 +1462,23 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     boardErrorHost = h('div', { class: 'trk-board-error', role: 'alert', hidden: true });
     boardLaneStrip = h('nav', { class: 'trk-board-state-strip', role: 'tablist', 'aria-label': 'Board states' });
     boardLanesHost = h('div', { class: 'trk-board-lanes' });
-    const board = h('section', { class: 'trk-board-view', 'aria-label': 'Tracker board' },
-      h('header', { class: 'trk-board-viewbar' }, h('strong', null, 'Board')),
-      boardErrorHost, boardLaneStrip, boardLanesHost,
-    );
+    // an element has no view bar or state strip: its lanes scroll sideways in the element's own header-less body
+    const board = elementMode
+      ? h('section', { class: 'trk-board-view trk-board-element', 'aria-label': 'Tracker board' }, boardErrorHost, boardLanesHost)
+      : h('section', { class: 'trk-board-view', 'aria-label': 'Tracker board' },
+        h('header', { class: 'trk-board-viewbar' }, h('strong', null, 'Board')),
+        boardErrorHost, boardLaneStrip, boardLanesHost,
+      );
     content.replaceChildren(board);
     startBoardWatch();
   };
 
   function renderPage() {
     if (destroyed) return;
+    endDrag();
     stopBoardWatch();
+    // the element's empty flag reads the All view only; the board has its own lanes
+    if (elementMode && state.tab === 'board') elementEmpty = false;
     destroyInbox();
     destroyTicketPage();
     renderTabs();
@@ -1454,13 +1696,14 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     el: root,
     focus() { root.focus({ preventScroll: true }); },
     setFullscreen,
+    refreshAccess() { if (!destroyed) updateActions(); },
     setTicket,
     updateLayout(width) { layoutWidth = width; if (state.ticketKey) renderPage(); else if (state.tab === 'board') renderBoardContents(); else { renderTabs(); drawRows(currentCache); } },
     state,
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      stopList?.(); stopBoardWatch(); stopStore?.(); stopKeyListener?.();
+      endDrag(); stopList?.(); stopBoardWatch(); stopStore?.(); stopKeyListener?.();
       destroyInbox(); destroyTicketPage();
       if (debounce !== undefined) clearTimeout(debounce);
       window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOnline);

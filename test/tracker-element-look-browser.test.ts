@@ -138,7 +138,7 @@ describe.skipIf(!available)('tracker element look in a real browser', { timeout:
       expect(await page.locator('.trk-element-switch').isVisible()).toBe(false);
       await page.locator('.trk-element-menu-button').click();
       const items = await page.locator('.trk-element-menu [role="menuitem"]').allTextContents();
-      expect(items).toEqual(['Copy link', 'View: All', 'View: My']);
+      expect(items).toEqual(['Copy link', 'View: All', 'View: My', 'View: Board']);
     } finally {
       await close();
     }
