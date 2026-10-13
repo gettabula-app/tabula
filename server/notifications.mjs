@@ -5,12 +5,15 @@ import crypto from 'node:crypto';
 import { ticketAccess, recipientActor, boardAccessForDirectory } from './tracker/access.mjs';
 import { notificationContent } from './tracker/inbox.mjs';
 import { snippetOf } from './chat-notify.mjs';
+import { cardFirstLine } from './card-due.mjs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const PAGE_BATCH = 100;
 const UNREAD_LIMIT = 200;
 const KEEP_PER_USER = 500;
-const KINDS = new Set(['chat_mention', 'comment_reply', 'comment_mention', 'board_shared', 'team_joined']);
+const KINDS = new Set(['chat_mention', 'comment_reply', 'comment_mention', 'board_shared', 'team_joined', 'card_due_soon', 'card_overdue', 'card_assigned']);
+// Card kinds read the card's first line at list time, and only while the viewer still has a role on the board and the card exists.
+const CARD_KINDS = new Set(['card_due_soon', 'card_overdue', 'card_assigned']);
 const MENTION_KINDS = new Set(['chat_mention', 'comment_mention', 'ticket_mentioned']);
 const WORKSPACE_REF = 'main';
 
@@ -193,7 +196,24 @@ export function createNotifications({
     }
     if (row.kind === 'board_shared') return Boolean(row.board_id && directory.boardRole(row.board_id, user.id) !== null);
     if (row.kind === 'team_joined') return Boolean(row.team_id && canOpenTeam(user, row.team_id));
+    if (CARD_KINDS.has(row.kind)) return cardOf(user, row) !== null;
     return false;
+  }
+
+  /** The card a card row points at: `{ snippet }` when the viewer may open it and it is still on the board, else null. */
+  function cardOf(user, row) {
+    if (!row.board_id || !roomAccess?.read || directory.boardRole(row.board_id, user.id) === null) return null;
+    let firstLine = null;
+    let found = false;
+    try {
+      roomAccess.read(row.board_id, (doc) => {
+        firstLine = cardFirstLine(doc, row.ref);
+        found = firstLine !== null;
+      });
+    } catch {
+      return null;
+    }
+    return found ? { snippet: clip(firstLine) || null } : null;
   }
 
   function targetForUserRow(row) {
@@ -207,12 +227,16 @@ export function createNotifications({
   }
 
   function userRowItem(user, row) {
-    if (!canOpenUserRow(user, row)) return null;
+    // A card row reads its card once: the same read proves access and supplies the snippet.
+    const card = CARD_KINDS.has(row.kind) ? cardOf(user, row) : undefined;
+    if (card === null || (card === undefined && !canOpenUserRow(user, row))) return null;
     const actorUser = row.actor_id ? directory.getUser(row.actor_id) : null;
     const boardRow = row.board_id ? directory.getBoard(row.board_id) : null;
     const teamRow = row.team_id ? directory.getTeam(row.team_id) : null;
     let snippet = null;
-    if (row.kind === 'chat_mention') {
+    if (CARD_KINDS.has(row.kind)) {
+      snippet = card?.snippet ?? null;
+    } else if (row.kind === 'chat_mention') {
       const message = chatDb()?.getMessage?.(Number(row.ref));
       if (!message) return null;
       if (message.deletedAt === null) {

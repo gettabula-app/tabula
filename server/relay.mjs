@@ -54,6 +54,7 @@ import { createSourceGate } from './source-policy.mjs';
 import { createPresenceRegistry } from './presence.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
+import { createCardDue } from './card-due.mjs';
 import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
 import { KEY_FLOOR_CHANGED_EVENT, createKeyFloorReporter } from './tracker/key-floor.mjs';
 import { trackerGateState } from './tracker/gate.mjs';
@@ -107,6 +108,8 @@ const MSG_TRACKER_NOTICE = 7;
 const MSG_AI_RUNS = 6;
 const AI_SWEEP_MS = 30_000;
 const NOTIFICATION_SWEEP_MS = 60 * 60 * 1000;
+// Card reminders (docs/notifications.md): due-soon and overdue sweep every 15 minutes; the test override can only shorten it.
+const CARD_DUE_SWEEP_MS = Number(process.env.TABULA_TEST_CARD_DUE_SWEEP_MS) > 0 ? Number(process.env.TABULA_TEST_CARD_DUE_SWEEP_MS) : 15 * 60 * 1000;
 const trackerSocketBudget = createTrackerSocketBudget();
 
 const CLOSE_UNAUTHENTICATED = 4401;
@@ -304,6 +307,7 @@ let cloud = null;
 let keyFloorReporter = null;
 let buildApi = null;
 let notificationStore = null;
+let cardDue = null;
 // Team chat (docs/chat.md), accounts mode, on unless TABULA_CHAT=off. chat.sqlite is opened on first use.
 let chat = null;
 let chatHub = null;
@@ -370,6 +374,24 @@ if (config.authEnabled) {
   };
   sweepNotifications();
   setInterval(sweepNotifications, NOTIFICATION_SWEEP_MS).unref();
+  cardDue = createCardDue({ directory, notifications: notificationStore });
+  const runCardDue = (fn) => (snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn());
+  const sweepCardDue = () => {
+    try {
+      Promise.resolve(runCardDue(() => cardDue.sweep())).catch((err) => log('card reminders: sweep failed', err?.message));
+    } catch (err) {
+      log('card reminders: sweep failed', err?.message);
+    }
+  };
+  setInterval(sweepCardDue, CARD_DUE_SWEEP_MS).unref();
+  // One boot pass for boards that predate the index (docs/notifications.md). It runs on timers, never inside startup.
+  if (directory.getSetting('card_due.indexed') !== '1') {
+    cardDue.backfillAll({
+      roomAccess: { read: (name, fn) => roomAccess.read(name, fn) },
+      run: runCardDue,
+      log,
+    }).catch((err) => log('card reminders: boot backfill failed', err?.message));
+  }
   settleVolume(directory);
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
@@ -669,6 +691,9 @@ class Room {
     }
     this.awareness = new awarenessProtocol.Awareness(this.doc);
     this.awareness.setLocalState(null);
+    if (this.kind === 'board' && cardDue) {
+      try { cardDue.seed(this.name, this.doc); } catch (err) { log(`room ${this.name}: could not index card reminders`, err?.message); }
+    }
 
     /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
     this.held = null;
@@ -683,6 +708,17 @@ class Room {
           if (ids.size) this.scheduleTrackerGuard(ids);
         } catch (err) {
           log(`room ${this.name}: could not schedule tracker guard`, err?.message);
+        }
+      }
+      // Card reminders index every board write, including MCP and tracker writes; only a connection's write names an actor
+      // for the assignment notice.
+      if (this.kind === 'board' && cardDue) {
+        try {
+          const ids = changedObjectIds(transaction, this.doc);
+          const actor = this.conns.has(origin) && typeof origin?.userId === 'string' ? origin.userId : null;
+          if (ids.size) cardDue.upsertFor(this.name, this.doc, ids, { actorId: actor });
+        } catch (err) {
+          log(`room ${this.name}: could not update card reminders`, err?.message);
         }
       }
     });
@@ -937,6 +973,7 @@ class Room {
         clearTimeout(this.trackerGuardTimer);
         this.trackerGuardTimer = null;
         if (this.kind === 'board') trackerGuard?.clearTitles(this.name);
+        if (this.kind === 'board') cardDue?.forget(this.name);
         this.doc.destroy();
         rooms.delete(this.name);
         if (this.kind === 'board') aiLive.dropBoard(this.name);

@@ -1,9 +1,9 @@
 // The notifications bell and panel on the Boards top bar (proto/designer-preview/notifications/SPEC.md): what a row says, how the
 // bell is labelled, how times read, where a row goes. Pure; the server's rows are ids and names, and the text is built here.
 
-export type NotificationKind = 'chat_mention' | 'comment_mention' | 'comment_reply' | 'board_shared' | 'team_joined' | 'ticket_assigned' | 'ticket_commented' | 'ticket_status';
+export type NotificationKind = 'chat_mention' | 'comment_mention' | 'comment_reply' | 'board_shared' | 'team_joined' | 'card_due_soon' | 'card_overdue' | 'card_assigned' | 'ticket_assigned' | 'ticket_commented' | 'ticket_status';
 
-export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['chat_mention', 'comment_mention', 'comment_reply', 'board_shared', 'team_joined', 'ticket_assigned', 'ticket_commented', 'ticket_status'];
+export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['chat_mention', 'comment_mention', 'comment_reply', 'board_shared', 'team_joined', 'card_due_soon', 'card_overdue', 'card_assigned', 'ticket_assigned', 'ticket_commented', 'ticket_status'];
 
 export interface NotificationItem {
   id: string;
@@ -14,7 +14,7 @@ export interface NotificationItem {
   actor: { id: string; name: string } | null;
   board: { id: string; title: string } | null;
   team: { id: string; name: string } | null;
-  /** What was said, or the ticket's title: read when the list was built, null when there is none to show. */
+  /** What was said, the card's first line, or the ticket's title: read when the list was built, null when there is none to show. */
   snippet: string | null;
   /** A route the app opens as it is: `#/...` or `/t/<KEY>`. */
   target: string;
@@ -59,11 +59,19 @@ export interface RowText {
 const clean = (s: string | null | undefined, max: number) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 export function rowText(item: NotificationItem): RowText {
-  const who = clean(item.actor?.name, 80) || 'Someone';
+  const named = clean(item.actor?.name, 80);
+  // Card reminders come from the app, not a person, so they never say "Someone".
+  const who = named || (item.kind === 'card_due_soon' || item.kind === 'card_overdue' ? 'A card' : 'Someone');
   const board = clean(item.board?.title, 200);
   const team = clean(item.team?.name, 200);
   const snippet = clean(item.snippet, 300);
   switch (item.kind) {
+    case 'card_assigned':
+      return { who, verb: 'assigned you a card on', where: board || 'a board', after: '', context: board ? `${board} · Card` : 'Card', excerpt: snippet || null };
+    case 'card_due_soon':
+      return { who, verb: 'is due soon on', where: board || 'a board', after: '', context: board ? `${board} · Card` : 'Card', excerpt: snippet || null };
+    case 'card_overdue':
+      return { who, verb: 'is overdue on', where: board || 'a board', after: '', context: board ? `${board} · Card` : 'Card', excerpt: snippet || null };
     case 'chat_mention': {
       const place = team || board;
       const where = place ? `${place} chat` : 'the workspace chat';
