@@ -19,7 +19,7 @@ A tracker is **live** when you can use it in place, and a **snapshot** when it i
 
 Only three trackers on a board are live at once. The one you selected comes first, then the one under the pointer, then the one with the most of itself in view. The others show as snapshots until you select or zoom to them.
 
-A snapshot shows the tracker's name and how many tickets are open. A snapshot that is not live has an **Open** chip when you select it or point at it, so there is always a way in. On a phone the tracker is always a snapshot card with an **Open** chip, and tapping it opens the tracker full screen.
+A snapshot shows the tracker's name and how many tickets are open. A tracker whose tickets have not loaded yet says "Zoom in or select this tracker to load its tickets." A snapshot that is not live has an **Open** chip when you select it or point at it, so there is always a way in. On a phone the tracker is always a snapshot card with an **Open** chip, and tapping it opens the tracker full screen.
 
 ## Work in the tracker
 
@@ -32,9 +32,13 @@ At the top of a live tracker you find:
 
 Click a ticket to open it. In a wide tracker (about 720 board units or more) the ticket opens as a panel beside the list, so the list stays visible. In a narrower one the ticket replaces the list, with a **Back** button. Press `Esc` to close the ticket; focus goes back to the ticket's row in the list. Press `Esc` again to leave the tracker and give the keys back to the board; the tracker stays selected.
 
+Keys you press inside the tracker belong to the tracker and do not act on the board: Backspace or Delete on a ticket does not delete the tracker, and a letter does not change the board's tool.
+
 ### The Board view
 
 **Board** shows the states as lanes side by side, with the number of tickets in each. Drag a ticket from one lane to another to change its state. Press `Esc` before you let go to cancel the drag. Each lane has a **+** to create a ticket in that state. Each card has a **⋯** menu that opens a list of states to move it to, which is also the way to change a state with the keyboard.
+
+When you move a ticket, a message "State changed" appears with **Undo**; choose **Undo** to put the ticket back in its old state.
 
 ### Open it full screen
 
