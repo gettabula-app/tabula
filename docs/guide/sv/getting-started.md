@@ -16,7 +16,7 @@ Om din arbetsyta kräver inloggning visas först **Sign in to Tabula** (Logga in
 
 Om du hellre vill börja med en färdig layout väljer du **Start from a template** (Börja från en mall). Se [Mallar](templates.md).
 
-<!-- screenshot: en tom ny tavla med tipset som visas första gången, det vänstra verktygsfältet och de övre fälten synliga -->
+![En ny tom tavla med tipset som visas första gången, det vänstra verktygsfältet, tavlans namn och synkstatus uppe till vänster samt knapparna för delning och meny uppe till höger](images/getting-started-board.png)
 
 ## Skärmen
 

@@ -33,7 +33,7 @@ Admins can also select **Create a token** in the **Access tokens** section of Ad
 6. Choose when the token **Expires**: 7, 30, 90 or 365 days. There is no token that never expires.
 7. Select **Create token**.
 
-<!-- screenshot: New token form in the AI tool access dialog, with Read and comment and Only these selected -->
+![The New token form in the AI tool access dialog: a name, Read and comment and Only these chosen, two boards ticked, and the expiry choices](images/token-form.png)
 
 The token is shown once. Copy it now and treat it like a password. If you lose it, revoke it and make another. The dialog also gives you a ready-made command and a settings snippet for your tool.
 

@@ -12,7 +12,7 @@ A poll asks everyone on the board one question with a fixed list of answers. You
    - **Anonymous (names stay hidden)**: on by default. Turn it off to show who chose what in the results.
 5. Click **Start poll**, or press `Ctrl+Enter` (`Cmd+Enter` on Mac).
 
-<!-- screenshot: the quick poll form with a question and three options filled in -->
+![The quick poll form with a question, three options, the More than one answer box, Anonymous ticked and the Start poll button](images/quick-poll-form.png)
 
 The poll opens at once for everyone on the board. If a session is already running, the poll is added right after the current step and the session moves to it. If no session is running, the poll is added at the end of the board's steps and the session starts on it.
 

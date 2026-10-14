@@ -14,7 +14,7 @@ När en tavla har steg men ingen session körs visar fältet längst ned **Sessi
 
 En tavla kan bara köra en session åt gången. Om du lägger till en ny mall ersätts den gamla mallens steg.
 
-<!-- screenshot: sessionsfältet längst ned på tavlan medan en session pågår, med stegräknare, timer och knappen Next step -->
+![En pågående session på en tavla med Start / Stop / Continue: sessionsfältet längst ned visar steg 1 av 5, timern, knappen Next step och Reveal notes](images/session-bar.png)
 
 ## Sessionsfältet
 
@@ -107,7 +107,7 @@ Din egen vy ändras inte. Knappen är inte begränsad till personer som kan redi
 
 När en session flyttas till ett steg med en ram flyttas bara vyn för personen som flyttade sessionen dit. De andra får en begäran där personen och steget anges.
 
-<!-- screenshot: begärandekortet längst ned på tavlan med knapparna Go to, Follow, Dismiss och Mute -->
+![Begärandekortet ovanför sessionsfältet som säger att en person ber dig titta på deras vy, med knapparna Go to, Follow, Dismiss och Mute](images/look-request.png)
 
 ### När någon ber dig titta
 

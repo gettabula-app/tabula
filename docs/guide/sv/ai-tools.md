@@ -33,7 +33,7 @@ Administratörer kan också välja **Create a token** (Skapa en token) i avsnitt
 6. Välj när tokenen **Expires** (Upphör att gälla): efter 7, 30, 90 eller 365 dagar. Det finns ingen token som aldrig upphör att gälla.
 7. Välj **Create token**.
 
-<!-- screenshot: formuläret New token i dialogrutan AI tool access, med Read and comment och Only these valda -->
+![Formuläret New token i dialogrutan AI tool access: ett namn, Read and comment och Only these valda, två tavlor ikryssade och valen för giltighetstid](images/token-form.png)
 
 Tokenen visas bara en gång. Kopiera den nu och behandla den som ett lösenord. Om du tappar bort den återkallar du den och skapar en ny. Dialogrutan ger dig också ett färdigt kommando och ett kodutdrag med inställningar för verktyget.
 

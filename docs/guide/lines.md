@@ -11,7 +11,7 @@ Pick **Line** in the **Connectors and lines** group of the left toolbar, or pres
 
 The tool returns to **Select** when the line is drawn. Hold `Shift` while you draw to snap the line to 15-degree steps. Hold `Cmd` (`Ctrl` on Windows and Linux) to lock it horizontal or vertical.
 
-<!-- screenshot: the Line tool selected in the rail, a line being dragged across the board with its end snapped to a 15-degree angle -->
+![The Line tool selected in the left toolbar and a line being dragged across the board, with a label showing its length and a 30 degree angle](images/line-drag.png)
 
 ## Move or reshape a line
 

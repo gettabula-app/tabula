@@ -12,7 +12,7 @@ I en omröstning ställer du en fråga till alla på tavlan och ger dem en fast 
    - **Anonymous (names stay hidden)** (Anonymt (namnen förblir dolda)): är aktiverat som standard. Stäng av det om du vill visa vem som har valt vad i resultatet.
 5. Klicka på **Start poll** (Starta omröstning) eller tryck på `Ctrl+Enter` (`Cmd+Enter` på Mac).
 
-<!-- screenshot: formuläret för snabbomröstning med en fråga och tre ifyllda alternativ -->
+![Formuläret för snabbomröstning med en fråga, tre alternativ, rutan More than one answer, Anonymous ikryssad och knappen Start poll](images/quick-poll-form.png)
 
 Omröstningen öppnas direkt för alla på tavlan. Om en session redan pågår läggs omröstningen till direkt efter det aktuella steget och sessionen går vidare till den. Om ingen session pågår läggs omröstningen till sist bland tavlans steg, och sessionen startar med den.
 

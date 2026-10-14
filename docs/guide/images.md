@@ -35,7 +35,7 @@ The quick-action bar has two buttons that belong to pictures:
 - **100%** sets the picture back to its natural size, around its centre.
 - **Alt text** opens a field where you describe the picture in a sentence. Screen readers use it, and so do AI tools that read the board.
 
-<!-- screenshot: the quick-action bar above a selected picture, with 100% and Alt text -->
+![A selected picture with the quick-action bar above it, starting with the 100% button](images/picture-quickbar.png)
 
 ## When a picture is not there yet
 

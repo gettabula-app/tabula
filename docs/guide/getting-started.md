@@ -16,7 +16,7 @@ If your workspace uses sign-in, you first see **Sign in to Tabula**. Enter your 
 
 To start with a ready-made layout instead, choose **Start from a template**. See [Templates](templates.md).
 
-<!-- screenshot: an empty new board with the first-run hint, left toolbar and top bars visible -->
+![A new empty board with the first-run hint, the left toolbar, the board name and sync status at the top left, and the share and menu buttons at the top right](images/getting-started-board.png)
 
 ## The screen
 

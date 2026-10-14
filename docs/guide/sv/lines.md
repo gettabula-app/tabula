@@ -12,7 +12,7 @@ Välj **Line** (Linje) i gruppen **Connectors and lines** (Kopplingslinjer och l
 
 Verktyget växlar tillbaka till **Select** (Markera) när linjen är ritad. Håll ner `Shift` medan du ritar för att linjen ska snäppa till steg om 15 grader. Håll ner `Cmd` (`Ctrl` på Windows och Linux) för att låsa den vågrät eller lodrät.
 
-<!-- screenshot: verktyget Line valt i verktygsraden, en linje som dras över tavlan med ena änden snäppad till 15 grader -->
+![Verktyget Line valt i det vänstra verktygsfältet och en linje som dras över tavlan, med en etikett som visar längd och vinkeln 30 grader](images/line-drag.png)
 
 ## Flytta eller forma om en linje
 

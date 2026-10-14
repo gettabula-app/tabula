@@ -15,7 +15,7 @@ Välj **Templates** (Mallar) i det övre fältet på sidan Boards, eller öppna 
 - Kategoriknapparna filtrerar alla listor: **All** (Alla), **Retrospective** (Tillbakablick), **Ideation** (Idégenerering), **Discussion** (Diskussion), **Prioritisation** (Prioritering), **Planning** (Planering), **Discovery** (Upptäckande), **Strategy** (Strategi), **Risk** (Risk) och **Custom** (Anpassad). **Custom** visas när en mall i den kategorin finns med i listan.
 - **Search templates** (Sök mallar) söker bland namn, kategorier och beskrivningar. Raden ovanför korten visar hur många som matchar eller **No templates match.** (Inga mallar matchar.)
 
-<!-- screenshot: mallsidan med avsnittet My templates ovanför de inbyggda korten och synliga miniatyrbilder -->
+![Mallsidan med avsnittet My templates som innehåller en sparad mall ovanför korten under Built-in templates](images/templates-page.png)
 
 ## Öppet läge och arbetsytor med inloggning
 
