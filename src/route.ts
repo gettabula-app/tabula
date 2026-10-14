@@ -139,6 +139,34 @@ export function navigateTrackerPath(target: TrackerPathRoute, mode: 'push' | 're
   return true;
 }
 
+/** The history entry a ticket opened from a list pushes carries this mark, so closing can pop it (and nothing else). */
+const TICKET_PUSHED = 'trackerTicketPushed';
+
+/**
+ * Opening and closing a ticket in the tracker route (TAB-360). Opening from a list pushes one history entry and marks it;
+ * moving to another ticket replaces it (keeping the mark), so closing never lands on the ticket before. Closing pops a marked
+ * entry; a ticket opened by its own address (no mark: nothing of ours to pop) goes to its list instead of leaving the tracker.
+ * The route host mounts a new screen on every route change, so everything is read from the address bar and the history entry,
+ * never from variables of one mount.
+ */
+export function createTicketRouteNavigator(closedTarget: () => TrackerPathRoute): (nextKey: string | null) => void {
+  return (nextKey) => {
+    if (typeof window === 'undefined') return;
+    const onTicket = parseTrackerPath(window.location.pathname, window.location.search)?.kind === 'ticket';
+    const marked = (window.history.state as Record<string, unknown> | null)?.[TICKET_PUSHED] === true;
+    if (nextKey) {
+      const path = buildTrackerPath({ kind: 'ticket', key: nextKey });
+      if (!path) return;
+      if (onTicket) window.history.replaceState(marked ? { [TICKET_PUSHED]: true } : null, '', path);
+      else window.history.pushState({ [TICKET_PUSHED]: true }, '', path);
+      window.dispatchEvent(new Event('popstate'));
+      return;
+    }
+    if (onTicket && marked) { window.history.back(); return; }
+    navigateTrackerPath(closedTarget(), 'replace');
+  };
+}
+
 /** Leave a path route (the tracker) for a hash page such as `#/` or `#/admin`: the path goes back to `/` and the router runs once. */
 export function navigateAppHash(hash: string): void {
   if (typeof window === 'undefined') return;

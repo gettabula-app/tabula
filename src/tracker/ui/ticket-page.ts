@@ -704,11 +704,20 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       className: extraClass,
     });
   }
-  function focusSnapshot(): { id: string } | { selector: string; index: number; label: string | null; href: string | null } | null {
+  function focusSnapshot(): { id: string; caret?: { start: number; end: number; dir: 'forward' | 'backward' | 'none'; top: number } } | { selector: string; index: number; label: string | null; href: string | null } | null {
     const active = document.activeElement as HTMLElement | null;
     if (!active || !root.contains(active)) return null;
     const id = active.getAttribute('data-focus-id');
-    if (id) return { id };
+    if (id) {
+      // a field that is being typed in keeps its caret, selection and scroll across the redraw (TAB-355)
+      const field = active as Partial<HTMLTextAreaElement>;
+      const tag = active.tagName.toLocaleLowerCase();
+      if (tag === 'textarea' || (tag === 'input' && field.type === 'text')) {
+        const length = field.value?.length ?? 0;
+        return { id, caret: { start: field.selectionStart ?? length, end: field.selectionEnd ?? length, dir: field.selectionDirection ?? 'none', top: tag === 'textarea' ? field.scrollTop ?? 0 : 0 } };
+      }
+      return { id };
+    }
     const classes = (active.className?.toString().split(/\s+/u).filter(Boolean) ?? []).map((name) => `.${name}`).join('');
     const selector = `${active.tagName.toLocaleLowerCase()}${classes}`;
     const matches = Array.from(root.querySelectorAll<HTMLElement>(selector));
@@ -728,6 +737,12 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       next = matches.find((item) => item.getAttribute('href') === target.href && (item.getAttribute('aria-label') ?? item.textContent?.trim() ?? null) === target.label) ?? matches[target.index];
     }
     next?.focus();
+    const tag = next?.tagName.toLocaleLowerCase();
+    if (next && 'caret' in target && target.caret && (tag === 'textarea' || tag === 'input')) {
+      const field = next as HTMLTextAreaElement;
+      try { field.setSelectionRange(target.caret.start, target.caret.end, target.caret.dir); } catch { /* an input type without a selection */ }
+      if (tag === 'textarea') field.scrollTop = target.caret.top;
+    }
   }
   function relationRow(relation: { kind: TrackerRelationKind; key: string }): HTMLElement {
     const target = opts.store.ticket(relation.key).ticket;
@@ -943,7 +958,9 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
           const related = event.relatedTarget as Node | null;
           if (related && editor.contains(related)) return;
           window.setTimeout(() => {
-            if (descriptionEditing && !editor.contains(document.activeElement)) commitDescription();
+            // the page redraws on every store update and puts focus back in the new editor: that is not leaving it (TAB-355)
+            const live = root.querySelector('[data-focus-id="description-editor"]');
+            if (descriptionEditing && !live?.contains(document.activeElement)) commitDescription();
           }, 0);
         });
         textarea.addEventListener('keydown', (event: KeyboardEvent) => {

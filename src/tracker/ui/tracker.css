@@ -739,6 +739,22 @@
   gap: 12px; padding: 10px 12px; scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--trk-text) 28%, transparent) transparent;
 }
+/* TAB-354: dragging a card between lanes in the full-screen board (the element has its own rules below) */
+.trk:not(.trk-element) .trk-board-card.is-draggable { cursor: grab; user-select: none; }
+.trk:not(.trk-element) .trk-board-card.is-dragging { opacity: 0.35; }
+.trk:not(.trk-element) .trk-board-lane.is-drop-target {
+  outline: 1px solid color-mix(in srgb, var(--trk-text) 45%, transparent); outline-offset: -1px;
+  background: color-mix(in srgb, var(--trk-text) 8%, var(--trk-ground));
+}
+.trk:not(.trk-element) .trk-board-ghost {
+  position: absolute; z-index: 5; margin: 0; pointer-events: none; cursor: grabbing;
+  box-shadow: var(--object-shadow); opacity: 0.95;
+}
+.trk:not(.trk-element).is-dragging, .trk:not(.trk-element).is-dragging * { cursor: grabbing !important; }
+@media (forced-colors: active) {
+  .trk:not(.trk-element) .trk-board-lane.is-drop-target { outline-color: CanvasText; }
+  .trk:not(.trk-element) .trk-board-ghost { border: 1px solid CanvasText; }
+}
 .trk.trk-element .trk-board-lane {
   width: var(--trk-lane-width, 224px); min-width: var(--trk-lane-width, 224px); flex: 0 0 var(--trk-lane-width, 224px);
   max-height: none; border: 0; border-radius: 8px; background: color-mix(in srgb, var(--trk-text) 4%, var(--trk-ground));
