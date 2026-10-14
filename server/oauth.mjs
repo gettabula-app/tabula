@@ -72,6 +72,8 @@ export const TOKEN_PREFIX_OAUTH = 'tbo_';
 export const REFRESH_TOKEN_PREFIX = 'tbr_';
 export const AUTHORIZATION_CODE_PREFIX = 'tbc_';
 export const OAUTH_SCOPES = ['read', 'comment', 'write'];
+// Ticket access a grant may carry (TAB-365). It is a ceiling stored on the grant and chosen at consent; it is never a scope string.
+export const OAUTH_TRACKER_SCOPES = ['read', 'write'];
 export const OAUTH_ACCESS_TTL_MS = 60 * 60 * 1000;
 export const OAUTH_REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const OAUTH_GRANT_TTL_MS = 180 * 24 * 60 * 60 * 1000;
@@ -269,6 +271,7 @@ const toGrant = (row) => ({
   userId: row.user_id,
   scope: row.scope,
   boardIds: parseBoardIds(row.board_ids),
+  tracker: row.tracker ?? null,
   resource: row.resource,
   createdAt: row.created_at,
   expiresAt: row.expires_at,
@@ -405,12 +408,13 @@ export function createOauthStore({ get, all, run, transaction, secret = null, ex
     });
   }
 
-  function createGrantInside({ clientId, userId, scope, boardIds = null, resource, now }) {
+  function createGrantInside({ clientId, userId, scope, boardIds = null, tracker = null, resource, now }) {
     if (!OAUTH_SCOPES.includes(scope)) throw new Error('invalid grant scope');
     if (typeof resource !== 'string' || !resource || resource.length > 2048) throw new Error('invalid grant resource');
     if (boardIds !== null && !(Array.isArray(boardIds) && boardIds.length <= MAX_OAUTH_BOARD_IDS && boardIds.every((id) => typeof id === 'string' && BOARD_ID_RE.test(id)))) {
       throw new Error('invalid grant boards');
     }
+    if (tracker !== null && !OAUTH_TRACKER_SCOPES.includes(tracker)) throw new Error('invalid grant tracker');
     const client = getClientRow(clientId, now);
     const user = get('SELECT id, email, name, role, disabled, created_at FROM users WHERE id = ?', userId);
     if (!client) throw new Error('OAuth client is unavailable');
@@ -429,13 +433,13 @@ export function createOauthStore({ get, all, run, transaction, secret = null, ex
 
     const id = newId();
     run(
-      `INSERT INTO oauth_grants (id, client_id, user_id, scope, board_ids, resource, created_at, expires_at, last_used_at, revoked_at, revoked_reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)`,
-      id, clientId, userId, scope, boardIds === null ? null : JSON.stringify(boardIds), resource, now, now + OAUTH_GRANT_TTL_MS,
+      `INSERT INTO oauth_grants (id, client_id, user_id, scope, board_ids, resource, created_at, expires_at, last_used_at, revoked_at, revoked_reason, tracker)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
+      id, clientId, userId, scope, boardIds === null ? null : JSON.stringify(boardIds), resource, now, now + OAUTH_GRANT_TTL_MS, tracker,
     );
     run('UPDATE oauth_clients SET last_used_at = ?, last_grant_at = COALESCE(last_grant_at, ?) WHERE id = ?', now, now, clientId);
     return {
-      id, clientId, userId, scope, boardIds, resource, createdAt: now, expiresAt: now + OAUTH_GRANT_TTL_MS,
+      id, clientId, userId, scope, boardIds, tracker, resource, createdAt: now, expiresAt: now + OAUTH_GRANT_TTL_MS,
       lastUsedAt: null, revokedAt: null, revokedReason: null, clientName: client.name,
       redirectHost: redirectHost(parseRedirectUris(client.redirect_uris)[0] ?? ''),
     };
@@ -515,7 +519,8 @@ export function createOauthStore({ get, all, run, transaction, secret = null, ex
     return true;
   }
 
-  function decideRequest({ envelope, request: signedRequest = undefined, userId, decision = 'allow', scope, boardIds = null, now = Date.now() }) {
+  // `tracker` comes only from the consent decision (never from the signed request or a scope string); the API applies the role ceiling.
+  function decideRequest({ envelope, request: signedRequest = undefined, userId, decision = 'allow', scope, boardIds = null, tracker = /** @type {'read' | 'write' | null} */ (null), now = Date.now() }) {
     sweep(now);
     const request = readRequest(envelope ?? signedRequest, now);
     if (!request) return null;
@@ -535,7 +540,7 @@ export function createOauthStore({ get, all, run, transaction, secret = null, ex
       if (!currentClient || !redirectUriRegistered(request.redirectUri, parseRedirectUris(currentClient.redirect_uris))) return null;
       if (!registerRequestInside(request, now)) return null;
       const grant = createGrantInside({
-        clientId: request.clientId, userId, scope: selectedScope, boardIds, resource: request.resource, now,
+        clientId: request.clientId, userId, scope: selectedScope, boardIds, tracker, resource: request.resource, now,
       });
       const code = issueCodeInside({
         requestId: request.requestId, grantId: grant.id, clientId: request.clientId,
@@ -740,7 +745,7 @@ export function createOauthStore({ get, all, run, transaction, secret = null, ex
     if (typeof token !== 'string' || !ACCESS_TOKEN_RE.test(token)) return null;
     const row = get(
       `SELECT t.id AS token_id, t.scope AS token_scope, t.expires_at AS token_expires_at,
-              g.id AS grant_id, g.user_id, g.client_id, g.scope AS grant_scope, g.board_ids, g.resource,
+              g.id AS grant_id, g.user_id, g.client_id, g.scope AS grant_scope, g.board_ids, g.resource, g.tracker,
               g.expires_at AS grant_expires_at, g.revoked_at, c.name AS client_name,
               u.email, u.name AS user_name, u.role AS user_role, u.disabled, u.created_at AS user_created_at
          FROM oauth_tokens t JOIN oauth_grants g ON g.id = t.grant_id
@@ -759,6 +764,7 @@ export function createOauthStore({ get, all, run, transaction, secret = null, ex
       clientName: row.client_name,
       scope: minScope(row.token_scope, row.grant_scope),
       boardIds: parseBoardIds(row.board_ids),
+      tracker: row.tracker ?? null,
       resource: row.resource,
       expiresAt: row.token_expires_at,
       user: {

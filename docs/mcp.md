@@ -407,6 +407,8 @@ Ticket tools are off by default. Set `TABULA_TRACKER=on` and `TABULA_MCP=on` to 
 
 `tracker` is an optional token capability, independent of the existing board `scope`: `null` grants no ticket tools, `read` grants the five read tools, and `write` grants all ten tools. The create-token API accepts `tracker: 'read'|'write'|null`; token list and admin views return the field, using `null` when unset. A token acts as its owner account, and each call checks the owner's current workspace role and token capability. A guest or board-only account gets `not_found` for ticket calls even if its token carries a capability; inaccessible tickets are concealed the same way. Disabled owners are rejected by token authentication. Open mode never exposes ticket tools, even when `TABULA_TRACKER=on`.
 
+OAuth connectors (Claude Desktop and claude.ai, see [mcp-oauth.md](mcp-oauth.md)) can carry the same `read` or `write` ticket access. The person chooses it when they consent, and the choice is capped by their role at that moment: owners, admins and members may give `write`, and a guest may give nothing. A connection made before this existed has none and gets no ticket tools until it connects again. Over OAuth the ticket tools follow that ceiling, not the connection's board scope (mcp-oauth.md 6.2.1).
+
 | Tool | Arguments | Result |
 | --- | --- | --- |
 | `create_ticket` | `{title, description?, state?, priority?, assignee?, labels?, due?, parent?, project?, milestone?, idempotencyKey?}` | `{ticket}` |

@@ -2,11 +2,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../server/config.mjs';
 import { MIGRATIONS, openDirectory } from '../server/directory.mjs';
 import { loadOAuthSecret } from '../server/instance-secret.mjs';
 import { createClientAwareLimiter } from '../server/limiter.mjs';
+import { migrate } from '../server/schema.mjs';
 import { OAUTH_ACCESS_TTL_MS, OAUTH_CODE_TTL_MS, OAUTH_GRANT_RETENTION_MS, OAUTH_GRANT_TTL_MS, OAUTH_MIGRATION, OAUTH_REPLAY_TTL_MS, OAUTH_SCOPES, MAX_OAUTH_CLIENTS, OAUTH_UNUSED_CLIENT_TTL_MS, OAUTH_USED_CLIENT_TTL_MS, TOKEN_PREFIX_OAUTH, verifyAuthorizeEnvelope } from '../server/oauth.mjs';
 import { isWindows } from './platform';
 
@@ -79,9 +81,9 @@ describe('OAuth grants bound to boards', () => {
 describe('OAuth store migration and persistence', () => {
   it('applies migration 16 with cascading user foreign keys and unique token digests', () => {
     const d = directory();
-    expect(MIGRATIONS).toHaveLength(19);
+    expect(MIGRATIONS).toHaveLength(20);
     expect(MIGRATIONS[15]).toMatchObject({ sql: OAUTH_MIGRATION, minReader: 11 });
-    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 19 });
+    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 20 });
 
     const fixture = grant(d);
     const pair = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
@@ -507,5 +509,76 @@ describe('OAuth instance secret and configuration', () => {
     }, (message) => warnings.push(message));
     expect(config.mcp).toMatchObject({ mode: 'open', oauth: false });
     expect(warnings).toHaveLength(1);
+  });
+});
+
+describe('OAuth ticket ceiling (TAB-365)', () => {
+  const REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
+  const RESOURCE = 'https://tabula.example/mcp';
+
+  function requestFor(d: ReturnType<typeof openDirectory>, clientId: string) {
+    return d.signRequest({ clientId, redirectUri: REDIRECT, codeChallenge: 'c'.repeat(43), resource: RESOURCE, scope: null, state: null }, T0);
+  }
+
+  it('stores the ceiling only from the decision, and a new consent for the same client writes its own value', () => {
+    const d = directory();
+    const person = d.createUser({ email: 'ceiling-consent@example.com', role: 'member' })!;
+    const registered = client(d);
+    const first = d.decideRequest({ envelope: requestFor(d, registered.clientId), userId: person.id, scope: 'read', tracker: 'write', now: T0 });
+    expect(first?.grant.tracker).toBe('write');
+    expect(d.listGrants(person.id, T0)).toMatchObject([{ id: first!.grant.id, scope: 'read', tracker: 'write' }]);
+
+    const second = d.decideRequest({ envelope: requestFor(d, registered.clientId), userId: person.id, scope: 'read', now: T0 + 1 });
+    expect(second?.grant.tracker).toBeNull();
+    expect(d.getGrant(first!.grant.id)).toMatchObject({ revokedReason: 'replaced' });
+    expect(d.listGrants(person.id, T0 + 2)).toMatchObject([{ id: second!.grant.id, tracker: null }]);
+
+    expect(() => d.decideRequest({ envelope: requestFor(d, registered.clientId), userId: person.id, scope: 'read', tracker: 'admin' as never, now: T0 + 3 }))
+      .toThrow(/invalid grant tracker/);
+    expect(d.listGrants(person.id, T0 + 4)).toHaveLength(1);
+    expect(() => d.oauthInternals!.createGrant({ clientId: registered.clientId, userId: person.id, scope: 'read', tracker: 'comment' as never, resource: RESOURCE, now: T0 + 5 }))
+      .toThrow(/invalid grant tracker/);
+  });
+
+  it('reports the grant ceiling on every access token, and a refresh keeps it without widening', () => {
+    const d = directory();
+    const person = d.createUser({ email: 'ceiling-refresh@example.com', role: 'member' })!;
+    const registered = client(d);
+    const made = d.oauthInternals!.createGrant({ clientId: registered.clientId, userId: person.id, scope: 'write', tracker: 'read', resource: RESOURCE, now: T0 });
+    const pair = d.oauthInternals!.issueTokens({ grantId: made.id, scope: 'write', now: T0 });
+    expect(d.findOauthAccessToken(pair.accessToken, T0 + 1)).toMatchObject({ tracker: 'read', scope: 'write' });
+    const rotated = d.refresh({ refreshToken: pair.refreshToken, clientId: registered.clientId, now: T0 + 1 });
+    expect(rotated).toMatchObject({ scope: 'write' });
+    expect(d.findOauthAccessToken(rotated.accessToken, T0 + 2)).toMatchObject({ tracker: 'read' });
+    expect(d.getGrant(made.id)).toMatchObject({ tracker: 'read' });
+  });
+
+  it('adds the ceiling to a schema 19 directory that already has a grant, and the grant keeps a NULL ceiling', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'oauth-ceiling-'));
+    temporary.push(root);
+    const file = path.join(root, 'directory.sqlite');
+    const prior = new DatabaseSync(file);
+    try {
+      prior.exec('PRAGMA foreign_keys = ON');
+      migrate(prior, MIGRATIONS.slice(0, 19), 'directory');
+      prior.prepare("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('u1', 'grant@example.com', 'Grant', 'member', 0, ?)").run(T0);
+      prior.prepare(
+        `INSERT INTO oauth_clients (id, name, redirect_uris, fingerprint, max_scope, created_at, last_used_at, last_grant_at)
+         VALUES ('c1', 'Claude', ?, 'fingerprint-c1', 'write', ?, ?, ?)`,
+      ).run(JSON.stringify([REDIRECT]), T0, T0, T0);
+      prior.prepare(
+        `INSERT INTO oauth_grants (id, client_id, user_id, scope, board_ids, resource, created_at, expires_at)
+         VALUES ('g1', 'c1', 'u1', 'write', NULL, ?, ?, ?)`,
+      ).run(RESOURCE, T0, T0 + OAUTH_GRANT_TTL_MS);
+      expect(prior.prepare('PRAGMA user_version').get()).toEqual({ user_version: 19 });
+    } finally {
+      prior.close();
+    }
+
+    const d = openDirectory(file, { oauthSecret: SECRET, oauthInternals: true });
+    directories.push(d);
+    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 20 });
+    expect(d.db.prepare("SELECT id, scope, tracker FROM oauth_grants WHERE id = 'g1'").get()).toEqual({ id: 'g1', scope: 'write', tracker: null });
+    expect(d.listGrants('u1', T0 + 1)).toMatchObject([{ id: 'g1', scope: 'write', tracker: null }]);
   });
 });

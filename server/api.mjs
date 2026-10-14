@@ -33,7 +33,7 @@ import { createTrackerInboxRoutes } from './tracker/inbox-routes.mjs';
 import { boardAccessForDirectory } from './tracker/access.mjs';
 import { clientRateKeyOf, clientIpReport } from './client-ip.mjs';
 import { createWindowLimiter } from './limiter.mjs';
-import { MAX_OAUTH_BOARD_IDS, OAUTH_SCOPES, redirectUriRegistered } from './oauth.mjs';
+import { MAX_OAUTH_BOARD_IDS, OAUTH_SCOPES, OAUTH_TRACKER_SCOPES, redirectUriRegistered } from './oauth.mjs';
 import { knownRedirect } from './oauth-known-clients.mjs';
 import { OpsError, TrackerRestoringError } from './tracker/shared.mjs';
 import { trackerGateState } from './tracker/gate.mjs';
@@ -583,6 +583,14 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     const value = oauthRoleScope(board.role);
     return oauthScopeRank(value) > oauthScopeRank(max) ? value : max;
   }, 'read');
+  // The most ticket access a connected app may be given at consent, from the person's role now (TAB-365): owners, admins and
+  // members may be given write, a viewer read only. A guest, or anyone while the tracker is off, may be given nothing.
+  const oauthTrackerRank = (value) => OAUTH_TRACKER_SCOPES.indexOf(value) + 1;
+  const oauthTrackerCeiling = (user) => {
+    if (!config.tracker || !user || user.role === 'guest') return null;
+    if (user.role === 'owner' || user.role === 'admin' || user.role === 'member') return 'write';
+    return user.role === 'viewer' ? 'read' : null;
+  };
 
   function oauthRequestContext(envelope, user, sessionId) {
     if (!config.mcp?.oauth || config.mcp.mode !== 'accounts' || typeof envelope !== 'string' || envelope.length > 8192
@@ -801,6 +809,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     redirectHost: grant.redirectHost,
     scope: grant.scope,
     boardCount: grant.boardIds === null ? null : grant.boardIds.length,
+    tracker: grant.tracker ?? null,
     createdAt: grant.createdAt,
     lastUsedAt: grant.lastUsedAt,
     expiresAt: grant.expiresAt,
@@ -1732,6 +1741,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               redirectUri: context.redirectUri,
               verified: context.verified,
               maxScope: context.maxScope,
+              trackerCeiling: oauthTrackerCeiling(user),
               pickerAvailable: true,
               scopes: {
                 unrestricted: context.maxScope,
@@ -1748,8 +1758,15 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               res.setHeader('retry-after', String(wait));
               throw new HttpError(429, 'rate_limited', 'Too many authorization decisions. Try again later.');
             }
-            if (Object.keys(body).some((key) => !['request', 'decision', 'scope', 'nonce', 'boardIds'].includes(key))) {
+            if (Object.keys(body).some((key) => !['request', 'decision', 'scope', 'nonce', 'boardIds', 'tracker'].includes(key))) {
               throw badRequest('The authorization decision is not valid');
+            }
+            // The ticket access is chosen here and nowhere else: a scope string or a query parameter on /oauth/authorize cannot set
+            // it. It is checked against the person's role at this moment, before anything else, so a refused value creates nothing.
+            const chosenTracker = body.tracker === undefined || body.tracker === null ? null : body.tracker;
+            if (chosenTracker !== null && (!OAUTH_TRACKER_SCOPES.includes(chosenTracker)
+              || oauthTrackerRank(chosenTracker) > oauthTrackerRank(oauthTrackerCeiling(user)))) {
+              throw badRequest('The selected ticket access is not available.');
             }
             if (typeof body.request !== 'string' || body.request.length > 8192 || typeof body.nonce !== 'string') {
               throw notFound('Authorization request not found');
@@ -1815,6 +1832,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
                   decision: 'allow',
                   scope,
                   boardIds,
+                  tracker: chosenTracker,
                   now: now(),
                 });
                 if (!result) return null;
@@ -1824,6 +1842,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
                   scope,
                   decision: 'allow',
                   grantId: result.grant.id,
+                  tracker: chosenTracker ?? 'none',
                   ...(boardIds ? { boardCount: boardIds.length } : {}),
                 });
                 return result;

@@ -295,7 +295,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       return {
         mode: 'accounts', userId: found.userId, user: found.user, userName: found.user.name,
         tokenId: found.tokenId, tokenName: found.clientName, scope: wide ? 'read' : found.scope,
-        boardIds: found.boardIds, tracker: null, expiresAt: found.expiresAt, createdBy: found.userId,
+        boardIds: found.boardIds, tracker: found.tracker ?? null, expiresAt: found.expiresAt, createdBy: found.userId,
         source: 'oauth', clientName: found.clientName, grantId: found.grantId, rateLimitId: found.grantId,
       };
     }
@@ -2684,7 +2684,8 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           log('mcp: could not sweep usage records', err?.message);
         }
       }
-      if (actor.source === 'oauth' && tool && RANK[actor.scope] < RANK[tool.scope]) {
+      // A ticket tool is decided by the grant's tracker ceiling (trackerVisible, requireTrackerAccess), not by the board scope.
+      if (actor.source === 'oauth' && tool && !tool.trackerCapability && RANK[actor.scope] < RANK[tool.scope]) {
         const metadata = `${config.mcp.issuer}/.well-known/oauth-protected-resource/mcp`;
         return {
           status: 403,
