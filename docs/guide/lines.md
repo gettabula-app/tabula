@@ -25,6 +25,7 @@ Select a line and open **More properties** (the quick-action bar has the colour 
 - **Width**
 - **Style** (solid, dashed or dotted)
 - **Start** and **End** arrowheads, from the same list of heads that connectors use. New lines have no arrowheads.
+- **Reverse direction**, which swaps the start and the end (so an arrowhead points the other way).
 - **Opacity**
 
 ## Lines and connectors
