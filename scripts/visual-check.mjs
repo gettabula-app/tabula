@@ -1666,13 +1666,15 @@ const STATES = {
       return outline !== 'none' && outline.includes('solid') && !outline.includes('transparent');
     });
     if (!focusRingVisible) throw new Error('tracker-keyboard: focus ring is not visible on the shell control');
+    // The list shortcuts (S, A, P, J, K ...) act when a row itself has focus. Tab lands on the buttons inside a row, which keep their own keys, so the probe focuses the row as a click on its background would.
+    await page.locator('.trk-list-row').first().focus();
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('s');
     await page.locator('.trk-pop').waitFor();
     await page.keyboard.press('Escape');
     await page.locator('.trk-pop').waitFor({ state: 'detached' });
     await page.keyboard.press('Enter');
-    await page.locator('.trk-ticket-stub h1').waitFor();
+    await page.locator('.trk-ticket-page-host .tk-title').waitFor(); // the ticket page's title (the stub was replaced by the real page)
     await page.keyboard.press('Escape');
     await page.locator('.trk-list-row').first().waitFor();
     return { noPark: true };
@@ -1926,6 +1928,8 @@ const STATES = {
     const themes = readThemes();
     for (const theme of themes) {
       const row = page.getByRole('radio', { name: theme.name, exact: true });
+      // v5.4: the themes sit in the board menu's Theme list, which stays closed until its row is opened
+      if (!(await row.isVisible())) await page.locator('.board-menu .board-menu-sub-trigger', { hasText: 'Theme' }).click();
       await row.click();
       await page.waitForFunction((id) => document.documentElement.dataset.theme === id, theme.id);
       const result = await page.evaluate(() => {
@@ -5400,7 +5404,7 @@ async function capture({ browser, state, theme, width, file, shared }) {
     await page.screenshot({ path: path.join(shared.outDir, file), animations: 'disabled', caret: 'hide', fullPage: FULL_PAGE.has(state) });
   } catch (err) {
     result.failed = String(err.message).split('\n')[0];
-    result.file = file.replace(/\.png$/, '-FAILED.png');
+    result.failed = String(err.message).split('\n').slice(0, 4).join(' | '); // the call log says which locator timed out
     await page.screenshot({ path: path.join(shared.outDir, result.file), animations: 'disabled' }).catch(() => undefined);
   } finally {
     if (state === 'tracker-real-server') page.off('response', onResponse);
