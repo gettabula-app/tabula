@@ -139,6 +139,27 @@ export function navigateTrackerPath(target: TrackerPathRoute, mode: 'push' | 're
   return true;
 }
 
+/**
+ * Opening and closing a ticket in the tracker route (TAB-360). Opening from a list pushes one history entry; moving to another
+ * ticket replaces it, so closing never lands on the ticket before. Closing pops the entry this page pushed, and a ticket that was
+ * opened by its own address (nothing of ours to pop) goes to its list instead of leaving the tracker.
+ */
+export function createTicketRouteNavigator(initialKey: string | null, closedTarget: () => TrackerPathRoute): (nextKey: string | null) => void {
+  let openKey = initialKey;
+  let pushed = false;
+  return (nextKey) => {
+    if (nextKey) {
+      navigateTrackerPath({ kind: 'ticket', key: nextKey }, openKey ? 'replace' : 'push');
+      if (!openKey) pushed = true;
+      openKey = nextKey;
+      return;
+    }
+    openKey = null;
+    if (pushed) { pushed = false; window.history.back(); return; }
+    navigateTrackerPath(closedTarget(), 'replace');
+  };
+}
+
 /** Leave a path route (the tracker) for a hash page such as `#/` or `#/admin`: the path goes back to `/` and the router runs once. */
 export function navigateAppHash(hash: string): void {
   if (typeof window === 'undefined') return;
