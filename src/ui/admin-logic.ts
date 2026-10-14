@@ -468,8 +468,14 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return d.by === 'admin' ? `${who} revoked the AI tool access token${label} of ${member}` : `${who} revoked their AI tool access token${label}`;
     }
     case 'mcp.limit': {
-      const tool = text(d.tool);
-      return `An AI tool token of ${who} reached its hourly limit${tool ? ` for ${clip(tool, 40)}` : ''}`;
+      // plain words for the four capped tools (no tool id in a sentence a person reads); the id stays in the row's data
+      const things: Record<string, string> = {
+        update_ticket: 'ticket edits', transition_ticket: 'ticket state changes', comment_ticket: 'ticket comments', create_ticket: 'new tickets',
+      };
+      const thing = typeof d.tool === 'string' ? things[d.tool] : undefined;
+      const cap = typeof d.cap === 'number' && Number.isSafeInteger(d.cap) && d.cap > 0 ? d.cap : null;
+      const subject = d.kind === 'grant' ? `A connected app of ${who}` : `An AI tool access token of ${who}`;
+      return thing && cap ? `${subject} reached its limit of ${cap} ${thing} an hour.` : `${subject} reached its hourly limit.`;
     }
     case 'mcp.token.revoke_all': {
       const count = typeof d.count === 'number' ? d.count : null;

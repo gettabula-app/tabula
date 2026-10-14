@@ -349,7 +349,7 @@ describe('agent ticket text limits and tool surface (TAB-330)', () => {
 
 describe('hourly cap on agent ticket edits and token attribution (TAB-330)', () => {
   // three update, transition or comment calls an hour per token; the count is in memory, so a restart starts it again
-  const capped = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on', MCP_TICKET_HOURLY: '3' } });
+  const capped = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on', MCP_TICKET_HOURLY: '3', MCP_TICKET_CREATE_HOURLY: '4' } });
   let cappedOwner: Account;
 
   beforeAll(async () => {
@@ -434,6 +434,32 @@ describe('hourly cap on agent ticket edits and token attribution (TAB-330)', () 
     expect((await capped.tool(bot.token, 'get_ticket', { key })).error).toBeUndefined();
     expect((await capped.tool(bot.token, 'list_tickets')).error).toBeUndefined();
     expect((await capped.tool(bot.token, 'search_tickets', { query: 'Unaffected' })).error).toBeUndefined();
+  });
+
+  it('create_ticket: four new tickets are allowed, the fifth is refused, a replay of an existing one still works', async () => {
+    const bot = await tokenFor('Create cap bot');
+    const keys: string[] = [];
+    for (let i = 1; i <= 4; i++) {
+      const made = await capped.tool(bot.token, 'create_ticket', { title: `Create cap ${i}`, idempotencyKey: `create-cap-${i}-key` });
+      expect(made.error).toBeUndefined();
+      keys.push(made.data.ticket.key);
+    }
+    const countsBefore = ticketCounts(capped.dir);
+    expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'create_ticket', arguments: { title: 'Create cap 5', idempotencyKey: 'create-cap-5-key' } }));
+    expect(ticketCounts(capped.dir)).toEqual(countsBefore);
+
+    // the same idempotency key returns the original ticket and costs nothing
+    const replay = await capped.tool(bot.token, 'create_ticket', { title: 'Create cap 1', idempotencyKey: 'create-cap-1-key' });
+    expect(replay.error).toBeUndefined();
+    expect(replay.data.ticket.key).toBe(keys[0]);
+    expect(ticketCounts(capped.dir)).toEqual(countsBefore);
+    // updates are a different budget
+    expect((await capped.tool(bot.token, 'update_ticket', { key: keys[0], title: 'Still editable' })).error).toBeUndefined();
+    // one audit row, naming the tool and its cap
+    for (let i = 6; i <= 8; i++) expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'create_ticket', arguments: { title: `Create cap ${i}`, idempotencyKey: `create-cap-${i}-key` } }));
+    expect(limitAuditRows(capped.dir, bot.id)).toEqual([
+      expect.objectContaining({ tool: 'create_ticket', cap: 4, window: 'hour' }),
+    ]);
   });
 
   it('writes one mcp.limit audit row per token and tool, however many calls are refused', async () => {

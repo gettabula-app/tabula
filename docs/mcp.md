@@ -15,6 +15,7 @@ Off by default. **An instance without `TABULA_MCP=on` behaves exactly as describ
 | `TABULA_MCP_SCOPE` | `read` | Open mode only. What the shared token may do: `read`, `comment` or `write` |
 | `TABULA_MCP_DAILY_WRITES` | `2000` | Maximum board writes per token or OAuth grant per UTC day. Counts items, not calls. Set to `0` for no cap; open mode has no daily cap |
 | `TABULA_MCP_TICKET_HOURLY` | `120` | Accounts mode: `update_ticket`, `transition_ticket` and `comment_ticket` calls per token or OAuth grant per rolling hour, each tool on its own budget. In memory, so it starts again when the relay restarts. Set to `0` for no cap |
+| `TABULA_MCP_TICKET_CREATE_HOURLY` | `60` | Accounts mode: `create_ticket` calls per token or OAuth grant per rolling hour. In memory, so it starts again when the relay restarts. Set to `0` for no cap |
 | `TABULA_TRACKER` | `off` | `on` exposes ticket tools in accounts mode when an access token has a tracker capability. Open mode never receives ticket tools. The directory migration runs regardless of this switch |
 
 `server/config.mjs` reads the `TABULA_` names directly; the old `MIRA_` spelling works through the rename's `withLegacyEnv`, which `loadConfig` applies to every variable. Other new user-visible strings are constants in one place each: the token prefix (`TOKEN_PREFIX`, `tbl_`) in `server/tokens.mjs` and the server name reported to clients (`MCP_SERVER_NAME`, `board`) in `server/mcp.mjs`. The CSRF header and the session cookie are not named anywhere in this feature: the token routes go through the API's own dispatch, and `/mcp` reads neither.
@@ -23,7 +24,7 @@ Startup rules (the relay refuses to start and says why, like the cloud variables
 
 - `TABULA_MCP` is anything but `on` or `off`.
 - `TABULA_MCP_DAILY_WRITES` is not an integer from `0` through `1,000,000`.
-- `TABULA_MCP_TICKET_HOURLY` is not an integer from `0` through `100,000`.
+- `TABULA_MCP_TICKET_HOURLY` or `TABULA_MCP_TICKET_CREATE_HOURLY` is not an integer from `0` through `100,000`.
 - `TABULA_TRACKER` is anything but `on` or `off`.
 - Open mode with `TABULA_MCP=on` and a missing, short or space-containing `TABULA_MCP_TOKEN`, or a `TABULA_MCP_SCOPE` that is not `read|comment|write`.
 - `TABULA_MCP=on` while the base URL (`TABULA_BASE_URL`) is `http://` for any host but `localhost`, `127.0.0.1` or `[::1]`. A bearer token that can edit boards must not cross the network in clear text. (Cloud workspaces sit behind Caddy with an `https://` base URL and are unaffected.)
@@ -395,6 +396,8 @@ The template's session steps and fonts are **not** applied (`stepsSkipped` says 
 | Calls per token | 120 JSON-RPC requests per minute, of which at most 30 mutating; includes `tools/call`, `resources/list` and `resources/read`, sliding window in memory (`429`, `Retry-After`, JSON-RPC error body) |
 | Board writes per token or OAuth grant | 2,000 items per UTC day by default; set `TABULA_MCP_DAILY_WRITES=0` for no cap. Applies to board tools, not ticket tools. Refusals use `daily_limit`; the count resets at 00:00 UTC |
 | Ticket updates per token or grant | `update_ticket`, `transition_ticket` and `comment_ticket`: 120 calls each per rolling hour by default (`TABULA_MCP_TICKET_HOURLY`, `0` for no cap). In memory, so it resets on restart. A refusal is a normal `429` `rate_limited` error with `retryAfterSec`, and nothing is written. The first refusal per token and tool in an hour writes one `mcp.limit` audit row |
+| Tickets created per token or grant | `create_ticket`: 60 per rolling hour by default (`TABULA_MCP_TICKET_CREATE_HOURLY`, `0` for no cap), on top of 10 a minute. A retry with the same `idempotencyKey` is a replay and costs nothing. In memory, so it resets on restart |
+| About these caps | They are per token or grant, not per owner, so a person with 20 tokens has 20 budgets (the same as the other limits). Token names are stored on ticket events and in backups: never put a secret in a token name. REST event pages and the activity feed still show the token id to every member |
 | Wrong tokens | 20 per minute per IP (a good token is never held back) |
 | Active tokens per user | 20 |
 

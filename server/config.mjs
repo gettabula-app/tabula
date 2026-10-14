@@ -56,6 +56,17 @@ function parseMcpTicketHourly(env) {
   return value;
 }
 
+// Tickets created per token and hour (TAB-330). 0 turns the cap off.
+function parseMcpTicketCreateHourly(env) {
+  const raw = mcpVar(env, 'MCP_TICKET_CREATE_HOURLY');
+  if (!raw) return 60;
+  const value = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!Number.isSafeInteger(value) || value < 0 || value > MCP_TICKET_HOURLY_MAX) {
+    throw new Error(`TABULA_MCP_TICKET_CREATE_HOURLY must be an integer from 0 to ${MCP_TICKET_HOURLY_MAX}`);
+  }
+  return value;
+}
+
 function parseOAuthRedirectHosts(raw) {
   const value = (raw ?? '').trim();
   if (!value) return { hosts: [], wildcard: false };
@@ -118,6 +129,7 @@ const parseAuthEmailLimit = (raw) => parseAuthLimit(raw, 'TABULA_AUTH_EMAIL_LIMI
 function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
   const dailyWrites = parseMcpDailyWrites(env);
   const ticketHourly = parseMcpTicketHourly(env);
+  const ticketCreateHourly = parseMcpTicketCreateHourly(env);
   const mode = mcpVar(env, 'MCP') || 'off';
   if (mode !== 'on' && mode !== 'off') throw new Error(`TABULA_MCP must be on or off (got "${mode.slice(0, 20)}")`);
   const oauthMode = mcpVar(env, 'MCP_OAUTH') || 'off';
@@ -151,7 +163,7 @@ function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
       }
     }
     return {
-      mode: 'accounts', oauth, issuer, redirectKnown, redirectHosts, redirectWildcard, redirectSchemes, hosted: Boolean(hosted), dailyWrites, ticketHourly,
+      mode: 'accounts', oauth, issuer, redirectKnown, redirectHosts, redirectWildcard, redirectSchemes, hosted: Boolean(hosted), dailyWrites, ticketHourly, ticketCreateHourly,
       ignored: [token && 'TABULA_MCP_TOKEN', scope && 'TABULA_MCP_SCOPE'].filter(Boolean),
     };
   }
@@ -160,7 +172,7 @@ function loadMcp(env, authEnabled, url, baseUrl, hosted, warn) {
     throw new Error(`TABULA_MCP_TOKEN must be set, at least ${MCP_TOKEN_MIN} characters without spaces, when TABULA_MCP=on in open mode`);
   }
   if (scope && !MCP_SCOPES.includes(scope)) throw new Error(`TABULA_MCP_SCOPE must be one of ${MCP_SCOPES.join(', ')} (got "${scope.slice(0, 20)}")`);
-  return { mode: 'open', token, scope: scope || 'read', oauth: false, issuer: null, redirectKnown, redirectHosts: [], redirectWildcard: false, redirectSchemes: [], hosted: false, dailyWrites, ticketHourly, ignored: [] };
+  return { mode: 'open', token, scope: scope || 'read', oauth: false, issuer: null, redirectKnown, redirectHosts: [], redirectWildcard: false, redirectSchemes: [], hosted: false, dailyWrites, ticketHourly, ticketCreateHourly, ignored: [] };
 }
 
 // Images on a board (docs/images.md). Sizes are bytes, with an optional K, M or G suffix (powers of 1024).
