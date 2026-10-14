@@ -233,6 +233,34 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     await page.close();
   });
 
+  it('Escape leaves the full-screen route after a click on its empty background, one layer per press', async () => {
+    const page = await open();
+    await enterWork(page);
+    await page.locator('.trk-frame-wrap.is-work .trk-element-expand').click();
+    const route = '.trk-route-root, .trk-fullscreen-portal';
+    const surface = page.locator(route).first();
+    await page.locator('.trk-route-root .trk-list-row, .trk-fullscreen-portal .trk-list-row').first().waitFor();
+    const box = (await surface.boundingBox())!;
+    const clickBackground = async () => {
+      await page.mouse.click(box.x + box.width - 6, box.y + 4);
+    };
+    // after a click on the empty top strip (focus is no longer in a row) one Escape still leaves the route
+    await clickBackground();
+    await page.keyboard.press('Escape');
+    await page.waitForFunction((selector) => document.querySelector(selector) === null, route);
+    // with a ticket open in the side panel the first Escape closes the panel (the topmost layer), the second leaves
+    await page.locator('.trk-frame-wrap.is-work .trk-element-expand').click();
+    await page.locator('.trk-route-root .trk-list-row, .trk-fullscreen-portal .trk-list-row').first().click();
+    await page.locator('.trk-peek-layout').waitFor();
+    await clickBackground();
+    await page.keyboard.press('Escape');
+    await page.locator('.trk-peek-layout').waitFor({ state: 'detached' });
+    expect(await page.locator(route).count()).toBe(1);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction((selector) => document.querySelector(selector) === null, route);
+    await page.close();
+  });
+
   it('Ctrl+Z after a ticket move is never the board undo: the frame stays, and the tracker undoes the move', async () => {
     const page = await open();
     const id = await enterWork(page);
