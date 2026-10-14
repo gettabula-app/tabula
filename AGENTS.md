@@ -15,6 +15,12 @@ There are two kinds of worktree, each in its own folder under `/Volumes/External
 - Use relative paths only, in shell commands and in apply_patch. Never write an absolute path (a dropped path segment once wrote into the main checkout).
 - The orchestrating agent checks `git -C /Volumes/External/tabula/tabula status --short` after every job.
 
+## Subagents and review (every agent, no exceptions)
+- **Claude agents:** hand implementation work to subagents, and pass `model: "haiku"` explicitly on every Agent call, effort xhigh. Use a stronger model only after asking the manager first.
+- **Codex agents and Codex jobs:** use Luna 6 in fast mode at max reasoning: `-m gpt-6-luna -c model_reasoning_effort="max" -c service_tier="priority"`, `-s workspace-write` only, never the dangerous bypass flag.
+- **Review is your job, not a formality.** Read every subagent diff and Codex output critically before you commit or report. Treat it as unreviewed until you have: checked it does what was asked and nothing else, run the gates below yourself, and sent corrections back. Do not relay a subagent's report as your own result. Say in the hand-off which parts a subagent wrote and what you changed after review.
+- One fit worktree per task, removed and pruned when the task is done. Stage explicit paths only, never `git add -A`.
+
 ## What you may do
 - Codex: leave your changes UNCOMMITTED. The sandbox cannot write the git metadata of a linked worktree; the orchestrating agent reviews the diff and commits.
 - No push, no deploy, no release, no secrets, no `.env` files, no `pkill` by name (stop only PIDs you started).
