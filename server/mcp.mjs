@@ -13,6 +13,7 @@ import { clientRateKeyOf } from './client-ip.mjs';
 import { createWindowLimiter, TICKET_CREATES_PER_WINDOW } from './limiter.mjs';
 import { parseBoardResourceUri } from './mcp-resource-uri.mjs';
 import { ticketAccess } from './tracker/access.mjs';
+import { publicEventDetails } from './tracker/events.mjs';
 import { requireTrackerGateOpen } from './tracker/shared.mjs';
 import {
   CARD_LINK_MAX, KANBAN, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES, cleanCardTitle, cleanOwnerName,
@@ -49,6 +50,11 @@ const WRITES_PER_WINDOW = 30;
 const FAILURES_PER_WINDOW = 20;
 const TOUCH_MS = 60_000;
 const MCP_DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+// update, transition and comment each get their own hourly budget per token or grant (TAB-330); create_ticket has its own per-minute cap
+const HOURLY_TICKET_TOOLS = new Set(['update_ticket', 'transition_ticket', 'comment_ticket']);
+const HOURLY_CREATE_TOOL = 'create_ticket';
+const HOURLY_AUDIT_MAX = 10_000;
 const MCP_REQUEST_TTL_MS = 24 * 60 * 60 * 1000;
 const MCP_REQUEST_RESULT_MAX_BYTES = 64 * 1024;
 const BEARER_RE = /^bearer +(\S+)$/i;
@@ -238,6 +244,13 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   const calls = createWindowLimiter(CALLS_PER_WINDOW, now);
   const writes = createWindowLimiter(WRITES_PER_WINDOW, now);
   const ticketCreates = createWindowLimiter(TICKET_CREATES_PER_WINDOW, now);
+  // in memory: the hourly caps start again when the relay restarts (docs/mcp.md)
+  const ticketHourlyCap = config.mcp.ticketHourly ?? 120;
+  const ticketHourly = createWindowLimiter(ticketHourlyCap, now, HOUR_MS);
+  // creating tickets has its own, lower budget (the biggest spam path: 10 a minute alone would be 600 an hour)
+  const ticketCreateHourlyCap = config.mcp.ticketCreateHourly ?? 60;
+  const ticketCreateHourly = createWindowLimiter(ticketCreateHourlyCap, now, HOUR_MS);
+  const ticketHourlyAudited = new Map();
   const lastTouch = new Map();
   const openDigest = open ? sha256(config.mcp.token) : null;
 
@@ -626,7 +639,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     return { page, more: cursor + page.length < matching.length };
   };
   const trackerActor = (actor) => ({
-    type: 'mcp_token', tokenId: actor.tokenId, ownerUserId: actor.userId, user: actor.user, tracker: actor.tracker,
+    type: 'mcp_token', tokenId: actor.tokenId, ownerUserId: actor.userId, user: actor.user, tracker: actor.tracker, tokenName: actor.tokenName,
   });
   const requireTrackerAccess = (actor, need) => {
     const access = ticketAccess(trackerActor(actor), { id: 'tracker-access-check' });
@@ -1954,7 +1967,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           createdAt: row.created_at,
           before: parsedJson(row.before_json),
           after: parsedJson(row.after_json),
-          details: parsedJson(row.details_json),
+          details: publicEventDetails(parsedJson(row.details_json)),
         }));
         const commentFit = fitList(comments, 60_000);
         const eventFit = fitList(events, 60_000);
@@ -2680,17 +2693,28 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         };
       }
       const limitKey = actor.rateLimitId ?? actor.tokenId;
+      // the hourly caps are checked before the per-minute write budget is spent, and only an allowed call counts against them
+      const isCreate = tool?.name === HOURLY_CREATE_TOOL;
+      const createArgs = params.arguments;
+      // a retry of a ticket that already exists (same idempotency key) is a replay: it creates nothing and costs no budget
+      const replay = isCreate && typeof createArgs === 'object' && createArgs !== null && !Array.isArray(createArgs) && findTicketByIdempotency({
+        directory, actor: trackerActor(actor), source: 'mcp', idempotencyKey: createArgs.idempotencyKey,
+      });
+      const hourlyLimiter = isCreate ? ticketCreateHourly : ticketHourly;
+      const hourlyCap = isCreate ? ticketCreateHourlyCap : ticketHourlyCap;
+      const hourlyKey = hourlyCap > 0 && tool && (isCreate ? !replay : HOURLY_TICKET_TOOLS.has(tool.name)) ? `${limitKey}:${tool.name}` : null;
+      const hourlyWait = hourlyKey ? hourlyLimiter.wait(hourlyKey) : 0;
+      if (hourlyWait) {
+        auditHourlyRefusal(actor, tool.name, hourlyCap);
+        return limited(id, hourlyWait);
+      }
       const wait = tool?.mutating ? writes.hit(limitKey) : 0;
       if (wait) return limited(id, wait);
-      if (tool?.name === 'create_ticket') {
-        const args = params.arguments;
-        const retry = typeof args === 'object' && args !== null && !Array.isArray(args) && findTicketByIdempotency({
-          directory, actor: trackerActor(actor), source: 'mcp', idempotencyKey: args.idempotencyKey,
-        });
-        if (!retry) {
-          const createWait = ticketCreates.hit(limitKey);
-          if (createWait) return limited(id, createWait);
-        }
+      if (hourlyKey && !isCreate) hourlyLimiter.hit(hourlyKey);
+      if (isCreate && !replay) {
+        const createWait = ticketCreates.hit(limitKey);
+        if (createWait) return limited(id, createWait);
+        if (hourlyKey) hourlyLimiter.hit(hourlyKey);
       }
       const done = tool?.mutating && snapshotBarrier
         ? await snapshotBarrier.runWriter(() => callWithPolicies(actor, tool, params))
@@ -2699,6 +2723,21 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       return { status: 200, body: rpcResult(id, done.result) };
     }
     return { status: 200, body: rpcError(id, -32601, 'Method not found') };
+  }
+
+  // One audit row per token and tool per hour, on the first refusal: it says the cap was reached, never what the call asked for.
+  function auditHourlyRefusal(actor, toolName, cap) {
+    const key = `${actor.rateLimitId ?? actor.tokenId}:${toolName}`;
+    const t = now();
+    if (ticketHourlyAudited.has(key) && t - ticketHourlyAudited.get(key) < HOUR_MS) return;
+    ticketHourlyAudited.delete(key);
+    ticketHourlyAudited.set(key, t);
+    if (ticketHourlyAudited.size > HOURLY_AUDIT_MAX) ticketHourlyAudited.delete(ticketHourlyAudited.keys().next().value);
+    try {
+      directory?.audit(actor.userId, 'mcp.limit', { tokenId: actor.tokenId, tool: toolName, cap, window: 'hour', ...(actor.source === 'oauth' ? { kind: 'grant' } : {}) });
+    } catch (err) {
+      log('mcp: could not write an audit row', err?.message);
+    }
   }
 
   const limited = (id, wait) => ({

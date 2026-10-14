@@ -620,6 +620,24 @@ describe('ticket page', () => {
     expect(describeEvent({ ...base, eventType: 'link.pr_merged', actor: { name: 'claude-code', type: 'agent' }, number: 12 } as TrackerEvent).actor).toMatchObject({ kind: 'agent', name: 'Agent · claude-code' });
   });
 
+  it('never labels an agent event with a raw token id, using the owner name or plain "Agent"', async () => {
+    // the REST event for a token carries the token id and no name (server/tracker/api-routes.mjs eventView)
+    const api = createHttpTrackerApi(async () => new Response(JSON.stringify({
+      ticket: ticket(), subscribed: false, comments: [],
+      events: [
+        { eventSeq: 9, eventType: 'transitioned', createdAt: NOW, actor: { type: 'mcp_token', id: 'tok_raw_4f9a2c' }, source: 'mcp', before: { state: { name: 'To do' } }, after: { state: { name: 'In progress' } } },
+      ],
+    }), { status: 200 }));
+    const detail = await api.getTicket('TAB-1');
+    const described = describeEvent(detail.events[0], { members: META.members });
+    expect(described.actor).toEqual({ kind: 'agent', name: 'Agent' });
+    expect(described.text).toBe('Agent moved it from To do to In progress');
+    expect(JSON.stringify(described)).not.toContain('tok_raw_4f9a2c');
+    // a name sent with the event is used
+    expect(describeEvent({ ...detail.events[0], actor: { type: 'mcp_token', id: 'tok_raw_4f9a2c', name: 'Mara' } } as TrackerEvent).actor)
+      .toEqual({ kind: 'agent', name: 'Agent · Mara' });
+  });
+
   it('normalizes REST activity cursors and event before/after records for the page', async () => {
     const api = createHttpTrackerApi(async () => new Response(JSON.stringify({
       ticket: ticket(), subscribed: false,

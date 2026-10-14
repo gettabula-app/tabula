@@ -5,7 +5,7 @@ const EVENT_TYPES = new Set([
   'archived', 'restored', 'related', 'unrelated', 'unlinked',
 ]);
 const CHANGE_FIELDS = new Set(['title', 'description', 'state', 'priority', 'assignee', 'labels', 'due', 'parent', 'project', 'milestone', 'relations', 'archived']);
-const DETAIL_FIELDS = new Set(['commentId', 'length', 'ownerUserId', 'relatedTicketKey', 'relationKind', 'batchId', 'reason']);
+const DETAIL_FIELDS = new Set(['commentId', 'length', 'ownerUserId', 'tokenName', 'relatedTicketKey', 'relationKind', 'batchId', 'reason']);
 
 function changedFields(value, path) {
   if (value == null) return null;
@@ -14,15 +14,27 @@ function changedFields(value, path) {
   return JSON.stringify(value);
 }
 
-function detailsJson(details, ownerUserId) {
+function detailsJson(details, ownerUserId, tokenName) {
   const payload = {};
   if (details && typeof details === 'object' && !Array.isArray(details)) {
     for (const [key, value] of Object.entries(details)) if (DETAIL_FIELDS.has(key)) payload[key] = value;
   }
   if (ownerUserId) payload.ownerUserId = ownerUserId;
+  if (tokenName) payload.tokenName = tokenName;
   const json = JSON.stringify(payload);
   if (Buffer.byteLength(json) > 16 * 1024) throw invalid('details', 'Event details are too large');
   return json;
+}
+
+/**
+ * Event details as a REST or MCP reader may see them. The token name is kept in the stored record for the workspace's own
+ * records and is never sent to a client (TAB-330, the security ticket on what members see).
+ */
+export function publicEventDetails(details) {
+  if (!details || typeof details !== 'object' || Array.isArray(details) || !('tokenName' in details)) return details;
+  const copy = { ...details };
+  delete copy.tokenName;
+  return copy;
 }
 
 /** Append one schema-versioned ticket event. Call inside the ticket mutation transaction. */
@@ -64,7 +76,7 @@ export function appendTicketEvent({
     createdAt,
     changedFields(before, 'before'),
     changedFields(after, 'after'),
-    detailsJson(details, info.type === 'mcp_token' ? info.userId : null),
+    detailsJson(details, info.type === 'mcp_token' ? info.userId : null, info.type === 'mcp_token' ? info.tokenName : null),
   );
   return Number(result.lastInsertRowid);
 }

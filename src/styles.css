@@ -204,9 +204,14 @@ hr { border: 0; }
   position: fixed; z-index: 30; top: var(--safe-top); left: var(--safe-left); right: var(--safe-right); min-height: 36px;
   display: flex; align-items: center; justify-content: center; gap: 12px; padding: 4px 12px;
   background: var(--tray); color: var(--tray-text); font-size: 12px; font-weight: 600; line-height: 1.25;
+  border-bottom: 1px solid var(--tray-line);
 }
 .demo-banner-short-copy { display: none; }
-.demo-banner a { color: inherit; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+.demo-banner a {
+  display: inline-flex; align-items: center; height: 26px; padding: 0 12px; border-radius: 6px; background: var(--signal); color: var(--on-signal);
+  text-decoration: none; font-weight: 600; white-space: nowrap;
+}
+.demo-banner a:hover { opacity: .88; }
 .demo-board > .chrome .top-left { top: calc(46px + var(--safe-top)); }
 .demo-board > .chrome .top-right { top: calc(46px + var(--safe-top)); }
 .demo-board > .chrome .rail { top: calc(108px + var(--safe-top)); max-height: calc(100% - 132px - var(--safe-top) - var(--safe-bottom)); }
@@ -985,7 +990,9 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .flowbar.poll-compact > .poll-chip { flex: 1 0 100%; padding: 4px 8px; }
   /* one row, never wrapped: the bars below are placed for a 36px banner; the link keeps a 44px tap target without growing it */
   .demo-banner { flex-wrap: nowrap; justify-content: space-between; gap: 8px; padding: 0 16px; height: 36px; font-size: 13px; }
-  .demo-banner a { display: inline-flex; align-items: center; height: 44px; padding: 0 8px; margin: -4px -8px; }
+  /* touch.css forces 44px on a link, so the link keeps that height and the ink pill is painted inside it */
+  .demo-banner a { position: relative; isolation: isolate; height: 44px; padding: 0 22px; margin: -4px -12px; background: none; }
+  .demo-banner a::before { content: ''; position: absolute; inset: 9px 12px; z-index: -1; border-radius: 6px; background: var(--signal); }
   /* The phone demo is a calm board: no board-name chip, no comments pill (the menu stays), six tools, and a zoom pill of - / % / + */
   .demo-board > .chrome .top-left, .demo-board > .chrome .comment-toggle { display: none; }
   .demo-board > .chrome > .top-right { top: calc(46px + var(--safe-top)); }

@@ -59,6 +59,26 @@ function ticketCounts(directory: string) {
   }
 }
 
+// A 429 from the MCP endpoint: the JSON-RPC error carries the reason and the wait, and the Retry-After header repeats the wait.
+function expectRateLimited(res: { status: number; body: Body; headers: Headers }) {
+  expect(res.status).toBe(429);
+  expect(res.body.error.data).toMatchObject({ error: 'rate_limited' });
+  expect(res.body.error.data.retryAfterSec).toBeGreaterThan(0);
+  expect(res.headers.get('retry-after')).toBe(String(res.body.error.data.retryAfterSec));
+}
+
+// The mcp.limit audit rows written for one token, oldest first, with the actor they were written under.
+function limitAuditRows(directory: string, tokenId: string) {
+  const db = new DatabaseSync(path.join(directory, 'directory.sqlite'));
+  try {
+    return db.prepare("SELECT actor_id, detail FROM audit WHERE action = 'mcp.limit' ORDER BY id").all()
+      .map((row) => ({ actorId: row.actor_id, ...JSON.parse(String(row.detail)) }))
+      .filter((row) => row.tokenId === tokenId);
+  } finally {
+    db.close();
+  }
+}
+
 beforeAll(async () => {
   await h.start();
   owner = await h.signInOwner();
@@ -290,6 +310,209 @@ describe('MCP tracker capability', () => {
     expect(limited.status).toBe(429);
     expect(limited.body.error.data).toMatchObject({ error: 'rate_limited' });
     expect(limited.body.error.data.retryAfterSec).toBeGreaterThan(0);
+  });
+});
+
+describe('agent ticket text limits and tool surface (TAB-330)', () => {
+  it('refuses a 20,001 character description or comment with invalid_input and writes nothing, and takes exactly 20,000', async () => {
+    const writer = await makeToken(member, 'write');
+    const target = await h.tool(writer.token, 'create_ticket', { title: 'Comment target', idempotencyKey: 'comment-target-ticket' });
+    expect(target.error).toBeUndefined();
+    const key = target.data.ticket.key as string;
+    const countsBefore = ticketCounts(h.dir);
+
+    const tooLong = 'a'.repeat(20_001);
+    const created = await h.tool(writer.token, 'create_ticket', { title: 'Too long', description: tooLong, idempotencyKey: 'too-long-description' });
+    expect(created.error).toBe('invalid_input');
+    expect(created.data.path).toBe('description');
+    const commented = await h.tool(writer.token, 'comment_ticket', { key, body: tooLong });
+    expect(commented.error).toBe('invalid_input');
+    expect(commented.data.path).toBe('body');
+    expect(ticketCounts(h.dir)).toEqual(countsBefore);
+
+    const longest = await h.tool(writer.token, 'comment_ticket', { key, body: 'a'.repeat(20_000) });
+    expect(longest.error).toBeUndefined();
+  });
+
+  it('gives the tracker toolset no delete_ tool except delete_saved_view, and no bulk tool', async () => {
+    const plain = await makeToken(owner);
+    const writer = await makeToken(owner, 'write');
+    const names = async (token: string): Promise<string[]> => (await h.call(token, 'tools/list')).body.result.tools.map((tool: Body) => tool.name as string);
+    const withoutTracker = new Set(await names(plain.token));
+    // the tracker tools are the ones a write-capable token sees and a token without the capability does not
+    const trackerTools = (await names(writer.token)).filter((name: string) => !withoutTracker.has(name)).sort();
+    expect(trackerTools).toEqual(TICKET_TOOLS);
+    expect(trackerTools.filter((name) => name.startsWith('delete_'))).toEqual(['delete_saved_view']);
+    expect(trackerTools.filter((name) => name.includes('bulk'))).toEqual([]);
+  });
+});
+
+describe('hourly cap on agent ticket edits and token attribution (TAB-330)', () => {
+  // three update, transition or comment calls an hour per token; the count is in memory, so a restart starts it again
+  const capped = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on', MCP_TICKET_HOURLY: '3', MCP_TICKET_CREATE_HOURLY: '4' } });
+  let cappedOwner: Account;
+
+  beforeAll(async () => {
+    await capped.start();
+    cappedOwner = await capped.signInOwner();
+    await capped.newTeam(cappedOwner.cookie);
+  });
+
+  afterAll(async () => {
+    await capped.cleanup();
+  });
+
+  async function tokenFor(name: string, tracker: 'read' | 'write' = 'write') {
+    const made = await capped.api(cappedOwner.cookie, 'POST', '/api/me/tokens', { name, scope: 'read', tracker });
+    expect(made.status).toBe(201);
+    return { id: made.body.id as string, token: made.body.token as string };
+  }
+
+  async function ticketFor(token: string, title: string) {
+    const made = await capped.tool(token, 'create_ticket', { title, idempotencyKey: `${title.replace(/\W/g, '-').toLowerCase()}-ticket` });
+    expect(made.error).toBeUndefined();
+    return made.data.ticket.key as string;
+  }
+
+  it('update_ticket: three calls succeed, the fourth is refused and the ticket is unchanged', async () => {
+    const writer = await tokenFor('Update cap bot');
+    const key = await ticketFor(writer.token, 'Update cap');
+    for (const title of ['Update 1', 'Update 2', 'Update 3']) expect((await capped.tool(writer.token, 'update_ticket', { key, title })).error).toBeUndefined();
+    const before = (await capped.tool(writer.token, 'get_ticket', { key })).data.ticket;
+    const countsBefore = ticketCounts(capped.dir);
+
+    expectRateLimited(await capped.call(writer.token, 'tools/call', { name: 'update_ticket', arguments: { key, title: 'Update 4' } }));
+    expect(ticketCounts(capped.dir)).toEqual(countsBefore);
+    const after = (await capped.tool(writer.token, 'get_ticket', { key })).data.ticket;
+    expect(after).toEqual(before);
+    expect(after.title).toBe('Update 3');
+  });
+
+  it('transition_ticket: three calls succeed, the fourth is refused and the state stays', async () => {
+    const mover = await tokenFor('Transition cap bot');
+    const key = await ticketFor(mover.token, 'Transition cap');
+    for (const state of ['In progress', 'In review', 'Done']) expect((await capped.tool(mover.token, 'transition_ticket', { key, state })).error).toBeUndefined();
+    const before = (await capped.tool(mover.token, 'get_ticket', { key })).data.ticket;
+    const countsBefore = ticketCounts(capped.dir);
+
+    expectRateLimited(await capped.call(mover.token, 'tools/call', { name: 'transition_ticket', arguments: { key, state: 'Cancelled' } }));
+    expect(ticketCounts(capped.dir)).toEqual(countsBefore);
+    const after = (await capped.tool(mover.token, 'get_ticket', { key })).data.ticket;
+    expect(after).toEqual(before);
+    expect(after.state.name).toBe('Done');
+  });
+
+  it('comment_ticket: three calls succeed, the fourth is refused and no comment is written', async () => {
+    const commenter = await tokenFor('Comment cap bot');
+    const key = await ticketFor(commenter.token, 'Comment cap');
+    for (let i = 1; i <= 3; i++) expect((await capped.tool(commenter.token, 'comment_ticket', { key, body: `Comment ${i}` })).error).toBeUndefined();
+    const countsBefore = ticketCounts(capped.dir);
+
+    expectRateLimited(await capped.call(commenter.token, 'tools/call', { name: 'comment_ticket', arguments: { key, body: 'Comment 4' } }));
+    expect(ticketCounts(capped.dir)).toEqual(countsBefore);
+    expect((await capped.tool(commenter.token, 'get_ticket', { key })).data.comments).toHaveLength(3);
+  });
+
+  it('a refused call does not spend the per-minute write budget: a comment after 28 refusals still succeeds', async () => {
+    const bot = await tokenFor('Refusal budget bot');
+    const key = await ticketFor(bot.token, 'Refusal budget');
+    for (let i = 1; i <= 3; i++) expect((await capped.tool(bot.token, 'update_ticket', { key, title: `Refusal ${i}` })).error).toBeUndefined();
+    // 1 create and 3 updates are 4 of the 30 writes a minute; if the 28 refusals spent writes too, the comment would be the 33rd
+    for (let i = 4; i <= 31; i++) expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'update_ticket', arguments: { key, title: `Refusal ${i}` } }));
+    expect((await capped.tool(bot.token, 'comment_ticket', { key, body: 'After refusals' })).error).toBeUndefined();
+  });
+
+  it('keeps a budget per tool: a refused update leaves comments and transitions working, and create and reads are unaffected', async () => {
+    const bot = await tokenFor('Separate budgets bot');
+    const key = await ticketFor(bot.token, 'Separate budgets');
+    for (let i = 1; i <= 3; i++) expect((await capped.tool(bot.token, 'update_ticket', { key, title: `Budget ${i}` })).error).toBeUndefined();
+    expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'update_ticket', arguments: { key, title: 'Budget 4' } }));
+
+    expect((await capped.tool(bot.token, 'comment_ticket', { key, body: 'Still allowed' })).error).toBeUndefined();
+    expect((await capped.tool(bot.token, 'transition_ticket', { key, state: 'In progress' })).error).toBeUndefined();
+    for (let i = 1; i <= 2; i++) expect((await capped.tool(bot.token, 'create_ticket', { title: `Unaffected ${i}`, idempotencyKey: `unaffected-${i}-key` })).error).toBeUndefined();
+    expect((await capped.tool(bot.token, 'get_ticket', { key })).error).toBeUndefined();
+    expect((await capped.tool(bot.token, 'list_tickets')).error).toBeUndefined();
+    expect((await capped.tool(bot.token, 'search_tickets', { query: 'Unaffected' })).error).toBeUndefined();
+  });
+
+  it('create_ticket: four new tickets are allowed, the fifth is refused, a replay of an existing one still works', async () => {
+    const bot = await tokenFor('Create cap bot');
+    const keys: string[] = [];
+    for (let i = 1; i <= 4; i++) {
+      const made = await capped.tool(bot.token, 'create_ticket', { title: `Create cap ${i}`, idempotencyKey: `create-cap-${i}-key` });
+      expect(made.error).toBeUndefined();
+      keys.push(made.data.ticket.key);
+    }
+    const countsBefore = ticketCounts(capped.dir);
+    expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'create_ticket', arguments: { title: 'Create cap 5', idempotencyKey: 'create-cap-5-key' } }));
+    expect(ticketCounts(capped.dir)).toEqual(countsBefore);
+
+    // the same idempotency key returns the original ticket and costs nothing
+    const replay = await capped.tool(bot.token, 'create_ticket', { title: 'Create cap 1', idempotencyKey: 'create-cap-1-key' });
+    expect(replay.error).toBeUndefined();
+    expect(replay.data.ticket.key).toBe(keys[0]);
+    expect(ticketCounts(capped.dir)).toEqual(countsBefore);
+    // updates are a different budget
+    expect((await capped.tool(bot.token, 'update_ticket', { key: keys[0], title: 'Still editable' })).error).toBeUndefined();
+    // one audit row, naming the tool and its cap
+    for (let i = 6; i <= 8; i++) expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'create_ticket', arguments: { title: `Create cap ${i}`, idempotencyKey: `create-cap-${i}-key` } }));
+    expect(limitAuditRows(capped.dir, bot.id)).toEqual([
+      expect.objectContaining({ tool: 'create_ticket', cap: 4, window: 'hour' }),
+    ]);
+  });
+
+  it('writes one mcp.limit audit row per token and tool, however many calls are refused', async () => {
+    const bot = await tokenFor('Audit cap bot');
+    const key = await ticketFor(bot.token, 'Audit cap');
+    for (let i = 1; i <= 3; i++) expect((await capped.tool(bot.token, 'update_ticket', { key, title: `Audit ${i}` })).error).toBeUndefined();
+    for (let i = 4; i <= 8; i++) expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'update_ticket', arguments: { key, title: `Audit ${i}` } }));
+    for (let i = 1; i <= 3; i++) expect((await capped.tool(bot.token, 'comment_ticket', { key, body: `Audit ${i}` })).error).toBeUndefined();
+    for (let i = 4; i <= 5; i++) expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'comment_ticket', arguments: { key, body: `Audit ${i}` } }));
+
+    expect(limitAuditRows(capped.dir, bot.id)).toEqual([
+      { actorId: cappedOwner.user.id, tokenId: bot.id, tool: 'update_ticket', cap: 3, window: 'hour' },
+      { actorId: cappedOwner.user.id, tokenId: bot.id, tool: 'comment_ticket', cap: 3, window: 'hour' },
+    ]);
+  });
+
+  it('records the token id and token name on the events of its tickets, and sends the name to no REST or MCP reader', async () => {
+    const named = await tokenFor('Attribution bot 7');
+    const key = await ticketFor(named.token, 'Attribution');
+    expect((await capped.tool(named.token, 'comment_ticket', { key, body: 'Looks good' })).error).toBeUndefined();
+
+    const db = new DatabaseSync(path.join(capped.dir, 'directory.sqlite'));
+    let events: Body[];
+    try {
+      const ticketId = (db.prepare('SELECT id FROM tickets WHERE key = ?').get(key) as Body).id;
+      events = db.prepare('SELECT event_type, actor_type, actor_id, details_json FROM ticket_events WHERE ticket_id = ? ORDER BY id').all(ticketId) as Body[];
+    } finally {
+      db.close();
+    }
+    expect(events.map((event) => event.event_type)).toEqual(['created', 'commented']);
+    for (const event of events) {
+      expect(event).toMatchObject({ actor_type: 'mcp_token', actor_id: named.id });
+      expect(JSON.parse(String(event.details_json))).toMatchObject({ tokenName: 'Attribution bot 7', ownerUserId: cappedOwner.user.id });
+    }
+
+    const rest = await capped.api(cappedOwner.cookie, 'GET', `/api/tracker/tickets/${key}`);
+    expect(rest.status).toBe(200);
+    expect(rest.body.events.map((event: Body) => event.actor.id)).toContain(named.id);
+    // the page labels an agent by the token owner's name (the agent member), never by the token's own name
+    expect(rest.body.events.filter((event: Body) => event.actor.type === 'mcp_token').map((event: Body) => event.actor.name)).toEqual([cappedOwner.user.name, cappedOwner.user.name]);
+    expect(JSON.stringify(rest.body)).not.toContain('Attribution bot 7');
+    const mcp = await capped.tool(named.token, 'get_ticket', { key });
+    expect(mcp.data.events.length).toBeGreaterThan(0);
+    expect(JSON.stringify(mcp.data.events)).not.toContain('Attribution bot 7');
+  });
+
+  it('with TABULA_MCP_TICKET_HOURLY=0 there is no cap, after a restart that starts the count again', async () => {
+    await capped.stop();
+    await capped.start({ TABULA_MCP_TICKET_HOURLY: '0', MIRA_MCP_TICKET_HOURLY: '0' });
+    const free = await tokenFor('No cap bot');
+    const key = await ticketFor(free.token, 'No cap');
+    for (let i = 1; i <= 5; i++) expect((await capped.tool(free.token, 'update_ticket', { key, title: `Free ${i}` })).error).toBeUndefined();
+    expect((await capped.tool(free.token, 'get_ticket', { key })).data.ticket.title).toBe('Free 5');
   });
 });
 

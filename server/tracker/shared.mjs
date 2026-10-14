@@ -61,10 +61,15 @@ export function actorInfo(actor) {
     ? (principal?.id ?? actor?.userId ?? null)
     : (actor?.ownerUserId ?? principal?.id ?? actor?.userId ?? null);
   const workspaceRole = principal?.workspaceRole ?? actor?.workspaceRole ?? principal?.role ?? actor?.userRole ?? actor?.role ?? null;
+  // the token's name, recorded on ticket events and never sent to a client (TAB-330)
+  const tokenName = type === 'mcp_token' && typeof actor?.tokenName === 'string'
+    ? Array.from(actor.tokenName.trim()).slice(0, 80).join('') || null
+    : null;
   return {
     type,
     id,
     userId,
+    tokenName,
     // `viewer` is also a board-share role; require the explicit workspace role field to avoid widening board-only access.
     role: workspaceRole === 'viewer' && principal?.workspaceRole !== 'viewer' && actor?.workspaceRole !== 'viewer' ? null : workspaceRole,
     disabled: actor?.disabled === true || principal?.disabled === true,

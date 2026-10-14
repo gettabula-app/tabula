@@ -205,6 +205,20 @@ describe('demo board seed', () => {
     expect(flowFor(app).isVoting()).toBe(false);
   });
 
+  it('uses theme variable colours and the serif face, so the seed reads in dark themes too', () => {
+    withAnimationFrame();
+    const app = fakeApp();
+    seedDemo(app);
+
+    expect(app.store.get('demo-title')).toMatchObject({ font: 'gambetta', textColor: expect.stringMatching(/^var\(--/) });
+    expect(app.store.get('demo-instructions')).toMatchObject({ textColor: expect.stringMatching(/^var\(--/) });
+    expect(app.store.get('demo-font-example')).toMatchObject({ textColor: expect.stringMatching(/^var\(--/) });
+    const frames = [...app.store.cache.values()].filter((o) => o.type === 'frame');
+    expect(frames).toHaveLength(4);
+    for (const frame of frames) expect(frame).toMatchObject({ fill: 'var(--paper, #FFFFFF)', font: 'gambetta' });
+    expect(frames).not.toContainEqual(expect.objectContaining({ font: 'cabinet-grotesk' }));
+  });
+
   it('lets the visitor start a dot vote after the plain board opens', () => {
     withAnimationFrame();
     const app = fakeApp();

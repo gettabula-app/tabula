@@ -35,9 +35,9 @@ function eventActor(event: TrackerEvent, ctx: TicketEventContext): TicketEventDe
   const memberName = ctx.members?.find((member) => member.userId === actorId)?.name;
   const name = explicitName || memberName || '';
   const source = String(event.source ?? '').toLocaleLowerCase();
+  // The REST event carries the token id and no name, so the label never shows an id: the owner's name when one is sent, else "Agent".
   if (kind === 'agent' || kind === 'mcp_token' || kind === 'token') {
-    const token = typeof actor.tokenId === 'string' ? actor.tokenId : explicitName || actorId || 'agent';
-    return { kind: 'agent', name: `Agent · ${token}` };
+    return { kind: 'agent', name: explicitName ? `Agent · ${explicitName}` : 'Agent' };
   }
   if (kind === 'import' || provider === 'linear' || source === 'import') return { kind: 'import', name: explicitName ? `Import · ${explicitName}` : 'Import' };
   if (provider === 'github' || kind === 'integration' || source === 'integration') return { kind: 'github', name: explicitName || (provider === 'github' ? 'GitHub' : 'Integration') };

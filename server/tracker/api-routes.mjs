@@ -1,5 +1,6 @@
 import { ticketAccess } from './access.mjs';
 import { OpsError, actorInfo, newId } from './shared.mjs';
+import { publicEventDetails } from './events.mjs';
 import {
   addTicketRowExtras, commentTicket, createLabel, createTicket, deleteTicketComment, editTicketComment, findTicketByIdempotency,
   getTicket, listLabels, listStates, listTickets, searchTickets, transitionTicket, updateTicket,
@@ -98,17 +99,18 @@ function parseJson(value) {
   try { return value == null ? null : JSON.parse(value); } catch { return null; }
 }
 
-function eventView(row) {
+function eventView(row, db) {
   return {
     eventSeq: row.id,
     eventType: row.event_type,
     schemaVersion: row.schema_version,
-    actor: { type: row.actor_type, id: row.actor_id },
+    // an agent's event shows the agent member's name (the role), resolved from the token's owner; never the token name
+    actor: { type: row.actor_type, id: row.actor_id, ...(row.actor_type === 'mcp_token' ? { name: actorName(db, row) } : {}) },
     source: row.source,
     createdAt: row.created_at,
     before: parseJson(row.before_json),
     after: parseJson(row.after_json),
-    details: parseJson(row.details_json),
+    details: publicEventDetails(parseJson(row.details_json)),
   };
 }
 
@@ -161,7 +163,7 @@ function eventPage(directory, ticketId, { before, limit = EVENT_PAGE } = {}) {
   const page = rows.slice(0, limit);
   const nextBefore = hasMore ? String(page.at(-1)?.id ?? '') || null : null;
   return {
-    items: page.reverse().map(eventView),
+    items: page.reverse().map((row) => eventView(row, db)),
     nextBefore,
   };
 }
