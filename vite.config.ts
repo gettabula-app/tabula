@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import docs from './scripts/vite-docs.mjs';
+import { browserTestFiles } from './scripts/check-browser-tests.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src 'self' https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
@@ -64,6 +65,14 @@ export const DRILL_PATTERN = '**/*.drill.test.ts';
 // `npm test` or CI. To run them again: TABULA_DESKTOP_TESTS=1 npx vitest run test/desktop-backup.test.ts test/desktop-config.test.ts test/desktop-env.test.ts test/desktop-logic.test.ts
 export const DESKTOP_TEST_PATTERNS = ['**/test/desktop-backup.test.ts', '**/test/desktop-config.test.ts', '**/test/desktop-env.test.ts', '**/test/desktop-logic.test.ts'];
 
+/**
+ * TABULA_TEST_SET splits the suite for CI: `unit` leaves out the test files that launch Chromium, `browser` runs only those (CI runs them in
+ * their own job with the browser installed). Unset runs everything, which is what `npm test` does locally.
+ */
+const browserFiles = browserTestFiles(path.join(ROOT, 'test'));
+const testSet = process.env.TABULA_TEST_SET;
+if (testSet !== undefined && testSet !== '' && testSet !== 'unit' && testSet !== 'browser') throw new Error(`TABULA_TEST_SET must be unit or browser, not ${testSet}`);
+
 const docsPages = {
   ...docs(),
   apply: (_config: any, env: { mode: string }) => env.mode !== 'demo',
@@ -112,14 +121,23 @@ export default defineConfig({
   test: {
     // agent worktrees live under .claude/worktrees; never collect their tests. The restore drill (test/drill,
     // `npm run drill:local`, vitest.drill.config.ts) is not part of `npm test` or CI: test/drill-config.test.ts checks it.
-    exclude: [...configDefaults.exclude, '.claude/**', DRILL_PATTERN, ...(process.env.TABULA_DESKTOP_TESTS === '1' ? [] : DESKTOP_TEST_PATTERNS)],
+    exclude: [
+      ...configDefaults.exclude,
+      '.claude/**',
+      DRILL_PATTERN,
+      ...(process.env.TABULA_DESKTOP_TESTS === '1' ? [] : DESKTOP_TEST_PATTERNS),
+      ...(testSet === 'unit' ? browserFiles : []),
+    ],
+    ...(testSet === 'browser' ? { include: browserFiles } : {}),
     // Many test files spawn a relay process each. On the small CI runners (Windows and macOS above all) running
     // them all at once starves the machine and unrelated tests time out, so CI runs two files at a time and every
     // test and hook gets room to wait for a relay. Both limits stay well above RELAY_START_MS (test/relay-timing.ts), so
     // a slow start ends in the helper's error, which carries the relay's output, and not in a bare timeout.
-    maxWorkers: process.env.CI ? 2 : undefined,
+    // Linux runners (4 vCPUs) run four files at once: four CI runs with 4 were green and about 30% faster than with 2 (no flake reported). The
+    // Windows and macOS runners keep two. TABULA_MAX_WORKERS lets a CI run try another number (workflow_dispatch input max-workers).
+    maxWorkers: process.env.CI ? Number(process.env.TABULA_MAX_WORKERS) || (process.platform === 'linux' ? 4 : 2) : undefined,
     // every test file's fetch avoids reused idle sockets and retries one reset GET visibly (test/http-retry.ts)
-    setupFiles: ['./test/setup-http.ts'],
+    setupFiles: ['./test/setup-http.ts', './test/setup-retry.ts'],
     // The Windows runners are roughly 20 times slower for real restores and relays (test/wait-budget.ts scales the waits inside tests the same way).
     testTimeout: process.platform === 'win32' ? 180_000 : 60_000,
     hookTimeout: process.platform === 'win32' ? 120_000 : 60_000,
