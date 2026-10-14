@@ -103,7 +103,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
   'tracker.gate_cleared', 'tracker.restore_boards_failed', 'tracker.key_epoch', 'tracker.drill_record', 'tracker.cutover_record',
   'volume.adopt',
-  'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
+  'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all', 'mcp.limit',
   'mcp.oauth.client_registered', 'mcp.oauth.authorize', 'mcp.oauth.revoke', 'mcp.oauth.revoke_all', 'mcp.oauth.reuse_detected',
   'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
   'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
@@ -466,6 +466,16 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const name = text(d.name);
       const label = name ? ` ${quote(clip(name, 60))}` : '';
       return d.by === 'admin' ? `${who} revoked the AI tool access token${label} of ${member}` : `${who} revoked their AI tool access token${label}`;
+    }
+    case 'mcp.limit': {
+      // plain words for the four capped tools (no tool id in a sentence a person reads); the id stays in the row's data
+      const things: Record<string, string> = {
+        update_ticket: 'ticket edits', transition_ticket: 'ticket state changes', comment_ticket: 'ticket comments', create_ticket: 'new tickets',
+      };
+      const thing = typeof d.tool === 'string' ? things[d.tool] : undefined;
+      const cap = typeof d.cap === 'number' && Number.isSafeInteger(d.cap) && d.cap > 0 ? d.cap : null;
+      const subject = d.kind === 'grant' ? `A connected app of ${who}` : `An AI tool access token of ${who}`;
+      return thing && cap ? `${subject} reached its limit of ${cap} ${thing} an hour.` : `${subject} reached its hourly limit.`;
     }
     case 'mcp.token.revoke_all': {
       const count = typeof d.count === 'number' ? d.count : null;

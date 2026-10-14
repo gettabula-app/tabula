@@ -291,6 +291,26 @@ describe('configuration', () => {
     }
   });
 
+  it('parses the hourly ticket creation cap as an integer from zero through 100000, defaulting to 60', () => {
+    expect(load({ ...accounts, MCP: 'on' }).mcp?.ticketCreateHourly).toBe(60);
+    expect(load({ ...accounts, MCP: 'on', MCP_TICKET_CREATE_HOURLY: '0' }).mcp?.ticketCreateHourly).toBe(0);
+    expect(load({ ...accounts, MCP: 'on', MCP_TICKET_CREATE_HOURLY: '5' }).mcp?.ticketCreateHourly).toBe(5);
+    for (const value of ['abc', '-1', '1.5', '100001']) {
+      expect(() => load({ MCP_TICKET_CREATE_HOURLY: value })).toThrow(/TABULA_MCP_TICKET_CREATE_HOURLY must be an integer from 0 to 100000/);
+    }
+  });
+
+  it('parses the hourly ticket cap as an integer from zero through 100000, defaulting to 120', () => {
+    expect(load({ ...accounts, MCP: 'on' }).mcp?.ticketHourly).toBe(120);
+    expect(load({ ...accounts, MCP: 'on', MCP_TICKET_HOURLY: '0' }).mcp?.ticketHourly).toBe(0);
+    expect(load({ ...accounts, MCP: 'on', MCP_TICKET_HOURLY: '3' }).mcp?.ticketHourly).toBe(3);
+    expect(load({ ...accounts, MCP: 'on', MCP_TICKET_HOURLY: '100000' }).mcp?.ticketHourly).toBe(100_000);
+    expect(load({ MCP: 'on', MCP_TOKEN: TOKEN, MCP_TICKET_HOURLY: '7' }).mcp?.ticketHourly).toBe(7);
+    for (const value of ['abc', '-1', '1.5', '100001']) {
+      expect(() => load({ MCP_TICKET_HOURLY: value })).toThrow(/TABULA_MCP_TICKET_HOURLY must be an integer from 0 to 100000/);
+    }
+  });
+
   it('needs a long enough shared token in open mode, and a known scope', () => {
     expect(() => load({ MCP: 'on' })).toThrow(/TABULA_MCP_TOKEN/);
     expect(() => load({ MCP: 'on', MCP_TOKEN: 'short' })).toThrow(/TABULA_MCP_TOKEN/);
