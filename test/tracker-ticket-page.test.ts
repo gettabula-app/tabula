@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { TrackerError, createHttpTrackerApi, createTrackerStore, type TrackerEvent, type TrackerMeta, type TrackerTicket } from '../src/tracker-data';
 import { createMockTrackerApi } from '../src/tracker-mock';
 import { describeEvent } from '../src/tracker/ui/ticket-events';
@@ -513,6 +514,21 @@ describe('ticket page', () => {
     expect(buttonByText(host, 'Subscribed')).toBeDefined();
   });
 
+  it('shows each alias once, never the ticket key, and keeps the separators out of the flex line (TAB-359)', async () => {
+    const { host } = await setup({ issue: ticket({ aliases: ['TAB-1', 'tab-1', 'OLD-22', 'old-22', 'ENG-9'] }) });
+    const aliases = host.querySelector('.tk-aliases')!;
+    expect(aliases.textContent).toContain('Also known as OLD-22, ENG-9');
+    expect(aliases.querySelectorAll('.tk-alias-link').map((el) => el.textContent)).toEqual(['OLD-22', 'ENG-9']);
+    // the separators sit inside the one inline list, not as direct children of the flex line that would gap before the comma
+    expect(aliases.childNodes.filter((node) => node.nodeType === 3 && node.textContent.includes(','))).toHaveLength(0);
+    expect(aliases.querySelector('.tk-alias-list')?.textContent).toBe('OLD-22, ENG-9');
+  });
+
+  it('hides the alias line when every stored alias is the ticket key (TAB-359)', async () => {
+    const { host } = await setup({ issue: ticket({ aliases: ['TAB-1', 'tab-1', ' TAB-1 '] }) });
+    expect(host.querySelector('.tk-aliases')).toBeNull();
+  });
+
   it('folds empty sections into ghost actions and omits empty linked-work sections', async () => {
     const { host } = await setup();
     expect(host.querySelector('.tk-subissues-section h2')).toBeNull();
@@ -523,6 +539,37 @@ describe('ticket page', () => {
     expect(buttonByText(host, '+ Add relation')).toBeDefined();
     expect(host.querySelector('.tk-linked-work-section')).toBeNull();
     expect(host.querySelector('.tk-linked-cards-section')).toBeNull();
+  });
+
+  it('names each relation row by its kind, shows the key once, and labels its remove button by key for all five kinds', async () => {
+    const kinds = [
+      { kind: 'blocks', label: 'Blocks' },
+      { kind: 'blocked_by', label: 'Blocked by' },
+      { kind: 'relates_to', label: 'Related to' },
+      { kind: 'duplicates', label: 'Duplicate of' },
+      { kind: 'duplicated_by', label: 'Duplicates' },
+    ] as const;
+    const relations = kinds.map(({ kind }, i) => ({ kind, key: `TAB-${i + 2}` }));
+    const issue = ticket({ relations });
+    const targets = relations.map(({ key }, i) => ticket({ id: `target-${i}`, key, title: `Linked work ${i + 1}` }));
+    const api = createMockTrackerApi({ meta: META, tickets: [issue, ...targets], now: () => NOW });
+    const { host } = await setup({ issue, api });
+    for (const [i, { kind, label }] of kinds.entries()) {
+      const { key } = relations[i];
+      const link = host.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Open ${key}, ${label.toLocaleLowerCase()}`);
+      expect(link, `link named for ${kind}`).toBeDefined();
+      const row = link!.parentNode as FakeElement;
+      expect(row.getAttribute('class')).toBe('tk-relation-row');
+      // the key is shown once in the row (the chip), not again in a label beside it
+      expect(row.textContent.split(key), `key once in the ${kind} row`).toHaveLength(2);
+      expect(link!.querySelector('.tk-relation-kind')).toBeNull(); // the group heading above already names the kind
+      const remove = row.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Remove relation to ${key}`);
+      expect(remove, `remove named for ${kind}`).toBeDefined();
+      expect(remove!.textContent).toBe('×');
+    }
+    // the key chip never breaks across lines (TAB- / 250)
+    const css = readFileSync(new URL('../src/tracker/ui/ticket-page.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.trk\.tk-page \.tk-relation-row \.trk-key-chip \{[^}]*white-space: nowrap;/);
   });
 
   it('creates one sub-issue in the default state even when Create is pressed twice', async () => {
@@ -591,6 +638,28 @@ describe('ticket page', () => {
     expect(dom.textContent).toContain('click (javascript:alert(1))');
     expect(dom.textContent).toContain('&lt;img src=x onerror=alert(2)&gt;');
     expect(dom.textContent).toContain('safe');
+  });
+
+  it('hides the address after a link that names its own ticket, and keeps every other address (TAB-359)', () => {
+    browser = installTrackerUiBrowser();
+    const target = ticket({ id: 'target-166', key: 'TAB-166', title: 'Imported work' });
+    const lookup = (key: string) => (key === 'TAB-166' ? target : null);
+    const render = (source: string) => buildMarkdownDom(renderMarkdownSafe(source), { lookup }).textContent;
+    const url = 'https://linear.app/tabula-app/issue/TAB-166/some-slug';
+    // the key link keeps its key and loses only the repeated address
+    expect(render(`[TAB-166](${url}) is done`)).toContain('TAB-166');
+    expect(render(`[TAB-166](${url}) is done`)).toContain(' is done');
+    expect(render(`[TAB-166](${url}) is done`)).not.toContain('linear.app');
+    // a lower-case key names the same ticket
+    expect(render(`[tab-166](${url})`)).not.toContain('linear.app');
+    // a bare address in plain text stays as it is
+    expect(render(`See ${url} for context`)).toContain(`See ${url} for context`);
+    // a link to another ticket keeps its address
+    expect(render('[TAB-166](https://linear.app/tabula-app/issue/TAB-167/some-slug)')).toContain('(https://linear.app/tabula-app/issue/TAB-167/some-slug)');
+    // a link with words for its label keeps its address, because the words do not name the ticket
+    expect(render(`[Fix it](${url})`)).toContain(`Fix it (${url})`);
+    // the existing rule for other links is unchanged
+    expect(render('[click](javascript:alert(1))')).toBe('click (javascript:alert(1))');
   });
 
   it('describes the supported history event types as one-line sentences', () => {

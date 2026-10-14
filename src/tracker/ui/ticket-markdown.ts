@@ -125,6 +125,20 @@ function appendPlain(parent: HTMLElement, text: string, options: MarkdownDomOpti
   }
 }
 
+const TICKET_KEY_TEXT = /^[A-Za-z]{2,5}-[1-9]\d*$/;
+const LINEAR_ISSUE_URL = /^https?:\/\/linear\.app\/[^/\s]+\/issue\/([A-Za-z]{2,5}-[1-9]\d*)(?:[/?#]|$)/i;
+
+/**
+ * True for `[TAB-166](https://linear.app/<workspace>/issue/TAB-166/<slug>)`: a link whose label is the key of the ticket its
+ * address points to. The key already names the ticket, so the address after it is not printed again (TAB-359). Only the
+ * rendering changes: the stored text keeps the link.
+ */
+function namesItsTicket(label: string, url: string): boolean {
+  const name = label.trim();
+  const target = LINEAR_ISSUE_URL.exec(url);
+  return TICKET_KEY_TEXT.test(name) && target !== null && target[1].toUpperCase() === name.toUpperCase();
+}
+
 function appendInline(parent: HTMLElement, inline: MarkdownInline, options: MarkdownDomOptions): void {
   if (inline.type === 'break') {
     parent.appendChild(h('br'));
@@ -140,7 +154,7 @@ function appendInline(parent: HTMLElement, inline: MarkdownInline, options: Mark
     appendPlain(parent, inline.raw, options);
   } else {
     appendPlain(parent, inline.label, options);
-    parent.appendChild(document.createTextNode(` (${inline.url})`));
+    if (!namesItsTicket(inline.label, inline.url)) parent.appendChild(document.createTextNode(` (${inline.url})`));
   }
 }
 
