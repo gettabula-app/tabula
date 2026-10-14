@@ -2,6 +2,7 @@ import type { BoardApp } from './app';
 import type { BaseObj, Id, Obj, Poll, Rect, Step, Vote } from './types';
 import { isBox, isConnector } from './types';
 import { newId, type FlowState } from './store';
+import { isOwnAuthor } from './identity';
 import { stepViewBounds } from './step-view';
 import { boxBounds } from './geometry';
 import { Polls, PollError, pollInstructions, type PollInput } from './polls';
@@ -109,7 +110,7 @@ export class Flow {
 
   isHidden(o: BaseObj): boolean {
     if (!o.privateStep || o.type !== 'sticky') return false;
-    if (o.createdBy === this.app.user.id) return false;
+    if (isOwnAuthor(this.app.user, o.createdBy)) return false;
     return !this.state().reveal;
   }
 

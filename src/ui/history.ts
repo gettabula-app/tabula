@@ -257,7 +257,7 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
 
   // ---------------------------------------------------------------- preview
 
-  const isHidden = (o: Obj) => isHiddenNow(o, app.user.id, app.store.getFlow().reveal);
+  const isHidden = (o: Obj) => isHiddenNow(o, app.user, app.store.getFlow().reveal);
 
   async function select(v: Version) {
     const mine = ++seq;

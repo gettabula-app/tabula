@@ -1565,7 +1565,7 @@ export class BoardApp {
     if (this.readOnly) return false;
     const stickies = ids.filter((id) => this.convertible(id));
     if (!stickies.length) return false;
-    const r = stickiesToCards(this.store, stickies, (o) => this.cardTargetOf(o.id), this.user.id);
+    const r = stickiesToCards(this.store, stickies, (o) => this.cardTargetOf(o.id), this.user);
     if (r.refused) {
       this.notify(r.refused);
       return false;
@@ -1588,7 +1588,7 @@ export class BoardApp {
   /** A sticky this person may turn into a card: not someone else's unrevealed private note (mayConvertSticky). */
   private convertible(id: Id): boolean {
     const o = this.store.get(id);
-    return o?.type === 'sticky' && mayConvertSticky(o as BaseObj, this.user.id);
+    return o?.type === 'sticky' && mayConvertSticky(o as BaseObj, this.user);
   }
 
   /** Whether Turn into card does anything for the selection. */
@@ -1654,7 +1654,7 @@ export class BoardApp {
     const t = this.laneTarget(p);
     if (!t) return;
     const order = [...stickies].sort((a, b) => { const ra = this.store.geometry(this.store.get(a)!), rb = this.store.geometry(this.store.get(b)!); return ra.y - rb.y || ra.x - rb.x; });
-    const r = stickiesToCards(this.store, order, () => ({ lane: t.id, index: t.index }), this.user.id);
+    const r = stickiesToCards(this.store, order, () => ({ lane: t.id, index: t.index }), this.user);
     if (r.refused) return this.notify(r.refused);
     if (!r.done.length) return;
     const lane = this.store.get(t.id) as BaseObj | undefined;

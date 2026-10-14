@@ -2,7 +2,7 @@ import './demo';
 import { DEMO, installDemoGuards } from './demo';
 import './styles.css';
 import { BoardApp } from './app';
-import { deleteBoard, getUser, openBoard, scratchBoard } from './sync';
+import { deleteBoard, openBoard, scratchBoard } from './sync';
 import { mountBoardUi } from './ui/board';
 import { loadTemplate, mountTemplateEditor, templateLeaveGuard } from './ui/template-edit';
 import { mountAccessBanner } from './ui/access';
@@ -37,6 +37,7 @@ import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type Me, type ServerBoard } from './api';
 import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
+import { boardUser } from './board-user';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { applyConnectionAccess, denialForGuestSession, GUEST_ENDED_BANNER, guestAccessEnded, watchGuestAccess } from './guest-access';
 import { createWorkspaceBanner } from './ui/workspace';
@@ -248,13 +249,6 @@ async function boardRole(id: string, auth: AuthState): Promise<ServerBoard['role
     }
   }
   return list.find((b) => b.id === id)?.role;
-}
-
-/** The user as the board shows them: in accounts mode the account's name on this device's identity. */
-function boardUser(auth: AuthState) {
-  if (auth.mode === 'guest') return { ...getUser(), id: auth.guest.guestId, name: auth.guest.name, guest: true };
-  const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
-  return me ? { ...getUser(), name: me.user.name } : getUser();
 }
 
 /** Edit a saved template on a scratch board: in memory only, no relay room, not stored with the boards. */

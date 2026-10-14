@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { isFeatureKey } from '../shared/containers';
 import { Store } from './store';
 import type { BaseObj, Id, Label, Obj } from './types';
+import { isOwnAuthor, type Who as AuthorRef } from './identity';
 import { SCHEMA_VERSION } from './types';
 import type { BoardRole, Version } from './api';
 
@@ -52,8 +53,8 @@ export function createStateCache(max = 5) {
  * Whether private writing hides this object from this person right now. It restates Flow.isHidden (which needs a
  * BoardApp) and reads the live board's `reveal`, so history never shows more than the board does.
  */
-export function isHiddenNow(o: Obj, userId: string, liveReveal: boolean): boolean {
-  return o.type === 'sticky' && !!(o as BaseObj).privateStep && o.createdBy !== userId && !liveReveal;
+export function isHiddenNow(o: Obj, who: AuthorRef, liveReveal: boolean): boolean {
+  return o.type === 'sticky' && !!(o as BaseObj).privateStep && !isOwnAuthor(who, o.createdBy) && !liveReveal;
 }
 
 // ---------------------------------------------------------------- restore
