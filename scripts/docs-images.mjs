@@ -943,6 +943,37 @@ const SHOTS = {
     await save(page, 'admin-chat', await contentClip(page, 28));
     await context.close();
   },
+
+  // an AI tool's changes on a board: its drafts on the canvas and the Agent activity panel (a real MCP call under a real token, so the log is the relay's own)
+  async 'agent-activity'({ browser, acc, people }) {
+    const W = 1280, H = 720;
+    const made = (await api(acc.base, people.owner, 'POST', '/api/me/tokens', { name: 'Claude Code on my laptop', scope: 'write', boardIds: ['retro'], days: 7 })).json;
+    const rpc = async (name, args) => {
+      const res = await fetch(`${acc.base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${made.token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) });
+      const text = await res.text();
+      if (!res.ok || /isError":\s*true/.test(text)) throw new Error(`MCP ${name} failed: ${text.slice(0, 200)}`);
+    };
+    const notes = ['Fast reviews', 'Clear goals', 'Pairing helped', 'Short stand-ups'].map((text, i) => ({ type: 'sticky', x: 80 + (i % 2) * 220, y: 100 + Math.floor(i / 2) * 220, text, color: i % 2 ? 'Green' : 'Yellow' }));
+    await rpc('create_objects', { boardId: 'retro', objects: notes });
+    await rpc('create_objects', { boardId: 'retro', objects: [{ type: 'text', x: 80, y: 40, w: 420, text: 'What went well' }] });
+    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
+    await openBoard(page, acc.base, 'retro');
+    await page.waitForFunction(() => window.__board.store.cache.size >= 5, null, { timeout: 15_000 });
+    await page.evaluate(() => { const app = window.__board; app.r.fit(app.r.contentBounds(), 80, 1); });
+    await page.locator('.agent-avatar').waitFor({ timeout: 15_000 }); // the tool shows as at work for 30 seconds after its call
+    await sleep(900);
+    await park(page);
+    await settle(page);
+    await save(page, 'agent-at-work', { x: 0, y: 0, width: W, height: H });
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByText('Agent activity', { exact: true }).click();
+    const dlg = page.getByRole('dialog', { name: 'Agent activity' });
+    await dlg.locator('.agent-activity-row').first().waitFor({ timeout: 15_000 });
+    await park(page);
+    await settle(page);
+    await save(page, 'agent-activity', pad(await boxOf(dlg), 16, W, H));
+    await context.close();
+  },
 };
 
 // ---------------------------------------------------------------- main
@@ -987,7 +1018,7 @@ async function main() {
   try {
     browser = await launchChromium();
     open = await startRelay('open', distDir);
-    const needsAccounts = names.some((n) => ['signin', 'teams-home', 'access-removed', 'share-roles', 'admin-backups', 'templates-page', 'version-history', 'token-form', 'admin-overview', 'admin-ai'].includes(n));
+    const needsAccounts = names.some((n) => ['signin', 'teams-home', 'access-removed', 'share-roles', 'admin-backups', 'templates-page', 'version-history', 'token-form', 'admin-overview', 'admin-ai', 'agent-activity'].includes(n));
     let people = null;
     if (needsAccounts) {
       acc = await startRelay('accounts', distDir);

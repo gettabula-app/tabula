@@ -87,6 +87,10 @@ När ett verktyg med åtkomsttoken ändrar en tavla kan alla på tavlan se det:
 - **Agentaktivitet.** I en arbetsyta med inloggning listar **Agent activity** i tavlemenyn vad varje agent gjort de senaste 7 dagarna, senaste först, som en kort rad som "created 6 sticky notes". Texter som personer skrivit visas aldrig. **Go there** tar dig till objekten. Tokenens namn visas i citattecken, skilt från medlemmens namn, så att en token inte kan se ut som en person.
 - **Ångra anrop.** Ägare och redigerare kan välja **Revert** för att ta tillbaka ett anrop. Objekt anropet skapade tas bort och objekt det tog bort kommer tillbaka, men allt en person ändrat sedan lämnas som det är, och ett meddelande säger hur många som lämnades. Ett anrop kan återställas en gång, i 48 timmar; en mycket stor ändring, eller en äldre, säger varför den inte går att återställa.
 
+![Ett verktyg som arbetar på en tavla: dess markör med namnet Maya's agent och tokenens namn inom citattecken, fyra lappar och en text märkta Agent draft samt verktygets avatar i deltagarlistan](images/agent-at-work.png)
+
+![Listan Agent activity med två poster, created 1 text och created 4 sticky notes, var och en med knapparna Go there och Revert](images/agent-activity.png)
+
 ## Daglig gräns och nya försök
 
 I en arbetsyta med inloggning kan varje token (och varje OAuth-anslutning) göra 2 000 ändringar på tavlor per dag. Räkningen gäller objekt, inte anrop: att skapa 10 klisterlappar i ett anrop räknas som 10. Den nollställs vid midnatt UTC, och ett verktyg som når gränsen får veta att den dagliga gränsen är nådd och när den nollställs. Läsning begränsas inte på det sättet, och det gör inte ärenden heller. Den som driver din server kan ändra talet eller stänga av gränsen.
