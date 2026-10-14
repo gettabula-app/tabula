@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const MARKER = 'chromium.executablePath()';
+export const MARKER = 'chromium.executablePath()';
 // Tests that may be skipped on the Linux CI leg: the WebKit test of the asset store (WebKit is not installed there). Any other skipped browser test
 // means Chromium or a feature went missing and a test stopped running: the check fails the leg. (Opt out in a run with CHECK_BROWSER_ALLOW_SKIPS=1.)
 export const ALLOWED_SKIPS = { 'test/asset-store-browser.test.ts': 1 };

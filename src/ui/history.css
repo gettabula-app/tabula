@@ -64,8 +64,8 @@
 
 .history-row-actions { display: flex; gap: 16px; padding: 0 16px 8px 80px; }
 .history-link {
-  height: 24px; padding: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted);
-  font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase;
+  min-height: 34px; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted);
+  font: 600 12px var(--ui); letter-spacing: normal; text-transform: none;
 }
 .history-link:hover:not(:disabled) { color: var(--tray-text); }
 .history-link:disabled { opacity: 0.6; }
@@ -81,15 +81,15 @@
 }
 .history-preview.show { display: grid; }
 /* the signal-yellow ring is faint on this pale surface */
-.history-preview :focus-visible { outline-color: var(--ink); }
+.history-preview :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline-color: var(--ink); }
 /* rings in a scrolling list sit inside the rows: outside them they are cut off by the container */
-.history-body :focus-visible { outline-offset: -2px; }
+.history-body :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline-offset: -2px; }
 .history-banner {
   display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 24px;
   border-bottom: 2px solid var(--ink); background: var(--canvas);
 }
 .history-banner-text { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; }
-.history-label { color: var(--graphite); font: 600 11px var(--ui); letter-spacing: 0.08em; text-transform: uppercase; }
+.history-label { color: var(--graphite); font: 600 12px var(--ui); letter-spacing: normal; text-transform: none; }
 .history-banner-title { margin: 8px 0 0; font: 700 20px var(--display); }
 .history-banner-sub { margin-top: 8px; color: var(--graphite); }
 .history-banner-sum { margin-top: 8px; font-weight: 600; }

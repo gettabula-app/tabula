@@ -136,7 +136,7 @@ export function privacyAdminPanel(me: Me): HTMLElement {
     const reasonText = edit.reasons.join(' ');
     const lastPreparedAt = previewReply?.builtAt ?? saved.lastBuiltAt;
     const timestamp = lastPreparedAt === null ? null : privacyTimestamp(lastPreparedAt);
-    const toggle = h('label', { class: 'privacy-toggle' },
+    const toggle = h('label', { class: 'check privacy-toggle' },
       h('input', {
         type: 'checkbox',
         checked,

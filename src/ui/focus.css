@@ -21,8 +21,8 @@
 
 .focus-card .btn, .focus-chip .btn { height: 32px; padding: 0 12px; border: 1px solid var(--tray-line); border-radius: var(--radius-sm); background: transparent; }
 .focus-card .btn:hover, .focus-chip .btn:hover { background: var(--tray-hover); }
-.focus-card .btn.primary { border-color: var(--signal); background: var(--signal); color: var(--on-signal); }
-.focus-card .btn.primary:hover { background: color-mix(in srgb, var(--signal) 85%, var(--paper)); }
+.focus-card .btn.primary { border: 0; background: var(--tray-text); color: var(--tray); }
+.focus-card .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--tray-text) 86%, var(--tray)); color: var(--tray); }
 .focus-card .focus-mute { margin-left: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; border-color: transparent; color: var(--tray-muted); }
 
 .focus-muted { list-style: none; margin: 0; padding: 0; }

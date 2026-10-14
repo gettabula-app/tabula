@@ -67,6 +67,12 @@ To edit text in a shape, sticky note, connector or frame title, double-click it,
 
 In the quick-action bar, **Text** sets horizontal alignment (left, centre, right) and text colour. For shapes and sticky notes it also sets **Vertical** alignment: top, middle or bottom.
 
+### Line height
+
+Select a text object, sticky note, shape or Markdown block, open **More properties** and choose a value under **Line height**: 1, 1.15, 1.3, 1.5 or 2. 1.3 is the normal spacing. A text object grows or shrinks to fit the new spacing; the box of a sticky note or shape stays the same size, and its text shrinks if it no longer fits.
+
+Very long words no longer run past the edge of a text object, note or shape: a word that is wider than the box breaks across lines where it falls.
+
 ### Fonts
 
 Open the properties panel (see below) and use **Font**. The font list has a search field (**Search Fontshare fonts**) that matches names and style words such as "serif", with exact name matches first, category filters and a section for fonts already used on the board. Pointing at a font previews it on your selection. Click to keep it, or press `Esc` to put the old one back. You can also set **Size** and **Weight** there. Size changes by 1 with the arrow keys or mouse wheel, and by 10 with `Shift`.
@@ -109,7 +115,7 @@ In a narrow window (860 pixels wide or less) the bar starts to the right of the 
 
 ## The properties panel
 
-**More properties** opens a panel on the side titled with the object type. Depending on the selection it offers: shape or class kind, fill, line colour, **Width** (1 to 6 px), **Style** (solid, dashed, dotted), font, size, weight, alignment, text colour, **Opacity**, align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`) (with several items selected they keep their order among themselves), duplicate, lock, **Copy as Mermaid**, and delete. If several objects are selected and differ, a field shows as mixed until you set it. On a phone the panel has a fold button that folds it down to its title row, so you can see the board above it.
+**More properties** opens a panel on the side titled with the object type. Depending on the selection it offers: shape or class kind, fill, line colour, **Width** (1 to 6 px), **Style** (solid, dashed, dotted), font, size, weight, **Line height**, alignment, text colour, **Opacity**, align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`) (with several items selected they keep their order among themselves), duplicate, lock, **Copy as Mermaid**, and delete. If several objects are selected and differ, a field shows as mixed until you set it. On a phone the panel has a fold button that folds it down to its title row, so you can see the board above it.
 
 ## Selecting, moving and grouping
 

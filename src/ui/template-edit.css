@@ -18,12 +18,12 @@
   font-size: 13px; font-weight: 600;
 }
 .template-banner .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
-.template-banner .btn.primary { border-color: var(--signal); background: var(--signal); color: var(--on-signal); }
-.template-banner .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }
+.template-banner .btn.primary { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+.template-banner .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 88%, var(--paper)); color: var(--paper); }
 .template-banner .btn:disabled { opacity: 0.5; }
 .template-banner .btn.ghost { padding: 0 6px; border: 0; background: none; }
 .template-banner .btn.ghost:not(:disabled):hover { background: none; color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
-.template-banner :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.template-banner :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 @media (max-width: 560px) {
   .board-root > .template-banner { gap: 8px; padding: 0 calc(8px + var(--safe-right)) 0 calc(8px + var(--safe-left)); }

@@ -13,6 +13,7 @@ Tabula is a whiteboard you share with your team: draw, write and organise ideas 
 - [Connectors](connectors.md)
 - [Lines](lines.md)
 - [Kanban boards](kanban.md)
+- [Tracker on a board](tracker.md)
 - [Smart guides](smart-guides.md)
 - [Layers](layers.md)
 - [Images](images.md)

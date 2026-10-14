@@ -8,7 +8,14 @@ let guestAudience = false;
 export function setTrackerGuest(guest: boolean): void {
   guestAudience = guest;
 }
-export const trackerNoTicketsLine = (): string => (guestAudience ? 'Tickets are for workspace members.' : 'Sign in to a workspace to see tickets.');
+// the phone's frame is always a snapshot (frame.ts, isPhone): there the Open chip is the way in
+const phoneNow = (): boolean => typeof matchMedia === 'function' && matchMedia('(max-width: 600px)').matches;
+let memberAudience = false;
+/** Set by the board: the person is signed in to a workspace with a tracker. A frame with no snapshot yet (past the live cap) is then not asking for a sign-in. */
+export function setTrackerMember(member: boolean): void {
+  memberAudience = member;
+}
+export const trackerNoTicketsLine = (): string => (guestAudience ? 'Tickets are for workspace members.' : memberAudience ? (phoneNow() ? 'Open this tracker to see its tickets.' : 'Zoom in or select this tracker to see its tickets.') : 'Sign in to a workspace to see tickets.');
 const escapeLine = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
 
 
