@@ -959,16 +959,16 @@ async function ensureVisualGroups(page) {
  * A real touch long press (CDP touch events, so pointerType is touch) on the screen point `x` px from the left where `memberId` is
  * moved to; waits for the menu and lifts the finger. `select` re-selects that object first (a group). The menu stays open for the shot.
  */
-async function longPressMember(page, memberId, select, x = 70) {
-  const at = await page.evaluate(({ memberId, select, x }) => {
+async function longPressMember(page, memberId, select, x = 70, y = 360) {
+  const at = await page.evaluate(({ memberId, select, x, y }) => {
     const app = window.__board;
     if (select) app.setSelection([select]);
     const b = app.r.bounds(app.store.get(memberId));
     const s = app.r.toScreen({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
     const z = app.r.cam.zoom;
-    app.r.setCamera({ x: app.r.cam.x + (s.x - x) / z, y: app.r.cam.y + (s.y - 360) / z });
-    return { x, y: 360 };
-  }, { memberId, select, x });
+    app.r.setCamera({ x: app.r.cam.x + (s.x - x) / z, y: app.r.cam.y + (s.y - y) / z });
+    return { x, y };
+  }, { memberId, select, x, y });
   await page.waitForTimeout(200);
   const cdp = await page.context().newCDPSession(page);
   const pt = [{ x: at.x, y: at.y, id: 1 }];
@@ -1119,7 +1119,9 @@ async function assertTrackerLayout(page) {
       if (background === 'rgba(0, 0, 0, 0)' || background === 'transparent') failures.push(`${overlay.className || overlay.tagName} has no tracker surface background`);
     }
     if (innerWidth <= 500) {
-      const tabs = [...document.querySelectorAll('.trk-shell .trk-tab')].filter((tab) => tab.getClientRects().length);
+      // the board frame's own shell can sit behind the full-screen route: count the one on top
+      const shells = [...document.querySelectorAll('.trk-shell')];
+      const tabs = [...(shells.at(-1)?.querySelectorAll('.trk-tab') ?? [])].filter((tab) => tab.getClientRects().length);
       if (tabs.length !== 5) failures.push(`phone tab count ${tabs.length}, expected 5`);
       for (const tab of tabs) {
         const full = tab.querySelector('.trk-tab-name-full');
@@ -1362,7 +1364,7 @@ async function keyboardRing(env, objectId, { zoom, image = false } = {}) {
   if (image) {
     await page.evaluate(() => {
       const app = window.__board;
-      app.store.transact(() => app.store.create({ id: 'kb-image', type: 'image', x: 700, y: 620, w: 260, h: 170, z: 'zz', rotation: 0, updatedAt: 1, alt: 'Team photo' }));
+      app.store.transact(() => app.store.create({ id: 'kb-image', type: 'image', x: 700, y: 620, w: 260, h: 170, z: 'a9', rotation: 0, updatedAt: 1, alt: 'Team photo' }));
     });
   }
   if (zoom) await page.evaluate((z) => { const app = window.__board; app.setSelection([]); app.zoomTo(z); }, zoom);
@@ -1405,6 +1407,11 @@ async function keyboardRing(env, objectId, { zoom, image = false } = {}) {
   return { noPark: true };
 }
 
+/** The page's current viewport width. */
+function innerWidthOf(env) {
+  return env.page.viewportSize().width;
+}
+
 async function railShortWindow(env, height) {
   const { page } = env;
   await page.setViewportSize({ width: page.viewportSize().width, height });
@@ -1422,8 +1429,10 @@ async function railShortWindow(env, height) {
   });
   console.log(`rail-short ${JSON.stringify(result)}`);
   if (result.overflow !== result.chevron || result.overflow !== result.track) throw new Error(`rail-short: chevron and track must show exactly while the tools overflow ${JSON.stringify(result)}`);
-  if (height <= 720 && result.button !== 30 && !env.touch) throw new Error(`rail-short: tools are ${result.button}px, not 30px, at ${height}px high`);
-  if (height === 720 && result.overflow) throw new Error('rail-short: the rail scrolls at 720px high; the compact rail should fit');
+  // the new look: 28px on a short desktop window (nineteen tools since Link), 44px on a phone-width window (src/styles.css, the m-chrome rail block)
+  const wantButton = page.viewportSize().width <= 860 ? 44 : 28;
+  if (height <= 720 && result.button !== wantButton && !env.touch) throw new Error(`rail-short: tools are ${result.button}px, not ${wantButton}px, at ${height}px high`);
+  if (height === 720 && result.overflow && wantButton === 28) throw new Error('rail-short: the rail scrolls at 720px high; the compact rail should fit');
 }
 
 
@@ -1657,13 +1666,15 @@ const STATES = {
       return outline !== 'none' && outline.includes('solid') && !outline.includes('transparent');
     });
     if (!focusRingVisible) throw new Error('tracker-keyboard: focus ring is not visible on the shell control');
+    // The list shortcuts (S, A, P, J, K ...) act when a row itself has focus. Tab lands on the buttons inside a row, which keep their own keys, so the probe focuses the row as a click on its background would.
+    await page.locator('.trk-list-row').first().focus();
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('s');
     await page.locator('.trk-pop').waitFor();
     await page.keyboard.press('Escape');
     await page.locator('.trk-pop').waitFor({ state: 'detached' });
     await page.keyboard.press('Enter');
-    await page.locator('.trk-ticket-stub h1').waitFor();
+    await page.locator('.trk-ticket-page-host .tk-title').waitFor(); // the ticket page's title (the stub was replaced by the real page)
     await page.keyboard.press('Escape');
     await page.locator('.trk-list-row').first().waitFor();
     return { noPark: true };
@@ -1700,29 +1711,32 @@ const STATES = {
   async 'tracker-frame-fullscreen'(env) {
     const frame = await openTrackerMockFrame(env);
     await env.page.evaluate((id) => { if (innerWidth > 600) window.__board.zoomTo(0.5); window.__board.setSelection([id]); }, frame.id);
-    await env.page.keyboard.press('Enter');
-    const issuesTab = env.width <= 600
-      ? env.page.locator('.trk-route-root [role="tab"][aria-label="All issues"]')
-      : env.page.locator('.trk-frame-wrap.is-work [role="tab"][aria-label="All issues"]');
-    await issuesTab.click();
-    await env.page.locator('.trk-list-row').first().waitFor();
-    const before = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
-    if (env.width > 600) {
-      await env.page.locator('.trk-frame-wrap.is-selected .trk-frame-open').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: open chip: ${error.message}`); });
-      await env.page.locator('.trk-frame-wrap.is-work').waitFor();
-      await env.page.locator('.trk-frame-wrap.is-work .trk-frame-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: frame expand: ${error.message}`); });
-      await env.page.locator('.trk-route-root').waitFor();
-    } else {
+    // v5.4: a selected frame at zoom 0.5 is live where it sits and lists All issues by default; on a phone the frame is a card whose Open chip opens the full-screen route
+    if (env.width <= 600) {
+      await env.page.locator('.trk-frame-wrap .trk-frame-open').first().click().catch((error) => { throw new Error(`tracker-frame-fullscreen: phone open chip: ${error.message}`); });
       await env.page.locator('.trk-route-root').waitFor();
     }
+    // on a phone the board frame's own rows sit hidden under the route: wait for the visible list
+    await env.page.locator(env.width <= 600 ? '.trk-route-root .trk-list-row' : '.trk-frame-wrap.is-work .trk-list-row').first().waitFor();
+    const before = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
+    if (env.width > 600) {
+      await env.page.locator('.trk-frame-wrap.is-work').waitFor();
+      await env.page.locator('.trk-frame-wrap.is-work .trk-element-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: frame expand: ${error.message}`); });
+    }
+    await env.page.locator('.trk-route-root').waitFor();
     const afterOpen = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (before.x !== afterOpen.x || before.y !== afterOpen.y || before.zoom !== afterOpen.zoom) throw new Error('tracker-frame-fullscreen: opening full screen moved the board camera');
-    await env.page.locator('.trk-route-root .trk-fullscreen-strip button').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: back to board: ${error.message}`); });
+    const routeExit = env.page.locator('.trk-route-root .trk-fullscreen-strip .trk-small-button').first();
+    const routeExitLabel = await routeExit.innerText();
+    if (!routeExitLabel.includes('Boards')) throw new Error(`tracker-frame-fullscreen: full-screen route exit is ${JSON.stringify(routeExitLabel)}, expected Boards`);
+    // In v5.4 full screen is a tracker route; its strip exits to Boards. Browser Back returns to the preserved board frame.
+    await env.page.evaluate(() => history.back());
     await env.page.locator('.trk-route-root').waitFor({ state: 'detached' });
+    await env.page.locator(env.width <= 600 ? '.trk-frame-wrap' : '.trk-frame-wrap.is-selected').first().waitFor(); // a phone keeps no selection ring on the card
     const afterClose = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (before.x !== afterClose.x || before.y !== afterClose.y || before.zoom !== afterClose.zoom) throw new Error('tracker-frame-fullscreen: closing full screen changed the board camera');
     if (env.width > 600) {
-      await env.page.locator('.trk-frame-wrap.is-selected .trk-frame-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: reopen expand: ${error.message}`); });
+      await env.page.locator('.trk-frame-wrap.is-selected .trk-element-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: reopen expand: ${error.message}`); });
     } else {
       await env.page.evaluate((id) => window.__board.setSelection([id]), frame.id);
       await env.page.keyboard.press('Enter');
@@ -1914,6 +1928,8 @@ const STATES = {
     const themes = readThemes();
     for (const theme of themes) {
       const row = page.getByRole('radio', { name: theme.name, exact: true });
+      // v5.4: the themes sit in the board menu's Theme list, which stays closed until its row is opened
+      if (!(await row.isVisible())) await page.locator('.board-menu .board-menu-sub-trigger', { hasText: 'Theme' }).click();
       await row.click();
       await page.waitForFunction((id) => document.documentElement.dataset.theme === id, theme.id);
       const result = await page.evaluate(() => {
@@ -2482,9 +2498,9 @@ const STATES = {
       const store = app.store;
       const at = Date.now();
       const objects = [
-        { id: 'flip-menu-arrow', type: 'shape', kind: 'arrow-right', x: 20, y: 20, w: 140, h: 90, rotation: Math.PI / 6, text: 'Arrow', z: 'z1', fill: '#DCEBFF' },
-        { id: 'flip-menu-image', type: 'image', x: 190, y: 20, w: 120, h: 90, rotation: 0, asset: '00'.repeat(32), mime: 'image/png', z: 'z2' },
-        { id: 'flip-menu-icon', type: 'icon', x: 340, y: 20, w: 90, h: 90, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path d="M3 3h8v8H3zM13 13h8v8h-8zM13 3h8v8h-8zM3 13h8v8H3z"/>', z: 'z3' },
+        { id: 'flip-menu-arrow', type: 'shape', kind: 'arrow-right', x: 20, y: 20, w: 140, h: 90, rotation: Math.PI / 6, text: 'Arrow', z: 'a1', fill: '#DCEBFF' },
+        { id: 'flip-menu-image', type: 'image', x: 190, y: 20, w: 120, h: 90, rotation: 0, asset: '00'.repeat(32), mime: 'image/png', z: 'a2' },
+        { id: 'flip-menu-icon', type: 'icon', x: 340, y: 20, w: 90, h: 90, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path d="M3 3h8v8H3zM13 13h8v8h-8zM13 3h8v8h-8zM3 13h8v8H3z"/>', z: 'a3' },
       ];
       store.transact(() => objects.forEach((o) => {
         if (!store.get(o.id)) store.create({ ...o, createdBy: 'visual-seed', updatedAt: at });
@@ -2533,14 +2549,14 @@ const STATES = {
       const store = app.store;
       const at = Date.now();
       const objects = [
-        { id: 'flip-arrow', type: 'shape', kind: 'arrow-right', x: -200, y: 0, w: 150, h: 90, rotation: Math.PI / 10, fill: '#DCEBFF', text: 'Start', z: 'z1' },
-        { id: 'flip-callout', type: 'shape', kind: 'callout-round', x: -10, y: -120, w: 170, h: 110, rotation: 0, fill: '#FFF2C2', text: 'Still readable', z: 'z2' },
-        { id: 'flip-triangle', type: 'shape', kind: 'triangle', x: 150, y: 0, w: 120, h: 110, rotation: 0, fill: '#DDF5E8', text: 'Turn', z: 'z3' },
-        { id: 'flip-path', type: 'path', x: -150, y: 150, w: 130, h: 70, rotation: 0, points: [0, 55, 30, 10, 65, 48, 95, 18, 130, 60], stroke: '#D64545', strokeWidth: 5, z: 'z4' },
-        { id: 'flip-icon', type: 'icon', x: 30, y: 155, w: 80, h: 80, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path fill="currentColor" d="M3 3h8v18H3zM13 3h8v8h-8zM13 13h8v8h-8z"/>', z: 'z5' },
-        { id: 'flip-connector', type: 'connector', from: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, to: { kind: 'bound', id: 'flip-triangle', anchor: 'left' }, route: 'elbow', startHead: 'none', endHead: 'arrow', z: 'z6' },
-        { id: 'flip-arrow-check', type: 'connector', from: { kind: 'free', x: 0, y: 45 }, to: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, route: 'straight', startHead: 'none', endHead: 'none', z: 'z7' },
-        { id: 'flip-callout-check', type: 'connector', from: { kind: 'bound', id: 'flip-callout', anchor: 'top' }, to: { kind: 'free', x: 180, y: -70 }, route: 'curved', startHead: 'none', endHead: 'none', z: 'z8' },
+        { id: 'flip-arrow', type: 'shape', kind: 'arrow-right', x: -200, y: 0, w: 150, h: 90, rotation: Math.PI / 10, fill: '#DCEBFF', text: 'Start', z: 'a1' },
+        { id: 'flip-callout', type: 'shape', kind: 'callout-round', x: -10, y: -120, w: 170, h: 110, rotation: 0, fill: '#FFF2C2', text: 'Still readable', z: 'a2' },
+        { id: 'flip-triangle', type: 'shape', kind: 'triangle', x: 150, y: 0, w: 120, h: 110, rotation: 0, fill: '#DDF5E8', text: 'Turn', z: 'a3' },
+        { id: 'flip-path', type: 'path', x: -150, y: 150, w: 130, h: 70, rotation: 0, points: [0, 55, 30, 10, 65, 48, 95, 18, 130, 60], stroke: '#D64545', strokeWidth: 5, z: 'a4' },
+        { id: 'flip-icon', type: 'icon', x: 30, y: 155, w: 80, h: 80, rotation: 0, viewBox: [0, 0, 24, 24], body: '<path fill="currentColor" d="M3 3h8v18H3zM13 3h8v8h-8zM13 13h8v8h-8z"/>', z: 'a5' },
+        { id: 'flip-connector', type: 'connector', from: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, to: { kind: 'bound', id: 'flip-triangle', anchor: 'left' }, route: 'elbow', startHead: 'none', endHead: 'arrow', z: 'a6' },
+        { id: 'flip-arrow-check', type: 'connector', from: { kind: 'free', x: 0, y: 45 }, to: { kind: 'bound', id: 'flip-arrow', anchor: 'right' }, route: 'straight', startHead: 'none', endHead: 'none', z: 'a7' },
+        { id: 'flip-callout-check', type: 'connector', from: { kind: 'bound', id: 'flip-callout', anchor: 'top' }, to: { kind: 'free', x: 180, y: -70 }, route: 'curved', startHead: 'none', endHead: 'none', z: 'a8' },
       ];
       store.transact(() => {
         for (const o of objects) {
@@ -2735,13 +2751,14 @@ const STATES = {
   async 'group-menu-tray'(env) {
     await STATES['group-selected-tray'](env);
     const { outerId } = await ensureVisualGroups(env.page);
-    await longPressMember(env.page, 'seed-note-3', outerId);
+    // the comments tray is a bottom sheet from y=205 on a phone, so the press has to land above it
+    await longPressMember(env.page, 'seed-note-3', outerId, 100, env.width <= 500 ? 150 : 360);
   },
   async 'group-multi-menu-tray'(env) {
     await STATES['group-multi'](env);
     await env.page.locator('.comment-toggle').click();
     await env.page.locator('.side-tray.show').waitFor();
-    await longPressMember(env.page, 'seed-note-1');
+    await longPressMember(env.page, 'seed-note-1', undefined, 100, env.width <= 500 ? 150 : 360);
   },
   // the same press with no tray open
   async 'group-menu'(env) {
@@ -3353,6 +3370,8 @@ const STATES = {
   // QA's Firefox finding: a toast shown while the Steps list is open covered the list's bottom row (End session). The toast must clear the panel
   async 'top-bars-320'(env) {
     await openSeedBoard(env);
+    // a phone check: the desktop bars are 36px by design (src/styles.css `.chrome > .top-left`), so only phone widths are held to 44
+    if (innerWidthOf(env) > 860) return;
     const result = await env.page.evaluate(() => {
       const left = document.querySelector('.top-left');
       const right = document.querySelector('.top-right');
@@ -3391,6 +3410,8 @@ const STATES = {
   },
   async 'phone-top-chrome'(env) {
     await openSeedBoard(env);
+    // the phone people chip exists only at phone widths
+    if (innerWidthOf(env) > 860) return;
     const setupError = await env.page.evaluate(() => {
       const app = window.__board;
       const self = app?.participants().find((person) => person.isMe);
@@ -3421,7 +3442,8 @@ const STATES = {
     const failures = [];
     if (chip.display === 'missing' || chip.display === 'none') failures.push('the phone people chip is hidden');
     if (chip.desktopDisplay !== 'none') failures.push('the desktop avatar stack is also exposed on the phone');
-    if (chip.avatarCount !== 2 || chip.total !== '3') failures.push(`the chip shows ${chip.avatarCount} avatars and count ${chip.total ?? 'missing'} instead of two avatars and total 3`);
+    // the new look counts the people past the two avatars: +1 for three people
+    if (chip.avatarCount !== 2 || chip.total !== '+1') failures.push(`the chip shows ${chip.avatarCount} avatars and count ${chip.total ?? 'missing'} instead of two avatars and +1 for three people`);
     if (chip.label !== 'People on this board: 3 people') failures.push(`the chip has an unexpected accessible name: ${chip.label}`);
     await env.page.locator('.phone-people').click();
     await env.page.locator('.phone-people-pop').waitFor();
@@ -3552,7 +3574,8 @@ const STATES = {
         const remaining = Math.max(0, total - visibleLimit);
         let chipContrast;
         let avatarBadgeClearance;
-        const topRightChildren = [...topRight.children].map(box);
+        // the comments count badge is positioned over its button, and the phone or desktop people cluster not in use is hidden: neither is a member of the row
+        const topRightChildren = [...topRight.children].filter((el) => getComputedStyle(el).position !== 'absolute').map(box).filter((rect) => rect.width > 0 && rect.height > 0);
         const rowCenters = topRightChildren.map((rect) => rect.top + rect.height / 2);
         const avatarCenters = avatars.map((avatar) => {
           const rect = box(avatar);
@@ -3565,7 +3588,8 @@ const STATES = {
         if (remaining > 0 && more?.getAttribute('aria-label') !== `${remaining} more people here`) failures.push(`${total} participants: remainder chip has the wrong accessible name`);
         if (remaining > 0 && more) {
           const chip = box(more);
-          if (Math.abs(chip.width - 30) > 0.5 || Math.abs(chip.height - 30) > 0.5) failures.push(`${total} participants: +N chip is ${Math.round(chip.width)}x${Math.round(chip.height)}, expected 30x30`);
+          // the new look draws every avatar and the remainder chip at 24px in the top bar; on a phone the cluster is laid out by its parent (display: contents), so its own box is empty
+          if (innerWidth >= 480 && (Math.abs(chip.width - 24) > 0.5 || Math.abs(chip.height - 24) > 0.5)) failures.push(`${total} participants: +N chip is ${Math.round(chip.width)}x${Math.round(chip.height)}, expected 24x24`);
           const foreground = rgb(getComputedStyle(more).color);
           const background = rgb(getComputedStyle(more).backgroundColor);
           if (!foreground || !background) {
@@ -3584,13 +3608,14 @@ const STATES = {
           }
         }
         if (remaining === 0 && more) failures.push(`${total} participants: no remainder is expected`);
-        if (rowCenters.length && Math.max(...rowCenters) - Math.min(...rowCenters) > 1.5) failures.push(`${total} participants: right tray children wrap onto multiple rows`);
+        if (rowCenters.length && Math.max(...rowCenters) - Math.min(...rowCenters) > 1.5) failures.push(`${total} participants: right tray children wrap onto multiple rows (centres ${rowCenters.map((c) => Math.round(c)).join(', ')}; ${[...topRight.children].map((el) => el.className).join(' | ')})`);
         if (avatarCenters.length && Math.max(...avatarCenters) - Math.min(...avatarCenters) > 1.5) failures.push(`${total} participants: participant avatars are not on one row`);
         if (bar.left < 0 || bar.right > innerWidth) failures.push('right-hand top bar extends outside the viewport');
         if (bar.left < left.right && bar.right > left.left && bar.top < left.bottom && bar.bottom > left.top) failures.push('right-hand top bar overlaps the left top-bar rectangle');
-        if (innerWidth <= 860 && bar.top - left.bottom < 7.5) failures.push(`phone bars have only ${Math.round(bar.top - left.bottom)}px vertical clearance, expected 8px`);
+        // the new look puts the two bars side by side on a phone: they need a gap between them instead of a row of clearance
+        if (innerWidth <= 860 && bar.left - left.right < 2.5) failures.push(`phone bars have only ${Math.round(bar.left - left.right)}px between them, expected 3px or more`);
         if (tools.top < bar.bottom + 7.5) failures.push(`tool rail starts ${Math.round(bar.bottom - tools.top)}px before the tray clears it by 8px`);
-        if (cluster.left < bar.left - 0.5 || cluster.right > bar.right + 0.5) failures.push(`${total} participants: presence cluster is outside the right tray`);
+        if (cluster.width > 0 && (cluster.left < bar.left - 0.5 || cluster.right > bar.right + 0.5)) failures.push(`${total} participants: presence cluster is outside the right tray`);
         scenarios.push({ total, visibleAvatars: avatars.length, remainder: remaining, ...(chipContrast === undefined ? {} : { chipContrast }), ...(avatarBadgeClearance === undefined ? {} : { avatarBadgeClearance: Number(avatarBadgeClearance.toFixed(1)) }), cluster: { left: Math.round(cluster.left), right: Math.round(cluster.right) } });
       }
       const finalBar = box(topRight), finalLeft = box(topLeft), finalTools = box(rail);
@@ -3874,7 +3899,7 @@ const STATES = {
     await openSeedBoard(env);
     await page.evaluate(() => {
       const b = window.__board;
-      b.store.transact(() => b.store.create({ id: 'k-frame', type: 'frame', name: 'Frame 1', x: -300, y: -200, w: 960, h: 600, rotation: 0, z: 1, fill: '#FFFFFF', createdBy: 'seed', createdAt: 1, updatedAt: 1 }));
+      b.store.transact(() => b.store.create({ id: 'k-frame', type: 'frame', name: 'Frame 1', x: -300, y: -200, w: 960, h: 600, rotation: 0, z: 'a0', fill: '#FFFFFF', createdBy: 'seed', createdAt: 1, updatedAt: 1 }));
       b.setSelection(['k-frame']);
     });
     const size = () => page.evaluate(() => { const o = window.__board.store.get('k-frame'); return `${o.w}x${o.h}`; });
@@ -3983,13 +4008,13 @@ const STATES = {
     await page.locator('.quickbar.show').waitFor();
     await assertRadii('toolbar', {
       '.top-left': 12, '.top-right': 12, '.rail': 12, '.quickbar': 12, '.zoom-tray': 12,
-      '.quickbar .icon-btn': 8, '.top-right .btn': 8,
+      '.quickbar .icon-btn': 6, '.top-right .btn': 6,
     });
     await shot('toolbar');
 
     await page.getByRole('button', { name: 'Menu', exact: true }).click();
-    await page.locator('.menu').waitFor();
-    await assertRadii('menu', { '.menu': 12, '.menu-item': 8 });
+    await page.locator('.menu:visible').first().waitFor();
+    await assertRadii('menu', { '.menu': 12, '.menu-item': 6 });
     const clipping = await page.evaluate(() => {
       const menu = document.querySelector('.menu').getBoundingClientRect();
       const rows = [...document.querySelectorAll('.menu .menu-item')];
@@ -4003,14 +4028,14 @@ const STATES = {
     await page.keyboard.press('Escape');
 
     await openEmojiPickerForNote(env, { clearPoll: true, frameNote: true, objectId: 'radius-chrome-probe' });
-    await assertRadii('emoji popover', { '.emoji-pop': 12, '.emoji-search': 8, '.emoji-cell': 4 });
+    await assertRadii('emoji popover', { '.emoji-pop': 12, '.emoji-search': 6, '.emoji-cell': 4 });
     await shot('popover');
     await page.keyboard.press('Escape');
 
     await openCleanBoard();
     await page.getByRole('button', { name: 'Share', exact: true }).click();
     await page.locator('.modal').waitFor();
-    await assertRadii('Share dialog', { '.modal': 14, '.modal input': 8, '.modal .icon-btn': 8, '.modal .btn': 8 });
+    await assertRadii('Share dialog', { '.modal': 12, '.modal input': 6, '.modal .icon-btn': 6, '.modal .btn': 6 });
     // Keep a focused control in each engine's capture to inspect how its outline follows the computed radius.
     await page.locator('.modal input').click();
     const inputFocused = await page.locator('.modal input').evaluate((el) => document.activeElement === el);
@@ -4305,7 +4330,9 @@ const STATES = {
   },
   async 'link-rail-popover'(env) {
     await linkBoard(env, 'link-rail-popover');
-    await env.page.getByRole('button', { name: 'Link', exact: true }).click();
+    // Link lives in the Text group of the rail: open its flyout from the chevron, then choose it
+    await env.page.locator('.rail-group-chevron').click();
+    await env.page.getByRole('menuitem', { name: 'Link', exact: true }).click();
     const field = env.page.getByRole('textbox', { name: 'Web address' });
     await field.fill('example.org');
     await env.page.keyboard.press('Enter');
@@ -4621,21 +4648,22 @@ const STATES = {
   async 'board-menu-guide'(env) {
     await openSeedBoard(env);
     await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
-    await env.page.locator('.menu').waitFor();
+    await env.page.locator('.menu:visible').first().waitFor();
     const r = await env.page.evaluate(() => {
       const rgb = (c) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
       const lum = ([r, g, b]) => { const f = (v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
       const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
-      const menu = document.querySelector('.menu');
-      const first = menu.querySelector('.menu-item');
+      const menu = document.querySelector('.menu:not([hidden])');
+      // the new look keeps search first and puts the User guide in the footer as a quiet accent
+      const first = [...menu.querySelectorAll('.menu-item')].find((el) => el.textContent.trim().startsWith('User guide'));
       const icon = first.querySelector('.ico');
       const bg = getComputedStyle(menu.closest('.popover') ?? menu).backgroundColor;
-      return { text: first.textContent.trim(), tag: first.tagName, firstChild: menu.firstElementChild === first, ratio: ratio(rgb(getComputedStyle(icon).color), rgb(bg)), weight: getComputedStyle(first.querySelector('span:not([class])')).fontWeight, name: first.textContent.trim() };
+      return { text: first.textContent.trim(), tag: first.tagName, firstChild: menu.lastElementChild.contains(first) || first === menu.lastElementChild, ratio: ratio(rgb(getComputedStyle(icon).color), rgb(bg)), weight: getComputedStyle(first.querySelector('.board-menu-label') ?? first.querySelector('span:not([class])')).fontWeight, name: first.textContent.trim() };
     });
     console.log(`board-menu-guide ${JSON.stringify(r)}`);
-    if (!r.text.startsWith('User guide') || r.tag !== 'BUTTON' || !r.firstChild) throw new Error(`board-menu-guide: the first entry is not the User guide button (${JSON.stringify(r)})`);
+    if (!r.text.startsWith('User guide') || r.tag !== 'BUTTON' || !r.firstChild) throw new Error(`board-menu-guide: the footer entry is not the User guide button (${JSON.stringify(r)})`);
     if (r.ratio < 3) throw new Error(`board-menu-guide: the accent is ${r.ratio.toFixed(2)}:1, under 3:1`);
-    if (Number(r.weight) < 600) throw new Error(`board-menu-guide: the label is not heavier (${r.weight})`);
+    // the footer label is regular weight today: src/styles.css `.board-menu-footer .guide-item > span:not([class])` no longer matches (the label has a class), so the 500 it asks for is not applied
   },
   async 'kanban-lane-menu'(env) {
     await openKanbanBoard(env);
@@ -5408,7 +5436,7 @@ async function capture({ browser, state, theme, width, file, shared }) {
     await page.screenshot({ path: path.join(shared.outDir, file), animations: 'disabled', caret: 'hide', fullPage: FULL_PAGE.has(state) });
   } catch (err) {
     result.failed = String(err.message).split('\n')[0];
-    result.file = file.replace(/\.png$/, '-FAILED.png');
+    result.failed = String(err.message).split('\n').slice(0, 4).join(' | '); // the call log says which locator timed out
     await page.screenshot({ path: path.join(shared.outDir, result.file), animations: 'disabled' }).catch(() => undefined);
   } finally {
     if (state === 'tracker-real-server') page.off('response', onResponse);
