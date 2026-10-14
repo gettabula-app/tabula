@@ -64,8 +64,8 @@ describe('objects made under the device id before the account id was stamped', (
 });
 
 describe('the relay in its default mode', () => {
-  it('counts a device-id author as forged_author but refuses nothing (it is not a hard rule)', () => {
-    const guard = createSyncGuard({ mode: 'report', hard: true });
+  it('counts a device-id author as forged_author in report mode and refuses nothing', () => {
+    const guard = createSyncGuard({ mode: 'report' });
     const doc = new Y.Doc();
     const room = { kind: 'board', doc, held: null, sent: [] as Uint8Array[], broadcastUpdate: () => undefined };
     const ws = {};
