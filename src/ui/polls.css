@@ -1,7 +1,7 @@
-/* Poll surfaces: calm Swiss layout. Theme variables and color-mix() only; medium card/popover corners, small controls, hairlines, 2px ink rules, no shadows; 8px spacing grid. */
+/* Poll surfaces: warm paper, small controls, hairlines, diffuse shadows and 16px group spacing. Theme variables only. */
 
 .poll-label {
-  margin: 0; font-size: 11px; font-weight: 600; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--graphite);
+  margin: 0; font-size: 12px; font-weight: 600; line-height: 16px; color: var(--tray-muted);
 }
 
 /* answering card, docked above the session bar: its top stays below the top bars, and only the list scrolls */
@@ -9,49 +9,42 @@
   position: absolute; left: var(--rail-clear, 76px); right: calc(16px + var(--safe-right) + var(--dock-inset, 0px)); bottom: var(--safe-bottom); margin: 0 auto; max-width: 560px; z-index: 11;
   overflow: hidden; box-sizing: border-box; padding: 16px; min-width: 0;
   display: flex; flex-direction: column; overflow-wrap: anywhere;
-  background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-top: 2px solid var(--ink); border-radius: var(--radius-md);
+  --tray: var(--paper); --tray-2: var(--paper); --tray-text: var(--ink); --tray-muted: var(--graphite);
+  --tray-line: var(--page-hairline); --tray-hover: var(--page-hover); --ctl-surface: var(--paper);
+  background: var(--paper); color: var(--ink); border: 1px solid var(--page-hairline); border-radius: var(--radius-md);
 }
 .poll-card[hidden] { display: none; }
-.poll-card :focus-visible, .poll-compose :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.poll-card :focus-visible:not(input):not(textarea):not(select):not(.combo), .poll-compose :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .poll-body { flex: 0 1 auto; display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; }
 .poll-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; }
+.poll-head [role='status'] { display: inline-flex; align-items: center; min-height: 20px; padding: 2px 8px; border-radius: 999px; background: var(--tag-green); color: var(--on-tag-green); font-size: 11px; line-height: 1.3; }
 .poll-question { flex: none; margin: 0; font: 700 18px/1.3 var(--display); overflow-wrap: anywhere; }
 .poll-scroll { flex: 0 1 auto; display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-/* more rows below: the bottom edge fades out, a cue that the list scrolls */
-.poll-scroll.more {
-  -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 24px), transparent);
-}
 .poll-choices { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; }
 .poll-choice {
-  display: flex; align-items: center; gap: 16px; min-width: 0; min-height: 40px; padding: 8px 16px;
-  border-top: 1px solid var(--rule); color: var(--ink); cursor: pointer;
+  display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 40px; padding: 8px 12px;
+  border-top: 1px solid var(--page-hairline); color: var(--tray-text); cursor: pointer;
 }
-.poll-choice:last-child { border-bottom: 1px solid var(--rule); }
-.poll-choice input { flex: none; margin: 0; width: 16px; height: 16px; accent-color: var(--ink); }
+.poll-choice:last-child { border-bottom: 1px solid var(--page-hairline); }
+.poll-choice input { flex: none; }
 .poll-choice span { min-width: 0; overflow-wrap: anywhere; }
-.poll-choice:hover { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); }
-.poll-choice:has(input:checked) { background: var(--signal); color: var(--on-signal); }
+.poll-choice:hover { background: var(--page-hover); }
+.poll-choice:has(input:checked) { background: var(--page-hover); color: var(--tray-text); }
 .poll-choices:disabled .poll-choice { cursor: default; }
 .poll-choices:disabled .poll-choice:hover { background: transparent; }
-.poll-choices:disabled .poll-choice:has(input:checked) { background: var(--signal); }
+.poll-choices:disabled .poll-choice:has(input:checked) { background: var(--page-hover); }
 .poll-foot { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-height: 40px; }
 .poll-note { color: var(--graphite); font-size: 13px; }
 /* the clear row keeps its space before the first answer, so rows do not move when it appears */
 .poll-clear.is-reserved { visibility: hidden; }
-.poll-card .btn {
-  height: 40px; padding: 0 16px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font-weight: 600;
-}
-.poll-card .btn:hover { background: var(--canvas); }
-
-.poll-results-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 16px; border-top: 2px solid var(--ink); }
+.poll-results-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 16px; border-top: 1px solid var(--page-hairline); }
 .poll-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; min-width: 0; }
 .poll-results li { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 8px 0; border-top: 1px solid var(--rule); }
 .poll-results li:first-child { border-top: 0; }
 .poll-row-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; min-width: 0; }
 .poll-row-head > span:first-child { min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .poll-row-head > span:last-child { flex: none; color: var(--graphite); font-size: 13px; }
-.poll-bar { height: 8px; border: 1px solid var(--rule); background: var(--paper); }
+.poll-bar { height: 8px; border: 1px solid var(--page-hairline); background: var(--paper); }
 .poll-bar span { display: block; height: 100%; background: var(--ink); }
 .poll-names { color: var(--graphite); font-size: 13px; overflow-wrap: anywhere; }
 
@@ -70,22 +63,17 @@
   padding: 0; box-sizing: border-box; border-radius: var(--radius-md);
   background: var(--tray); color: var(--tray-text);
 }
-.poll-compose { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 16px; }
+.poll-compose { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 0; min-width: 0; padding: 16px; }
 .poll-compose .field { margin-top: 0; }
+.poll-compose > .field + .field, .poll-compose > .field + .check, .poll-compose > .check + .check { margin-top: 16px; }
 .poll-options { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.poll-compose .field-label { margin: 0 0 8px; color: var(--tray-muted); font-size: 12px; font-weight: 600; line-height: 16px; }
-.poll-compose .input { height: 40px; padding: 0 8px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink); }
+.poll-compose .field-label { margin: 0 0 6px; color: var(--tray-muted); font-size: 12px; font-weight: 600; line-height: 16px; }
 .poll-compose .input::placeholder { color: var(--placeholder); opacity: 1; }
 .poll-compose-list { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .poll-compose-scroll { flex: 0 1 auto; min-height: 0; overflow-y: auto; }
 .poll-compose-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .poll-compose-options li { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .poll-compose-options .input { flex: 1; min-width: 0; }
-.poll-compose .icon-btn { width: 40px; height: 40px; border-radius: var(--radius-sm); color: var(--ink); }
-.poll-compose .icon-btn:hover { background: var(--tray-hover); }
-.poll-compose .btn {
-  height: 40px; padding: 0 16px;
-}
-.poll-check { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; font-size: 14px; }
-.poll-check input { flex: none; margin: 0; width: 16px; height: 16px; accent-color: var(--ink); }
-.poll-compose-actions { flex: none; justify-content: flex-end; gap: 8px; }
+.poll-compose-list > .btn.ghost { align-self: flex-start; justify-content: flex-start; height: 32px; padding: 0 8px; color: var(--tray-muted); }
+.popover .poll-compose-list > .btn.ghost:not(:disabled):hover { background: var(--tray-hover); color: var(--tray-text); text-decoration: none; }
+.poll-compose-actions { flex: none; justify-content: flex-end; gap: 8px; margin-top: 12px; }

@@ -295,6 +295,20 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const root = h('section', { class: 'trk trk-shell', tabindex: '0', 'aria-label': 'Tracker', 'data-fullscreen': String(fullScreen) });
   if (elementMode) root.classList.add('trk-element');
+  // When the focused control is removed or hidden by a re-render (a row, once its ticket opens), the browser drops focus on the
+  // body, and the next key would reach the board. The tracker takes the focus back. The listener is on the document because a
+  // removed node's focusout no longer bubbles to the shell.
+  let lastFocused: EventTarget | null = null;
+  root.addEventListener('focusin', (event) => { lastFocused = event.target; });
+  const rescueFocus = (event: FocusEvent) => {
+    if (event.target !== lastFocused || event.relatedTarget) return;
+    const lost = event.target as Node;
+    requestAnimationFrame(() => {
+      const gone = !lost.isConnected || (lost instanceof HTMLElement && !lost.checkVisibility());
+      if (gone && root.isConnected && !root.hidden && document.activeElement === document.body) root.focus({ preventScroll: true });
+    });
+  };
+  document.addEventListener('focusout', rescueFocus, true);
   const routeMode = options.routeMode === true;
   const menuButton = h('button', {
     class: 'trk-menu-button', type: 'button', 'aria-label': 'Menu', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
@@ -620,8 +634,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       if (field === 'state') {
         const picked = await openPicker<string>(anchor, { label: 'State', options: info.states.map((item) => ({ value: item.key, label: item.name })), value: ticket.state.key });
         if (typeof picked === 'string' && picked !== ticket.state.key) {
+          const previous = ticket.state.key; // read before the store updates the cached ticket this row holds
           const next = await options.store.transitionTicket(ticket.key, picked);
-          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, ticket.state.key));
+          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, previous));
           announce(`${next.key} moved to ${next.state.name}`);
         }
       } else if (field === 'assignee') {
@@ -674,6 +689,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const doBulk = async (patch: { state?: string; assignee?: string | null; priority?: TrackerPriority; labels?: string[]; due?: string | null; archived?: boolean }, anchor?: HTMLElement) => {
     if (readOnly || !state.selectedKeys.length) return;
+    const count = state.selectedKeys.length; // read before the awaits: the store's update redraws the list, which may drop the selection
     try {
       let undoBatch: Awaited<ReturnType<TrackerStore['bulk']>> | undefined;
       if (patch.state) {
@@ -696,10 +712,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         undoBatch = await options.store.bulk(state.selectedKeys, patch);
         const batch = undoBatch;
         lastUndoAction = () => options.store.undo(batch);
-        const count = state.selectedKeys.length;
         toast(patch.archived ? `${count} issues archived` : `${count} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
       }
-      if (patch.state) toast(`${state.selectedKeys.length} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
+      if (patch.state) toast(`${count} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
       state.selectedKeys = [];
       announce('Selection cleared');
       drawRows(currentCache);
@@ -1033,7 +1048,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       panel.appendChild(h('strong', null, 'Columns'));
       for (const column of OPTIONAL_COLUMNS) {
         const checkbox = h('input', { type: 'checkbox', checked: state.columns.has(column), 'aria-label': `${column} column`, onchange: () => { if (checkbox.checked) state.columns.add(column); else state.columns.delete(column); drawRows(currentCache); } });
-        panel.appendChild(h('label', { class: 'trk-display-check' }, checkbox, column[0].toUpperCase() + column.slice(1)));
+        panel.appendChild(h('label', { class: 'trk-display-check check' }, checkbox, column[0].toUpperCase() + column.slice(1)));
       }
       popover(displayButton, panel, { className: 'trk trk-pop trk-display-pop', label: 'Display issues' });
     });
@@ -1774,6 +1789,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      document.removeEventListener('focusout', rescueFocus, true);
       endDrag(); stopList?.(); stopBoardWatch(); stopStore?.(); stopKeyListener?.();
       destroyInbox(); destroyTicketPage();
       if (debounce !== undefined) clearTimeout(debounce);

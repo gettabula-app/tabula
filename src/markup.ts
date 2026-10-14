@@ -626,7 +626,9 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
   if (full && count.block) inner += kIcon(ICON_LOCK, badgeLeft - 16, mid - 6, 12, K.meta);
   // The lane name and its quiet done marker.
   const stage = o.stage === 'done' ? 'Done' : '';
-  const stageW = stage ? 18 + measure(stage, fontCss(o.font, 12, 500)) : 0;
+  // a lane that is itself called Done shows only the check: the word would be said twice
+  const stageRepeatsName = !!stage && (o.name ?? '').trim().toLowerCase() === stage.toLowerCase();
+  const stageW = stage ? 18 + (stageRepeatsName ? 0 : measure(stage, fontCss(o.font, 12, 500))) : 0;
   const nameFont = fontCss(o.font, 13, 500);
   const metricLeft = full ? badgeLeft - (full && count.block ? 18 : 8) : right - countW - 8;
   const room = metricLeft - 8 - 12 - (stage ? stageW + 8 : 0);
@@ -638,7 +640,7 @@ function laneMarkup(o: BaseObj, ctx: MarkupCtx) {
   if (ctx.editingId !== o.id) inner += uiText(nameText, 12 + dotW, mid + 5, K.canvasInk, o.font, 13, 500);
   if (stage) {
     const x = 12 + dotW + measure(nameText, nameFont) + 8;
-    inner += `<g><title>Stage: done</title>${kIcon(ICON_CHECK, x, mid - 7, 14, K.meta)}${uiText(stage, x + 17, mid + 4, K.meta, o.font, 12, 500)}</g>`;
+    inner += `<g><title>Stage: done</title>${kIcon(ICON_CHECK, x, mid - 7, 14, K.meta)}${stageRepeatsName ? '' : uiText(stage, x + 17, mid + 4, K.meta, o.font, 12, 500)}</g>`;
   }
   // the body: an empty lane's dashed box, and the add-card row after the last card
   const local = { x: 0, y: 0, w, h };

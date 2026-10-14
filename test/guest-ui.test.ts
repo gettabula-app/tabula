@@ -120,9 +120,10 @@ describe('guest board UI', () => {
     const cursorLayer = browser!.document.createElement('div');
     browser!.document.body.appendChild(cursorLayer);
     type Cursor = { id: number; name: string; guest: boolean; color: string; p: { x: number; y: number } };
-    type Harness = BoardAppType & { cursorEls: Map<number, HTMLDivElement> };
+    type Harness = BoardAppType & { cursorEls: Map<number, HTMLDivElement>; cursorBoard: Map<number, { x: number; y: number }> };
     const app = Object.assign(Object.create(BoardApp.prototype) as Harness, {
       cursorEls: new Map<number, HTMLDivElement>(),
+      cursorBoard: new Map<number, { x: number; y: number }>(),
       r: { cursorLayer, toScreen: (p: { x: number; y: number }) => ({ x: p.x, y: p.y }) },
     });
     const render = Reflect.get(BoardApp.prototype, 'renderCursors') as (this: Harness, cursors: Cursor[]) => void;
@@ -145,9 +146,10 @@ describe('guest board UI', () => {
     const cursorLayer = browser!.document.createElement('div');
     browser!.document.body.appendChild(cursorLayer);
     type Cursor = { id: number; name: string; guest: boolean; color: string; p: { x: number; y: number } };
-    type Harness = BoardAppType & { cursorEls: Map<number, HTMLDivElement> };
+    type Harness = BoardAppType & { cursorEls: Map<number, HTMLDivElement>; cursorBoard: Map<number, { x: number; y: number }> };
     const app = Object.assign(Object.create(BoardApp.prototype) as Harness, {
       cursorEls: new Map<number, HTMLDivElement>(),
+      cursorBoard: new Map<number, { x: number; y: number }>(),
       r: { cursorLayer, toScreen: (p: { x: number; y: number }) => ({ x: p.x, y: p.y }) },
     });
     const render = Reflect.get(BoardApp.prototype, 'renderCursors') as (this: Harness, cursors: Cursor[]) => void;
@@ -169,7 +171,9 @@ describe('guest board UI', () => {
     expect(Object.keys(label.style)).toEqual([]);
     expect(Object.keys(name.style)).toEqual(['background']);
     expect(Object.keys(badge.style)).toEqual([]);
-    expect(Object.keys(guest.style).sort()).toEqual(['color', 'transform']);
+    // the glide is the one inline motion property: set per render (none on the first frame, a short linear glide when a cursor moves), everything visual stays in CSS
+    expect(Object.keys(guest.style).sort()).toEqual(['color', 'transform', 'transition']);
+    expect(guest.style.transition).toBe('none');
     for (const element of [label, name, badge]) {
       expect(element.style.margin).toBeUndefined();
       expect(element.style.borderRadius).toBeUndefined();

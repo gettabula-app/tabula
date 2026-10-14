@@ -5,9 +5,10 @@ name: CI
 # by docs.yml. Fragment-only pushes to main are also ignored by `**.md`; main receives fragments with their code change.
 # Pull requests have no paths filter on purpose: a workflow that never starts reports nothing, so "CI passed" could wait
 # forever as a required check. Every pull request starts a run and the "changes" job decides what it needs.
+# The merge queue pushes a batch tip to a queue/<batch-id> branch first: that run is the verdict, and main is fast-forwarded only when it is green.
 on:
   push:
-    branches: [main]
+    branches: [main, 'queue/**']
     paths-ignore: ['**.md', 'docs/**', 'design/**', 'LICENSE*', '.github/dependabot.yml']
   pull_request:
   workflow_dispatch:
@@ -16,6 +17,10 @@ on:
         description: 'Also test on Node 22, the oldest Node a self-hoster may run (package.json engines)'
         type: boolean
         default: false
+      max-workers:
+        description: 'Test files vitest runs at once on each runner (an experiment; empty uses 4 on Linux)'
+        type: string
+        default: ''
   # release.yml (a v* tag, or by hand) runs these gates before it builds and pushes the image. A tag no longer starts CI by itself:
   # the release workflow calls it, so the gates run once per tag, and the Docker job below still publishes the semver tags to ghcr.
   # The release passes with-node22: true, so the SHA that is released has also passed on Node 22, the floor for self-hosters. CI is Linux only
@@ -29,11 +34,13 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch/PR cancels the run in progress, so a burst
-# of commits only builds the last one.
+# A newer push to the same pull request cancels the run in progress, so a burst of commits only builds the last one. Everything else gets one
+# group per commit and is never cancelled: a push to main (or a queue batch) always ends with a verdict for its own SHA, and two runs overlap
+# instead of one replacing the other (a group with cancel-in-progress false keeps only one pending run and drops the middle one).
+# A manual dispatch has its own group too, so two experiments on the same commit (for example with different max-workers) both run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'workflow_dispatch' && github.run_id || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   FORCE_COLOR: 1
@@ -48,10 +55,15 @@ jobs:
     name: Changed files
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # actions: read lets the `verified` step ask whether this commit already passed on a queue branch
+    permissions:
+      contents: read
+      actions: read
     outputs:
       code: ${{ steps.classify.outputs.code }}
       guide: ${{ steps.classify.outputs.guide }}
       matrix: ${{ steps.matrix.outputs.matrix }}
+      verified: ${{ steps.verified.outputs.verified }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -96,12 +108,31 @@ jobs:
           fi
           echo "matrix=$matrix" | tee -a "$GITHUB_OUTPUT"
 
+      # A push to main whose commit already passed CI on a queue/** branch (same SHA, same tree) needs no second run of the same tests: the unit,
+      # browser, quality and image-build jobs are skipped and only the image publish and "CI passed" run. Any doubt (no match, API error) runs everything.
+      - id: verified
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          verified=false
+          if [ "$EVENT" = push ] && [ "$REF" = refs/heads/main ]; then
+            hit=$(gh api "repos/$REPO/actions/runs?head_sha=$SHA&event=push&status=success&per_page=50" --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and (.head_branch | startswith("queue/")))] | length' || echo 0)
+            if [ "${hit:-0}" -gt 0 ]; then verified=true; fi
+          fi
+          echo "This commit passed CI on a queue branch: $verified"
+          echo "verified=$verified" >> "$GITHUB_OUTPUT"
+
   quality:
     name: Lint, typecheck & audit
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -121,10 +152,9 @@ jobs:
   test:
     name: Test & build (${{ matrix.os }}, node ${{ matrix.node }}${{ matrix.shard && format(', shard {0}', matrix.shard) || '' }})
     runs-on: ${{ matrix.os }}
-    # The Linux node 24 leg also installs Chromium and runs the browser tests, which add a few minutes (see docs/testing.md, "Browser tests in CI").
-    timeout-minutes: ${{ matrix.os == 'ubuntu-latest' && matrix.node == 24 && 20 || 15 }}
+    timeout-minutes: 15
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
@@ -136,28 +166,18 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      # Browser tests (Playwright Chromium) run on this one leg only: they skip cleanly where Chromium is absent, so every other leg stays as it was.
-      # The key holds the lockfile hash, and the lockfile pins the Playwright version, so a new Playwright downloads a new browser.
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      # --with-deps installs the system libraries a fresh runner lacks; the cache only saves the browser download
-      - name: Install Chromium
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
-        run: npx playwright install --with-deps chromium
-      # vitest also writes a JSON report, so every job ends with its slowest test files and keeps the times (TAB-201)
+      # TABULA_TEST_SET=unit leaves out the Chromium test files: they run in their own job below (parallel, with the browser installed), and
+      # every leg here lacked the browser anyway. vitest also writes a JSON report, so every job ends with its slowest test files (TAB-201).
       - run: npm test -- --reporter=default --reporter=json --outputFile.json=test-results.json
         if: ${{ !matrix.shard }}
+        env:
+          TABULA_TEST_SET: unit
+          TABULA_MAX_WORKERS: ${{ inputs.max-workers }}
       - run: npm test -- --shard=${{ matrix.shard }} --reporter=default --reporter=json --outputFile.json=test-results.json
         if: ${{ matrix.shard }}
-      # A browser test that skipped because Chromium went missing would stay green: fail this leg if any browser test file passed nothing
-      - name: Browser tests really ran
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 24 && !cancelled()
-        run: node scripts/check-browser-tests.mjs test-results.json
+        env:
+          TABULA_TEST_SET: unit
+          TABULA_MAX_WORKERS: ${{ inputs.max-workers }}
       - name: Slowest test files
         if: ${{ !cancelled() }}
         # On the Windows shards, the slowest platform, a single test over its limit in test/timing-budget.json fails the job
@@ -171,22 +191,100 @@ jobs:
           retention-days: 14
       - run: npm run build:app
         if: ${{ matrix.shard != '2/2' }}
-      # the icon sets are built once, where the dist artifact is made, and again in the Docker build
-      - run: npm run build:icons
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
-      - uses: actions/upload-artifact@v7
-        if: matrix.os == 'ubuntu-latest' && matrix.node == 24
-        with:
-          name: dist
-          path: dist/
-          retention-days: 7
 
+  # The browser tests (Playwright Chromium, about 30 test files) run in their own job, alongside the unit legs and the Docker build, so the
+  # slowest leg is no longer unit tests plus browser tests in a row. Chromium is installed here only (see docs/testing.md, "Browser tests in CI").
+  # A failed browser test is retried once and listed in the job summary (scripts/flake-reporter.mjs) instead of turning main red; a run with
+  # with-node22 (the release gates) retries nothing. test/setup-retry.ts limits the retry to the files that ask for Chromium.
+  browser:
+    name: Browser tests (ubuntu-latest, node 24)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      # The key holds the lockfile hash, and the lockfile pins the Playwright version, so a new Playwright downloads a new browser.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      # --with-deps installs the system libraries a fresh runner lacks; the cache only saves the browser download
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm test -- --reporter=default --reporter=json --outputFile.json=test-results.json --reporter=./scripts/flake-reporter.mjs
+        env:
+          TABULA_TEST_SET: browser
+          TABULA_BROWSER_RETRY: ${{ inputs.with-node22 && '0' || '1' }}
+          TABULA_MAX_WORKERS: ${{ inputs.max-workers }}
+      # A browser test that skipped because Chromium went missing would stay green: fail this job if any browser test file passed nothing
+      - name: Browser tests really ran
+        if: ${{ !cancelled() }}
+        run: node scripts/check-browser-tests.mjs test-results.json
+      - name: Slowest test files
+        if: ${{ !cancelled() }}
+        run: node scripts/test-timings.mjs test-results.json --top 15
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: test-times-ubuntu-latest-browser
+          path: test-results.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The image is built in parallel with the tests and never pushed here: it proves the Dockerfile builds and fills the layer cache.
   docker:
     name: Docker image
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [changes, quality, test]
-    if: needs.changes.outputs.code == 'true'
+    needs: [changes, quality]
+    if: needs.changes.outputs.code == 'true' && needs.changes.outputs.verified != 'true'
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      # Keep the with: inputs here and in the retry step identical.
+      - uses: docker/build-push-action@v7
+        id: build
+        continue-on-error: true
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Wait before retrying the image build
+        if: steps.build.outcome == 'failure'
+        run: sleep 90
+      - uses: docker/build-push-action@v7
+        id: build-retry
+        if: steps.build.outcome == 'failure'
+        continue-on-error: true
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Fail the job if the image build has failed on both attempts.
+      - name: Fail if the image build retry failed
+        if: steps.build.outcome == 'failure' && steps.build-retry.outcome != 'success'
+        run: exit 1
+
+  # The image is pushed only after every test job is green, and only for main and release tags: the layers come from the cache the job above filled.
+  docker-publish:
+    name: Docker image publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [changes, quality, test, browser, docker]
+    # !failure() so that a commit already verified on a queue branch (its test jobs are skipped) is still published
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && needs.changes.outputs.code == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) }}
     permissions:
       contents: read
       packages: write
@@ -204,7 +302,6 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha
       - uses: docker/login-action@v4
-        if: github.event_name == 'push'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -215,7 +312,7 @@ jobs:
         continue-on-error: true
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -229,7 +326,7 @@ jobs:
         continue-on-error: true
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -264,7 +361,7 @@ jobs:
     name: CI passed
     runs-on: ubuntu-latest
     if: always()
-    needs: [changes, quality, test, docker, docs]
+    needs: [changes, quality, test, browser, docker, docker-publish, docs]
     steps:
       - name: Fail if a required job failed or was cancelled
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')

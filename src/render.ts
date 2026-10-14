@@ -241,6 +241,7 @@ export class Renderer {
   private resizeObserver: ResizeObserver;
   private overlayDirty = true;
   private camDirty = true;
+  private readonly appliedListeners = new Set<() => void>();
   private cameraListeners = new Set<() => void>();
   readonly ctx: MarkupCtx;
   /** An object as drawn, read through safeObj (src/safe-obj.ts). */
@@ -422,6 +423,12 @@ export class Renderer {
   onCamera(fn: () => void) {
     this.cameraListeners.add(fn);
     return () => this.cameraListeners.delete(fn);
+  }
+
+  /** Called in the frame that draws a new camera, right after the canvas takes it: what is placed by hand (remote cursors) moves in the same frame as the board. */
+  onCameraApplied(fn: () => void) {
+    this.appliedListeners.add(fn);
+    return () => this.appliedListeners.delete(fn);
   }
 
   setCamera(c: Partial<Camera>) {
@@ -646,6 +653,7 @@ export class Renderer {
     this.renderGrid();
     this.camDirty = false;
     this.root.style.setProperty('--zoom', String(zoom));
+    this.appliedListeners.forEach((l) => l());
   }
 
   private renderGrid() {

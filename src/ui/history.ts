@@ -429,7 +429,10 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
         { label: 'Save', primary: true, onClick: () => (submit() ? undefined : false) },
       ]);
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.isComposing && submit()) dlg.close();
+        if (e.key !== 'Enter' || e.isComposing) return;
+        // the dialog closes and focus goes back to the Save version button: without this the same Enter then presses that button and opens the dialog again
+        e.preventDefault();
+        if (submit()) dlg.close();
       });
     });
   }

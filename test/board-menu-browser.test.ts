@@ -75,6 +75,25 @@ describe.skipIf(!available)('the board menu and its search field', { timeout: 20
     await page.locator('.board-theme-submenu').waitFor({ state: 'visible' });
   });
 
+  it('keeps Export open when a click lands on the row the pointer rested on, and a second click closes it', async () => {
+    const page = await openBoard();
+    await page.getByRole('button', { name: 'Menu' }).click();
+    const menu = page.locator('.board-menu');
+    await menu.waitFor();
+    const trigger = menu.locator('.board-menu-sub-trigger').first();
+    await trigger.hover();
+    await page.locator('.board-export-submenu').waitFor({ state: 'visible' });
+    await trigger.click();
+    await page.waitForTimeout(300);
+    expect(await page.locator('.board-export-submenu').isVisible()).toBe(true);
+    expect(await trigger.getAttribute('aria-expanded')).toBe('true');
+    // focus moved into the list, so the keyboard carries on from there
+    expect(await page.evaluate(() => !!document.activeElement?.closest('.board-export-submenu'))).toBe(true);
+    await trigger.click();
+    await page.waitForTimeout(300);
+    expect(await page.locator('.board-export-submenu').isVisible()).toBe(false);
+  });
+
   it('closes on the first Esc from an empty search and clears a typed one first', async () => {
     const page = await openBoard();
     await page.getByRole('button', { name: 'Menu' }).click();
