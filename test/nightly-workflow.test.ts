@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { NIGHTLY_OS } from '../scripts/lib/nightly-report.mjs';
 
 const workflow = fs.readFileSync('.github/workflows/nightly.yml', 'utf8');
 
@@ -18,6 +19,16 @@ describe('the nightly workflow', () => {
     expect(workflow).toContain("cron: '17 3 * * *'");
     expect(workflow).toContain('workflow_dispatch:');
     expect(workflow).not.toMatch(/cron:\s*['"]?0\s/);
+  });
+
+  it('reports every leg of the suite matrix, each under its own artifact name, and expects nothing else', () => {
+    const suite = job('suite');
+    const oses = suite.match(/os: \[([^\]]+)\]/)![1].split(',').map((v) => v.trim());
+    const nodes = suite.match(/node: \[([^\]]+)\]/)![1].split(',').map((v) => v.trim());
+    const legs = oses.flatMap((os) => nodes.map((node) => `${os}-node${node}`));
+    expect([...NIGHTLY_OS].sort()).toEqual(legs.sort());
+    expect(suite).toContain('NIGHTLY_OS: ${{ matrix.os }}-node${{ matrix.node }}');
+    expect(suite).toContain('name: nightly-${{ matrix.os }}-node${{ matrix.node }}');
   });
 
   it('serializes nightly runs and tests main on Linux only, with Node 22 and 24 (macOS, Windows and desktop are frozen)', () => {

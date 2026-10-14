@@ -113,7 +113,8 @@ export function mountFlowBar(app: BoardApp, parent: HTMLElement) {
     );
 
     const extras: HTMLElement[] = [];
-    if ((step.mode === 'private-write' || step.mode === 'vote') && !f.reveal) {
+    // a discuss step shows it too while notes are still held back: the steps called "Reveal" are discuss steps
+    if ((step.mode === 'private-write' || step.mode === 'vote' || (step.mode === 'discuss' && app.flow.hasPrivateNotes())) && !f.reveal) {
       extras.push(h('button', {
         class: step.mode === 'vote' ? 'btn vote-reveal' : 'btn',
         disabled: ro,

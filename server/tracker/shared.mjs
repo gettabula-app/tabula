@@ -105,3 +105,6 @@ export function utcStartOfDay(value) {
 export function newId() {
   return crypto.randomBytes(16).toString('base64url');
 }
+
+/** Priority names by stored number; shared by ticket JSON and the list rows. */
+export const PRIORITIES = Object.freeze(['none', 'urgent', 'high', 'medium', 'low']);

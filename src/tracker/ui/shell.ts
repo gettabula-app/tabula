@@ -947,7 +947,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           role: 'row', tabindex: '-1', 'aria-selected': String(selectedHere), 'data-cursor': String(cursor), 'data-key': ticket.key,
           style: { gridTemplateColumns: columns.map((column) => `var(--trk-${column}-width)`).join(' ') },
           onclick: () => { state.cursorKey = ticket.key; openTicket(ticket.key); },
-          onfocus: () => { state.cursorKey = ticket.key; },
+          // focusin, not focus: Tab may land on a button inside the row, and the shortcuts act on the row that holds focus
+          onfocusin: () => { state.cursorKey = ticket.key; if (listModel) listModel = moveCursorTo(listModel, ticket.key); },
         }, ...cells);
         rows.push(row);
       }
@@ -962,12 +963,18 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
 
   const drawRows = (cache: typeof currentCache) => {
-    // the rows are rebuilt on every draw: a row that had the focus gets it back (the element's side panel and its close depend on it)
-    const focusedKey = elementMode && listRenderHost?.contains(document.activeElement) ? (document.activeElement as HTMLElement).dataset.key ?? null : null;
+    // the rows are rebuilt on every draw: a row, or a button inside one, that had the focus gets it back (the element's side panel and its close depend on it)
+    const focused = listRenderHost?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+    const focusedRow = focused?.closest<HTMLElement>('[data-key]') ?? null;
+    const focusedKey = focusedRow?.dataset.key ?? null;
+    const buttonIndex = focused && focusedRow && focused !== focusedRow ? [...focusedRow.querySelectorAll('button')].indexOf(focused as HTMLButtonElement) : -1;
     try { renderRows(cache); }
     catch (error) { showListError(error instanceof Error ? error.message : 'Could not render issues.'); }
     if (elementMode) renderElementHeader();
-    if (focusedKey) listRenderHost?.querySelector<HTMLElement>(`[data-key="${CSS.escape(focusedKey)}"]`)?.focus({ preventScroll: true });
+    if (focusedKey) {
+      const row = [...listRenderHost?.querySelectorAll<HTMLElement>('[data-key]') ?? []].find((candidate) => candidate.getAttribute('data-key') === focusedKey);
+      (buttonIndex >= 0 ? row?.querySelectorAll<HTMLElement>('button')[buttonIndex] ?? row : row)?.focus({ preventScroll: true });
+    }
   };
 
   const publishCurrentSnapshot = () => {
