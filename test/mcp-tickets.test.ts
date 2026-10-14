@@ -462,6 +462,17 @@ describe('hourly cap on agent ticket edits and token attribution (TAB-330)', () 
     ]);
   });
 
+  it('relate_tickets: three calls succeed, the fourth is refused, and it has its own budget (TAB-369)', async () => {
+    const bot = await tokenFor('Relate cap bot');
+    const a = await ticketFor(bot.token, 'Relate cap A');
+    const b = await ticketFor(bot.token, 'Relate cap B');
+    for (const remove of [false, true, false]) expect((await capped.tool(bot.token, 'relate_tickets', { key: a, relation: 'relates_to', otherKey: b, ...(remove ? { remove } : {}) })).error).toBeUndefined();
+    expectRateLimited(await capped.call(bot.token, 'tools/call', { name: 'relate_tickets', arguments: { key: a, relation: 'relates_to', otherKey: b, remove: true } }));
+    // the link is still there, and the other tools have their own budgets
+    expect((await capped.tool(bot.token, 'get_ticket', { key: a })).data.ticket.relations).toHaveLength(1);
+    expect((await capped.tool(bot.token, 'update_ticket', { key: a, title: 'Relate cap A edited' })).error).toBeUndefined();
+  });
+
   it('writes one mcp.limit audit row per token and tool, however many calls are refused', async () => {
     const bot = await tokenFor('Audit cap bot');
     const key = await ticketFor(bot.token, 'Audit cap');
