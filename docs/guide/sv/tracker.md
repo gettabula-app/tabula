@@ -19,7 +19,7 @@ En spårare är **levande** när du kan använda den på plats, och en **ögonbl
 
 Bara tre spårare på en tavla kan vara levande samtidigt. Den du har markerat kommer först, sedan den under pekaren och sedan den som syns mest på skärmen. De andra visas som ögonblicksbilder tills du markerar dem eller zoomar till dem.
 
-En ögonblicksbild visar spårarens namn och hur många ärenden som är öppna. En ögonblicksbild som inte är levande får en bricka med **Open** (Öppna) när du markerar den eller pekar på den, så att det alltid finns ett sätt in. På en telefon visas spåraren alltid som ett ögonblicksbildskort med en bricka **Open**, och när du trycker på den öppnas spåraren i helskärm.
+En ögonblicksbild visar spårarens namn och hur många ärenden som är öppna. En spårare vars ärenden ännu inte har lästs in säger ”Zoom in or select this tracker to load its tickets.” (Zooma in eller markera spåraren för att läsa in ärendena.) En ögonblicksbild som inte är levande får en bricka med **Open** (Öppna) när du markerar den eller pekar på den, så att det alltid finns ett sätt in. På en telefon visas spåraren alltid som ett ögonblicksbildskort med en bricka **Open**, och när du trycker på den öppnas spåraren i helskärm.
 
 ## Arbeta i spåraren
 
@@ -32,9 +32,13 @@ En ögonblicksbild visar spårarens namn och hur många ärenden som är öppna.
 
 Klicka på ett ärende för att öppna det. I en bred spårare (ungefär 720 tavelenheter eller mer) öppnas ärendet som en panel bredvid listan, så att listan syns hela tiden. I en smalare spårare ersätter ärendet listan och du får en knapp **Back** (Tillbaka). Tryck på `Esc` för att stänga ärendet. Fokus går tillbaka till ärendets rad i listan. Tryck på `Esc` igen för att lämna spåraren och ge tangenterna tillbaka till tavlan. Spåraren förblir markerad.
 
+Tangenter du trycker i spåraren hör till spåraren och påverkar inte tavlan: Backspace eller Delete på ett ärende tar inte bort spåraren, och en bokstav byter inte tavlans verktyg.
+
 ### Vyn Board
 
 **Board** visar statusarna som kolumner bredvid varandra, med antalet ärenden i varje. Dra ett ärende från en kolumn till en annan för att ändra dess status. Tryck på `Esc` innan du släpper för att avbryta draget. Varje kolumn har ett **+** för att skapa ett ärende i den statusen. Varje kort har en knapp **⋯** som öppnar en lista med statusar att flytta det till. Det är också sättet att ändra status med tangentbordet.
+
+När du flyttar ett ärende visas meddelandet ”State changed” (Status ändrad) med **Undo** (Ångra). Välj **Undo** för att lägga tillbaka ärendet i dess gamla status.
 
 ### Öppna i helskärm
 
