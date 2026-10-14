@@ -26,6 +26,7 @@ Markera en linje och öppna **More properties** (Fler egenskaper); snabbåtgärd
 - **Width** (Bredd)
 - **Style** (Linjestil): heldragen, streckad eller punktad
 - **Start** och **End** (Slut) för pilspetsar, från samma lista som kopplingslinjer använder. Nya linjer har inga pilspetsar.
+- **Reverse direction** (Vänd riktning), som byter plats på början och slutet (så att en pilspets pekar åt andra hållet).
 - **Opacity** (Genomskinlighet)
 
 ## Linjer och kopplingslinjer
