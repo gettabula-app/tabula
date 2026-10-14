@@ -36,7 +36,7 @@ Under antalen visar **Instance** (Instans) serveradressen, hur e-post skickas, v
 
 I en hostad arbetsyta ser ägaren också **Manage billing** (Hantera fakturering). Den öppnar faktureringsportalen i samma flik. Där kan du ändra abonnemang och betalningsmetod. Medan arbetsytan har en kostnadsfri provperiod ser ägaren också ”Kostnadsfri provperiod till” och slutdatumet bredvid. Administratörer som inte är ägare ser det inte. En arbetsyta som tillhandahålls utan kostnad (en komparbetsyta) har inget att fakturera. Därför visas i stället ”Den här arbetsytan tillhandahålls utan kostnad. Det finns inget att fakturera.” här och på fliken Backups.
 
-<!-- screenshot: avsnittet Översikt med statistikrutorna och instanslistan -->
+![Fliken Overview i Admin med statistikrutorna för medlemmar, team, tavlor och sessioner och instanslistan under](images/admin-overview.png)
 
 ## Inställningar
 
@@ -113,7 +113,7 @@ Om det står på fliken att servern inte kan lagra nycklar kan du fortfarande ä
 
 Information om egna nycklar finns i [Din AI-nyckel](ai-keys.md).
 
-<!-- screenshot: AI-fliken med inställningarna och raden för arbetsytans nyckel som visar de fyra sista tecknen -->
+![Fliken AI i Admin med funktionsrutorna, modellen och gränserna samt raden Workspace key som visar en nyckel som slutar på 4f2a](images/admin-ai.png)
 
 ## Chatt
 
@@ -125,7 +125,7 @@ Fliken **Chat** (Chatt) visas när chatten är på. Den är på som standard i a
 
 Granskningsloggen har filtret **Chat** (Chatt). Det visar ändringar i de här inställningarna, meddelanden som en ägare eller moderator har tagit bort och den dagliga rensningen som en rad med antal. Den visar aldrig vad ett meddelande innehöll.
 
-<!-- screenshot: Chattfliken med de tre inställningarna -->
+![Fliken Chat i Admin med rutorna för arbetsytans kanal och för läsare samt valen för hur länge meddelanden sparas](images/admin-chat.png)
 
 ## Säkerhetskopior
 

@@ -35,6 +35,8 @@ Then choose the paper (A4 or Letter), the orientation (automatic follows most of
 
 Tabula does not make the PDF itself. **The PDF goes through your browser's print dialog**: press **Continue**, then choose **Save as PDF** as the destination there to get a file, or pick a printer. Text stays text in the PDF. Tested in Chrome and Edge; other browsers' print dialogs differ, and a frame larger than a page is scaled down. Soft shadows behind notes are left out of the print. Like the other exports, a print uses the light default colours on white and leaves out comment pins and hidden objects.
 
+![The Print or save as PDF form with What to print set to The whole board on one page, Paper A4, Orientation Automatic, the title option ticked, and Cancel and Continue buttons](images/print-dialog.png)
+
 ### Board file (.drift)
 
 A `.drift` file holds the complete board, including comments, polls and votes, the board's edit history and its [pictures](images.md). It is the most faithful copy. Use it to back up a board or hand it to someone else.

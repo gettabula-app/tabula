@@ -4,6 +4,9 @@ A code block puts code on the board as a card of coloured, fixed-width text: a t
 
 > **One writer at a time.** The code of a block is one piece of text. If two people type in the *same* block at the same moment, the later change replaces the earlier one. Different blocks are independent.
 
+![A code block titled total.js with the language JavaScript, line numbers and coloured code, and the Wrap lines and Copy code buttons at its top right](images/code-block.png)
+
+
 ## Add one
 
 Open the **Text** group in the left toolbar (the button with a small arrow, below the sticky note) and choose **Code block**, then click the board for a block 520 wide, or drag to set its width. It opens for typing at once. A new block starts in the language you used last on this board, or in Plain text; on a phone or tablet it wraps long lines.

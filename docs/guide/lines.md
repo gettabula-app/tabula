@@ -4,14 +4,14 @@ A line is a plain stroke on the board. It is not attached to anything: use it fo
 
 ## Draw a line
 
-Pick **Line** in the **Connectors and lines** group of the left rail, or press `Shift+L`. Then either:
+Pick **Line** in the **Connectors and lines** group of the left toolbar, or press `Shift+L`. Then either:
 
 - drag from where the line should start to where it should end, or
 - click once for the start, and click again for the end.
 
 The tool returns to **Select** when the line is drawn. Hold `Shift` while you draw to snap the line to 15-degree steps. Hold `Cmd` (`Ctrl` on Windows and Linux) to lock it horizontal or vertical.
 
-<!-- screenshot: the Line tool selected in the rail, a line being dragged across the board with its end snapped to a 15-degree angle -->
+![The Line tool selected in the left toolbar and a line being dragged across the board, with a label showing its length and a 30 degree angle](images/line-drag.png)
 
 ## Move or reshape a line
 

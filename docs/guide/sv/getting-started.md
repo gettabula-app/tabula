@@ -16,13 +16,13 @@ Om din arbetsyta kräver inloggning visas först **Sign in to Tabula** (Logga in
 
 Om du hellre vill börja med en färdig layout väljer du **Start from a template** (Börja från en mall). Se [Mallar](templates.md).
 
-<!-- screenshot: en tom ny tavla med tipset som visas första gången, det vänstra verktygsfältet och de övre fälten synliga -->
+![En ny tom tavla med tipset som visas första gången, det vänstra verktygsfältet, tavlans namn och synkstatus uppe till vänster samt knapparna för delning och meny uppe till höger](images/getting-started-board.png)
 
 ## Skärmen
 
 - **Uppe till vänster.** Knappen **All boards** (Alla tavlor) (husikonen) går tillbaka till sidan Boards. Bredvid den finns tavlans namn och synkroniseringsstatus. Märket **View only** (Endast visning) eller **Can comment** (Kan kommentera) visas här när du inte kan redigera tavlan.
 - **Uppe till höger.** Personerna på tavlan (runda avatarer på en rad, så många som ryms; ett **+N**-märke räknar resten), kommentarknappen, **Share** (Dela) och knappen **Menu** (Meny) (tre punkter).
-- **På en telefon** (en skärm upp till 480 px bred) delar båda fälten en rad. Till vänster finns huset, ett förkortat tavelnamn och synkpunkten. Till höger finns en personbricka (dold medan du är ensam; med andra visar den upp till två avatarer och ett antal, och ett tryck listar alla), kommentarknappen med sitt märke för olästa, **Share** (Dela) som ikon och knappen **Menu** (Meny). På en skärm smalare än 380 px flyttas **Chat** (Chatt) in i **Menu**, och en liten punkt på knappen **Menu** visar att chatten har olästa meddelanden.
+- **På en telefon** (en skärm upp till 480 px bred) delar båda fälten en rad. Till vänster finns huset, ett förkortat tavelnamn och synkpunkten. Till höger finns en personbricka (dold medan du är ensam och inget [AI-verktyg](ai-tools.md#se-en-agent-arbeta) arbetar; annars visar den upp till två avatarer och ett **+N**-antal som även räknar verktyg i arbete, och ett tryck listar alla), kommentarknappen med sitt märke för olästa, **Share** (Dela) som ikon och knappen **Menu** (Meny). På en skärm smalare än 380 px flyttas **Chat** (Chatt) in i **Menu**, och en liten punkt på knappen **Menu** visar att chatten har olästa meddelanden.
 - **Vänstra verktygsfältet.** Verktygen beskrivs nedan.
 - **Nere till höger.** Zooma ut, zoomnivå, zooma in, **Fit board** (Visa hela tavlan) och en knapp för att visa eller dölja minikartan.
 - **Nedtill.** Sessionsraden för faciliterade sessioner. Se [Sessioner och fokusbegäranden](sessions.md).

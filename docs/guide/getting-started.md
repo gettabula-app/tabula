@@ -16,13 +16,13 @@ If your workspace uses sign-in, you first see **Sign in to Tabula**. Enter your 
 
 To start with a ready-made layout instead, choose **Start from a template**. See [Templates](templates.md).
 
-<!-- screenshot: an empty new board with the first-run hint, left toolbar and top bars visible -->
+![A new empty board with the first-run hint, the left toolbar, the board name and sync status at the top left, and the share and menu buttons at the top right](images/getting-started-board.png)
 
 ## The screen
 
 - **Top left.** The **All boards** button (house icon) returns to the Boards page. Next to it are the board name and the sync status. A **View only** or **Can comment** badge appears here when you cannot edit the board.
 - **Top right.** The people on the board (round avatars in one row, as many as fit; a **+N** badge counts the rest), the comments button, **Share**, and the **Menu** button (three dots).
-- **On a phone** (a screen up to 480 px wide) both bars share one row. On the left are the house, a shortened board name and the sync dot. On the right are a people chip (hidden while you are alone; with others it shows up to two avatars and a count, and tapping it lists everyone), the comments button with its unread badge, **Share** as an icon, and the **Menu** button. On a screen narrower than 380 px, **Chat** moves into the **Menu**, and a small dot on the **Menu** button tells you that chat has unread messages.
+- **On a phone** (a screen up to 480 px wide) both bars share one row. On the left are the house, a shortened board name and the sync dot. On the right are a people chip (hidden while you are alone and no [AI tool](ai-tools.md#seeing-an-agent-at-work) is at work; otherwise it shows up to two avatars and a **+N** count that includes tools at work, and tapping it lists everyone), the comments button with its unread badge, **Share** as an icon, and the **Menu** button. On a screen narrower than 380 px, **Chat** moves into the **Menu**, and a small dot on the **Menu** button tells you that chat has unread messages.
 - **Left toolbar.** The tools, listed below.
 - **Bottom right.** Zoom out, the zoom level, zoom in, **Fit board**, and a minimap toggle.
 - **Bottom.** The session bar for facilitated sessions. See [Sessions and focus requests](sessions.md).

@@ -10,7 +10,7 @@ The menu item is shown to owners and editors, and to everyone when your workspac
 
 Version history is stored on the server. If you are offline, or the board is not connected to a server, the panel says "Version history is stored on the server and needs a connection."
 
-<!-- screenshot: the Version history panel with a named version, automatic versions grouped under Today, and the All / Named tabs -->
+![The Version history panel with the All and Named tabs and the Save version button, a named version and automatic versions grouped under Today](images/version-history.png)
 
 ## Automatic and named versions
 

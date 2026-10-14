@@ -29,7 +29,7 @@ To react to something on the board:
 
 A small sticker is placed beside the top right corner of your selection. It does not follow the object if you move it later, and it has no counter. Delete it like any object, or undo.
 
-<!-- screenshot: the React with a sticker popover open above a selected sticky note -->
+![The React popover open above a selected sticky note, showing sixteen sticker reactions in a grid](images/sticker-picker.png)
 
 ## Offline
 

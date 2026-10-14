@@ -12,7 +12,7 @@ Det finns tre sätt:
 
 Kopplingslinjer kan fästas vid former, klisterlappar, text, ikoner och UML-element. De kan inte fästas vid ramar eller ritningar, och inte heller vid låsta objekt.
 
-<!-- screenshot: en form med pekaren över sig och fyra synliga kopplingspunkter, samt en kopplingslinje som dras till en annan form -->
+![En kopplingslinje som dras från en rektangel till en ellips, där ellipsen visar sina fyra blå kopplingspunkter](images/connector-drag.png)
 
 ## Klicka på en kopplingspunkt
 

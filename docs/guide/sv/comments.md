@@ -10,7 +10,7 @@ Kommentarer är trådade anteckningar som fästs på en plats på tavlan eller p
 
 Tråden skapas när du skickar det första meddelandet. Om du trycker på `Esc` eller klickar på **Cancel** (Avbryt) sparas inget. När du har placerat en nål växlar verktyget tillbaka till **Select** (Markera), så du trycker på `C` igen för att placera nästa.
 
-<!-- screenshot: en kommentarsnål på en lapp med tråden öppen i det engelska gränssnittet, med ett svar och knappen Resolve (Lös) -->
+![En kommentarsnål på en lapp med tråden öppen: en kommentar, ett svar, ett svarsfält och knappen Resolve](images/comment-thread.png)
 
 En nål som placeras på ett objekt sitter kvar på det när du flyttar, ändrar storlek på eller roterar objektet. En nål som placeras på tom arbetsyta stannar där du satte den. Om objektet tas bort stannar nålen på sin senaste plats.
 

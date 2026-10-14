@@ -36,7 +36,7 @@ Below the counts, **Instance** lists the server address, how email is sent, the 
 
 On a hosted workspace, the owner also sees **Manage billing**. It opens the billing portal in the same tab, where you change the plan and update the payment method. While the workspace is on a free trial, the owner also sees "Free trial until" and the end date beside it. Admins who are not owners do not see it. A workspace that is provided free of charge (a comp workspace) has nothing to bill, so the owner reads "This workspace is provided free of charge. There is nothing to bill." here and in the Backups tab instead of the button.
 
-<!-- screenshot: Overview section with the stat tiles and the Instance list -->
+![The Overview tab of Admin with the stat tiles for members, teams, boards and sessions, and the Instance list below them](images/admin-overview.png)
 
 ## Settings
 
@@ -113,7 +113,7 @@ If the tab says the server cannot store keys, you can still change the settings 
 
 For a person's own key, see [Your AI key](ai-keys.md).
 
-<!-- screenshot: AI tab with the settings, and the workspace key line showing the last four characters -->
+![The AI tab of Admin with the feature checkboxes, model and limits, and the Workspace key line that shows the key ending in 4f2a](images/admin-ai.png)
 
 ## Chat
 
@@ -125,7 +125,7 @@ The **Chat** tab appears when chat is on. It is on by default in workspaces with
 
 The audit log has a **Chat** filter. It shows changes to these settings, messages that an owner or moderator removed, and the daily clean-up as one line with a count. It never shows what a message said.
 
-<!-- screenshot: Chat tab with the three settings -->
+![The Chat tab of Admin with the workspace channel and viewers checkboxes and the Keep messages choices](images/admin-chat.png)
 
 ## Backups
 

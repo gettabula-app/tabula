@@ -10,7 +10,7 @@ Comments are threaded notes pinned to a place on the board or to an object. Use 
 
 The thread is created when you post the first message. If you press `Esc` or click **Cancel**, nothing is saved. After you place a pin, the tool switches back to **Select**, so you press `C` again for the next one.
 
-<!-- screenshot: a comment pin on a sticky note with its thread open, showing one reply and the Resolve button -->
+![A comment pin on a sticky note with its thread open: a comment, one reply, a Reply box and the Resolve button](images/comment-thread.png)
 
 A pin placed on an object stays attached to it when you move, resize or rotate the object. A pin placed on empty canvas stays where you put it. If the object is deleted, the pin stays at its last position.
 

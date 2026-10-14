@@ -5,14 +5,14 @@ I en omröstning ställer du en fråga till alla på tavlan och ger dem en fast 
 ## Starta en snabbomröstning
 
 1. Klicka på **Start a quick poll** (Starta snabbomröstning) i verktygsfältet till vänster.
-2. Skriv frågan i **Ask a question** (Ställ en fråga). Den får vara högst 200 tecken.
+2. Skriv frågan i **Question** (Fråga). Den får vara högst 200 tecken.
 3. Fyll i svarsalternativen. En omröstning har 2 till 10 alternativ, vart och ett på högst 120 tecken. Klicka på **Add option** (Lägg till alternativ) för att lägga till fler eller på **x** bredvid ett alternativ för att ta bort det. Alternativen måste innehålla text och vara olika.
 4. Välj hur personer ska svara:
    - **More than one answer** (Fler än ett svar): personer kan markera flera alternativ. Utan det kan varje person välja ett alternativ.
    - **Anonymous (names stay hidden)** (Anonymt (namnen förblir dolda)): är aktiverat som standard. Stäng av det om du vill visa vem som har valt vad i resultatet.
 5. Klicka på **Start poll** (Starta omröstning) eller tryck på `Ctrl+Enter` (`Cmd+Enter` på Mac).
 
-<!-- screenshot: formuläret för snabbomröstning med en fråga och tre ifyllda alternativ -->
+![Formuläret för snabbomröstning med en fråga, tre alternativ, rutan More than one answer, Anonymous ikryssad och knappen Start poll](images/quick-poll-form.png)
 
 Omröstningen öppnas direkt för alla på tavlan. Om en session redan pågår läggs omröstningen till direkt efter det aktuella steget och sessionen går vidare till den. Om ingen session pågår läggs omröstningen till sist bland tavlans steg, och sessionen startar med den.
 

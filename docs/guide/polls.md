@@ -5,14 +5,14 @@ A poll asks everyone on the board one question with a fixed list of answers. You
 ## Start a quick poll
 
 1. Click **Start a quick poll** in the toolbar on the left.
-2. Type the question in **Ask a question**. It can be up to 200 characters.
+2. Type the question in **Question**. It can be up to 200 characters.
 3. Fill in the options. A poll has 2 to 10 options, each up to 120 characters. Click **Add option** for more, or the **x** beside an option to remove it. Options must have text and must differ from each other.
 4. Choose how people answer:
    - **More than one answer**: people can tick several options. Without it, each person picks one.
    - **Anonymous (names stay hidden)**: on by default. Turn it off to show who chose what in the results.
 5. Click **Start poll**, or press `Ctrl+Enter` (`Cmd+Enter` on Mac).
 
-<!-- screenshot: the quick poll form with a question and three options filled in -->
+![The quick poll form with a question, three options, the More than one answer box, Anonymous ticked and the Start poll button](images/quick-poll-form.png)
 
 The poll opens at once for everyone on the board. If a session is already running, the poll is added right after the current step and the session moves to it. If no session is running, the poll is added at the end of the board's steps and the session starts on it.
 

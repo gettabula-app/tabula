@@ -35,6 +35,8 @@ Välj sedan papper (A4 eller Letter), orientering (automatisk följer de flesta 
 
 Tabula gör inte PDF-filen själv. **PDF-filen går via webbläsarens utskriftsdialog**: tryck på **Continue** (Fortsätt) och välj sedan **Save as PDF** (Spara som PDF) som mål där för att få en fil, eller välj en skrivare. Text förblir text i PDF-filen. Testat i Chrome och Edge; andra webbläsares utskriftsdialoger skiljer sig åt, och en ram som är större än en sida skalas ned. Mjuka skuggor bakom anteckningar utelämnas vid utskrift. Precis som de andra exporterna använder en utskrift de ljusa standardfärgerna på vit bakgrund och utelämnar kommentarsnålar och dolda objekt.
 
+![Formuläret Print or save as PDF med What to print inställt på hela tavlan på en sida, Paper A4, Orientation Automatic, titelvalet ikryssat och knapparna Cancel och Continue](images/print-dialog.png)
+
 ### Tavelfil (.drift)
 
 En `.drift`-fil innehåller hela tavlan, inklusive kommentarer, omröstningar och röster, tavlans redigeringshistorik och dess [bilder](images.md). Det här är den mest fullständiga kopian. Använd den för att säkerhetskopiera en tavla eller lämna över den till någon annan.

@@ -15,7 +15,7 @@ Choose **Templates** in the top bar of the Boards page, or open the `#/templates
 - The category buttons filter all the lists: **All**, **Retrospective**, **Ideation**, **Discussion**, **Prioritisation**, **Planning**, **Discovery**, **Strategy**, **Risk** and **Custom**. **Custom** appears once a template in that category is listed.
 - **Search templates** matches name, category and description. The line above the cards shows how many match, or **No templates match.**
 
-<!-- screenshot: the Templates page with a My templates section above the built-in cards, thumbnails visible -->
+![The Templates page with a My templates section holding one saved template above the Built-in templates cards](images/templates-page.png)
 
 ## Open mode and workspaces with sign-in
 

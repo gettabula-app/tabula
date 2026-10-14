@@ -8,6 +8,9 @@ Spåraren visar samma lista med ärenden var du än ser den. En ändring i spår
 
 Välj **Tracker** (spårare) i det vänstra verktygsfältet. Spåraren visas mitt i det du ser och är markerad. Om verktygsfältet saknar knappen **Tracker** har arbetsytan inte spåraren, eller så kan du bara visa tavlan. Du kan lägga till fler än en spårare på en tavla. De visar alla samma ärenden.
 
+![En levande spårare på en tavla på fliken All: sju ärenden grupperade efter tillstånd under Done, In review, In progress och To do, med flikarna All, My och Board samt knapparna New ticket och Open full screen överst](images/tracker-board.png)
+
+
 ## Levande och ögonblicksbild
 
 En spårare är **levande** när du kan använda den på plats, och en **ögonblicksbild** när den bara är en bild av den.
@@ -41,6 +44,9 @@ Varje rad i listan visar ärendets prioritet, etiketter, projekt, milstolpe och 
 **Board** visar statusarna som kolumner bredvid varandra, med antalet ärenden i varje. Dra ett ärende från en kolumn till en annan för att ändra dess status. Tryck på `Esc` innan du släpper för att avbryta draget. Varje kolumn har ett **+** för att skapa ett ärende i den statusen. Varje kort har en knapp **⋯** som öppnar en lista med statusar att flytta det till. Det är också sättet att ändra status med tangentbordet.
 
 När du flyttar ett ärende visas meddelandet ”State changed” (Status ändrad) med **Undo** (Ångra). Välj **Undo** för att lägga tillbaka ärendet i dess gamla status.
+
+![Fliken Board i en spårare på en tavla: banorna To do, In progress och In review med ett kort per ärende, dess nummer och prioritet samt en plusknapp på varje bana](images/tracker-board-lanes.png)
+
 
 ### Öppna i helskärm
 

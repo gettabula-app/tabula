@@ -29,7 +29,7 @@ Så här reagerar du på något på tavlan:
 
 Ett litet klistermärke placeras bredvid det övre högra hörnet av markeringen. Det följer inte med objektet om du flyttar det senare, och det har ingen räknare. Ta bort det som vilket objekt som helst eller ångra.
 
-<!-- screenshot: menyn React with a sticker öppen ovanför en markerad klisterlapp -->
+![Popover-rutan React öppen ovanför en markerad lapp, med sexton klistermärkesreaktioner i ett rutnät](images/sticker-picker.png)
 
 ## Offline
 

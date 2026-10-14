@@ -5,6 +5,7 @@
 //   npm run docs:images -- --only share-roles,signin --out /tmp/shots
 //   npm run docs:images -- --only admin-backups,chat-tray,chat-page,kanban-card-dialog,layers-panel
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -70,8 +71,9 @@ async function startRelay(mode, distDir) {
   // nothing from the caller's shell may reach the relay
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(k)));
   Object.assign(env, { PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, DIST_DIR: distDir, QUIET: '1' });
-  if (mode === 'accounts' || mode === 'chat') Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: base });
+  if (mode === 'accounts' || mode === 'chat' || mode === 'tracker') Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: base, ...(mode === 'accounts' ? { TABULA_MCP: 'on', TABULA_AI_SECRET: crypto.randomBytes(32).toString('base64') } : {}) });
   if (mode === 'chat') env.TABULA_CHAT = 'on';
+  if (mode === 'tracker') env.TABULA_TRACKER = 'on';
   let stderr = '';
   const child = spawn(process.execPath, [path.join(root, 'server', 'relay.mjs')], { cwd: dataDir, env, stdio: ['ignore', 'ignore', 'pipe'] });
   child.stderr.on('data', (c) => (stderr += String(c)));
@@ -152,6 +154,21 @@ async function seedAccounts(relay) {
   return { owner, ana, design };
 }
 
+
+/** A workspace with the tracker on: a board and a handful of tickets in different states. */
+async function seedTracker(relay) {
+  const owner = await signIn(relay, OWNER_EMAIL);
+  await api(relay.base, owner, 'PATCH', '/api/me', { name: 'Maya' });
+  await api(relay.base, owner, 'POST', '/api/boards', { id: 'retro', title: 'Sprint retro' });
+  await api(relay.base, owner, 'POST', '/api/boards', { id: 'planning', title: 'Sprint planning' });
+  const rows = [
+    ['Fix the login loop on Safari', 'in_progress', 'high'], ['Write the migration guide', 'todo', 'medium'], ['Spike: caching layer', 'todo', 'low'],
+    ['CSV export with formula guards', 'in_progress', 'medium'], ['Lane menu and WIP warning', 'in_review', 'medium'], ['Update the onboarding hint', 'done', 'low'], ['Docker image for the relay', 'done', 'high'],
+  ];
+  for (const [i, [title, state, priority]] of rows.entries()) await api(relay.base, owner, 'POST', '/api/tracker/tickets', { title, state, priority, idempotencyKey: `docs-seed-${i}-xxxxxxxx` });
+  return { owner };
+}
+
 /** Real chat storage and HTTP reads, with fixed times, IDs and synthetic participants for repeatable pixels. */
 async function seedGuideChat(relay) {
   const owner = await signIn(relay, OWNER_EMAIL);
@@ -206,6 +223,8 @@ async function serveOutside(route) {
   return cached ? route.fulfill(cached) : route.abort();
 }
 
+const pages = []; // every page of the current shot, so a failure can leave a picture of where it stopped
+
 /** A fresh context: fixed clock, locale, zone and theme, motion off, no service worker, outside hosts refused. */
 async function newPage(browser, { base, width, height, theme = 'default', user, session, clock = NOW }) {
   const context = await browser.newContext({
@@ -228,6 +247,7 @@ async function newPage(browser, { base, width, height, theme = 'default', user, 
     }
   }
   const page = await context.newPage();
+  pages.push(page);
   return { context, page };
 }
 
@@ -635,6 +655,427 @@ const SHOTS = {
     await save(page, 'layers-panel', clip);
     await context.close();
   },
+
+  // ---- the guide's other screens (docs/guide placeholders): empty board, poll form, sticker picker, connector, line, picture bar, comment, session bar
+
+  async 'getting-started-board'({ browser, open }) {
+    const W = 1280, H = 720;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-empty-board');
+    await page.evaluate(() => window.__board.store.setMeta({ name: 'Sprint planning' }));
+    await page.locator('.empty-hint').waitFor();
+    await park(page);
+    await settle(page);
+    await save(page, 'getting-started-board', { x: 0, y: 0, width: W, height: H });
+    await context.close();
+  },
+
+  async 'quick-poll-form'({ browser, open }) {
+    const W = 900, H = 620;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-poll-form');
+    await page.getByRole('button', { name: 'Start a quick poll' }).click();
+    const form = page.locator('.poll-pop');
+    await form.waitFor();
+    await form.getByLabel('Question', { exact: true }).fill('Which day works best for the demo?');
+    await form.getByLabel('Option 1', { exact: true }).fill('Monday');
+    await form.getByLabel('Option 2', { exact: true }).fill('Wednesday');
+    await form.getByRole('button', { name: 'Add option' }).click();
+    await form.getByLabel('Option 3', { exact: true }).fill('Friday');
+    await park(page);
+    await settle(page);
+    await save(page, 'quick-poll-form', pad(await boxOf(form), 14, W, H));
+    await context.close();
+  },
+
+  async 'sticker-picker'({ browser, open }) {
+    const W = 1000, H = 640;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-sticker-picker');
+    await page.evaluate(`(${seeds.theme.toString()})(window.__board)`);
+    await placeAt(page, ['docs-note'], 1.2, 380, 250);
+    await page.evaluate(() => window.__board.setSelection(['docs-note']));
+    await page.locator('.quickbar').getByRole('button', { name: 'React with a sticker', exact: true }).click();
+    const pop = page.locator('.popover').last();
+    await pop.waitFor();
+    await page.waitForFunction(() => [...document.querySelectorAll('.reaction-grid img')].every((i) => i.complete && i.naturalWidth > 0), null, { timeout: 15_000 });
+    await park(page);
+    await settle(page);
+    await save(page, 'sticker-picker', pad(union(await boxOf(page.locator('.quickbar')), await boxOf(pop), await screenRect(page, 'docs-note')), 40, W, H, 40));
+    await context.close();
+  },
+
+  async 'connector-drag'({ browser, open }) {
+    const W = 1100, H = 440;
+    const { context, page } = await shapesBoard(browser, open.base, { width: W, height: H, at: [150, 190] });
+    const rect = await screenRect(page, 'docs-rect');
+    const ell = await screenRect(page, 'docs-ellipse');
+    await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    await sleep(250);
+    // the connection dot on the right side sits 14 px outside the edge
+    await page.mouse.move(rect.x + rect.width + 14, rect.y + rect.height / 2);
+    await sleep(150);
+    await page.mouse.down();
+    await page.mouse.move(ell.x - 40, ell.y + ell.height / 2 - 10, { steps: 8 });
+    await page.mouse.move(ell.x + 20, ell.y + ell.height / 2, { steps: 6 });
+    await sleep(250);
+    await settle(page);
+    await save(page, 'connector-drag', pad(union(rect, ell), 90, W, H, 40));
+    await page.mouse.up();
+    await context.close();
+  },
+
+  async 'line-drag'({ browser, open }) {
+    const W = 1100, H = 520;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-line-drag');
+    await page.evaluate(`(${seeds.theme.toString()})(window.__board)`); // a board with something on it, so the empty-board hint is not in the way
+    await placeAt(page, ['docs-note', 'docs-box', 'docs-text'], 0.6, 640, 230);
+    await page.evaluate(() => window.__board.setTool({ kind: 'line' }));
+    await page.mouse.move(300, 330);
+    await page.mouse.down();
+    await page.keyboard.down('Shift');
+    await page.mouse.move(520, 250, { steps: 10 });
+    await page.mouse.move(660, 169, { steps: 10 }); // 30 degrees up from the start: a 15-degree step the end snaps to
+    await sleep(250);
+    await settle(page);
+    await save(page, 'line-drag', { x: 0, y: 40, width: W, height: 420 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await context.close();
+  },
+
+  async 'picture-quickbar'({ browser, open }) {
+    const W = 1000, H = 640;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-picture');
+    // a picture drawn here (no file in the repo): sky, sun and two hills
+    const dataUrl = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 900; c.height = 600;
+      const g = c.getContext('2d');
+      g.fillStyle = '#BFD7FF'; g.fillRect(0, 0, 900, 600);
+      g.fillStyle = '#FFE16B'; g.beginPath(); g.arc(690, 150, 70, 0, 7); g.fill();
+      g.fillStyle = '#7DBB8C'; g.beginPath(); g.ellipse(250, 640, 420, 230, 0, 0, 7); g.fill();
+      g.fillStyle = '#5AA06F'; g.beginPath(); g.ellipse(700, 650, 380, 190, 0, 0, 7); g.fill();
+      return c.toDataURL('image/png');
+    });
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Image', exact: true }).click();
+    await (await chooser).setFiles({ name: 'hills.png', mimeType: 'image/png', buffer: Buffer.from(dataUrl.split(',')[1], 'base64') });
+    await page.locator('.quickbar').getByRole('button', { name: 'Alt text', exact: true }).waitFor({ timeout: 15_000 });
+    await sleep(600);
+    await park(page);
+    await settle(page);
+    await save(page, 'picture-quickbar', { x: 90, y: 40, width: W - 90, height: H - 150 });
+    await context.close();
+  },
+
+  async 'comment-thread'({ browser, open }) {
+    const W = 1000, H = 640;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-comment');
+    await page.evaluate(`(${seeds.theme.toString()})(window.__board)`);
+    await placeAt(page, ['docs-note'], 1, 260, 170);
+    const note = await screenRect(page, 'docs-note');
+    await page.evaluate(() => window.__board.setTool({ kind: 'comment' }));
+    await page.mouse.click(note.x + note.width - 20, note.y + 24);
+    const box = page.getByPlaceholder('Add a comment');
+    await box.fill('Can we reword this goal before Friday?');
+    await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: 'Resolve' }).waitFor({ timeout: 10_000 });
+    await page.getByPlaceholder('Reply').fill('Yes, I will reword it this afternoon.');
+    await page.keyboard.press('Enter');
+    await page.getByText('Yes, I will reword it this afternoon.').waitFor({ timeout: 10_000 });
+    await park(page);
+    await settle(page);
+    await save(page, 'comment-thread', { x: 0, y: 40, width: W, height: H - 60 });
+    await context.close();
+  },
+
+  async 'session-bar'({ browser, open }) {
+    const W = 1280, H = 720;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-session-bar');
+    await page.getByRole('button', { name: 'Templates and team exercises' }).click();
+    await page.locator('.template-picker-card', { hasText: 'Start / Stop / Continue' }).first().click();
+    await page.locator('.template-picker-use').click();
+    await page.getByText('Session ready').waitFor();
+    await page.getByRole('button', { name: 'Start session' }).click();
+    await page.getByRole('button', { name: 'Next step' }).waitFor();
+    await page.waitForFunction(() => !document.querySelector('.toast.show'), null, { timeout: 12_000 });
+    await sleep(500);
+    await page.evaluate(() => { const app = window.__board; app.store.setMeta({ name: 'Sprint retro' }); app.r.fit(app.r.contentBounds(), 20, 1); document.activeElement?.blur(); });
+    await park(page);
+    await settle(page);
+    await save(page, 'session-bar', { x: 0, y: 0, width: W, height: H });
+    await context.close();
+  },
+
+  async 'look-request'({ browser, open }) {
+    const W = 1280, H = 720;
+    const a = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(a.page, open.base, 'docs-look-request');
+    await a.page.getByRole('button', { name: 'Templates and team exercises' }).click();
+    await a.page.locator('.template-picker-card', { hasText: 'Start / Stop / Continue' }).first().click();
+    await a.page.locator('.template-picker-use').click();
+    await a.page.getByText('Session ready').waitFor();
+    await a.page.getByRole('button', { name: 'Start session' }).click();
+    await a.page.getByRole('button', { name: 'Next step' }).waitFor();
+    const b = await newPage(browser, { base: open.base, width: W, height: H, user: { id: 'docs-ana', ...ANA_USER } });
+    await openBoard(b.page, open.base, 'docs-look-request');
+    await b.page.getByRole('button', { name: 'Ask everyone to look here' }).click();
+    await a.page.getByRole('button', { name: 'Follow' }).waitFor({ timeout: 15_000 });
+    await a.page.waitForFunction(() => !document.querySelector('.toast.show'), null, { timeout: 12_000 });
+    await a.page.evaluate(() => { window.__board.store.setMeta({ name: 'Sprint retro' }); document.activeElement?.blur(); });
+    await park(a.page);
+    await settle(a.page);
+    await save(a.page, 'look-request', { x: 0, y: 0, width: W, height: H });
+    await b.context.close();
+    await a.context.close();
+  },
+
+  // the Templates page with a saved template: the board's own Save board as template dialog, then the page
+  async 'templates-page'({ browser, acc, people }) {
+    const W = 1200, H = 1400;
+    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
+    await openBoard(page, acc.base, 'retro');
+    await page.evaluate(() => {
+      const app = window.__board;
+      const z = app.store.topZs(4);
+      app.store.transact(() => {
+        app.store.create({ id: 'docs-t-frame', type: 'frame', name: 'Went well', x: 0, y: 0, w: 360, h: 300, rotation: 0, z: z[0], fill: '#FFFFFF' });
+        app.store.create({ id: 'docs-t-a', type: 'sticky', x: 30, y: 50, w: 140, h: 140, rotation: 0, z: z[1], fill: '#BDE7C8', text: 'Fast reviews', fontSize: 16, parent: 'docs-t-frame' });
+        app.store.create({ id: 'docs-t-b', type: 'sticky', x: 190, y: 50, w: 140, h: 140, rotation: 0, z: z[2], fill: '#FFE16B', text: 'Clear goals', fontSize: 16, parent: 'docs-t-frame' });
+      });
+    });
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByText('Save board as template', { exact: true }).click();
+    const dlg = page.getByRole('dialog');
+    await dlg.getByLabel('Name').fill('Sprint retro starter');
+    await dlg.getByLabel('Description').fill('Two columns and a few notes to start a retrospective.');
+    await dlg.getByRole('button', { name: 'Save template' }).click();
+    await page.getByRole('dialog').waitFor({ state: 'detached' });
+    await page.goto(`${acc.base}/#/templates`);
+    await page.getByText('Sprint retro starter').waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('.template-card, .tpl-card').length > 3);
+    await page.evaluate(() => document.activeElement?.blur());
+    await park(page);
+    await settle(page);
+    await save(page, 'templates-page', { x: 0, y: 0, width: W, height: 1180 });
+    await context.close();
+  },
+
+  async 'version-history'({ browser, acc, people }) {
+    const W = 1200, H = 800;
+    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
+    const at = (min) => NOW - min * 60_000;
+    const versions = [
+      { id: 'v5', createdAt: at(12), kind: 'auto', label: null, by: null, byName: null, objects: 14, bytes: 5200, from: null },
+      { id: 'v4', createdAt: at(55), kind: 'auto', label: null, by: null, byName: null, objects: 12, bytes: 4800, from: null },
+      { id: 'v3', createdAt: at(130), kind: 'named', label: 'Before the client review', by: 'docs-maya', byName: 'Maya', objects: 11, bytes: 4400, from: null },
+      { id: 'v2', createdAt: at(200), kind: 'auto', label: null, by: null, byName: null, objects: 9, bytes: 3900, from: null },
+      { id: 'v1', createdAt: at(2900), kind: 'auto', label: null, by: null, byName: null, objects: 5, bytes: 2500, from: null },
+    ];
+    await page.route('**/api/boards/*/versions', (route) => (route.request().method() === 'GET' ? route.fulfill({ contentType: 'application/json', body: JSON.stringify({ versions }) }) : route.continue()));
+    await openBoard(page, acc.base, 'roadmap');
+    await page.evaluate(`(${seeds.theme.toString()})(window.__board)`);
+    await placeAt(page, ['docs-note', 'docs-box', 'docs-text'], 0.8, 300, 200);
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByText('Version history', { exact: true }).click();
+    await page.getByText('Before the client review').waitFor();
+    await park(page);
+    await settle(page);
+    await save(page, 'version-history', { x: 0, y: 0, width: W, height: H });
+    await context.close();
+  },
+
+  async 'token-form'({ browser, acc, people }) {
+    const W = 1100, H = 1300;
+    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.owner });
+    await page.goto(`${acc.base}/#/`);
+    await page.getByRole('button', { name: /Maya/ }).first().click();
+    await page.getByText('AI tool access', { exact: true }).click();
+    const dlg = page.getByRole('dialog', { name: 'AI tool access' });
+    await dlg.getByRole('button', { name: 'New token' }).click();
+    await dlg.getByLabel('Name').fill('Claude Code on my laptop');
+    await dlg.getByText('Read and comment', { exact: true }).click();
+    await dlg.getByText('Only these', { exact: true }).click();
+    await dlg.getByText('Sprint retro', { exact: true }).click();
+    await dlg.getByText('Roadmap 2026', { exact: true }).click();
+    await park(page);
+    await settle(page);
+    await save(page, 'token-form', pad(await boxOf(dlg), 4, W, H));
+    await context.close();
+  },
+
+  // the admin tabs the guide describes: Overview, AI and Chat
+  async 'admin-overview'({ browser, acc, people }) {
+    const W = 1280, H = 1100;
+    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.owner });
+    await page.goto(`${acc.base}/#/admin`);
+    await page.getByText('Instance', { exact: true }).waitFor();
+    // the throwaway relay's own address and port are not for a guide: show an example address in its place
+    await page.evaluate(() => {
+      for (const el of document.querySelectorAll('.admin-panel *')) if (el.children.length === 0 && /^http:\/\/127\.0\.0\.1:\d+$/.test(el.textContent ?? '')) el.textContent = 'https://tabula.example.com';
+    });
+    await park(page);
+    await settle(page);
+    await save(page, 'admin-overview', await contentClip(page, 28));
+    await context.close();
+  },
+
+  async 'admin-ai'({ browser, acc, people }) {
+    const W = 1280, H = 1500;
+    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.owner });
+    // the relay would check a key with its provider, so the page gets the workspace key as the relay would report one: only the last four characters
+    await page.route('**/api/admin/ai', async (route) => {
+      if (route.request().method() !== 'GET') return route.continue();
+      const res = await route.fetch();
+      const body = await res.json();
+      await route.fulfill({ response: res, json: { ...body, enabled: true, hasSecret: true, key: { provider: 'anthropic', hint: '4f2a', baseUrl: null, model: null, createdAt: NOW - 3 * 86_400_000, lastUsedAt: NOW - 2 * 3_600_000, readable: true } } });
+    });
+    await page.goto(`${acc.base}/#/admin/ai`);
+    await page.getByText('Workspace key', { exact: true }).waitFor();
+    await sleep(800);
+    await page.evaluate(() => document.activeElement?.blur());
+    await park(page);
+    await settle(page);
+    // down to the key line: below it the empty replace-key form shows its own prompt
+    const clip = await contentClip(page, 28);
+    const keyRow = await boxOf(page.getByText('Added ', { exact: false }).first());
+    await save(page, 'admin-ai', { ...clip, height: keyRow.y + keyRow.height + 28 - clip.y });
+    await context.close();
+  },
+
+  async 'admin-chat'({ browser, chat, chatPeople }) {
+    const W = 1280, H = 1000;
+    const { context, page } = await newPage(browser, { base: chat.base, width: W, height: H, session: chatPeople.owner });
+    await page.goto(`${chat.base}/#/admin/chat`);
+    await page.locator('.admin-panel').waitFor();
+    await sleep(800);
+    await park(page);
+    await settle(page);
+    await save(page, 'admin-chat', await contentClip(page, 28));
+    await context.close();
+  },
+
+  // an AI tool's changes on a board: its drafts on the canvas and the Agent activity panel (a real MCP call under a real token, so the log is the relay's own)
+  async 'agent-activity'({ browser, acc, people }) {
+    const W = 1280, H = 720;
+    const made = (await api(acc.base, people.owner, 'POST', '/api/me/tokens', { name: 'Claude Code on my laptop', scope: 'write', boardIds: ['retro'], days: 7 })).json;
+    const rpc = async (name, args) => {
+      const res = await fetch(`${acc.base}/mcp`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${made.token}` }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }) });
+      const text = await res.text();
+      if (!res.ok || /isError":\s*true/.test(text)) throw new Error(`MCP ${name} failed: ${text.slice(0, 200)}`);
+    };
+    const notes = ['Fast reviews', 'Clear goals', 'Pairing helped', 'Short stand-ups'].map((text, i) => ({ type: 'sticky', x: 80 + (i % 2) * 220, y: 100 + Math.floor(i / 2) * 220, text, color: i % 2 ? 'Green' : 'Yellow' }));
+    await rpc('create_objects', { boardId: 'retro', objects: notes });
+    await rpc('create_objects', { boardId: 'retro', objects: [{ type: 'text', x: 80, y: 40, w: 420, text: 'What went well' }] });
+    const { context, page } = await newPage(browser, { base: acc.base, width: W, height: H, session: people.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
+    await openBoard(page, acc.base, 'retro');
+    await page.waitForFunction(() => window.__board.store.cache.size >= 5, null, { timeout: 15_000 });
+    await page.evaluate(() => { const app = window.__board; app.r.fit(app.r.contentBounds(), 80, 1); });
+    await page.locator('.agent-avatar').waitFor({ timeout: 15_000 }); // the tool shows as at work for 30 seconds after its call
+    await sleep(900);
+    await park(page);
+    await settle(page);
+    await save(page, 'agent-at-work', { x: 0, y: 0, width: W, height: H });
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByText('Agent activity', { exact: true }).click();
+    const dlg = page.getByRole('dialog', { name: 'Agent activity' });
+    await dlg.locator('.agent-activity-row').first().waitFor({ timeout: 15_000 });
+    await park(page);
+    await settle(page);
+    await save(page, 'agent-activity', pad(await boxOf(dlg), 16, W, H));
+    await context.close();
+  },
+
+  async 'code-block'({ browser, open }) {
+    const W = 1000, H = 640;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-code-block');
+    await page.evaluate(() => window.__board.setTool({ kind: 'code' }));
+    await page.mouse.click(420, 200);
+    await page.waitForFunction(() => [...window.__board.store.cache.values()].some((o) => o.type === 'code'));
+    // the block opens for typing: put the code in as a paste would, then finish with Escape
+    const text = ['function total(items) {', '  // add up the price of every item', '  let sum = 0;', '  for (const item of items) {', '    sum += item.price * item.count;', '  }', '  return sum;', '}'].join('\n');
+    await page.keyboard.insertText(text);
+    await page.keyboard.press('Escape');
+    const id = await page.evaluate(() => {
+      const app = window.__board;
+      const [codeId] = [...app.store.cache.values()].filter((o) => o.type === 'code').map((o) => o.id);
+      app.store.update(codeId, { lang: 'js', title: 'total.js', lines: true });
+      app.setSelection([codeId]);
+      return codeId;
+    });
+    await sleep(1500); // the colours arrive from the highlighter a moment later
+    await park(page);
+    await settle(page);
+    await save(page, 'code-block', pad(await screenRect(page, id), 40, W, H));
+    await context.close();
+  },
+
+  async 'print-dialog'({ browser, open }) {
+    const W = 1000, H = 760;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-print');
+    await page.evaluate(`(${seeds.layers.toString()})(window.__board)`);
+    await placeAt(page, ['docs-frame', 'docs-layer-box', 'docs-layer-title'], 0.6, 120, 140);
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByText('Export', { exact: true }).first().click();
+    await page.getByText('Print or save as PDF', { exact: false }).first().click();
+    const dlg = page.getByRole('dialog', { name: 'Print or save as PDF' });
+    await dlg.waitFor();
+    await park(page);
+    await settle(page);
+    await save(page, 'print-dialog', pad(await boxOf(dlg), 8, W, H));
+    await context.close();
+  },
+
+  // the tracker on a board (docs/guide/tracker.md): live in place on the All tab, then the Board tab with a ticket open beside it
+  async 'tracker-board'({ browser, trk, trkPeople }) {
+    const W = 1200, H = 720;
+    const { context, page } = await newPage(browser, { base: trk.base, width: W, height: H, session: trkPeople.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
+    await openBoard(page, trk.base, 'retro');
+    await page.getByRole('button', { name: 'Tracker', exact: true }).click();
+    await page.getByText('Workspace tickets', { exact: true }).waitFor({ timeout: 20_000 });
+    await page.getByText('Fix the login loop on Safari').waitFor({ timeout: 20_000 });
+    await page.evaluate(() => {
+      const app = window.__board;
+      const t = [...app.store.cache.values()].find((o) => o.type === 'tracker');
+      app.setSelection([]);
+      app.r.fit(app.r.contentBounds([t.id]), 90, 1);
+    });
+    await sleep(600);
+    await page.evaluate(() => document.activeElement?.blur());
+    await park(page);
+    await settle(page);
+    await save(page, 'tracker-board', { x: 0, y: 0, width: W, height: H });
+    await context.close();
+  },
+
+  async 'tracker-board-lanes'({ browser, trk, trkPeople }) {
+    const W = 1400, H = 760;
+    const { context, page } = await newPage(browser, { base: trk.base, width: W, height: H, session: trkPeople.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
+    await openBoard(page, trk.base, 'planning');
+    await page.getByRole('button', { name: 'Tracker', exact: true }).click();
+    await page.getByText('Workspace tickets', { exact: true }).waitFor({ timeout: 20_000 });
+    await page.evaluate(() => {
+      const app = window.__board;
+      const t = [...app.store.cache.values()].find((o) => o.type === 'tracker');
+      app.store.update(t.id, { w: 1040, h: 520 }); // wide enough for all four lanes
+      app.setSelection([]);
+      app.r.fit(app.r.contentBounds([t.id]), 90, 1);
+    });
+    await sleep(600);
+    await page.getByText('Board', { exact: true }).first().click();
+    await sleep(1200);
+    await page.evaluate(() => { window.__board.setSelection([]); document.activeElement?.blur(); });
+    await park(page);
+    await settle(page);
+    await save(page, 'tracker-board-lanes', { x: 0, y: 0, width: W, height: H });
+    await context.close();
+  },
 };
 
 // ---------------------------------------------------------------- main
@@ -664,12 +1105,13 @@ async function main() {
     if (status !== 0) throw new Error('npm run build:app failed');
   }
   fs.mkdirSync(outDir, { recursive: true });
-  let browser = null, open = null, acc = null, chat = null;
+  let browser = null, open = null, acc = null, chat = null, trk = null;
   const cleanup = async () => {
     await browser?.close().catch(() => undefined);
     await stopRelay(open);
     await stopRelay(acc);
     await stopRelay(chat);
+    await stopRelay(trk);
   };
   const interrupted = () => cleanup().finally(() => process.exit(130));
   process.on('SIGINT', interrupted);
@@ -679,24 +1121,31 @@ async function main() {
   try {
     browser = await launchChromium();
     open = await startRelay('open', distDir);
-    const needsAccounts = names.some((n) => ['signin', 'teams-home', 'access-removed', 'share-roles', 'admin-backups'].includes(n));
+    const needsAccounts = names.some((n) => ['signin', 'teams-home', 'access-removed', 'share-roles', 'admin-backups', 'templates-page', 'version-history', 'token-form', 'admin-overview', 'admin-ai', 'agent-activity'].includes(n));
     let people = null;
     if (needsAccounts) {
       acc = await startRelay('accounts', distDir);
       people = await seedAccounts(acc);
     }
+    let trk = null, trkPeople = null;
+    if (names.includes('tracker-board') || names.includes('tracker-board-lanes')) {
+      trk = await startRelay('tracker', distDir);
+      trkPeople = await seedTracker(trk);
+    }
     let chatPeople = null;
-    if (names.includes('chat-tray') || names.includes('chat-page')) {
+    if (names.some((n) => ['chat-tray', 'chat-page', 'admin-chat'].includes(n))) {
       chat = await startRelay('chat', distDir);
       chatPeople = await seedGuideChat(chat);
     }
     for (const name of names) {
       try {
-        await SHOTS[name]({ browser, open, acc, people, chat, chatPeople });
+        pages.length = 0;
+        await SHOTS[name]({ browser, open, acc, people, chat, chatPeople, trk, trkPeople });
         console.log(`ok ${name}`);
       } catch (err) {
         failed.push(name);
         console.error(`failed ${name}: ${String(err.message).split('\n')[0]}`);
+        if (process.env.DOCS_IMAGES_DEBUG) await pages[0]?.screenshot({ path: path.join(outDir, `failed-${name}.png`) }).catch(() => undefined);
       }
     }
   } finally {

@@ -14,7 +14,7 @@ When a board has steps but no session is running, the bar at the bottom shows **
 
 A board runs one session at a time. Adding a new template replaces the steps of the old one.
 
-<!-- screenshot: the running session bar at the bottom of the board with step counter, timer and Next step button -->
+![A running session on a Start / Stop / Continue board: the session bar at the bottom shows step 1 of 5, the timer, the Next step button and Reveal notes](images/session-bar.png)
 
 ## The session bar
 
@@ -107,7 +107,7 @@ Your own view does not change. The button is not limited to people who can edit,
 
 When a session moves to a step with a frame, only the person who moved it flies there. The others get a request that names the person and the step.
 
-<!-- screenshot: the request card at the bottom of the board with Go to, Follow, Dismiss and Mute buttons -->
+![The request card above the session bar saying a person asks you to look at their view, with Go to, Follow, Dismiss and Mute buttons](images/look-request.png)
 
 ### When someone asks you
 

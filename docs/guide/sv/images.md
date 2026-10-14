@@ -35,7 +35,7 @@ Snabbåtgärdsfältet har två knappar för bilder:
 - **100%** återställer bildens naturliga storlek, kring dess mittpunkt.
 - **Alt text** (Alternativtext) öppnar ett fält där du beskriver bilden med en mening. Skärmläsare använder texten. AI-verktyg som läser tavlan gör det också.
 
-<!-- screenshot: snabbåtgärdsfältet ovanför en markerad bild, med 100% och Alt text -->
+![En markerad bild med snabbåtgärdsfältet ovanför, som börjar med knappen 100%](images/picture-quickbar.png)
 
 ## När en bild inte har kommit fram än
 

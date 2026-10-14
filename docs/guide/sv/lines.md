@@ -5,14 +5,14 @@ En linje är ett enkelt streck på tavlan. Den är inte fäst vid något: använ
 
 ## Rita en linje
 
-Välj **Line** (Linje) i gruppen **Connectors and lines** (Kopplingslinjer och linjer) i verktygsraden till vänster, eller tryck på `Shift+L`. Gör sedan något av följande:
+Välj **Line** (Linje) i gruppen **Connectors and lines** (Kopplingslinjer och linjer) i det vänstra verktygsfältet, eller tryck på `Shift+L`. Gör sedan något av följande:
 
 - Dra från där linjen ska börja till där den ska sluta.
 - Klicka en gång för start och en gång till för slut.
 
 Verktyget växlar tillbaka till **Select** (Markera) när linjen är ritad. Håll ner `Shift` medan du ritar för att linjen ska snäppa till steg om 15 grader. Håll ner `Cmd` (`Ctrl` på Windows och Linux) för att låsa den vågrät eller lodrät.
 
-<!-- screenshot: verktyget Line valt i verktygsraden, en linje som dras över tavlan med ena änden snäppad till 15 grader -->
+![Verktyget Line valt i det vänstra verktygsfältet och en linje som dras över tavlan, med en etikett som visar längd och vinkeln 30 grader](images/line-drag.png)
 
 ## Flytta eller forma om en linje
 

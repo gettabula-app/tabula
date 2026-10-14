@@ -33,7 +33,7 @@ Administratörer kan också välja **Create a token** (Skapa en token) i avsnitt
 6. Välj när tokenen **Expires** (Upphör att gälla): efter 7, 30, 90 eller 365 dagar. Det finns ingen token som aldrig upphör att gälla.
 7. Välj **Create token**.
 
-<!-- screenshot: formuläret New token i dialogrutan AI tool access, med Read and comment och Only these valda -->
+![Formuläret New token i dialogrutan AI tool access: ett namn, Read and comment och Only these valda, två tavlor ikryssade och valen för giltighetstid](images/token-form.png)
 
 Tokenen visas bara en gång. Kopiera den nu och behandla den som ett lösenord. Om du tappar bort den återkallar du den och skapar en ny. Dialogrutan ger dig också ett färdigt kommando och ett kodutdrag med inställningar för verktyget.
 
@@ -82,14 +82,20 @@ Kanbantavlor kräver försiktighet:
 
 När ett verktyg med åtkomsttoken ändrar en tavla kan alla på tavlan se det:
 
-- **Markör och avatar.** En kort stund efter varje ändring visas verktyget som i arbete: en markör som bär namnet på medlemmen det arbetar åt (till exempel "Adas agent"), med tokenens namn i citattecken efter, som rör sig dit där verktyget ändrar tavlan. I deltagarlistan har det en egen avatar med en gnista; välj den för att gå dit verktyget arbetar. Den som gått med via en anslutningskod ser bara att en agent arbetar, inte vems den är.
+- **Markör och avatar.** En kort stund efter varje ändring visas verktyget som i arbete: en markör som bär namnet på medlemmen det arbetar åt (till exempel "Adas agent"), med tokenens namn i citattecken efter, som rör sig dit där verktyget ändrar tavlan. I deltagarlistan har det en egen avatar med en gnista; välj den för att gå dit verktyget arbetar. Den som gått med via en anslutningskod ser bara att en agent arbetar, inte vems den är. På en telefon räknar personbrickan ett verktyg i arbete i sitt **+N** och visas även när du är ensam på tavlan; tryck på den för att lista personerna och verktygen.
 - **Agentutkast.** Det ett verktyg skapar är märkt **Agent draft** tills en person redigerar det eller markerar det och väljer **Accept draft** i egenskapspanelen (**Accept drafts** för flera).
 - **Agentaktivitet.** I en arbetsyta med inloggning listar **Agent activity** i tavlemenyn vad varje agent gjort de senaste 7 dagarna, senaste först, som en kort rad som "created 6 sticky notes". Texter som personer skrivit visas aldrig. **Go there** tar dig till objekten. Tokenens namn visas i citattecken, skilt från medlemmens namn, så att en token inte kan se ut som en person.
 - **Ångra anrop.** Ägare och redigerare kan välja **Revert** för att ta tillbaka ett anrop. Objekt anropet skapade tas bort och objekt det tog bort kommer tillbaka, men allt en person ändrat sedan lämnas som det är, och ett meddelande säger hur många som lämnades. Ett anrop kan återställas en gång, i 48 timmar; en mycket stor ändring, eller en äldre, säger varför den inte går att återställa.
 
+![Ett verktyg som arbetar på en tavla: dess markör med namnet Maya's agent och tokenens namn inom citattecken, fyra lappar och en text märkta Agent draft samt verktygets avatar i deltagarlistan](images/agent-at-work.png)
+
+![Listan Agent activity med två poster, created 1 text och created 4 sticky notes, var och en med knapparna Go there och Revert](images/agent-activity.png)
+
 ## Daglig gräns och nya försök
 
 I en arbetsyta med inloggning kan varje token (och varje OAuth-anslutning) göra 2 000 ändringar på tavlor per dag. Räkningen gäller objekt, inte anrop: att skapa 10 klisterlappar i ett anrop räknas som 10. Den nollställs vid midnatt UTC, och ett verktyg som når gränsen får veta att den dagliga gränsen är nådd och när den nollställs. Läsning begränsas inte på det sättet, och det gör inte ärenden heller. Den som driver din server kan ändra talet eller stänga av gränsen.
+
+Ärendeverktyg har en egen gräns per token och timme: upp till 120 ärendeuppdateringar, 120 tillståndsändringar och 120 kommentarer (var och en räknas för sig) samt upp till 60 nya ärenden. Ett anrop över gränsen nekas med en tid att försöka igen och ändrar ingenting.
 
 Ett AI-verktyg kan fråga vem det agerar som och se hur många ändringar det har använt i dag och när räkningen nollställs.
 

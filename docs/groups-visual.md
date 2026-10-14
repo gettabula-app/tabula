@@ -2,7 +2,7 @@
 
 TAB-106, slice 2. The look of selecting, hovering, entering and locking a group, and of the Group and Ungroup buttons on touch, for the five themes. It extends [groups.md](groups.md) (which says what happens) with what it looks like. Nothing here changes the data model.
 
-The mocks are drawn from the themes' own variables in `src/themes.ts` and regenerate with `node scripts/groups-visual-mock.mjs`. Each PNG in `docs/groups-visual/` has the five themes side by side (default, ayu, kanagawa, matrix, evergreen).
+The mocks are drawn from the themes' own variables in `src/themes.ts` and regenerate with `node scripts/groups-visual-mock.mjs`. It writes one PNG per state into `docs/groups-visual/` with the five themes side by side (default, ayu, kanagawa, matrix, evergreen); the PNGs are not kept in the repository, so they never go out of date.
 
 ## Principles
 
@@ -36,7 +36,6 @@ Contrast of the group lines against each theme's canvas (non-text UI needs 3:1; 
 
 ## 1. Selected: item, several items, group
 
-`selected.png`.
 
 | | One item (as today) | Several items (as today) | A group (new) |
 |---|---|---|---|
@@ -50,13 +49,11 @@ On touch (`pointer: coarse`) handles are 16 px (as `render.ts` already does for 
 
 ## 2. Hover over a member of an unselected group
 
-`hover.png`.
 
 Hovering any member outlines the **whole group** a click would select: 1.5 px solid `--group-hover` (`--guide`) round the derived rectangle, 6 px out, and nothing round the member itself. The guide color has at least 3:1 contrast in every theme and differs from the solid `--group-line` used for selection, so hover cannot be mistaken for selection. A single item uses the same theme-aware hover color. No chip on hover: it would flash as the pointer crosses a board, and the outline is enough to say what the click picks. While a dot vote runs the hover goes back to the single item, because a click votes for the item ([groups.md](groups.md), Selecting).
 
 ## 3. Inside a group
 
-`inside.png`.
 
 - **Dim**: everything outside the entered group is covered by a `--group-dim` wash (the canvas colour at 62%), drawn between the outside items and the group's members, so members stay fully lit and the rest recede but stay legible. This reuses the dimming that exists for a focused frame step (`docs/groups.md`, "Entered state"); only the colour token is new, which makes it follow the theme on dark boards.
 - **Bounds**: 1.5 px **dashed** (6 4) `--group-line` round the group's rectangle, 6 px out. Dashed against the solid of selection is the second cue besides the dim.
@@ -68,7 +65,6 @@ Esc moves the dim and chips to the parent group if there is one, so the breadcru
 
 ## 4. A locked group
 
-`locked.png`.
 
 Locked things are quiet in Tabula today: nothing marks them at rest, and the badge appears when the pointer is over one (`ov.lockedHover`). Groups keep that.
 
@@ -79,7 +75,6 @@ Locked things are quiet in Tabula today: nothing marks them at rest, and the bad
 
 ## 5. Group and Ungroup in the quick-action bar on touch
 
-`touch.png`.
 
 - **Group** shows when two or more items are selected at one level; **Ungroup** shows instead when exactly one group is selected. Never both.
 - Each is an **icon plus a text label** (`qb-text` button): the two icons are not common enough to carry the meaning alone, and a label costs 70 px on a bar that scrolls (TAB-239). Height 44 px and min width 44 px, which `icon-btn` already gets on `pointer: coarse`.
@@ -90,7 +85,7 @@ Locked things are quiet in Tabula today: nothing marks them at rest, and the bad
 
 ## 6. Transforming a group: resize, rotate, and what the gesture says (slice 3)
 
-`transform.png` (pointer) and `transform-touch.png` (touch). It fills the `TODO(slice 3)` in `render.ts`: the handles and the live chip of a selected group. Behaviour is in [groups.md](groups.md) (Resize, Rotate); this is how it looks.
+The pointer and the touch state. It fills the `TODO(slice 3)` in `render.ts`: the handles and the live chip of a selected group. Behaviour is in [groups.md](groups.md) (Resize, Rotate); this is how it looks.
 
 **Handles.** The selected group's solid box (section 1) gets the same handles as a single item, built from the existing tokens: eight squares (corners and edge midpoints) 9 px with a 2 px radius, fill `--group-handle`, stroke 1.5 px `--group-line`, and the rotate circle 10 px across on a 1 px stem 24 px above the top edge. Every one scales the group **proportionally** (groups.md), so the edge handles do not stretch one axis: they differ from the corners only in where the anchor is. On touch (`pointer: coarse`) the squares are **16 px** and the circle 16 px, each with a 44 px hit area that never reaches into a neighbouring handle (on a small group the edge handles drop out, leaving the four corners and the rotate circle, so targets never overlap).
 

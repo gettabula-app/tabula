@@ -33,7 +33,7 @@ Admins can also select **Create a token** in the **Access tokens** section of Ad
 6. Choose when the token **Expires**: 7, 30, 90 or 365 days. There is no token that never expires.
 7. Select **Create token**.
 
-<!-- screenshot: New token form in the AI tool access dialog, with Read and comment and Only these selected -->
+![The New token form in the AI tool access dialog: a name, Read and comment and Only these chosen, two boards ticked, and the expiry choices](images/token-form.png)
 
 The token is shown once. Copy it now and treat it like a password. If you lose it, revoke it and make another. The dialog also gives you a ready-made command and a settings snippet for your tool.
 
@@ -82,14 +82,20 @@ Kanban boards need care:
 
 When a tool with an access token changes a board, everyone on the board can see it:
 
-- **A cursor and an avatar.** For a short while after each change the tool shows as at work: a cursor named for the member it works for (for example "Ada's agent"), with the token's name in quotes after it, moving to where it is changing the board. In the people list it has its own avatar with a spark; select it to go to where the tool works. People who joined with a join code only see that an agent is at work, not whose it is.
+- **A cursor and an avatar.** For a short while after each change the tool shows as at work: a cursor named for the member it works for (for example "Ada's agent"), with the token's name in quotes after it, moving to where it is changing the board. In the people list it has its own avatar with a spark; select it to go to where the tool works. People who joined with a join code only see that an agent is at work, not whose it is. On a phone the people chip counts a tool at work in its **+N**, and it shows even when you are alone on the board; tap it to list the people and the tools.
 - **Agent draft.** Whatever a tool creates is marked **Agent draft** until a person edits it or selects it and chooses **Accept draft** in the properties panel (**Accept drafts** for several).
 - **Agent activity.** In a workspace with sign-in, **Agent activity** in the board menu lists what each agent did in the last 7 days, newest first, as a short line such as "created 6 sticky notes". It never shows the text people wrote. **Go there** takes you to the objects. The token's name is shown in quotes, apart from the member's name, so a token cannot pass for a person.
 - **Revert.** Owners and editors can choose **Revert** to take one call back. Objects the call made are removed and objects it removed come back, but anything a person changed since is left as it is, and a message says how many were left. A call can be reverted once, for 48 hours; a very large change, or an older one, says why it cannot be reverted.
 
+![A tool at work on a board: its cursor named Maya's agent with the token name in quotes, four sticky notes and a text marked Agent draft, and the tool's avatar in the people list](images/agent-at-work.png)
+
+![The Agent activity list with two entries, created 1 text and created 4 sticky notes, each with Go there and Revert buttons](images/agent-activity.png)
+
 ## Daily limit and retrying
 
 In a workspace with sign-in, each token (and each OAuth connection) can make 2,000 changes to boards per day. The count is in items, not calls: creating 10 sticky notes in one call counts as 10. It resets at midnight UTC, and a tool that hits it is told the daily limit has been reached and when it resets. Reading is not limited this way, and neither are tickets. Whoever runs your server can change the number or turn the limit off.
+
+Ticket tools have their own limit per token and hour: up to 120 ticket updates, 120 state changes and 120 comments (each counted separately), and up to 60 new tickets. A call over the limit is refused with a time to retry, and changes nothing.
 
 An AI tool can ask who it is acting as and see how many changes it has used today and when the count resets.
 

@@ -10,7 +10,7 @@ Menyalternativet visas för ägare och redigerare samt för alla när arbetsytan
 
 Versionshistoriken lagras på servern. Om du är offline eller om tavlan inte är ansluten till en server står det i panelen: ”Versionshistoriken lagras på servern och kräver en anslutning.”
 
-<!-- screenshot: panelen Versionshistorik med en namngiven version, automatiska versioner grupperade under I dag och flikarna Alla / Namngivna -->
+![Panelen Version history med flikarna All och Named och knappen Save version, en namngiven version och automatiska versioner grupperade under Today](images/version-history.png)
 
 ## Automatiska och namngivna versioner
 
