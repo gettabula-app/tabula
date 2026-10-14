@@ -824,7 +824,6 @@ const SHOTS = {
     const b = await newPage(browser, { base: open.base, width: W, height: H, user: { id: 'docs-ana', ...ANA_USER } });
     await openBoard(b.page, open.base, 'docs-look-request');
     await b.page.getByRole('button', { name: 'Ask everyone to look here' }).click();
-    const card = a.page.locator('.focus-request, .look-request').first();
     await a.page.getByRole('button', { name: 'Follow' }).waitFor({ timeout: 15_000 });
     await a.page.waitForFunction(() => !document.querySelector('.toast.show'), null, { timeout: 12_000 });
     await a.page.evaluate(() => { window.__board.store.setMeta({ name: 'Sprint retro' }); document.activeElement?.blur(); });
