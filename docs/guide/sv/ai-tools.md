@@ -95,6 +95,8 @@ När ett verktyg med åtkomsttoken ändrar en tavla kan alla på tavlan se det:
 
 I en arbetsyta med inloggning kan varje token (och varje OAuth-anslutning) göra 2 000 ändringar på tavlor per dag. Räkningen gäller objekt, inte anrop: att skapa 10 klisterlappar i ett anrop räknas som 10. Den nollställs vid midnatt UTC, och ett verktyg som når gränsen får veta att den dagliga gränsen är nådd och när den nollställs. Läsning begränsas inte på det sättet, och det gör inte ärenden heller. Den som driver din server kan ändra talet eller stänga av gränsen.
 
+Ärendeverktyg har en egen gräns per token och timme: upp till 120 ärendeuppdateringar, 120 tillståndsändringar och 120 kommentarer (var och en räknas för sig) samt upp till 60 nya ärenden. Ett anrop över gränsen nekas med en tid att försöka igen och ändrar ingenting.
+
 Ett AI-verktyg kan fråga vem det agerar som och se hur många ändringar det har använt i dag och när räkningen nollställs.
 
 Om ett svar går förlorat kan ett verktyg göra om ett skapa- eller kommentarsanrop med samma begäran-id. Det första resultatet skickas då igen i 24 timmar, och inget skapas eller räknas två gånger.
