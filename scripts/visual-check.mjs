@@ -1709,15 +1709,15 @@ const STATES = {
   async 'tracker-frame-fullscreen'(env) {
     const frame = await openTrackerMockFrame(env);
     await env.page.evaluate((id) => { if (innerWidth > 600) window.__board.zoomTo(0.5); window.__board.setSelection([id]); }, frame.id);
-    await env.page.keyboard.press('Enter');
-    const issuesTab = env.width <= 600
-      ? env.page.locator('.trk-route-root [role="tab"][aria-label="All issues"]')
-      : env.page.locator('.trk-frame-wrap.is-work [role="tab"][aria-label="All issues"]');
-    await issuesTab.click();
-    await env.page.locator('.trk-list-row').first().waitFor();
+    // v5.4: a selected frame at zoom 0.5 is live where it sits and lists All issues by default; on a phone the frame is a card whose Open chip opens the full-screen route
+    if (env.width <= 600) {
+      await env.page.locator('.trk-frame-wrap .trk-frame-open').first().click().catch((error) => { throw new Error(`tracker-frame-fullscreen: phone open chip: ${error.message}`); });
+      await env.page.locator('.trk-route-root').waitFor();
+    }
+    // on a phone the board frame's own rows sit hidden under the route: wait for the visible list
+    await env.page.locator(env.width <= 600 ? '.trk-route-root .trk-list-row' : '.trk-frame-wrap.is-work .trk-list-row').first().waitFor();
     const before = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (env.width > 600) {
-      await env.page.locator('.trk-frame-wrap.is-selected .trk-frame-open').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: open chip: ${error.message}`); });
       await env.page.locator('.trk-frame-wrap.is-work').waitFor();
       await env.page.locator('.trk-frame-wrap.is-work .trk-element-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: frame expand: ${error.message}`); });
     }
@@ -1730,7 +1730,7 @@ const STATES = {
     // In v5.4 full screen is a tracker route; its strip exits to Boards. Browser Back returns to the preserved board frame.
     await env.page.evaluate(() => history.back());
     await env.page.locator('.trk-route-root').waitFor({ state: 'detached' });
-    await env.page.locator('.trk-frame-wrap.is-selected').waitFor();
+    await env.page.locator(env.width <= 600 ? '.trk-frame-wrap' : '.trk-frame-wrap.is-selected').first().waitFor(); // a phone keeps no selection ring on the card
     const afterClose = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (before.x !== afterClose.x || before.y !== afterClose.y || before.zoom !== afterClose.zoom) throw new Error('tracker-frame-fullscreen: closing full screen changed the board camera');
     if (env.width > 600) {
