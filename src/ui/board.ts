@@ -90,7 +90,8 @@ type IconName = keyof typeof ICONS;
  */
 export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () => void }, opts: { scratch?: boolean; demo?: boolean; trackerId?: string; ticketKey?: string; guestId?: string } = {}) {
   const scratch = opts.scratch === true;
-  const demo = opts.demo === true || DEMO;
+  // DEMO first: it is a build-time constant, so in the demo build this folds to true and the history, chat, share and account code behind `!demo` is dropped from the bundle (the other order kept it, 112 KB)
+  const demo = DEMO || opts.demo === true;
   let trackerStore: TrackerStore | null = null;
   const trackerEnabled = () => {
     return !scratch && !demo && trackerAllowed(authState());
