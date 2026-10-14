@@ -36,7 +36,7 @@ const USAGE = `Usage: npm run visual -- --id TAB-123 [options]
                      mode presence-avatars-many, kanban, kanban-card, kanban-drag, kanban-drag-empty, kanban-keyboard, kanban-adding, kanban-wip,
                      kanban-lowdetail, kanban-dialog, kanban-labels, kanban-labels-colour, kanban-full-card, kanban-convert, kanban-lane-menu,
                      kanban-menu, kanban-filter, kanban-filter-on, kanban-wip-block, kanban-wip-refused, kanban-addlane, kanban-sheet, resize-guides-size,
-                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, image-placeholders, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, ai-key-test, ai-key-test-error, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, and in accounts mode admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
+                     kanban-sheet-filter, kanban-card-meta, kanban-sheet-meta, kanban-sheet-adding, kanban-sheet-full, kanban-sheet-viewer, kanban-lane-drag, kanban-lane-no-anchors, ai-review, ai-preview-empty, text-handles, flip-menu, flip-visual, image-placeholders, paste-text, text-scale-touch, ai-live-remote-ring, ai-live-remote-preview, kanban-moveto, kanban-moveto-full, kanban-templates, comment-thread, drawer-stickers, share, empty-share, poll-quick, poll-step, print-dialog, and in accounts mode ai-key-test, ai-key-test-error, admin, admin-tokens, ai-key-me, ai-key-me-openai, ai-key-me-openai-bad, ai-key-me-openai-saved, ai-key-me-anthropic-saved (Your AI key) and ai-admin, ai-admin-openai, ai-admin-openai-bad, ai-admin-openai-saved, ai-admin-anthropic-saved (the admin AI tab), ai-key-me-keyboard and ai-admin-keyboard (keyboard only), backups-list, backups-detail, backups-board-copy,
                      backups-confirm, backups-restoring, backups-off, join-short-code, share-code-phone, guest-cursors, guest-expired, tracker-real-server, chat, chat-focus-pill, chat-focus-send, chat-composer, chat-unread, chat-page, chat-page-team,
                      chat-workspace-empty, chat-page-pick, chat-home, chat-admin, chat-react, chat-mention, chat-notifications, chat-members, chat-object, chat-session, chat-poll, chat-poll-overlap, review-ticket-page, review-ticket-page-phone (the chat states
                      turn on TABULA_CHAT)
@@ -1442,7 +1442,7 @@ async function privacyPanel(page, base, mode, { preview = true } = {}) {
   await page.goto(`${base}/#/admin/privacy`);
   await page.locator('.privacy-admin .privacy-toggle').waitFor();
   if (preview) {
-    await page.getByRole('button', { name: 'Show what would be sent', exact: true }).click();
+    await page.locator('.privacy-actions button[data-focus="preview"]').click();
     await page.locator('.privacy-json').waitFor();
   }
 }
@@ -2874,6 +2874,29 @@ const STATES = {
     await env.page.getByRole('button', { name: 'Start a dot vote' }).click();
     await env.page.getByRole('dialog', { name: 'Start a dot vote' }).waitFor();
   },
+  async 'poll-quick'(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Start a quick poll' }).click();
+    await env.page.locator('.poll-pop').waitFor();
+  },
+  async 'poll-step'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const flow = window.__board.flow;
+      flow.setSteps([{ id: 'visual-poll-step', title: 'Discussion', instructions: 'Answer the question.', mode: 'write', durationSec: 120 }]);
+      flow.start();
+    });
+    await env.page.getByRole('button', { name: 'All steps' }).click();
+    await env.page.getByLabel('Step 1 mode').selectOption('poll');
+    await env.page.getByRole('dialog', { name: 'Poll' }).waitFor();
+  },
+  async 'print-dialog'(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await env.page.getByRole('button', { name: 'Export', exact: true }).click();
+    await env.page.getByRole('button', { name: /Print or save as PDF/ }).click();
+    await env.page.getByRole('dialog', { name: 'Print or save as PDF' }).waitFor();
+  },
   async 'vote-running'(env) {
     await openSeedBoard(env);
     // the vote step lives in the seeded board, so a later width may find it already running
@@ -2953,6 +2976,11 @@ const STATES = {
     await openEmptyBoard(env);
     await env.page.getByRole('button', { name: 'Share', exact: true }).click();
     await env.page.locator('[role="dialog"]').first().waitFor();
+  },
+  async share(env) {
+    await openSeedBoard(env);
+    await env.page.getByRole('button', { name: 'Share', exact: true }).click();
+    await env.page.getByRole('dialog').waitFor();
   },
   async 'share-code-phone'({ page, base, width }) {
     if (width > 500) throw new Error('share-code-phone is only valid at phone widths');
@@ -5072,8 +5100,12 @@ const STATES = {
   async 'ai-review'(env) {
     const { page } = env;
     await openSeedBoard(env, '?debug');
+    await page.evaluate(() => {
+      const flow = window.__board.flow;
+      for (const poll of flow.polls.list()) flow.clearPoll(poll.id);
+    });
     await sendAiRun(page);
-    await page.getByRole('button', { name: /review/i }).first().click();
+    await page.locator('.ailive-row .ailive-btn').filter({ hasText: 'Review' }).evaluate((button) => button.click());
     await page.locator('.aireview').first().waitFor();
     await settle(page);
   },
@@ -5148,7 +5180,7 @@ function relayEnv({ mode, port, dataDir, distDir, frameable, chat, joinCodes, tr
   return env;
 }
 
-const newRelayHandle = () => ({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-visual-')), base: '', child: null });
+const newRelayHandle = () => ({ dataDir: path.resolve(fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-visual-'))), base: '', child: null });
 
 /** Starts the relay for `handle` and resolves when it answers. The caller stops it, also when this throws. */
 async function startRelay(handle, options) {
@@ -5484,7 +5516,7 @@ function ensureBuilt(noBuild) {
   }
   if (noBuild && built) return distDir;
   console.log('building the app (npm run build:app)');
-  const run = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:app', '--', '--mode', 'visual'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
+  const run = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:app', '--', '--mode', 'visual', '--configLoader', 'runner'], { cwd: root, stdio: 'inherit', shell: process.platform === 'win32' });
   if (run.status !== 0) throw new Error('npm run build:app failed');
   return distDir;
 }

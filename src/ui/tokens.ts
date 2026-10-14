@@ -248,7 +248,7 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
       } else if (!boards.length) {
         boardsBody.replaceChildren(h('p', { class: 'tokens-hint' }, 'You have no boards on this server yet.'));
       } else {
-        boardsBody.replaceChildren(h('div', { class: 'tokens-boards' }, boards.map((b) => h('label', { class: 'tokens-check' },
+        boardsBody.replaceChildren(h('div', { class: 'tokens-boards' }, boards.map((b) => h('label', { class: 'check tokens-check' },
           h('input', {
             type: 'checkbox',
             checked: draft.boardIds.includes(b.id),
