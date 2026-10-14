@@ -152,7 +152,7 @@ Med `add_kanban_card` och `move_kanban_card` kan du ange var kortet ska hamna i 
 
 ## Logga in med OAuth
 
-I dag ansluter ett verktyg med en token, som ovan. Det går snart att ansluta från verktygets egen vy för **Add connector** (Lägg till anslutning) med OAuth, men det är inte tillgängligt än. Tills vidare använder du kommandot eller inställningsfilen från tokendialogrutan.
+Ett verktyg kan också ansluta från sin egen vy **Add connector** (Claude, ChatGPT, Cursor och VS Code) när den som driver din Tabula-server har slagit på det; det fungerar i arbetsytor med inloggning. Du anger arbetsytans adress följd av `/mcp`, loggar in i arbetsytan i webbläsaren, väljer vad appen får göra (läsa, läsa och kommentera, eller läsa och redigera, och vilka tavlor) och trycker **Allow**. Anslutningen följer samma regler som en token: aldrig mer åtkomst än du själv har, och privata sessionsanteckningar förblir dolda. Anslutna appar listas under **Connected apps** i **AI tool access**, där du kan välja **Disconnect** för en; **Revoke all** och **Sign out everywhere** kopplar bort alla appar. En app som anslutits så här arbetar bara med tavlor. Ärendeverktyg kräver en token. Om verktygets anslutningsvy säger att den inte kan registrera sig är det inte påslaget på servern: använd kommandot eller inställningsfilen från tokendialogrutan i stället.
 
 ## Hantera dina token
 
