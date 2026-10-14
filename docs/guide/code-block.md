@@ -40,7 +40,7 @@ The colours of the code follow the board's theme; there is nothing to set.
 
 ## Share and export
 
-PNG, SVG and print show the block as it looks on the board, without the buttons. A board file (`.drift`) and a JSON snapshot keep the code, language and title. An AI agent connected with an access token can create and change code blocks, and Tabula's built-in AI reads the code like the text of any object. See [Code blocks](../code-blocks.md) for the details.
+PNG, SVG and print show the block as it looks on the board, without the buttons. A board file (`.drift`) and a JSON snapshot keep the code, language and title. An AI agent connected with an access token can create and change code blocks, and Tabula's built-in AI reads the code like the text of any object.
 
 ## Keyboard and screen readers
 
