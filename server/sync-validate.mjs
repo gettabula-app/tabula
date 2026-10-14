@@ -39,6 +39,7 @@
 //   createdByPolicy   'writer' (default) | 'member': 'member' also accepts any current member as createdBy, for undo
 //                     restoring somebody else's deleted object with its original createdBy
 
+import { CODE_LANG_IDS, MAX_CODE_CHARS, MAX_CODE_TITLE } from '../shared/code-langs.mjs';
 import { cleanColor } from '../shared/colors.mjs';
 import { isDueDate, isSafeHttpUrl, kanbanColor, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES } from '../shared/containers.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
@@ -112,7 +113,7 @@ export const FORBIDDEN_KEYS = Object.freeze(['__proto__', 'constructor', 'protot
 // ---------------------------------------------------------------- enumerations (kept equal to board-ops.mjs by a test)
 
 export const OBJ_TYPES = Object.freeze([
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table', 'code',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ]);
 /** Object types the validator knows beyond board-ops.mjs's list: none now that link cards (docs/link-cards.md) are in both. */
@@ -373,6 +374,8 @@ export const FIELDS = Object.freeze({
   text: { ...BOX, lineHeight: num(0.8, 3) },
   // a Markdown block's text is capped lower than a note: every viewer lays it out
   markdown: { ...BOX, text: str(LIMITS.markdown), lineHeight: num(0.8, 3) },
+  // a code block (docs/code-blocks.md): the code is `text` (the cap is report-only like every text cap), the language one of the shared list
+  code: { ...BOX, text: str(MAX_CODE_CHARS), lang: oneOf(CODE_LANG_IDS), title: str(MAX_CODE_TITLE), lines: bool, wrap: bool },
   // a table (docs/tables.md): the header flags, and rows, columns, widths and cells as keys of their own, checked by tablePartCheck
   table: { ...BOX, headerRow: bool, headerCol: bool },
   frame: { ...BOX, name: str(LIMITS.name) },

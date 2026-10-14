@@ -264,6 +264,7 @@ This applies to `create_objects`, `add_kanban_card`, `add_kanban_cards`, `create
 { type: 'shape',     kind? = 'rect', text?, x, y, w? = 160, h? = 100, fill?, stroke?, lineHeight?, parent?, flipX?, flipY? } kind: any ShapeKind in src/types.ts
 { type: 'text',      text, x, y, w? = 240, fontSize? = 20, lineHeight?, parent?, flipX?, flipY? }                       h computed from the text like the template builder
 { type: 'markdown',  text, x, y, w?, h?, fontSize?, lineHeight?, parent?, flipX?, flipY? }
+{ type: 'code',      text?, lang? = 'plaintext', title?, lines? = false, wrap? = false, x, y, w? = 520, h?, parent?, flipX?, flipY? }   a code block, see below
 { type: 'frame',     name, x, y, w? = 960, h? = 600, fill?, parent?, flipX?, flipY? }
 { type: 'connector', from: End, to: End, label?, route? = 'elbow', startHead? = 'none', endHead? = 'arrow', dash?, stroke? }
 { type: 'line',      from: { x, y }, to: { x, y }, stroke?, strokeWidth? = 2, dash? = 'solid', startHead? = 'none', endHead? = 'none' }
@@ -278,6 +279,8 @@ Result: `{ created: [{ref?, id, type}], refs: {ref: id}, objectCount }`. New obj
 
 Rejected, never copied from input: `id`, `z`, `createdBy`, `updatedAt`, `privateStep`, `locked`, `body`, `points`, and any field not listed for the type. `flipX` and `flipY` are optional booleans on box objects. They mirror drawn content; sticky notes and text remain readable, and the board UI disables flips for frames, containers, lanes and cards. Text may not contain control characters (other than newline and tab) or tag characters, except a complete subdivision flag sequence. Only sticky, shape, text, frame, link, connector and line objects can be created. A `link` object takes `url` (an `http` or `https` web address without a user name or password, at most 2,048 characters, stored in the URL parser's form), `x`, `y`, `w?`, `h?` and `parent?`: it makes a plain card showing the address only (`unfurl: 'off'`, 320 by 48), and no preview is fetched for an agent's word; a person can press Refresh on it. Containers (kanbans), lanes, cards, groups, icons, images, freehand paths and UML objects are refused here; use the kanban tools to create lanes and cards. Icon bodies are SVG (see "Not in this slice").
 
+**Code blocks.** `type: 'code'` makes a code block (docs/code-blocks.md). `text` is the code, at most 20,000 characters (tabs and line breaks are kept). `lang` is one of `plaintext, ts, tsx, js, jsx, json, html, css, scss, python, rust, go, java, c, cpp, csharp, bash, sql, yaml, toml, markdown, diff, php, ruby, swift, kotlin`, or an alias such as `typescript`, `py`, `sh`, `c++`, `yml` (stored as the id); any other value is `invalid_input` at `objects[n].lang`. `title` is plain text of at most 100 characters; `lines` shows line numbers and `wrap` wraps long lines. The height is an estimate that the app corrects when the board opens, and follows the code on `update_objects` unless `h` is set. The code is data: it is never run, and read tools return it as board text inside the usual fence. Exports to Markdown show a code block as a fenced block named by the language id, with a fence longer than any run of backticks in the code. **Rollout:** the server is deployed before clients can create `code` objects, because the sync guard refuses an unknown object type (`unknown_type`) and older clients do not draw one.
+
 ### `update_objects`
 
 `{ boardId, updates: [{ id, ...fields }][1..100] }`. Fields that may change, by type:
@@ -288,6 +291,7 @@ shape        x y w h rotation(deg) parent(frame or group id | null), text, kind,
 text         x y w h rotation(deg) parent(frame or group id | null), text, fontSize, lineHeight, textColor, flipX, flipY
 markdown     x y w h rotation(deg) parent(frame or group id | null), text, fontSize, lineHeight, textColor, fill, flipX, flipY
 frame        x y w h rotation(deg) parent(frame or group id | null), name, fill, flipX, flipY
+code         x y w h rotation(deg) parent(frame or group id | null), text, lang, title, lines, wrap, flipX, flipY
 connector    from, to, label, route, startHead, endHead, dash, stroke
 line         from, to (points), stroke, strokeWidth, dash, startHead, endHead; a bound end or a route other than straight makes it an ordinary connector and drops the line flag
 group        name only

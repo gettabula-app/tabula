@@ -38,3 +38,21 @@
 @media (pointer: coarse), (max-width: 860px) {
   .combo-opt { min-height: 44px; }
 }
+
+/* switchRow: a switch with its label (the code block's Line numbers and Wrap lines) */
+.check.switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; color: var(--tray-text); font-size: 13px; cursor: pointer; } /* min-height comes from .check (32px, 44px on touch) */
+.switch-input {
+  appearance: none; -webkit-appearance: none; position: relative; flex: none; width: 34px; height: 20px; margin: 0; padding: 0; border-radius: 10px; cursor: pointer;
+  background: color-mix(in srgb, var(--tray-text) 14%, var(--tray));
+}
+.switch-input::after { content: ''; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tray); box-shadow: 0 0 0 1px var(--field-edge-strong); }
+.switch-input:checked { background: var(--signal); }
+.switch-input:checked::after { transform: translateX(14px); background: var(--on-signal); box-shadow: none; }
+.switch-input, .switch-input::after { transition: background-color 120ms ease, transform 120ms ease; }
+@media (prefers-reduced-motion: reduce) { .switch-input, .switch-input::after { transition: none; } }
+@media (forced-colors: active) {
+  .switch-input { border: 1px solid CanvasText; }
+  .switch-input:checked { background: Highlight; }
+  .switch-input::after { background: CanvasText; }
+  .switch-input:checked::after { background: HighlightText; }
+}

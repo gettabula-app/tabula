@@ -1,5 +1,5 @@
 import type { BoardApp } from '../app';
-import { copyMarkdownSource, copyTable } from './markdown-actions';
+import { copyCodeSource, copyMarkdownSource, copyTable } from './markdown-actions';
 import type { Align, BaseObj, ConnectorObj, Obj, Route, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
 import { isLine } from '../line-geometry';
@@ -477,6 +477,7 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
     groups.push([
       lock,
       ...(sel.length === 1 && sel[0].type === 'markdown' ? [action('copy', 'Copy as Markdown', () => copyMarkdownSource((sel[0] as BaseObj).text ?? ''))] : []),
+      ...(sel.length === 1 && sel[0].type === 'code' ? [action('copy', 'Copy code', () => copyCodeSource((sel[0] as BaseObj).text ?? ''))] : []),
       ...(sel.length === 1 && sel[0].type === 'table' ? [action('copy', 'Copy for a spreadsheet', () => copyTable(sel[0] as unknown as Record<string, unknown>, 'tsv'))] : []),
       action('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
       ...(opts.demo || !canSaveTemplate(authState().mode) ? [] : [action('templates', 'Save as template', () => openSaveTemplate(app, [...app.selection]))]),

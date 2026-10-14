@@ -3,6 +3,11 @@ import type { BaseObj, ConnectorObj, Id, Obj } from './types';
 import { isBox, isConnector } from './types';
 import { center, connectorGeom, rotate } from './geometry';
 import { LABEL_FONT, labelBox, labelPill, layoutText, markdownBoxHeight, styleOf, textHeight } from './markup';
+import { CODE, CODE_MONO, codeBoxHeight, layoutCode } from './code-layout';
+import { CODE_STRINGS } from './code-strings';
+import { clampCodeText, enterEdit, tabEdit, type Edit } from './code-ui-logic';
+import { MAX_CODE_CHARS } from '../shared/code-langs.mjs';
+import { safeObj } from './safe-obj';
 import { fontFamily } from './fonts';
 import { MD_PAD } from './markdown-layout';
 import { TABLE_PAD_X, TABLE_PAD_Y, layoutTable } from './table-layout';
@@ -55,6 +60,9 @@ export class TextEditor {
   private selectionEnd = 0;
   private blurHeld = false;
   private bottomInset = 0;
+  /** While a code block is typed in: the store subscription that keeps the textarea on the block, and the undo capture window to give back. */
+  private unsubStore: (() => void) | null = null;
+  private captureTimeout = 350;
 
   constructor(private app: BoardApp) {
     this.ta = document.createElement('textarea');
@@ -72,6 +80,18 @@ export class TextEditor {
       if (e.key === 'Escape' || (e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
         e.preventDefault();
         this.commit();
+      }
+      if (this.isCode() && !e.isComposing && this.id) {
+        // code keeps its indentation: Enter starts the next line where this one began, Tab and Shift+Tab indent and outdent (src/code-ui-logic.ts)
+        if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          this.applyEdit(enterEdit(this.ta.value, this.ta.selectionStart, this.ta.selectionEnd));
+        } else if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          this.applyEdit(tabEdit(this.ta.value, this.ta.selectionStart, this.ta.selectionEnd, e.shiftKey));
+        }
+        e.stopPropagation();
+        return;
       }
       if (e.key === 'Enter' && !e.shiftKey && (this.mode === 'frame' || this.mode === 'label')) {
         e.preventDefault();
@@ -91,6 +111,13 @@ export class TextEditor {
       }
       e.stopPropagation();
     });
+    this.ta.addEventListener('paste', (e) => {
+      if (!this.isCode()) return;
+      // the textarea cuts a paste at its maxlength without a word; this says so, quietly
+      const pasted = e.clipboardData?.getData('text/plain') ?? '';
+      const room = MAX_CODE_CHARS - (this.ta.value.length - (this.ta.selectionEnd - this.ta.selectionStart));
+      if (pasted.length > room) this.app.notify(`Code blocks hold up to ${MAX_CODE_CHARS.toLocaleString('en-US')} characters: the rest of what you pasted was left out.`);
+    });
     this.ta.addEventListener('blur', () => {
       this.rememberSelection();
       if (!this.blurHeld) this.commit();
@@ -102,8 +129,44 @@ export class TextEditor {
     return this.id !== null;
   }
 
+  /** The object being edited, if any. */
+  get editingId(): Id | null {
+    return this.id;
+  }
+
   private isMarkdown(): boolean {
     return this.active && this.app.store.get(this.id ?? undefined)?.type === 'markdown';
+  }
+
+  private isCode(): boolean {
+    return this.active && this.mode === 'text' && this.app.store.get(this.id ?? undefined)?.type === 'code';
+  }
+
+  /** Puts an edit of the whole text into the textarea as one typed change (so the field's own undo and the board's both see it), then the selection. */
+  private applyEdit(edit: Edit) {
+    const ta = this.ta;
+    const old = ta.value;
+    if (edit.value !== old) {
+      let a = 0;
+      while (a < old.length && a < edit.value.length && old[a] === edit.value[a]) a++;
+      let b = 0;
+      while (b < old.length - a && b < edit.value.length - a && old[old.length - 1 - b] === edit.value[edit.value.length - 1 - b]) b++;
+      const replacement = edit.value.slice(a, edit.value.length - b);
+      ta.setSelectionRange(a, old.length - b);
+      let done = false;
+      try { done = document.execCommand(replacement ? 'insertText' : 'delete', false, replacement || undefined); } catch { done = false; }
+      if (!done || ta.value !== edit.value) {
+        ta.value = edit.value;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+    ta.setSelectionRange(edit.start, edit.end);
+    this.rememberSelection();
+  }
+
+  /** A code block is being typed in (it takes no emoji, so the floating edit bar stays away). */
+  get codeEditing(): boolean {
+    return this.isCode();
   }
 
   get textMode(): boolean {
@@ -186,11 +249,24 @@ export class TextEditor {
     }
     this.ta.value = this.original;
     const markdown = o.type === 'markdown';
-    // a Markdown block opens with the caret at the end of its source (select-all would let one keystroke replace it)
-    this.selectionStart = this.selectionEnd = markdown ? this.original.length : 0;
+    const code = o.type === 'code';
+    // code is typed in the textarea's own limit, and Markdown or code open with the caret at the end of the source (select-all would let one keystroke replace it)
+    if (code) this.original = this.ta.value = clampCodeText(this.original).text;
+    this.selectionStart = this.selectionEnd = markdown || code ? this.original.length : 0;
     this.ta.dataset.mode = this.mode;
     this.ta.dataset.kind = o.type;
-    this.ta.placeholder = markdown ? 'Write Markdown: # heading, **bold**, - [ ] task, | table |' : '';
+    if (code) this.ta.maxLength = MAX_CODE_CHARS;
+    else this.ta.removeAttribute('maxlength');
+    this.ta.spellcheck = !code;
+    this.ta.setAttribute('aria-label', code ? 'Edit code' : 'Edit text');
+    this.ta.dataset.wrap = code && (o as BaseObj).wrap === true ? 'true' : 'false';
+    this.ta.placeholder = markdown ? 'Write Markdown: # heading, **bold**, - [ ] task, | table |' : code ? CODE_STRINGS.empty : '';
+    if (code) {
+      // one undo step for the whole session, however long the pauses; a change from elsewhere (the wrap switch, a collaborator) moves the textarea too
+      this.captureTimeout = this.app.store.undo.captureTimeout;
+      this.app.store.undo.captureTimeout = Number.MAX_SAFE_INTEGER;
+      this.unsubStore = this.app.store.onChange(() => { if (this.active) requestAnimationFrame(() => this.active && this.reposition()); });
+    }
     this.ta.style.display = 'block';
     this.app.r.setEditing(id);
     this.app.store.undo.stopCapturing();
@@ -198,7 +274,7 @@ export class TextEditor {
     this.unsubCam = this.app.r.onCamera(() => this.reposition());
     // The opening selection is set now, while the box is already on screen and can be typed in; the deferred step below only
     // takes focus. Setting it there put it after anything the person did in the first frame (select all, a first keystroke).
-    if (markdown) this.ta.setSelectionRange(this.original.length, this.original.length);
+    if (markdown || code) this.ta.setSelectionRange(this.original.length, this.original.length);
     else this.ta.select();
     requestAnimationFrame(() => {
       if (this.id !== id) return;
@@ -330,6 +406,28 @@ export class TextEditor {
       this.place(tl.x, tl.y, cell.w, cell.h, b.rotation || 0, z, scale);
       return;
     }
+    if (b.type === 'code') {
+      // the textarea is the code area: the box, font, size, line height and offsets of the drawn code, no padding, no border, no focus ring
+      const L = layoutCode(safeObj(b) as BaseObj);
+      ta.style.fontFamily = CODE_MONO;
+      ta.style.fontWeight = '400';
+      ta.style.textAlign = 'left';
+      ta.style.color = 'var(--ink)';
+      ta.style.background = 'transparent';
+      const scale = this.setEditorFont(CODE.FONT);
+      ta.style.lineHeight = `${L.lineH / scale}px`;
+      // the drawn baseline is a fixed 0.8em into the row; the textarea's is the face's own ascent. The difference (under a pixel) is padding above the first row
+      // when the text has to move down; when it has to move up, half of it moves the whole box and half stays as a (sub-pixel) difference, so neither is off by more than half of it
+      const shift = this.codeBaselineShift(L.lineH);
+      const down = Math.max(0, shift);
+      ta.style.padding = `${down / scale}px 0 0 0`;
+      ta.style.height = 'auto';
+      const need = Math.max(ta.scrollHeight * scale, L.lineH + down);
+      const c = center(b);
+      const tl = rotate({ x: b.x + L.textX, y: b.y + L.top + Math.min(0, shift) / 2 }, c, b.rotation || 0);
+      this.place(tl.x, tl.y, L.textW, need, b.rotation || 0, z, scale);
+      return;
+    }
     if (b.type === 'markdown') {
       // the source in a monospace face over the block, as tall as it needs (the rendered block keeps its own height under it)
       ta.style.fontFamily = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
@@ -395,6 +493,30 @@ export class TextEditor {
     }
   }
 
+  private baselineCache = new Map<string, number>();
+  /** How far (world units) the textarea's text sits below where the drawing puts the same line: ascent-based baseline of the face vs the drawing's 0.8em one. */
+  private codeBaselineShift(lineH: number): number {
+    const key = `${lineH}`;
+    const hit = this.baselineCache.get(key);
+    if (hit !== undefined) return hit;
+    let shift = 0;
+    try {
+      const ctx = document.createElement('canvas').getContext('2d');
+      if (ctx) {
+        ctx.font = `400 ${CODE.FONT}px ${CODE_MONO}`;
+        const m = ctx.measureText('M');
+        const asc = m.fontBoundingBoxAscent, desc = m.fontBoundingBoxDescent;
+        if (Number.isFinite(asc) && Number.isFinite(desc) && asc > 0) {
+          const field = (lineH - (asc + desc)) / 2 + asc; // where the textarea puts its baseline in a row
+          const drawn = (lineH - CODE.FONT) / 2 + CODE.FONT * 0.8;
+          shift = Math.round((drawn - field) * 100) / 100;
+        }
+      }
+    } catch { shift = 0; }
+    this.baselineCache.set(key, shift);
+    return shift;
+  }
+
   /** The touch CSS enforces 16 CSS px; scale the overlay back to the board font's visual size. */
   private setEditorFont(size: number) {
     const scale = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? Math.min(1, size / 16) : 1;
@@ -422,6 +544,7 @@ export class TextEditor {
         s.update(o.id, { text: v });
         if (o.type === 'text') s.update(o.id, { h: textHeight({ ...(o as BaseObj), text: v }) });
         if (o.type === 'markdown') s.update(o.id, { h: markdownBoxHeight({ ...(o as BaseObj), text: v }) });
+        if (o.type === 'code') s.update(o.id, { h: codeBoxHeight({ ...(o as BaseObj), text: v }) });
       });
     } else if (this.mode === 'cell' && this.cell) {
       const patch = setCellPatch(o as unknown as Record<string, unknown>, this.cell.rowId, this.cell.colId, v);
@@ -444,7 +567,7 @@ export class TextEditor {
       s.transact(() => s.update(o.id, { label: v || undefined }));
       this.reposition(); // the pill grows and wraps with the text
     }
-    if (o.type === 'text' || o.type === 'markdown' || this.mode === 'cell') this.reposition();
+    if (o.type === 'text' || o.type === 'markdown' || o.type === 'code' || this.mode === 'cell') this.reposition();
     else if (this.mode === 'text') {
       // re-centre vertically as lines are added
       requestAnimationFrame(() => this.reposition());
@@ -458,6 +581,11 @@ export class TextEditor {
     this.cell = null;
     this.unsubCam?.();
     this.unsubCam = null;
+    if (this.unsubStore) {
+      this.unsubStore();
+      this.unsubStore = null;
+      this.app.store.undo.captureTimeout = this.captureTimeout;
+    }
     const o = this.app.store.get(id);
     const v = this.ta.value;
     this.ta.style.display = 'none';
@@ -473,6 +601,8 @@ export class TextEditor {
     }
     // An empty text object is removed when editing ends.
     if (o && (o.type === 'text' || o.type === 'markdown') && !v.trim()) this.app.store.transact(() => this.app.store.remove([o.id]));
+    // so is a code block that was left empty and has no title (a titled one is still a card someone made)
+    if (o && o.type === 'code' && !v.trim() && !String((o as BaseObj).title ?? '').trim()) this.app.store.transact(() => this.app.store.remove([o.id]));
     this.app.r.setEditing(null);
     this.app.store.undo.stopCapturing();
     this.app.emit('editing');

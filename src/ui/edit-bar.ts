@@ -32,7 +32,8 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
   parent.appendChild(bar);
 
   const fine = typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches;
-  const visible = () => app.editor.active && app.editor.textMode && !app.readOnly;
+  // the bar holds only the emoji button, and a code block takes no emoji: no button, so no bar
+  const visible = () => app.editor.active && app.editor.textMode && !app.readOnly && !app.editor.codeEditing;
   const position = () => {
     if (!visible() || !bar.classList.contains('show')) return;
     const box = app.editor.textarea.getBoundingClientRect();
@@ -59,6 +60,7 @@ export function mountEditBar(app: BoardApp, parent: HTMLElement) {
     const show = visible();
     bar.classList.toggle('show', show);
     if (show) position();
+    else if (app.editor.codeEditing) app.editor.setBottomInset(0);
   };
 
   const offEditing = app.on('editing', sync);

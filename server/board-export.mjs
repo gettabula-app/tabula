@@ -1,5 +1,6 @@
 // Small Markdown export for MCP. Every board-authored string is cleaned before formatting.
 import { boardTitle, cleanForModel, isLine, readAll } from './board-ops.mjs';
+import { CODE_LANG_IDS, DEFAULT_CODE_LANG, MAX_CODE_CHARS } from '../shared/code-langs.mjs';
 import { parseTableKey, toMarkdownTable } from '../shared/tables.mjs';
 
 function inline(value, max = 20_000) {
@@ -62,6 +63,16 @@ export function exportBoardMarkdown(doc, titleOverride = undefined) {
       // the block's own Markdown, quoted so its headings and lists do not become the summary's: one line each, cleaned like every board-authored string
       const lines = cleanForModel(object.text, 4_000).text.split(/\r?\n/u).map((line) => line.replace(/\s+$/u, ''));
       return lines.length && lines.some(Boolean) ? lines.map((line) => (line ? '> ' + line : '>')).join('\n') : null;
+    }
+    if (object.type === 'code') {
+      // the code in a fenced block named by its language id; the fence is longer than any run of backticks in the code, so the code cannot close it
+      const code = cleanForModel(object.text, MAX_CODE_CHARS).text.replace(/\r\n?/gu, '\n').replace(/\n+$/u, '');
+      if (!code.trim()) return null;
+      const longest = Math.max(0, ...(code.match(/`+/gu) ?? []).map((run) => run.length));
+      const fence = '`'.repeat(Math.max(3, longest + 1));
+      const lang = typeof object.lang === 'string' && CODE_LANG_IDS.includes(object.lang) ? object.lang : DEFAULT_CODE_LANG;
+      const title = typeof object.title === 'string' && object.title.trim() ? inline(object.title, 100) + '\n\n' : '';
+      return title + fence + lang + '\n' + code + '\n' + fence;
     }
     if (object.type === 'table') {
       // a table as a Markdown table, quoted like a Markdown block; every cell is cleaned like any board-authored string

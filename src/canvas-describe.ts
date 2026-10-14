@@ -4,6 +4,7 @@ import { isLine } from './line-geometry';
 import { TYPE_LABEL } from './layers';
 import { STICKY_COLORS } from './palette';
 import { markdownReading, markdownTitle } from './markdown';
+import { codeLangLabel, normaliseCodeLang } from '../shared/code-langs.mjs';
 import { tableModel } from '../shared/tables';
 
 /**
@@ -16,6 +17,8 @@ export interface Description {
 }
 
 const NAME_TEXT_MAX = 120;
+/** How much of a code block's text a screen reader is given (the rest is counted). */
+export const CODE_DESCRIBE_MAX = 2000;
 
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
 
@@ -98,6 +101,19 @@ export function describeObject(o: Obj, ctx: DescribeContext): Description {
       const reading = markdownReading(source);
       const tasks = reading.tasks ? [`${plural(reading.tasks, 'task')}, ${reading.done} done.`] : [];
       return { name: `Markdown block${title ? `, "${title}"` : ''}${suffix}`, description: [...rest.filter((r) => r !== oneLine(source)), reading.text, ...tasks].filter(Boolean).join(' ') };
+    }
+    case 'code': {
+      // "Code block, TypeScript, <title>" and the code itself (up to a cap) as the description
+      const r = o as { title?: unknown; text?: unknown; lang?: unknown };
+      const lang = codeLangLabel(normaliseCodeLang(r.lang) ?? 'plaintext');
+      const title = oneLine(String(r.title ?? ''));
+      const source = typeof r.text === 'string' ? r.text.replace(/\r\n?/g, '\n') : '';
+      const lines = source.split('\n').length;
+      const shown = source.length > CODE_DESCRIBE_MAX ? `${source.slice(0, CODE_DESCRIBE_MAX)}… (${source.length - CODE_DESCRIBE_MAX} more characters)` : source;
+      return {
+        name: `Code block, ${lang}${title ? `, "${cut(title)}"` : ''}${suffix}`,
+        description: [...rest.filter((x) => x !== oneLine(source)), source.trim() ? `${plural(lines, 'line')}.` : 'Empty.', shown.trim() ? `Code: ${shown}` : ''].filter(Boolean).join(' '),
+      };
     }
     case 'table': {
       // rows by columns; the first row's text (a header when it is one) and the filled cells are the description

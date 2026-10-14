@@ -35,6 +35,7 @@ import { createMilestone, createProject, listMilestones, listProjects, updateMil
 import { createSavedView, deleteSavedView, getSavedView, listSavedViews, updateSavedView } from './tracker/views.mjs';
 import { diffBoardUpdates } from './board-diff.mjs';
 import { exportBoardMarkdown } from './board-export.mjs';
+import { MAX_CODE_CHARS, MAX_CODE_TITLE } from '../shared/code-langs.mjs';
 import { MAX_CELL_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS } from '../shared/tables.mjs';
 
 export const MCP_SERVER_NAME = 'board';
@@ -133,14 +134,17 @@ const createItemSchema = {
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source, no HTML), x, y, w?, h?, fontSize?. table: rows (lists of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?, line?. from and to are an object id, a ref, or {x, y} points. line: a plain line (type line is the same, stored as a connector): from and to are {x, y} points; optional stroke, strokeWidth?, dash?, startHead?, endHead? (defaults: none, none, 2, solid). Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source, no HTML), x, y, w?, h?, fontSize?. code: text, x, y, lang? (ts, py, json), title?, lines?, wrap?, w?, h?. table: rows (lists of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?, line?. from and to are an object id, a ref, or {x, y} points. line: a plain line (type line is the same, stored as a connector): from and to are {x, y} points; optional stroke, strokeWidth?, dash?, startHead?, endHead? (defaults: none, none, 2, solid). Any object but a connector may have parent.',
   properties: {
-    type: { enum: ['sticky', 'shape', 'text', 'markdown', 'table', 'frame', 'connector', 'line', 'link'] },
+    type: { enum: ['sticky', 'shape', 'text', 'markdown', 'code', 'table', 'frame', 'connector', 'line', 'link'] },
     line: { type: 'boolean', description: 'true on a connector makes it a line: both ends free, straight.' },
     strokeWidth: num('A line\'s stroke width: 0 to 20 (default 2).'),
     ref: refSchema,
     url: { type: 'string', maxLength: 2048, description: 'A link card: an http or https web address, without a user name or password.' },
-    text: { type: 'string', maxLength: LIMITS.text },
+    text: { type: 'string', maxLength: MAX_CODE_CHARS },
+    lang: { type: 'string' },
+    title: { type: 'string', maxLength: MAX_CODE_TITLE },
+    lines: { type: 'boolean' }, wrap: { type: 'boolean' },
     rows: tableRowsSchema,
     headerRow: { type: 'boolean' }, headerCol: { type: 'boolean' },
     name: { type: 'string', maxLength: LIMITS.name },
@@ -178,7 +182,10 @@ const updateItemSchema = {
     rotation: { type: 'number' },
     flipX: { type: 'boolean' }, flipY: { type: 'boolean' },
     parent: { type: ['string', 'null'] },
-    text: { type: 'string', maxLength: LIMITS.text },
+    text: { type: 'string', maxLength: MAX_CODE_CHARS },
+    lang: { type: 'string' },
+    title: { type: 'string', maxLength: MAX_CODE_TITLE },
+    lines: { type: 'boolean' }, wrap: { type: 'boolean' },
     rows: tableRowsSchema,
     headerRow: { type: 'boolean' }, headerCol: { type: 'boolean' },
     name: { type: 'string', maxLength: LIMITS.name },

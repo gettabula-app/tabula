@@ -9,6 +9,7 @@ import { DASHES, HEADS, OBJ_TYPES, ROUTES, SHAPE_KINDS, SIDES, STICKY_COLORS } f
 import { cleanColor } from '../shared/colors.mjs';
 import { checkTemplateKanbanLimits, isSafeHttpUrl, templateKanbanFields, templateLabels } from '../shared/containers.mjs';
 import { parseTableKey, tablePartsProblem } from '../shared/tables.mjs';
+import { CODE_LANG_IDS, MAX_CODE_TITLE } from '../shared/code-langs.mjs';
 import { MAX_SVG_BODY, svgProblem } from '../shared/svg-safety.mjs';
 
 // the built-in categories (CATEGORIES in src/templates.ts) and CUSTOM_CATEGORY; a test keeps them equal
@@ -104,6 +105,7 @@ const VALIGNS = ['top', 'middle', 'bottom'];
 const VISIBILITIES = ['+', '-', '#', '~', ''];
 const COORD = 1_000_000;
 const MAX_TEXT = 20_000;
+export const MAX_TEMPLATE_CODE_CHARS = 8_000;
 const MAX_POINTS = 100_000;
 const MAX_MEMBERS = 200;
 
@@ -233,6 +235,18 @@ function box(o, what, ids, labels) {
     case 'shape':
       if (o.kind !== undefined) out.kind = oneOf(o.kind, SHAPE_KINDS, `${what} kind`);
       break;
+    case 'code': {
+      // a code block (docs/code-blocks.md): the code is `text`, at most 8,000 characters in a template (it counts toward the template's size like any text)
+      if (o.text !== undefined) out.text = text(o.text, `${what} text`, MAX_TEMPLATE_CODE_CHARS, { lines: true });
+      if (o.lang !== undefined) out.lang = oneOf(o.lang, CODE_LANG_IDS, `${what} lang`);
+      if (o.title !== undefined) out.title = text(o.title, `${what} title`, MAX_CODE_TITLE);
+      for (const key of ['lines', 'wrap']) {
+        if (o[key] === undefined) continue;
+        if (typeof o[key] !== 'boolean') fail(`${what} ${key} must be a boolean.`);
+        out[key] = o[key];
+      }
+      break;
+    }
     case 'frame':
       if (o.name !== undefined) out.name = text(o.name, `${what} name`, 500, { lines: true });
       break;

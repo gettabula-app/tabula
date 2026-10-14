@@ -1,0 +1,38 @@
+/* What sits over a code block (docs/code-blocks.md): a focusable code area and two header buttons. Page chrome only: never in an export, never in a print. */
+.code-ctl-layer { position: absolute; inset: 0; z-index: 6; pointer-events: none; overflow: hidden; }
+.code-ctl { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.code-ctl.editing .code-area, .code-ctl.far .code-bar { display: none; }
+.code-area { position: absolute; pointer-events: none; border-radius: 4px; }
+.code-area:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.code-bar { position: absolute; left: 0; top: 0; width: 64px; height: 28px; display: flex; gap: 8px; transform-origin: 0 0; opacity: 0; pointer-events: none; }
+.code-ctl.hot .code-bar, .code-ctl.sel .code-bar, .code-ctl:focus-within .code-bar, .code-ctl.touch .code-bar { opacity: 1; pointer-events: auto; }
+.code-btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0;
+  border-radius: var(--radius-sm); background: transparent; color: var(--graphite, currentColor);
+}
+.code-btn:hover { background: var(--tray-hover); color: var(--ink); }
+.code-btn.on, .code-btn.done { color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.code-btn:disabled { opacity: 0.4; cursor: default; }
+.code-btn:focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+/* a finger needs 44px: the button stays 28px, the part that takes the touch grows */
+@media (pointer: coarse) { .code-btn::after { content: ''; position: absolute; inset: -8px; } }
+.code-bar { transition: opacity 120ms ease; }
+@media (prefers-reduced-motion: reduce) { .code-bar { transition: none; } }
+@media (forced-colors: active) {
+  .code-btn { color: ButtonText; border: 1px solid ButtonText; }
+  .code-btn.on { background: Highlight; color: HighlightText; }
+  .code-btn:focus-visible, .code-area:focus-visible { outline: 2px solid Highlight; }
+}
+@media print { .code-ctl-layer { display: none; } }
+
+/* the language list: 280px wide, 320px tall at most, the list scrolls and the search stays; a full-height sheet on a phone */
+.code-lang-pop { width: 280px; padding: 8px; }
+.code-lang { display: flex; flex-direction: column; gap: 6px; }
+.code-lang-list { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
+.code-lang-list .menu-item { width: 100%; justify-content: space-between; }
+.code-lang-empty { padding: 12px 10px; color: var(--tray-muted); font-size: 13px; }
+@media (max-width: 500px) {
+  .code-lang-pop { left: 0 !important; top: 0 !important; width: 100vw; max-width: none; height: 100dvh; max-height: none !important; box-sizing: border-box; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+  .code-lang { height: 100%; }
+  .code-lang-list { max-height: none; flex: 1; }
+}

@@ -61,7 +61,7 @@ describe('the module is pure and its tables match the app', () => {
   it('imports no Yjs, no node: module and no clock or randomness', () => {
     const source = fs.readFileSync(new URL('../server/sync-validate.mjs', import.meta.url), 'utf8');
     const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]);
-    expect(imports.sort()).toEqual(['../shared/colors.mjs', '../shared/containers.mjs', '../shared/svg-safety.mjs', '../shared/tables.mjs', '../shared/text-limits.mjs']);
+    expect(imports.sort()).toEqual(['../shared/code-langs.mjs', '../shared/colors.mjs', '../shared/containers.mjs', '../shared/svg-safety.mjs', '../shared/tables.mjs', '../shared/text-limits.mjs']);
     expect(source).not.toMatch(/Date\.now|Math\.random|process\.(?!env)|require\(/);
   });
 
