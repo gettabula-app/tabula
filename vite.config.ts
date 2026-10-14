@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import docs from './scripts/vite-docs.mjs';
 import { browserTestFiles } from './scripts/check-browser-tests.mjs';
+import { DEMO_BOOT_HTML, DEMO_BOOT_STYLE } from './src/demo/boot-screen.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DEMO_CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://api.fontshare.com/v2/css; font-src 'self' https://cdn.fontshare.com; img-src 'self' data: blob:; connect-src 'self' https://api.fontshare.com/v2/css https://cdn.fontshare.com/; base-uri 'self'; form-action 'none'";
@@ -23,7 +24,13 @@ function demoBuildPlugin() {
       return html
         .replace(/\s*<link\b[^>]*rel=["']manifest["'][^>]*>/i, '')
         .replace(/href=["']\/favicon\.svg["']/i, `href="${base}favicon.svg"`)
-        .replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${DEMO_CSP}">`);
+        // Fontshare stylesheets load after the board is up (src/main.ts, ensureFont); the two preconnects stay.
+        .replace(/\s*<!--\s*One family per request:[\s\S]*?-->/, '')
+        .replace(/\s*<link\b[^>]*href=["']https:\/\/api\.fontshare\.com\/v2\/css[^"']*["'][^>]*>/gi, '')
+        .replace('<head>', () => `<head>\n    <meta http-equiv="Content-Security-Policy" content="${DEMO_CSP}">`)
+        // The loading screen paints from the first byte (src/demo/boot-screen.ts): its style ends <head>, its markup follows #app.
+        .replace('</head>', () => `    <style>${DEMO_BOOT_STYLE}</style>\n  </head>`)
+        .replace('<div id="app"></div>', () => `<div id="app"></div>\n    ${DEMO_BOOT_HTML}`);
     },
     writeBundle() {
       fs.mkdirSync(outDir, { recursive: true });
