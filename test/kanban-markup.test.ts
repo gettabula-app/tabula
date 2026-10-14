@@ -86,6 +86,17 @@ describe('a lane', () => {
     expect(draw(store, lanes[1])).not.toContain('>DONE</text>');
   });
 
+  it('says Done once: a lane called Done shows the name and the check, a lane with another name adds the word', () => {
+    const { store, lanes } = board();
+    const called = draw(store, lanes[2]);
+    expect(called.match(/>Done<\/text>/g)).toHaveLength(1);
+    expect(called).toContain('Stage: done');
+    store.transact(() => store.update(lanes[2], { name: 'Shipped' }));
+    const other = draw(store, lanes[2]);
+    expect(other).toContain('>Shipped</text>');
+    expect(other.match(/>Done<\/text>/g)).toHaveLength(1);
+  });
+
   it('shows count over limit, and the danger chip and rule when over it', () => {
     const { store, lanes } = board();
     store.transact(() => store.update(lanes[0], { wip: 3 }));

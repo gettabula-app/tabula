@@ -30,6 +30,9 @@ afterAll(async () => {
 async function open(): Promise<Page> {
   const page = await browser!.newPage({ viewport: { width: 1280, height: 800 } });
   page.setDefaultTimeout(budget(45_000));
+  // The webfonts come from Fontshare and arrive at a time the test does not control. Where the fallback face wraps wider than Satoshi (Linux CI) the
+  // text changes line count when one lands, and a stored height computed before it no longer matches. Blocking them keeps one face for the whole test.
+  await page.route(/fontshare\.com/, (route) => route.abort());
   await page.goto(`${base}?debug#/b/lh-${Math.random().toString(36).slice(2, 8)}`);
   await page.waitForFunction(() => (window as any).__board, null, { timeout: budget(20_000) });
   await page.waitForFunction(() => document.querySelector('.rail-btn[aria-label="Sticky note"]'));
