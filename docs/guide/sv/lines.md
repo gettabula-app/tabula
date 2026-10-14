@@ -5,7 +5,7 @@ En linje är ett enkelt streck på tavlan. Den är inte fäst vid något: använ
 
 ## Rita en linje
 
-Välj **Line** (Linje) i gruppen **Connectors and lines** (Kopplingslinjer och linjer) i verktygsraden till vänster, eller tryck på `Shift+L`. Gör sedan något av följande:
+Välj **Line** (Linje) i gruppen **Connectors and lines** (Kopplingslinjer och linjer) i det vänstra verktygsfältet, eller tryck på `Shift+L`. Gör sedan något av följande:
 
 - Dra från där linjen ska börja till där den ska sluta.
 - Klicka en gång för start och en gång till för slut.

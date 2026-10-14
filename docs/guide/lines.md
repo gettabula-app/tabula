@@ -4,7 +4,7 @@ A line is a plain stroke on the board. It is not attached to anything: use it fo
 
 ## Draw a line
 
-Pick **Line** in the **Connectors and lines** group of the left rail, or press `Shift+L`. Then either:
+Pick **Line** in the **Connectors and lines** group of the left toolbar, or press `Shift+L`. Then either:
 
 - drag from where the line should start to where it should end, or
 - click once for the start, and click again for the end.
