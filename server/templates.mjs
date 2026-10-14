@@ -313,16 +313,20 @@ function box(o, what, ids, labels) {
 
 function connector(o, what, ids) {
   if (o.flipX !== undefined || o.flipY !== undefined) fail(`${what} cannot have flip flags.`);
+  if (o.line !== undefined && typeof o.line !== 'boolean') fail(`${what} line must be true or false.`);
+  // a line (docs/lines.md) is straight by default and has no arrowhead at its end; it keeps line only while both ends are free and it is straight
+  const asLine = o.line === true;
   const out = {
     id: o.id,
     type: 'connector',
     z: text(o.z, `${what} z order`, 64, { min: 1 }),
     from: end(o.from, 'from', what, ids),
     to: end(o.to, 'to', what, ids),
-    route: o.route === undefined ? 'elbow' : oneOf(o.route, ROUTES, `${what} route`),
+    route: o.route === undefined ? (asLine ? 'straight' : 'elbow') : oneOf(o.route, ROUTES, `${what} route`),
     startHead: o.startHead === undefined ? 'none' : oneOf(o.startHead, HEADS, `${what} startHead`),
-    endHead: o.endHead === undefined ? 'arrow' : oneOf(o.endHead, HEADS, `${what} endHead`),
+    endHead: o.endHead === undefined ? (asLine ? 'none' : 'arrow') : oneOf(o.endHead, HEADS, `${what} endHead`),
   };
+  if (asLine && out.from.kind === 'free' && out.to.kind === 'free' && out.route === 'straight') out.line = true;
   if (o.parent !== undefined) {
     const parentType = typeof o.parent === 'string' ? ids.get(o.parent) : undefined;
     if (parentType !== 'frame' && parentType !== 'group') fail(`${what} has a parent that is not a frame or group in the template.`);

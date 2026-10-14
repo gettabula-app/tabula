@@ -267,7 +267,7 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
     };
 
     const checkbox = (label: string, checked: boolean, set: (on: boolean) => void) =>
-      h('label', { class: 'ai-check' },
+      h('label', { class: 'check ai-check' },
         h('input', {
           type: 'checkbox',
           checked,

@@ -10,6 +10,7 @@ import type { Obj, ProposedBy } from './types';
 import { HEADS, SHAPE_KINDS } from './shapes';
 import { RELATIONS } from './uml';
 import { LIMITS as CONTAINER_LIMITS, OWNER_KINDS, STAGES, isSafeHttpUrl, kanbanColor } from '../shared/containers';
+import { lineFlag } from './line-geometry';
 
 export { CARD_LINK_MAX, isSafeHttpUrl } from '../shared/containers';
 
@@ -175,6 +176,8 @@ export function safeObj<T extends Obj>(o: T): T {
     out.to = end(out.to);
     out.route = typeof out.route === 'string' && ROUTES.has(out.route) ? out.route : 'straight';
     for (const k of ['startHead', 'endHead']) out[k] = typeof out[k] === 'string' && HEAD_SET.has(out[k] as string) ? out[k] : 'none';
+    // a line keeps its flag only while it is one (line-geometry.ts): otherwise it draws and behaves as a plain connector
+    if ('line' in out && !lineFlag(out)) delete out.line;
   } else {
     for (const k of REQUIRED_NUMBERS) out[k] = finite(out[k]) ? out[k] : 0;
   }

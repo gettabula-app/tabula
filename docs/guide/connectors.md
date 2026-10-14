@@ -10,7 +10,7 @@ There are three ways:
 2. **Connection dots.** With **Select** active, hover a shape. Blue dots appear on its four sides. Drag from a dot to another shape or to empty canvas.
 3. **Click a dot.** Click a dot without dragging. See below.
 
-Connectors attach to shapes, sticky notes, text, icons and UML elements. They do not attach to frames or drawings, and not to locked items.
+Connectors attach to shapes, sticky notes, text, icons and UML elements. They do not attach to frames or drawings, and not to locked items. For a plain line that is not attached to anything, use [Lines](lines.md).
 
 <!-- screenshot: a shape hovered with its four connection dots visible, and a connector being dragged to a second shape -->
 

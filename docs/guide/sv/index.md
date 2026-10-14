@@ -11,7 +11,9 @@ Tabula är en whiteboard som du delar med ditt team: rita, skriv och organisera 
 
 - [Former, text och lappar](shapes-text-notes.md)
 - [Kopplingslinjer](connectors.md)
+- [Linjer](lines.md)
 - [Kanbantavlor](kanban.md)
+- [Spårare på en tavla](tracker.md)
 - [Smarta hjälplinjer](smart-guides.md)
 - [Lager](layers.md)
 - [Bilder](images.md)

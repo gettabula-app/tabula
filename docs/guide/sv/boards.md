@@ -55,6 +55,7 @@ I arbetsytor med inloggning sitter en klocka i det övre fältet på sidan Board
 - **Chattomnämnanden**: någon nämnde dig i en tavel-, team- eller arbetsytechatt.
 - **Svar**: någon svarade på en kommentar av dig.
 - **Delningar**: någon delade en tavla direkt med dig.
+- **Kort**: ett kort som du äger förfaller i morgon, förfaller i dag eller är försenat, eller någon tilldelade dig ett kort. Om du väljer raden öppnas tavlan.
 - **Teamanslutningar**: någon du bjöd in gick med i teamet, också när personen loggade in via din inbjudningslänk.
 - **Spåraren**: ärenden som tilldelats dig, kommenterats och flyttats, om din arbetsyta har spåraren.
 

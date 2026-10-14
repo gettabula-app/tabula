@@ -378,8 +378,36 @@ function proposedOf(v) {
   return name ? { feature: v.feature, name } : { feature: v.feature };
 }
 
+/**
+ * A line (docs/lines.md) is a connector with `line: true`, both ends free and a straight route. A connector that breaks any of
+ * those is an ordinary connector: the flag is dropped when an end is bound or the route changes, so it is never read as a line.
+ */
+export function isLine(o) {
+  return o?.type === 'connector' && o.line === true && o.from?.kind === 'free' && o.to?.kind === 'free' && (o.route === undefined || o.route === 'straight');
+}
+
+/** The type the MCP tools and the summary show: a line reads as `line`, every other object as its stored type. */
+export function objectTypeOf(o) {
+  return isLine(o) ? 'line' : o.type;
+}
+
+/** A line as the model sees it: its two points, stroke, width, dash and heads (no route, no ends). */
+function summariseLine(o) {
+  const point = (end) => ({ x: r2(end.x), y: r2(end.y) });
+  const out = {
+    id: id64(o.id), type: 'line', from: point(o.from), to: point(o.to),
+    strokeWidth: Number.isFinite(o.strokeWidth) ? r2(o.strokeWidth) : 2,
+    dash: DASHES.includes(o.dash) ? o.dash : 'solid',
+    startHead: HEADS.includes(o.startHead) ? o.startHead : 'none',
+    endHead: HEADS.includes(o.endHead) ? o.endHead : 'none',
+  };
+  if (typeof o.stroke === 'string' && o.stroke) out.stroke = cleanForModel(o.stroke, 64).text;
+  return out;
+}
+
 /** @param {boolean} [detail] the extra fields get_objects adds */
 export function summarise(o, textMax, detail = false) {
+  if (isLine(o)) return summariseLine(o);
   if (o.type === 'connector') {
     const out = {
       id: id64(o.id), type: 'connector', from: endOut(o.from), to: endOut(o.to),
@@ -524,7 +552,7 @@ export function summariseBoard(doc, options = {}) {
 
   const typeCounts = new Map();
   for (const o of [...boxes, ...connectors]) {
-    const type = str40(o.type);
+    const type = str40(objectTypeOf(o));
     typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
   }
   const overall = overallBounds(boxes);
@@ -536,13 +564,12 @@ export function summariseBoard(doc, options = {}) {
   );
   const chosenIds = new Set(chosen.map((o) => o.id));
   const narrowed = Boolean(frameId || bounds);
-  const wantConnectors = !wanted || wanted.has('connector');
   const insideBounds = (end) => end?.kind === 'free' && bounds && end.x >= bounds.x && end.x <= bounds.x + bounds.w && end.y >= bounds.y && end.y <= bounds.y + bounds.h;
-  const chosenConnectors = !wantConnectors
-    ? []
-    : connectors.filter(
-        (c) => !narrowed || frameDescendants?.has(c.id) || [c.from, c.to].some((e) => (e?.kind === 'bound' && chosenIds.has(e.id)) || insideBounds(e)),
-      );
+  // a connector is wanted as 'connector' and a line as 'line': asking for connectors does not return lines
+  const chosenConnectors = connectors.filter(
+    (c) => (!wanted || wanted.has(objectTypeOf(c)))
+      && (!narrowed || frameDescendants?.has(c.id) || [c.from, c.to].some((e) => (e?.kind === 'bound' && chosenIds.has(e.id)) || insideBounds(e))),
+  );
 
   const ordered = [...chosen, ...chosenConnectors].map((o) => ({ o, key: keyOf(o) })).sort((a, b) => cmpKey(a.key, b.key));
   const after = cursor ? decodeCursor(cursor) : null;
@@ -1238,9 +1265,12 @@ const CREATE_KEYS = {
   markdown: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'fontSize', 'lineHeight', 'parent', 'flipX', 'flipY'],
   table: ['type', 'ref', 'rows', 'headerRow', 'headerCol', 'x', 'y', 'fontSize', 'parent', 'flipX', 'flipY'],
   frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
-  connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
+  connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke', 'line', 'strokeWidth'],
+  // a line is stored as a connector with `line: true`; this is the synonym's own key list (docs/lines.md)
+  line: ['type', 'ref', 'from', 'to', 'stroke', 'strokeWidth', 'dash', 'startHead', 'endHead'],
   link: ['type', 'ref', 'url', 'x', 'y', 'w', 'h', 'parent', 'flipX', 'flipY'],
 };
+const LINE_DEFAULT_STROKE_WIDTH = 2;
 
 export const SERVER_TRACKER_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
 
@@ -1285,15 +1315,17 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
       if (SERVER_TRACKER_FIELDS.has(key)) throw invalid(at(path, key), 'Tracker link fields are server-written');
     }
     if (item.type === 'tracker') throw invalid(at(path, 'type'), 'Tracker frames can only be created by the app');
-    const type = choice(item.type, Object.keys(CREATE_KEYS), at(path, 'type'));
-    record(item, path, CREATE_KEYS[type]);
+    // `line` is a synonym: it is stored as a connector with line: true, and read back as a line
+    const kind = choice(item.type, Object.keys(CREATE_KEYS), at(path, 'type'));
+    record(item, path, CREATE_KEYS[kind]);
+    const type = kind === 'line' ? 'connector' : kind;
     const id = freshId();
     if (item.ref !== undefined) {
       if (typeof item.ref !== 'string' || !REF_RE.test(item.ref)) throw invalid(at(path, 'ref'), 'Must be 1 to 32 letters, digits, - or _');
       if (refs.has(item.ref)) throw invalid(at(path, 'ref'), 'Each ref may be used once');
       refs.set(item.ref, { id, type });
     }
-    return { item, type, id, path };
+    return { item, type, kind, id, path };
   });
 
   const zs = topKeys(map, entries.length);
@@ -1303,23 +1335,44 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
   const ops = [];
   const created = [];
 
-  entries.forEach(({ item, type, id, path }, i) => {
+  entries.forEach(({ item, type, kind, id, path }, i) => {
     const base = { id, type, z: zs[i], createdBy, updatedAt: now };
     const lineHeight = item.lineHeight === undefined ? undefined : num(item.lineHeight, at(path, 'lineHeight'), 0.8, 3);
     let fields;
     if (type === 'connector') {
       const ends = { allowRef: true, get, refs };
-      fields = {
-        ...base,
-        from: parseEnd(required(item, 'from', path), at(path, 'from'), ends),
-        to: parseEnd(required(item, 'to', path), at(path, 'to'), ends),
-        route: item.route === undefined ? 'elbow' : choice(item.route, ROUTES, at(path, 'route')),
-        startHead: item.startHead === undefined ? 'none' : choice(item.startHead, HEADS, at(path, 'startHead')),
-        endHead: item.endHead === undefined ? 'arrow' : choice(item.endHead, HEADS, at(path, 'endHead')),
-        dash: item.dash === undefined ? undefined : choice(item.dash, DASHES, at(path, 'dash')),
-        stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke')),
-        label: item.label === undefined ? undefined : text(item.label, at(path, 'label'), 0, LIMITS.label) || undefined,
-      };
+      if (item.line !== undefined && typeof item.line !== 'boolean') throw invalid(at(path, 'line'), 'Must be a boolean');
+      if (kind === 'line' && item.line === false) throw invalid(at(path, 'line'), 'A line is always a line: omit line or set it to true');
+      const isLineNow = kind === 'line' || item.line === true;
+      if (isLineNow) {
+        // a line has two free points and is straight: no bound end, no other route, no label; the defaults are a plain solid 2-pixel line
+        const from = parseEnd(required(item, 'from', path), at(path, 'from'), ends);
+        const to = parseEnd(required(item, 'to', path), at(path, 'to'), ends);
+        if (from.kind !== 'free' || to.kind !== 'free') throw invalid(path, 'A line needs free ends: give each end as {x, y}');
+        if (item.route !== undefined && item.route !== 'straight') throw invalid(at(path, 'route'), 'A line is straight');
+        fields = {
+          ...base,
+          from, to, route: 'straight', line: true,
+          startHead: item.startHead === undefined ? 'none' : choice(item.startHead, HEADS, at(path, 'startHead')),
+          endHead: item.endHead === undefined ? 'none' : choice(item.endHead, HEADS, at(path, 'endHead')),
+          dash: item.dash === undefined ? 'solid' : choice(item.dash, DASHES, at(path, 'dash')),
+          strokeWidth: item.strokeWidth === undefined ? LINE_DEFAULT_STROKE_WIDTH : num(item.strokeWidth, at(path, 'strokeWidth'), 0, LIMITS.strokeMax),
+          stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke')),
+        };
+      } else {
+        if (item.strokeWidth !== undefined) throw invalid(at(path, 'strokeWidth'), 'Only a line has a stroke width');
+        fields = {
+          ...base,
+          from: parseEnd(required(item, 'from', path), at(path, 'from'), ends),
+          to: parseEnd(required(item, 'to', path), at(path, 'to'), ends),
+          route: item.route === undefined ? 'elbow' : choice(item.route, ROUTES, at(path, 'route')),
+          startHead: item.startHead === undefined ? 'none' : choice(item.startHead, HEADS, at(path, 'startHead')),
+          endHead: item.endHead === undefined ? 'arrow' : choice(item.endHead, HEADS, at(path, 'endHead')),
+          dash: item.dash === undefined ? undefined : choice(item.dash, DASHES, at(path, 'dash')),
+          stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke')),
+          label: item.label === undefined ? undefined : text(item.label, at(path, 'label'), 0, LIMITS.label) || undefined,
+        };
+      }
     } else {
       const x = coordinate(required(item, 'x', path), at(path, 'x'));
       const y = coordinate(required(item, 'y', path), at(path, 'y'));
@@ -1399,7 +1452,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
       }
     }
     ops.push({ op: 'create', id, fields });
-    created.push({ ...(item.ref === undefined ? {} : { ref: item.ref }), id, type });
+    created.push({ ...(item.ref === undefined ? {} : { ref: item.ref }), id, type: kind === 'line' || fields.line === true ? 'line' : type });
   });
 
   for (const start of parents.keys()) {
@@ -1502,7 +1555,9 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
     for (const key of fields) {
       const fieldPath = at(path, key.slice(0, 40));
       if (key === 'type') throw invalid(fieldPath, 'The type cannot change');
-      if (!allowed.includes(key)) throw invalid(fieldPath, `field_not_allowed_for_type: ${key.slice(0, 40)} cannot be changed on this object`);
+      // a line also takes a stroke width; a plain connector does not
+      const lineWidth = key === 'strokeWidth' && current.type === 'connector' && current.line === true;
+      if (!allowed.includes(key) && !lineWidth) throw invalid(fieldPath, `field_not_allowed_for_type: ${key.slice(0, 40)} cannot be changed on this object`);
       const v = patch[key];
       if (v === null) {
         if (!CLEARABLE.has(key)) throw invalid(fieldPath, 'Cannot be cleared');
@@ -1557,6 +1612,13 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         }
         default: throw invalid(fieldPath, 'Unknown field');
       }
+    }
+    // a line stays a line only while both ends are free and its route is straight; otherwise it is an ordinary connector
+    if (current.type === 'connector' && current.line === true) {
+      const from = sets.get('from') ?? current.from;
+      const to = sets.get('to') ?? current.to;
+      const route = sets.has('route') ? sets.get('route') : current.route;
+      if (from?.kind !== 'free' || to?.kind !== 'free' || (route !== undefined && route !== 'straight')) unsets.add('line');
     }
     if (sets.has('parent')) {
       pendingParent.set(id, sets.get('parent'));

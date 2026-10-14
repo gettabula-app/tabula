@@ -1,6 +1,6 @@
 # Kopplingslinjer
 
-Kopplingslinjer binder ihop former och sitter kvar när du flyttar dem. De kan ha pilspetsar, en etikett och en av tre linjedragningar.
+Kopplingslinjer binder ihop former och sitter kvar när du flyttar dem. För en enkel linje som inte är fäst vid något, se [Linjer](lines.md). De kan ha pilspetsar, en etikett och en av tre linjedragningar.
 
 ## Rita en kopplingslinje
 

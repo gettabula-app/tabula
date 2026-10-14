@@ -1048,7 +1048,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       panel.appendChild(h('strong', null, 'Columns'));
       for (const column of OPTIONAL_COLUMNS) {
         const checkbox = h('input', { type: 'checkbox', checked: state.columns.has(column), 'aria-label': `${column} column`, onchange: () => { if (checkbox.checked) state.columns.add(column); else state.columns.delete(column); drawRows(currentCache); } });
-        panel.appendChild(h('label', { class: 'trk-display-check' }, checkbox, column[0].toUpperCase() + column.slice(1)));
+        panel.appendChild(h('label', { class: 'trk-display-check check' }, checkbox, column[0].toUpperCase() + column.slice(1)));
       }
       popover(displayButton, panel, { className: 'trk trk-pop trk-display-pop', label: 'Display issues' });
     });

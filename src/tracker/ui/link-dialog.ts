@@ -194,7 +194,7 @@ export function mountLinkDialog(host: HTMLElement, opts: MountLinkDialogOptions)
     );
     const checkbox = existingCardCount > 0
       ? h('div', { class: 'trk-link-create-option' },
-        h('label', { class: 'trk-link-create-label', for: `trk-link-create-${id}` },
+        h('label', { class: 'trk-link-create-label check', for: `trk-link-create-${id}` },
           h('input', {
             id: `trk-link-create-${id}`, type: 'checkbox', checked: state.createTickets, 'data-focus-id': 'create-tickets',
             disabled: state.submitting,

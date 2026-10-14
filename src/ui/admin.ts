@@ -392,7 +392,7 @@ function membersPanel(me: Me): HTMLElement {
     const self = m.id === actor.id;
     const lock = roleLock(actor, m, owners);
     const select = h('select', {
-      class: `input admin-role-select tag tag-${ROLE_TAG[m.role]}`, 'aria-label': `Role of ${m.name || m.email}`, disabled: !lock.allowed, title: lock.reason, 'data-focus': `${m.id}:role`,
+      class: `input admin-role-select tag-${ROLE_TAG[m.role]}`, 'aria-label': `Role of ${m.name || m.email}`, disabled: !lock.allowed, title: lock.reason, 'data-focus': `${m.id}:role`,
       onchange: async (e: Event) => {
         const el = e.currentTarget as HTMLSelectElement;
         const next = el.value as UserRole;
@@ -567,7 +567,7 @@ function boardsPanel(): HTMLElement {
   return h('div', null,
     h('div', { class: 'admin-toolbar' },
       searchField('Search boards', (q) => { query = q; paint(); }),
-      h('label', { class: 'admin-check' }, showDeleted, 'Show deleted'),
+      h('label', { class: 'check admin-check' }, showDeleted, 'Show deleted'),
       count),
     box);
 }

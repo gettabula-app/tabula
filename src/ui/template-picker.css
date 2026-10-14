@@ -34,7 +34,7 @@
   flex: none;
   align-items: center;
   gap: 8px;
-  height: 36px;
+  height: 34px;
   padding: 0 10px;
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--tray-text) 6%, var(--tray));
@@ -169,7 +169,7 @@
 .template-picker-card-description {
   overflow: hidden;
   color: var(--tray-muted);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -184,9 +184,9 @@
   font-size: 10px;
   font-weight: 600;
   line-height: 1.8;
-  letter-spacing: .04em;
+  letter-spacing: normal;
   text-overflow: ellipsis;
-  text-transform: uppercase;
+  text-transform: none;
   white-space: nowrap;
 }
 .template-picker-empty {
@@ -265,10 +265,6 @@
   .template-picker-dialog .modal-body { padding: 6px 12px 8px; }
   .template-picker-layout { gap: 10px; }
   .template-picker-search { height: 44px; }
-  .template-picker-search-input.input,
-  .template-picker-search-input.input:hover,
-  .template-picker-search-input.input:focus,
-  .template-picker-search-input.input:focus-visible { height: 42px; }
   .template-picker-content { display: flex; flex-direction: column; gap: 8px; }
   .template-picker-categories {
     flex: none;
@@ -315,10 +311,6 @@
 @media (pointer: coarse) {
   .template-picker-dialog .modal-head .icon-btn { width: 44px; height: 44px; }
   .template-picker-search { height: 44px; }
-  .template-picker-search-input.input,
-  .template-picker-search-input.input:hover,
-  .template-picker-search-input.input:focus,
-  .template-picker-search-input.input:focus-visible { height: 42px; }
   .template-picker-category { min-height: 44px; }
   .template-picker-clear,
   .template-picker-blank,

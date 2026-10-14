@@ -23,6 +23,10 @@ Att skriva i en kommentarsruta aktiverar aldrig kortkommandon för tavlan, så d
 - Klicka på **Resolve** när frågan är löst. Lösta nålar tonas ned. Klicka på **Reopen** (Öppna igen) för att ta upp tråden igen.
 - Klicka utanför tråden eller tryck på `Esc` för att stänga den.
 
+### Nämn någon
+
+Skriv `@` i en ny kommentar eller ett svar för att se de som är här nu och alla som tidigare har kommenterat på tavlan. Välj en med piltangenterna och `Enter`, eller klicka på ett namn, så visas det som personens namn i kommentaren. Om personen kan öppna tavlan hittar hen din kommentar under klockan. Personer som inte är inloggade (gäster) visas inte i listan, eftersom de inte får några aviseringar. Att redigera en kommentar aviserar ingen igen. En kommentar kan nämna upp till 10 personer.
+
 ## Redigera och ta bort
 
 - **Edit** (Redigera) ändrar texten i din egen kommentar. Ingen kan redigera någon annans kommentar, inte ens tavlans ägare. Redigerade kommentarer märks med ”redigerat” bredvid tiden.

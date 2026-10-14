@@ -3,7 +3,7 @@
 .oauth-consent {
   min-height: 100vh; overflow-x: hidden; background: var(--canvas); color: var(--ink);
 }
-.oauth-consent :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.oauth-consent :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--ink); outline-offset: 2px; }
 .oauth-consent-top {
   display: flex; align-items: center; height: 56px;
   padding: 0 max(24px, calc((100% - 720px) / 2 + 24px)); border-bottom: 1px solid var(--page-hairline);
@@ -33,33 +33,29 @@
 .oauth-consent-uri { margin-top: 8px; color: var(--ink); }
 .oauth-consent-level { min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); }
 .oauth-consent-level legend { padding: 0 6px; font-size: 14px; font-weight: 700; }
-.oauth-consent-scope { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; cursor: pointer; }
+.oauth-consent-scope { min-height: 44px; padding: 10px 0; cursor: pointer; }
 .oauth-consent-scope + .oauth-consent-scope { border-top: 1px solid var(--rule); }
-.oauth-consent-scope input { flex: none; margin: 4px 0 0; accent-color: var(--ink); }
+.oauth-consent-scope input { align-self: flex-start; margin-top: 4px; }
 .oauth-consent-scope-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .oauth-consent-scope-label { font-weight: 600; }
 .oauth-consent-scope-help { color: var(--graphite); font-size: 12px; overflow-wrap: anywhere; }
 .oauth-consent-picker { min-width: 0; margin: 0; padding: 12px 16px 16px; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); }
 .oauth-consent-picker legend { padding: 0 6px; font-size: 14px; font-weight: 700; }
-.oauth-consent-mode { display: flex; align-items: center; gap: 10px; min-height: 44px; padding-inline: 8px; cursor: pointer; }
-.oauth-consent-mode input, .oauth-consent-board input { flex: none; margin: 0; accent-color: var(--ink); }
+.oauth-consent-mode { min-height: 44px; padding-inline: 8px; cursor: pointer; }
+.oauth-consent-mode input, .oauth-consent-board input { flex: none; margin: 0; }
 .oauth-consent-board-selection { min-width: 0; margin-top: 8px; }
 .oauth-consent-board-count { margin: 0 0 8px; color: var(--graphite); font-size: 12px; }
 .oauth-consent-board-list { max-height: 16rem; overflow: auto; border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--canvas); overscroll-behavior: contain; }
-.oauth-consent-board { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 6px 10px; cursor: pointer; }
+.oauth-consent-board { min-width: 0; min-height: 44px; padding: 6px 10px; cursor: pointer; }
 .oauth-consent-board + .oauth-consent-board { border-top: 1px solid var(--rule); }
-.oauth-consent-board:has(:focus-visible), .oauth-consent-mode:has(:focus-visible) { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: var(--radius-sm); }
 .oauth-consent-board-name { min-width: 0; flex: 1; overflow-wrap: anywhere; }
 .oauth-consent-board-role { flex: none; padding: 2px 7px; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--graphite); font-size: 11px; white-space: nowrap; }
 .oauth-consent-board input:disabled { cursor: default; }
 .oauth-consent-error { min-height: 0; margin: 0; color: var(--danger); font-size: 13px; }
 .oauth-consent-error:empty { display: none; }
 .oauth-consent-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.oauth-consent-button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: transparent; color: var(--ink); font-size: 13px; font-weight: 600; cursor: pointer; }
-.oauth-consent-button:not(:disabled):hover { background: var(--ink); color: var(--paper); }
-.oauth-consent-button.primary { border: 0; background: var(--signal); color: var(--on-signal); }
-.oauth-consent-button.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }
-.oauth-consent-button:disabled { opacity: 0.5; cursor: default; }
+.oauth-consent .btn.primary { border: 0; background: var(--ink); color: var(--paper); }
+.oauth-consent .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 88%, var(--paper)); color: var(--paper); }
 .oauth-consent-plain { max-width: 720px; margin: 24px auto; padding: 0 24px; color: var(--ink); overflow-wrap: anywhere; }
 .oauth-consent-loading { margin: 0; color: var(--graphite); }
 
