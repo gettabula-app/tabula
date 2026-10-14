@@ -5,6 +5,7 @@ import { installFakeBrowser, type FakeBrowser } from './fake-dom';
 const mocks = vi.hoisted(() => ({
   seedDemo: vi.fn<() => void>(),
   mountBoardUi: vi.fn<(...args: unknown[]) => void>(),
+  ensureFont: vi.fn<(slug: string, weights: number[]) => Promise<void>>(async () => undefined),
   app: undefined as {
     store: { undo: { clear: () => void; stopCapturing: () => void } };
     conn: { destroy: () => void };
@@ -24,6 +25,11 @@ vi.mock('../src/app', () => ({
 }));
 vi.mock('../src/ui/board', () => ({ mountBoardUi: mocks.mountBoardUi }));
 vi.mock('../src/demo/seed', () => ({ seedDemo: mocks.seedDemo }));
+// the fake DOM has no document.head: the font requests are checked here, not loaded
+vi.mock('../src/fonts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/fonts')>()),
+  ensureFont: (slug: string, weights: number[]) => mocks.ensureFont(slug, weights),
+}));
 vi.mock('../src/ui/tooltip', () => ({ installTooltips: vi.fn<() => void>() }));
 
 const spyStorage = () => ({
@@ -50,6 +56,7 @@ afterEach(() => {
   vi.resetModules();
   mocks.seedDemo.mockClear();
   mocks.mountBoardUi.mockClear();
+  mocks.ensureFont.mockClear();
 });
 
 describe('demo boot', () => {
@@ -72,6 +79,8 @@ describe('demo boot', () => {
       }),
     });
     vi.stubGlobal('navigator', { sendBeacon: vi.fn<() => boolean>(() => true) });
+    // the board paints on the second frame, which runs at once here
+    vi.stubGlobal('requestAnimationFrame', (fn: (time: number) => void) => { fn(0); return 1; });
     Object.assign(window, { navigator });
     fetchSpy = vi.fn<() => Promise<Response>>(async () => new Response('{}'));
     vi.stubGlobal('fetch', fetchSpy);
@@ -88,6 +97,12 @@ describe('demo boot', () => {
     expect(location.hash).toBe('#/b/demo');
     expect(mocks.seedDemo).toHaveBeenCalledTimes(1);
     expect(mocks.mountBoardUi).toHaveBeenCalledWith(mocks.app, local, expect.any(Object), { demo: true });
+    expect(mocks.ensureFont.mock.calls).toEqual([
+      ['switzer', [400, 500, 600, 700]],
+      ['cabinet-grotesk', [500, 700, 800]],
+      ['satoshi', [400, 500, 700]],
+      ['gambetta', [400, 500, 700]],
+    ]);
     expect(local.querySelector('.demo-banner')?.textContent).toContain('Demo: nothing is saved');
     const testConn = sync.scratchBoard('test', { id: 'test', name: 'Test', color: '#2F6FED' }, false);
     expect(testConn.comments.readOnly()).toBe(false);

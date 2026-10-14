@@ -21,7 +21,7 @@ import { onceForLocation } from './nav-dedupe';
 import { renderJoin } from './ui/join';
 import { renderAdmin } from './ui/admin';
 import { showRestoring } from './ui/restoring';
-import { loadCatalogue } from './fonts';
+import { ensureFont, loadCatalogue } from './fonts';
 import { CUSTOM_PREFIX, TEMPLATES, insertCustomTemplate, insertTemplate } from './templates';
 import { getTemplate } from './template-store';
 import { mayChange } from './template-share';
@@ -56,6 +56,7 @@ import {
 import { isDesktop } from './desktop-env';
 import type { Desktop } from './desktop';
 import { seedDemo } from './demo/seed';
+import { demoBootDone } from './demo/boot-screen';
 import { mountDemoBanner } from './ui/demo-banner';
 import type { User } from './types';
 import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from './tracker-data';
@@ -319,6 +320,14 @@ function watchImport(conn: BoardConn, outcome: Extract<ImportOutcome, { ok: true
   });
 }
 
+/** The demo's families. They load after the board is up: ensureFont adds the Fontshare stylesheets, and the board repaints when each one arrives. */
+const DEMO_FONTS: [string, number[]][] = [
+  ['switzer', [400, 500, 600, 700]],
+  ['cabinet-grotesk', [500, 700, 800]],
+  ['satoshi', [400, 500, 700]],
+  ['gambetta', [400, 500, 700]],
+];
+
 async function route() {
   if (DEMO) {
     if (location.hash !== '#/b/demo') {
@@ -336,6 +345,10 @@ async function route() {
     app.store.undo.stopCapturing();
     mountBoardUi(app, root, { home: () => undefined }, { demo: true });
     mountDemoBanner(root);
+    for (const [slug, weights] of DEMO_FONTS) void ensureFont(slug, weights);
+    // The loading screen leaves once the board has painted: the seed's camera fit runs in the first frame, the second one is painted.
+    // Not in a finally: if an earlier step throws, the screen stays and its 15 s message covers the failed boot.
+    requestAnimationFrame(() => requestAnimationFrame(demoBootDone));
     return;
   }
 
