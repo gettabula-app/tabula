@@ -45,6 +45,20 @@ const PROPERTY_NAMES: Record<string, string> = {
 };
 let localCommentSerial = 0;
 
+/** The aliases a ticket page shows: each once, ignoring case, and never the ticket's own key (an import can store both, TAB-359). */
+function displayedAliases(aliases: readonly string[], key: string): string[] {
+  const seen = new Set([key.toUpperCase()]);
+  const shown: string[] = [];
+  for (const alias of aliases) {
+    const name = alias.trim();
+    const folded = name.toUpperCase();
+    if (!name || seen.has(folded)) continue;
+    seen.add(folded);
+    shown.push(name);
+  }
+  return shown;
+}
+
 function button(label: string, className: string, disabled: boolean, onClick: (event: MouseEvent) => void, focusId?: string): HTMLButtonElement {
   const stableFocusId = focusId ?? `${className.split(/\s+/u)[0] || 'button'}:${label.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-')}`;
   const el = h('button', {
@@ -892,14 +906,15 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       parentLine.replaceChildren('Sub-issue of ', parentLink, h('span', { class: 'tk-progress-count', role: 'img', 'aria-label': `${parentDone} of ${parentChildren.length || 1} sub-issues complete` }, progressValue));
       titleHeading.appendChild(parentLine);
     }
-    if (current.aliases.length) {
-      const aliases = h('p', { class: 'tk-aliases' }, h('span', null, 'Also known as '));
-      current.aliases.forEach((alias, index) => {
-        if (index) aliases.appendChild(document.createTextNode(', '));
-        const aliasButton = button(alias, 'tk-alias-link', false, () => opts.onNavigate(current.key));
-        aliases.appendChild(aliasButton);
+    const shownAliases = displayedAliases(current.aliases, current.key);
+    if (shownAliases.length) {
+      // the buttons and their separators live in one inline list: as direct flex items of the line, each ", " would take the line's gap
+      const list = h('span', { class: 'tk-alias-list' });
+      shownAliases.forEach((alias, index) => {
+        if (index) list.appendChild(document.createTextNode(', '));
+        list.appendChild(button(alias, 'tk-alias-link', false, () => opts.onNavigate(current.key)));
       });
-      titleHeading.appendChild(aliases);
+      titleHeading.appendChild(h('p', { class: 'tk-aliases' }, h('span', null, 'Also known as '), list));
     }
     layout.appendChild(titleHeading);
 

@@ -514,6 +514,21 @@ describe('ticket page', () => {
     expect(buttonByText(host, 'Subscribed')).toBeDefined();
   });
 
+  it('shows each alias once, never the ticket key, and keeps the separators out of the flex line (TAB-359)', async () => {
+    const { host } = await setup({ issue: ticket({ aliases: ['TAB-1', 'tab-1', 'OLD-22', 'old-22', 'ENG-9'] }) });
+    const aliases = host.querySelector('.tk-aliases')!;
+    expect(aliases.textContent).toContain('Also known as OLD-22, ENG-9');
+    expect(aliases.querySelectorAll('.tk-alias-link').map((el) => el.textContent)).toEqual(['OLD-22', 'ENG-9']);
+    // the separators sit inside the one inline list, not as direct children of the flex line that would gap before the comma
+    expect(aliases.childNodes.filter((node) => node.nodeType === 3 && node.textContent.includes(','))).toHaveLength(0);
+    expect(aliases.querySelector('.tk-alias-list')?.textContent).toBe('OLD-22, ENG-9');
+  });
+
+  it('hides the alias line when every stored alias is the ticket key (TAB-359)', async () => {
+    const { host } = await setup({ issue: ticket({ aliases: ['TAB-1', 'tab-1', ' TAB-1 '] }) });
+    expect(host.querySelector('.tk-aliases')).toBeNull();
+  });
+
   it('folds empty sections into ghost actions and omits empty linked-work sections', async () => {
     const { host } = await setup();
     expect(host.querySelector('.tk-subissues-section h2')).toBeNull();
@@ -623,6 +638,28 @@ describe('ticket page', () => {
     expect(dom.textContent).toContain('click (javascript:alert(1))');
     expect(dom.textContent).toContain('&lt;img src=x onerror=alert(2)&gt;');
     expect(dom.textContent).toContain('safe');
+  });
+
+  it('hides the address after a link that names its own ticket, and keeps every other address (TAB-359)', () => {
+    browser = installTrackerUiBrowser();
+    const target = ticket({ id: 'target-166', key: 'TAB-166', title: 'Imported work' });
+    const lookup = (key: string) => (key === 'TAB-166' ? target : null);
+    const render = (source: string) => buildMarkdownDom(renderMarkdownSafe(source), { lookup }).textContent;
+    const url = 'https://linear.app/tabula-app/issue/TAB-166/some-slug';
+    // the key link keeps its key and loses only the repeated address
+    expect(render(`[TAB-166](${url}) is done`)).toContain('TAB-166');
+    expect(render(`[TAB-166](${url}) is done`)).toContain(' is done');
+    expect(render(`[TAB-166](${url}) is done`)).not.toContain('linear.app');
+    // a lower-case key names the same ticket
+    expect(render(`[tab-166](${url})`)).not.toContain('linear.app');
+    // a bare address in plain text stays as it is
+    expect(render(`See ${url} for context`)).toContain(`See ${url} for context`);
+    // a link to another ticket keeps its address
+    expect(render('[TAB-166](https://linear.app/tabula-app/issue/TAB-167/some-slug)')).toContain('(https://linear.app/tabula-app/issue/TAB-167/some-slug)');
+    // a link with words for its label keeps its address, because the words do not name the ticket
+    expect(render(`[Fix it](${url})`)).toContain(`Fix it (${url})`);
+    // the existing rule for other links is unchanged
+    expect(render('[click](javascript:alert(1))')).toBe('click (javascript:alert(1))');
   });
 
   it('describes the supported history event types as one-line sentences', () => {
