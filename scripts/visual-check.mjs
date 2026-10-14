@@ -1719,19 +1719,22 @@ const STATES = {
     if (env.width > 600) {
       await env.page.locator('.trk-frame-wrap.is-selected .trk-frame-open').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: open chip: ${error.message}`); });
       await env.page.locator('.trk-frame-wrap.is-work').waitFor();
-      await env.page.locator('.trk-frame-wrap.is-work .trk-frame-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: frame expand: ${error.message}`); });
-      await env.page.locator('.trk-route-root').waitFor();
-    } else {
-      await env.page.locator('.trk-route-root').waitFor();
+      await env.page.locator('.trk-frame-wrap.is-work .trk-element-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: frame expand: ${error.message}`); });
     }
+    await env.page.locator('.trk-route-root').waitFor();
     const afterOpen = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (before.x !== afterOpen.x || before.y !== afterOpen.y || before.zoom !== afterOpen.zoom) throw new Error('tracker-frame-fullscreen: opening full screen moved the board camera');
-    await env.page.locator('.trk-route-root .trk-fullscreen-strip .trk-small-button').first().click().catch((error) => { throw new Error(`tracker-frame-fullscreen: back to board: ${error.message}`); });
+    const routeExit = env.page.locator('.trk-route-root .trk-fullscreen-strip .trk-small-button').first();
+    const routeExitLabel = await routeExit.innerText();
+    if (!routeExitLabel.includes('Boards')) throw new Error(`tracker-frame-fullscreen: full-screen route exit is ${JSON.stringify(routeExitLabel)}, expected Boards`);
+    // In v5.4 full screen is a tracker route; its strip exits to Boards. Browser Back returns to the preserved board frame.
+    await env.page.evaluate(() => history.back());
     await env.page.locator('.trk-route-root').waitFor({ state: 'detached' });
+    await env.page.locator('.trk-frame-wrap.is-selected').waitFor();
     const afterClose = await env.page.evaluate(() => ({ ...window.__board.r.cam }));
     if (before.x !== afterClose.x || before.y !== afterClose.y || before.zoom !== afterClose.zoom) throw new Error('tracker-frame-fullscreen: closing full screen changed the board camera');
     if (env.width > 600) {
-      await env.page.locator('.trk-frame-wrap.is-selected .trk-frame-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: reopen expand: ${error.message}`); });
+      await env.page.locator('.trk-frame-wrap.is-selected .trk-element-expand').click().catch((error) => { throw new Error(`tracker-frame-fullscreen: reopen expand: ${error.message}`); });
     } else {
       await env.page.evaluate((id) => window.__board.setSelection([id]), frame.id);
       await env.page.keyboard.press('Enter');
