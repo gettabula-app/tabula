@@ -9,6 +9,7 @@ export { OWNER_NAME_MAX };
 import type { Store } from './store';
 import { newId } from './store';
 import type { BaseObj, Id, Obj, Point } from './types';
+import { isOwnAuthor, type Who } from './identity';
 import { cardContentHeight } from './markup';
 import { cleanCardLabels, listLabels } from './labels';
 import { STICKY_COLORS } from './palette';
@@ -392,7 +393,7 @@ export function editCards(store: Store, ids: Id[], patch: CardPatch): boolean {
  * yet converts only for its author (docs/kanban.md, Sticky to card and back): converting clears `privateStep`, so
  * anyone else converting it would show it to everybody before the reveal. The reveal clears `privateStep` on every note.
  */
-export const mayConvertSticky = (o: BaseObj, userId: string) => o.type === 'sticky' && !o.locked && !(o.privateStep && o.createdBy !== userId);
+export const mayConvertSticky = (o: BaseObj, who: Who) => o.type === 'sticky' && !o.locked && !(o.privateStep && !isOwnAuthor(who, o.createdBy));
 
 /** Where a sticky turned into a card goes: a lane at an index, or nowhere (a loose card where the sticky was). */
 export type CardTarget = { lane: Id; index: number } | null;
@@ -412,7 +413,7 @@ function stickyToCardFields(o: BaseObj): Partial<BaseObj> | null {
  * order given. The others become loose cards where they are. Returns the refusal when a limit or a description that is
  * too long stops it, in which case nothing is written.
  */
-export function stickiesToCards(store: Store, ids: Id[], target: (o: BaseObj) => CardTarget, userId: string): { done: Id[]; refused?: string } {
+export function stickiesToCards(store: Store, ids: Id[], target: (o: BaseObj) => CardTarget, userId: Who): { done: Id[]; refused?: string } {
   const stickies = ids.map((id) => store.get(id) as BaseObj | undefined).filter((o): o is BaseObj => !!o && mayConvertSticky(o, userId));
   if (!stickies.length || store.readOnly) return { done: [] };
   let total = 0;

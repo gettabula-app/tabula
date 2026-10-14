@@ -226,7 +226,7 @@ describe('guest board UI', () => {
   });
 
   it('sets the guest identity flag before publishing the local board user', () => {
-    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+    const main = readFileSync(new URL('../src/board-user.ts', import.meta.url), 'utf8');
     expect(main).toMatch(/if \(auth\.mode === 'guest'\) return \{\s*\.\.\.getUser\(\),\s*id: auth\.guest\.guestId,\s*name: auth\.guest\.name,\s*guest: true\s*\}/);
   });
 });

@@ -325,6 +325,7 @@ export interface BoardMeta {
 export interface Point { x: number; y: number }
 export interface Rect { x: number; y: number; w: number; h: number }
 
-export interface User { id: string; name: string; color: string; guest?: boolean }
+/** `deviceId` is set in accounts mode: what createdBy held before the account id replaced it (see src/identity.ts). */
+export interface User { id: string; name: string; color: string; guest?: boolean; deviceId?: string }
 
 export const SCHEMA_VERSION = 1;

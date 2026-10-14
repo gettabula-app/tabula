@@ -159,7 +159,19 @@ export class Polls {
   }
 
   mine(pollId: Id): PollAnswer | undefined {
-    return this.app.store.pollAnswers.get(answerKey(pollId, this.app.user.id));
+    const answers = this.app.store.pollAnswers;
+    const { id, deviceId } = this.app.user;
+    // an answer given under the device id, before the account id was stamped, is still this person's until they answer again
+    return answers.get(answerKey(pollId, id)) ?? (deviceId ? answers.get(answerKey(pollId, deviceId)) : undefined);
+  }
+
+  /** Deletes this person's answer under the account id and under the device id of before, in one write. */
+  private deleteMine(pollId: Id) {
+    const { id, deviceId } = this.app.user;
+    this.write(() => {
+      this.app.store.pollAnswers.delete(answerKey(pollId, id));
+      if (deviceId) this.app.store.pollAnswers.delete(answerKey(pollId, deviceId));
+    });
   }
 
   /** Open for answers: opened, not closed, and its step is the running one. */
@@ -248,12 +260,12 @@ export class Polls {
     const cur = this.mine(pollId)?.optionIds ?? [];
     const next = !poll.multiple ? [optionId] : cur.includes(optionId) ? cur.filter((id) => id !== optionId) : [...cur, optionId];
     if (next.length) this.saveAnswer(poll, next);
-    else this.write(() => this.app.store.pollAnswers.delete(answerKey(pollId, this.app.user.id)));
+    else this.deleteMine(pollId);
   }
 
   clearMine(pollId: Id) {
     this.requireOpen(pollId);
-    this.write(() => this.app.store.pollAnswers.delete(answerKey(pollId, this.app.user.id)));
+    this.deleteMine(pollId);
   }
 
   /** Shows the results to everyone. Allowed while the poll is open or closed; the poll stays revealed. */
@@ -327,7 +339,10 @@ export class Polls {
       updatedAt: Date.now(),
       ...(poll.anonymous ? {} : { name: me.name, color: me.color }),
     };
-    this.write(() => this.app.store.pollAnswers.set(answerKey(poll.id, me.id), answer));
+    this.write(() => {
+      this.app.store.pollAnswers.set(answerKey(poll.id, me.id), answer);
+      if (me.deviceId) this.app.store.pollAnswers.delete(answerKey(poll.id, me.deviceId)); // the answer of before moves to the account id, it does not count twice
+    });
   }
 
   private stamp(pollId: Id, field: 'openedAt' | 'closedAt') {

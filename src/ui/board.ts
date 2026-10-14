@@ -48,6 +48,7 @@ const trackerBoardMockVisual = import.meta.env.MODE === 'visual' && (() => {
   return query.has('debug') && query.get('trackerMock') === 'board';
 })();
 import { fontName } from '../fonts';
+import { deviceIdentity } from '../board-user';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { isDesktop } from '../desktop-env';
 import { api } from '../api';
@@ -1417,7 +1418,7 @@ function openShare(app: BoardApp) {
 function openProfile(app: BoardApp) {
   openProfileDialog(app.user, (u) => {
     Object.assign(app.user, u);
-    saveUser(app.user);
+    saveUser(deviceIdentity(app.user)); // never app.user itself: in accounts mode it carries the account id
     app.conn.awareness.setLocalStateField('user', app.user);
   });
 }
