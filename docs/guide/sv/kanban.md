@@ -46,7 +46,7 @@ Ett kort som har ett AI-verktyg som ansvarig har en åttkantig bricka i stället
 
 ## Förfallodatum och försenade kort
 
-Ange ett **Due date** och kortet visar datumet som ”I dag”, ”I morgon”, en veckodag med datum eller ”för 3 dagar sedan”. Ett kort är **Overdue** (Försenat) när datumet har passerat och kolumnen inte har fasen **Done**. Då visas kortet med en varningsfärg och text, så att informationen inte bara förmedlas med färg. Ett kort i en kolumn med fasen Done blir aldrig försenat. ”I dag” baseras på datumet på din egen enhet, så två personer i olika tidszoner kan se olika datum i några timmar runt midnatt. Använd **Due** (Förfaller) i filtret för att se försenade kort, kort som förfaller i dag eller den här veckan.
+Ange ett **Due date** och kortet visar datumet som ”I dag”, ”I morgon”, en veckodag med datum eller ”för 3 dagar sedan”. Ett kort är **Overdue** (Försenat) när datumet har passerat och kolumnen inte har fasen **Done**. Då visas kortet med en varningsfärg och text, så att informationen inte bara förmedlas med färg. Ett kort i en kolumn med fasen Done blir aldrig försenat. ”I dag” baseras på datumet på din egen enhet, så två personer i olika tidszoner kan se olika datum i några timmar runt midnatt. Använd **Due** (Förfaller) i filtret för att se försenade kort, kort som förfaller i dag eller den här veckan. Påminnelser under klockan använder UTC-datum, så de kan skilja sig från kortets egen färg för **Overdue** (Försenad) i några timmar.
 
 ## Etiketter
 

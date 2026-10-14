@@ -7,11 +7,6 @@ import { reopenPollResults } from './idle-bar';
 import { POLL_LIST_MIN, POLL_LIST_MIN_SHORT, pollCardBox } from './poll-layout';
 import './polls.css';
 
-/** The fade on a list's bottom edge shows while more of it is below. */
-function showMore(list: HTMLElement) {
-  list.classList.toggle('more', list.scrollHeight - list.clientHeight - list.scrollTop > 2);
-}
-
 /** "N of M answered" for the card and the bar alike. */
 function answeredText(app: BoardApp, pollId: Id): string {
   return answeredLabel(app.flow.polls.tally(pollId).responses, countPeople(app.participants()));
@@ -72,7 +67,7 @@ function pollBody(app: BoardApp, poll: Poll): HTMLElement {
   const choices = poll.options.map((o) => {
     const input = h('input', { type: poll.multiple ? 'checkbox' : 'radio', name: `poll-${poll.id}`, checked: mine.includes(o.id), 'data-option': o.id });
     input.addEventListener('change', () => attempt(() => polls.choose(poll.id, o.id)));
-    return h('label', { class: 'poll-choice' }, input, h('span', null, o.text));
+    return h('label', { class: 'check poll-choice' }, input, h('span', null, o.text));
   });
   const note = canAnswer
     ? 'Your answer saves as you choose and can change until the poll closes.'
@@ -81,7 +76,7 @@ function pollBody(app: BoardApp, poll: Poll): HTMLElement {
     h('div', { class: 'poll-head' }, h('span', { class: 'poll-label' }, 'Poll'),
       h('span', { class: 'poll-label', role: 'status', 'data-answered': poll.revealed ? undefined : poll.id }, status)),
     h('h2', { class: 'poll-question', id: questionId }, poll.question),
-    h('div', { class: 'poll-scroll', onscroll: (e: Event) => showMore(e.currentTarget as HTMLElement) },
+    h('div', { class: 'poll-scroll' },
       h('fieldset', { class: 'poll-choices', disabled: !canAnswer, 'aria-labelledby': questionId }, ...choices),
       poll.revealed ? resultsList(tally) : null),
     h('div', { class: 'poll-foot' },
@@ -110,7 +105,6 @@ export function mountPollCard(app: BoardApp, parent: HTMLElement, bar: HTMLEleme
     const box = pollCardBox({ viewport, top, dock, natural: overhead + list, minimum: overhead + Math.min(viewport < 700 ? POLL_LIST_MIN_SHORT : POLL_LIST_MIN, list) });
     card.style.bottom = `${box.bottom}px`;
     card.style.maxHeight = `${box.height}px`;
-    showMore(scroll);
   };
   new ResizeObserver(place).observe(bar);
   window.addEventListener('resize', place);
@@ -187,7 +181,7 @@ function composer(initial: PollInput | null, submitLabel: string, onSubmit: (inp
       const input = h('input', { class: 'input', maxlength: String(POLL_LIMITS.option), value: text, placeholder: `Option ${i + 1}`, 'aria-label': `Option ${i + 1}` });
       input.addEventListener('input', () => { options[i] = input.value; });
       const remove = h('button', {
-        class: 'icon-btn', type: 'button', disabled: options.length <= POLL_LIMITS.minOptions, 'aria-label': `Remove option ${i + 1}`,
+        class: 'icon-btn ghost', type: 'button', disabled: options.length <= POLL_LIMITS.minOptions, 'aria-label': `Remove option ${i + 1}`,
         onclick: () => { options.splice(i, 1); draw(); },
       }, icon('close', 16));
       return h('li', null, input, remove);
@@ -202,8 +196,8 @@ function composer(initial: PollInput | null, submitLabel: string, onSubmit: (inp
     h('div', { class: 'field poll-options' },
       h('div', { class: 'field-label' }, 'Options'),
       h('div', { class: 'poll-compose-list' }, h('div', { class: 'poll-compose-scroll' }, list), add)),
-    h('label', { class: 'poll-check' }, multiple, h('span', null, 'More than one answer')),
-    h('label', { class: 'poll-check' }, anonymous, h('span', null, 'Anonymous (names stay hidden)')),
+    h('label', { class: 'check poll-check' }, multiple, h('span', null, 'More than one answer')),
+    h('label', { class: 'check poll-check' }, anonymous, h('span', null, 'Anonymous (names stay hidden)')),
     h('div', { class: 'btn-row poll-compose-actions' },
       h('button', { class: 'btn ghost', type: 'button', onclick: onCancel }, 'Cancel'),
       h('button', { class: 'btn primary', type: 'button', onclick: submit }, submitLabel)),

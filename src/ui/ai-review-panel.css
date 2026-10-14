@@ -11,21 +11,18 @@
 .aireview-list, .aireview-members { list-style: none; margin: 0; padding: 0; }
 .aireview-list > li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--tray-line); }
 .aireview-list > li:last-child { border-bottom: 0; }
-.aireview-list input[type='checkbox'] { flex: none; width: 16px; height: 16px; margin: 9px 0 0; accent-color: var(--signal); }
+.aireview-check { justify-content: center; min-width: 32px; }
 .aireview-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .aireview .input { width: 100%; box-sizing: border-box; border-radius: var(--radius-sm); font: 13px/1.35 var(--ui); }
 .aireview textarea.input { resize: vertical; min-height: 52px; padding: 7px 10px; }
 .aireview-frame { align-items: center !important; }
-.aireview-frame input[type='checkbox'] { margin-top: 0; }
-.aireview-kind { flex: none; color: var(--tray-muted); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.aireview-kind { flex: none; color: var(--tray-muted); font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; }
 .aireview-colors { display: flex; flex-wrap: wrap; gap: 5px; }
 .aireview-colors .swatch { width: 18px; height: 18px; }
 .aireview-group { flex-direction: column; gap: 6px !important; }
 .aireview-group-head { display: flex; align-items: center; gap: 10px; width: 100%; }
-.aireview-group-head input[type='checkbox'] { margin-top: 0; }
 .aireview-members { width: 100%; padding-left: 26px !important; box-sizing: border-box; }
 .aireview-member { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; }
-.aireview-member input[type='checkbox'] { margin: 0; }
 .aireview-member-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aireview-member.stale .aireview-member-text { color: var(--tray-muted); text-decoration: line-through; }
 .aireview-tag { flex: none; padding: 1px 6px; border: 1px solid var(--tray-line); border-radius: var(--radius-xs); color: var(--tray-muted); font-size: 11px; font-weight: 600; }

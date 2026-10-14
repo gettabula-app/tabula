@@ -874,7 +874,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     let visibility: HTMLElement;
     if (config.keySource === 'user') {
       paintDescription();
-      visibility = h('label', { class: 'aibar-switch' },
+      visibility = h('label', { class: 'check aibar-switch' },
         h('input', {
           type: 'checkbox', role: 'switch', checked: st.privateRun,
           onchange: (e: Event) => {

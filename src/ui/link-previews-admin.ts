@@ -84,7 +84,7 @@ export function linkPreviewsAdminPanel(me: Me): HTMLElement {
     const sw = h('button', {
       class: `lp-switch${on ? ' on' : ''}`, type: 'button', role: 'switch', 'aria-checked': String(on), 'aria-label': 'Link previews', 'aria-busy': busy ? 'true' : undefined, disabled: saved.locked,
       onclick: () => void save(!on),
-    }, h('span', { class: 'lp-thumb', 'aria-hidden': 'true' }));
+    });
     const focus = document.activeElement === root.querySelector('.lp-switch');
     const parts: Node[] = [h('div', { class: 'lp-row' }, head, sw), h('p', { class: 'lp-text' }, hosted ? LINK_PREVIEWS_COPY.hosted : LINK_PREVIEWS_COPY.self)];
     if (saved.locked) parts.push(h('p', { class: 'lp-locked' }, LINK_PREVIEWS_COPY.locked));

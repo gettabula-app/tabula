@@ -66,6 +66,12 @@ Om du vill redigera text i en form, lapp, kopplingslinje eller ramrubrik dubbelk
 
 I snabbåtgärdsfältet ställer **Text** in vågrät justering (vänster, mitten, höger) och textfärg. För former och lappar ställer det också in **Vertical** justering: överst, i mitten eller nederst.
 
+### Radavstånd
+
+Markera ett textobjekt, en klisterlapp, en form eller ett Markdown-block, öppna **More properties** (Fler egenskaper) och välj ett värde under **Line height** (Radavstånd): 1, 1,15, 1,3, 1,5 eller 2. 1,3 är det normala avståndet. Ett textobjekt växer eller krymper så att det passar det nya avståndet. Rutan för en klisterlapp eller en form behåller sin storlek, och texten blir mindre om den inte längre ryms.
+
+Väldigt långa ord går inte längre utanför kanten på ett textobjekt, en lapp eller en form: ett ord som är bredare än rutan bryts över flera rader där det hamnar.
+
 ### Teckensnitt
 
 Öppna egenskapspanelen (se nedan) och använd **Font** (Teckensnitt). Teckensnittslistan har ett sökfält (**Search Fontshare fonts** (Sök Fontshare-teckensnitt)) som hittar namn och stilord, till exempel ”serif”. Exakta namn visas först, följt av kategorifilter och ett avsnitt med teckensnitt som redan används på tavlan. Håll pekaren över ett teckensnitt för att förhandsvisa det på markeringen. Klicka för att behålla det eller tryck på `Esc` för att återställa det tidigare teckensnittet. Du kan också ställa in **Size** (Storlek) och **Weight** (Vikt) där. Storleken ändras med 1 med piltangenterna eller mushjulet och med 10 när du håller ned `Shift`.
@@ -108,7 +114,7 @@ I ett smalt fönster (860 pixlar brett eller mindre) börjar fältet till höger
 
 ## Egenskapspanelen
 
-**More properties** öppnar en panel vid sidan med objekttypen som rubrik. Beroende på markeringen innehåller den: form- eller klasstyp, fill, line colour, **Width** (Bredd) (1 till 6 px), **Style** (Stil) (heldragen, streckad, prickad), font, size, weight, alignment, text colour, **Opacity** (Opacitet), align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`), duplicate, lock, **Copy as Mermaid** (Kopiera som Mermaid) och delete. När du ändrar ordningen med flera markerade objekt behåller de sin inbördes ordning. Om flera markerade objekt skiljer sig åt visas ett fält som blandat tills du ändrar det. På en telefon har panelen en fällknapp som fäller ihop den till rubrikraden, så att du kan se tavlan ovanför.
+**More properties** öppnar en panel vid sidan med objekttypen som rubrik. Beroende på markeringen innehåller den: form- eller klasstyp, fill, line colour, **Width** (Bredd) (1 till 6 px), **Style** (Stil) (heldragen, streckad, prickad), font, size, weight, **Line height** (Radavstånd), alignment, text colour, **Opacity** (Opacitet), align and distribute, bring to front (`]`), bring forward (`Ctrl+]`), send backward (`Ctrl+[`), send to back (`[`), duplicate, lock, **Copy as Mermaid** (Kopiera som Mermaid) och delete. När du ändrar ordningen med flera markerade objekt behåller de sin inbördes ordning. Om flera markerade objekt skiljer sig åt visas ett fält som blandat tills du ändrar det. På en telefon har panelen en fällknapp som fäller ihop den till rubrikraden, så att du kan se tavlan ovanför.
 
 ## Markera, flytta och gruppera
 
