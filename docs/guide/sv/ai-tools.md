@@ -78,6 +78,15 @@ Kanbantavlor kräver försiktighet:
 - Ett verktyg kan koppla samman kort och andra objekt, men inte en kolumn eller själva kanbantavlan. En ny eller ändrad kopplingslinje som slutar vid en kolumn eller kanbantavla avvisas. Befintliga kopplingslinjer påverkas inte.
 - Text som ett verktyg skriver håller ihop emoji som består av flera delar, till exempel familjer och flaggor för England, Skottland och Wales. Dolda tecken tas fortfarande bort.
 
+## Se en agent arbeta
+
+När ett verktyg med åtkomsttoken ändrar en tavla kan alla på tavlan se det:
+
+- **Markör och avatar.** En kort stund efter varje ändring visas verktyget som i arbete: en markör som bär namnet på medlemmen det arbetar åt (till exempel "Adas agent"), med tokenens namn i citattecken efter, som rör sig dit där verktyget ändrar tavlan. I deltagarlistan har det en egen avatar med en gnista; välj den för att gå dit verktyget arbetar. Den som gått med via en anslutningskod ser bara att en agent arbetar, inte vems den är.
+- **Agentutkast.** Det ett verktyg skapar är märkt **Agent draft** tills en person redigerar det eller markerar det och väljer **Accept draft** i egenskapspanelen (**Accept drafts** för flera).
+- **Agentaktivitet.** I en arbetsyta med inloggning listar **Agent activity** i tavlemenyn vad varje agent gjort de senaste 7 dagarna, senaste först, som en kort rad som "created 6 sticky notes". Texter som personer skrivit visas aldrig. **Go there** tar dig till objekten. Tokenens namn visas i citattecken, skilt från medlemmens namn, så att en token inte kan se ut som en person.
+- **Ångra anrop.** Ägare och redigerare kan välja **Revert** för att ta tillbaka ett anrop. Objekt anropet skapade tas bort och objekt det tog bort kommer tillbaka, men allt en person ändrat sedan lämnas som det är, och ett meddelande säger hur många som lämnades. Ett anrop kan återställas en gång, i 48 timmar; en mycket stor ändring, eller en äldre, säger varför den inte går att återställa.
+
 ## Daglig gräns och nya försök
 
 I en arbetsyta med inloggning kan varje token (och varje OAuth-anslutning) göra 2 000 ändringar på tavlor per dag. Räkningen gäller objekt, inte anrop: att skapa 10 klisterlappar i ett anrop räknas som 10. Den nollställs vid midnatt UTC, och ett verktyg som når gränsen får veta att den dagliga gränsen är nådd och när den nollställs. Läsning begränsas inte på det sättet, och det gör inte ärenden heller. Den som driver din server kan ändra talet eller stänga av gränsen.
