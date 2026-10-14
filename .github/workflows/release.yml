@@ -44,7 +44,7 @@ jobs:
       packages: write
     uses: ./.github/workflows/ci.yml
     with:
-      full-matrix: true
+      with-node22: true
 
   release:
     name: Build, push, register
