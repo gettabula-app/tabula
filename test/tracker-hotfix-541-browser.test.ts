@@ -105,4 +105,34 @@ describe.skipIf(!available)('standalone tracker, v5.4 dogfooding regressions', {
     expect(new URL(page.url()).pathname).not.toMatch(/^\/t\//);
     await page.close();
   });
+
+  // the real route host (src/main.ts) mounts a new screen on every route change, which the single-mount mock above does not
+  it('TAB-360: opening a ticket from the list and pressing Escape twice leaves the full-screen route with one step per press', async () => {
+    const page = await browser!.newPage({ viewport: { width: 1280, height: 800 } });
+    page.setDefaultTimeout(budget(45_000));
+    await page.goto(`${base}?debug&trackerMock=board#/b/trk-${Math.random().toString(36).slice(2, 8)}`);
+    await page.waitForFunction(() => (window as any).__board && (window as any).__trackerStore && [...(window as any).__board.store.cache.values()].some((o: any) => o.type === 'tracker'), null, { timeout: budget(90_000) });
+    const id = await page.evaluate(() => [...(window as any).__board.store.cache.values()].find((o: any) => o.type === 'tracker').id as string);
+    await page.evaluate((i) => (window as any).__board.setSelection([i]), id);
+    await page.locator('.trk-frame-wrap.is-work .trk-list-row').first().waitFor();
+    await page.locator('.trk-frame-wrap.is-work .trk-element-expand').click();
+    const route = '.trk-route-root, .trk-fullscreen-portal';
+    const row = page.locator('.trk-route-root .trk-list-row, .trk-fullscreen-portal .trk-list-row').first();
+    await row.waitFor();
+    const depthBefore = await page.evaluate(() => history.length);
+    await row.click();
+    await page.locator('.trk-peek-layout, .tk-page').first().waitFor();
+    const onTicket = () => page.evaluate(() => /^\/t\/[A-Z]+-\d+/.test(location.pathname));
+    expect(await onTicket()).toBe(true);
+    // one step to open the ticket, and exactly one to close it
+    expect(await page.evaluate(() => history.length)).toBe(depthBefore + 1);
+    await page.mouse.click(1274, 4);
+    await page.keyboard.press('Escape');
+    await expect.poll(onTicket).toBe(false);
+    expect(await page.locator(route).count()).toBe(1);
+    // the second Escape leaves the route (back to the board), not to the same list again
+    await page.keyboard.press('Escape');
+    await page.waitForFunction((selector) => document.querySelector(selector) === null, route);
+    await page.close();
+  });
 });

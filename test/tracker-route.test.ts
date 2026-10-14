@@ -127,47 +127,57 @@ describe('tracker route gating and return paths', () => {
     expect(events).toEqual(['popstate', 'popstate']);
   });
 
-  // TAB-360: the X on a ticket page used to be history.back(), which showed the ticket before it, or left the tracker
+  // TAB-360: the X on a ticket page used to be history.back(), which showed the ticket before it, or left the tracker. The route
+  // host mounts a fresh screen (and a fresh navigator) on every route change, so each call below makes a new navigator.
   describe('createTicketRouteNavigator', () => {
-    function fakeHistory() {
-      const log: string[] = [];
+    function fakeBrowser(start: string) {
+      const entries: Array<{ path: string; state: unknown }> = [{ path: start, state: null }];
+      let at = 0;
       vi.stubGlobal('window', {
+        location: {
+          get pathname() { return entries[at].path.split('?')[0]; },
+          get search() { const q = entries[at].path.split('?')[1]; return q ? `?${q}` : ''; },
+        },
         history: {
-          pushState: (_s: unknown, _t: string, path: string) => { log.push(`push ${path}`); },
-          replaceState: (_s: unknown, _t: string, path: string) => { log.push(`replace ${path}`); },
-          back: () => { log.push('back'); },
+          get state() { return entries[at].state; },
+          pushState: (state: unknown, _t: string, path: string) => { entries.splice(at + 1); entries.push({ path, state }); at += 1; },
+          replaceState: (state: unknown, _t: string, path: string) => { entries[at] = { path, state }; },
+          back: () => { at = Math.max(0, at - 1); },
         },
         dispatchEvent: () => true,
       });
-      return log;
+      return { path: () => entries[at].path, depth: () => entries.length };
     }
+    const nav = (key: string | null) => createTicketRouteNavigator(() => ({ kind: 'view', view: 'all' }))(key);
 
     it('opens with one pushed entry and closes by popping it', () => {
-      const log = fakeHistory();
-      const go = createTicketRouteNavigator(null, () => ({ kind: 'view', view: 'all' }));
-      go('TAB-1');
-      go(null);
-      expect(log).toEqual(['push /t/TAB-1', 'back']);
+      const browser = fakeBrowser('/t/all');
+      nav('TAB-1');
+      expect(browser.path()).toBe('/t/TAB-1');
+      nav(null);
+      expect(browser.path()).toBe('/t/all');
+      expect(browser.depth()).toBe(2); // the popped entry is still ahead; nothing was added behind
     });
 
-    it('moving to another ticket replaces the entry, so closing never lands on the ticket before', () => {
-      const log = fakeHistory();
-      const go = createTicketRouteNavigator(null, () => ({ kind: 'view', view: 'all' }));
-      go('TAB-1');
-      go('TAB-2');
-      go('TAB-3');
-      go(null);
-      expect(log).toEqual(['push /t/TAB-1', 'replace /t/TAB-2', 'replace /t/TAB-3', 'back']);
+    it('moving to another ticket replaces the entry, so closing never lands on the ticket before and leaving needs one Back', () => {
+      const browser = fakeBrowser('/t/all');
+      nav('TAB-1');
+      nav('TAB-2');
+      nav('TAB-3');
+      expect(browser.depth()).toBe(2);
+      nav(null);
+      expect(browser.path()).toBe('/t/all');
     });
 
-    it('a ticket opened by its own address closes to its list instead of leaving the tracker', () => {
-      const log = fakeHistory();
-      const go = createTicketRouteNavigator('TAB-9', () => ({ kind: 'view', view: 'my' }));
-      go(null);
-      expect(log).toEqual(['replace /t/my']);
-      go('TAB-10');
-      go(null);
-      expect(log.slice(1)).toEqual(['push /t/TAB-10', 'back']);
+    it('a ticket opened by its own address closes to its list without leaving the tracker', () => {
+      const browser = fakeBrowser('/t/TAB-9');
+      nav(null);
+      expect(browser.path()).toBe('/t/all');
+      expect(browser.depth()).toBe(1);
+      // and a ticket opened from that list is marked again, so it pops
+      nav('TAB-10');
+      nav(null);
+      expect(browser.path()).toBe('/t/all');
     });
   });
 });
