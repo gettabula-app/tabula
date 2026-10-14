@@ -13,6 +13,7 @@ import { codeLayerLabel } from './code-strings';
 import { generateNKeysBetween } from 'fractional-indexing';
 import type { Id, Obj } from './types';
 import type { ZPatch } from './z-order';
+import { lineFlag } from './line-geometry';
 
 /** Types whose `parent` children nest under them in the panel. Groups join here (docs/groups.md). */
 export const CONTAINERS = new Set<string>(['frame', 'container', 'lane']);
@@ -67,8 +68,11 @@ export function layerLabel(o: Obj): string {
   if (text) return text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1)}…` : text;
   // a frame whose name was emptied draws no title on the board; this is only what the list and a screen reader say
   if (o.type === 'frame' && typeof (o as { name?: unknown }).name === 'string') return UNTITLED_FRAME;
-  return TYPE_LABEL[o.type] ?? 'Object';
+  return lineLike(o) ? 'Line' : TYPE_LABEL[o.type] ?? 'Object';
 }
+
+/** A line is a connector with both ends free: it is listed and described as a Line. */
+const lineLike = (o: Obj) => o.type === 'connector' && lineFlag(o);
 
 /** A name as the field stores it: one line, at most 80 characters; empty clears it (the label falls back). */
 export function cleanName(raw: string): string | undefined {

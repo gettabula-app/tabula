@@ -50,6 +50,7 @@ export const ICONS = {
   ellipse: '<ellipse cx="12" cy="12" rx="8.5" ry="7"/>',
   diamond: '<path d="M12 3.5l8.5 8.5-8.5 8.5L3.5 12z"/>',
   connector: '<path d="M5 19L18 6"/><path d="M11 6h7v7"/>',
+  line: '<path d="M5 19L19 5"/><circle cx="5" cy="19" r="1.8" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.8" fill="currentColor" stroke="none"/>',
   pen: '<g transform="translate(0.15 -1.75)"><path d="M4 20c3-1 4-4 6-7s5-6 8-7c1-.4 2 .6 1.6 1.6-1 3-4 6-7 8s-6 3-7 6"/></g>',
   frame: '<path d="M7 3v18M17 3v18M3 7h18M3 17h18"/>',
   kanban: '<path d="M4 4h16v16H4zM9.5 4v16M14.5 4v16"/>',

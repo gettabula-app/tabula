@@ -88,8 +88,8 @@ const hover = async (page: Page, id = 'c1') => {
 describe.skipIf(!available)('the code block in the rail', { timeout: 200_000 }, () => {
   it('is the fifth item of the Text and content flyout, with no key, and the flyout fits a 720px window', async () => {
     const page = await open({ height: 720 });
-    await page.locator('.rail-tool-group').waitFor();
-    await page.locator('.rail-group-chevron').click();
+    await page.locator('.rail-text-group').waitFor();
+    await page.locator('.rail-text-group .rail-group-chevron').click();
     const flyout = page.locator('.rail-tool-pop');
     expect(await flyout.getAttribute('aria-label')).toBe('Text and content tools');
     const items = await flyout.getByRole('menuitem').evaluateAll((els) => els.map((e) => [e.getAttribute('aria-label'), e.getAttribute('aria-keyshortcuts')]));
@@ -99,7 +99,7 @@ describe.skipIf(!available)('the code block in the rail', { timeout: 200_000 }, 
     expect(r!.y + r!.height).toBeLessThanOrEqual(720);
     // remembered choice and chevron work as for the others
     await page.getByRole('menuitem', { name: 'Code block' }).click();
-    const group = page.locator('.rail-tool-group');
+    const group = page.locator('.rail-text-group');
     expect(await group.getAttribute('data-tool')).toBe('code');
     expect(await group.getAttribute('aria-label')).toBe('Code block');
     await expect.poll(() => page.evaluate(() => localStorage.getItem('driftboard:rail-tool-group:text-markdown-link'))).toBe('code');

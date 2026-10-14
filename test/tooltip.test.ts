@@ -338,6 +338,7 @@ describe('shortcutKeys', () => {
     expect(ids.filter((id) => shortcutKeys(id) === undefined)).toEqual([]);
     const lists = SHORTCUTS.filter((s) => s.ids.length > 1).flatMap((s) => s.ids).filter((id) => /, | or | \/ /.test(shortcutKeys(id) ?? ''));
     expect(lists).toEqual([]);
-    for (const letter of Object.keys(TOOL_KEYS)) expect(shortcutKeys(letter)).toBe(letter.toUpperCase());
+    // a tool key is its letter, or Shift and the letter for the Line tool (Shift+L)
+    for (const letter of Object.keys(TOOL_KEYS)) expect(shortcutKeys(letter)).toBe(letter.startsWith('shift+') ? 'Shift+L' : letter.toUpperCase());
   });
 });

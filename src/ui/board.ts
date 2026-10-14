@@ -280,147 +280,194 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     b.dataset.tool = tool.kind;
     return b;
   };
-  const railGroupChoices = [
-    { id: 'text', label: 'Text', icon: 'text' as IconName, key: 'T', tool: { kind: 'text' } as Tool },
-    { id: 'table', label: 'Table', icon: 'table' as IconName, key: 'G', tool: { kind: 'table' } as Tool },
-    { id: 'markdown', label: 'Markdown block', icon: 'markdown' as IconName, key: '', tool: { kind: 'markdown' } as Tool },
-    // Link cards open an address popover instead of arming a tool, and are not offered in the demo
-    ...(demo ? [] : [{ id: 'link', label: 'Link', icon: 'link' as IconName, key: '', tool: null as Tool | null }]),
-    // last in the flyout and without a key: the group's name, its stored choice and its other items stay as they were
-    { id: 'code', label: 'Code block', icon: 'code' as IconName, key: '', tool: { kind: 'code' } as Tool },
-  ];
-  const railGroupState: RailToolChoice[] = railGroupChoices.map(({ id, tool }) => ({ id, toolKind: tool?.kind }));
-  const railGroupStorageKey = 'driftboard:rail-tool-group:text-markdown-link';
-  const loadRailGroupChoice = () => {
-    try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(railGroupStorageKey); } catch { return null; }
-  };
-  const saveRailGroupChoice = (choice: string) => {
-    try { localStorage.setItem(railGroupStorageKey, choice); } catch { /* grouped tool memory is a convenience */ }
-  };
-  let lastRailGroupChoice = restoreToolChoice(loadRailGroupChoice(), app.tool.kind, railGroupState, 'text');
-  let railGroupButton: HTMLButtonElement;
-  let closeRailGroup: () => void = () => {};
-  let longPressTimer = 0;
-  let suppressGroupClickTimer = 0;
-  let suppressGroupClick = false;
-  const clearGroupClickSuppression = () => {
-    window.clearTimeout(suppressGroupClickTimer);
-    suppressGroupClickTimer = 0;
-    suppressGroupClick = false;
-  };
-  const deferClearGroupClickSuppression = () => {
-    window.clearTimeout(suppressGroupClickTimer);
-    if (!suppressGroupClick) return;
-    suppressGroupClickTimer = window.setTimeout(() => {
-      suppressGroupClick = false;
-      suppressGroupClickTimer = 0;
-    }, 50);
-  };
-  const currentRailGroupChoice = () => railGroupChoices.find((choice) => choice.id === lastRailGroupChoice) ?? railGroupChoices[0];
-  const paintRailGroupButton = () => {
-    const choice = currentRailGroupChoice();
-    if (choice.tool) railGroupButton.dataset.tool = choice.tool.kind;
-    else delete railGroupButton.dataset.tool;
-    const active = !!choice.tool && app.tool.kind === choice.tool.kind;
-    railGroupButton.classList.toggle('on', active);
-    railGroupButton.setAttribute('aria-pressed', String(active));
-    railGroupButton.setAttribute('aria-label', choice.label);
-    if (choice.key) { railGroupButton.setAttribute('aria-keyshortcuts', choice.key); railGroupButton.dataset.tipKey = choice.key.toLowerCase(); } else { railGroupButton.removeAttribute('aria-keyshortcuts'); delete railGroupButton.dataset.tipKey; }
-    railGroupButton.replaceChildren(icon(choice.icon, 20), h('span', { class: 'rail-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 10)));
-  };
-  const selectRailGroupChoice = (id: string) => {
-    const choice = railGroupChoices.find((item) => item.id === id);
-    if (!choice) return;
-    closeRailGroup();
-    lastRailGroupChoice = choice.id;
-    saveRailGroupChoice(choice.id);
-    paintRailGroupButton();
-    if (choice.tool) app.setTool(choice.tool);
-    else if (app.readOnly) toast("You can't add links to a board you can only view.");
-    else openLinkPopover(app, railGroupButton);
-  };
-  const openRailGroup = () => {
-    if (document.querySelector('.rail-tool-pop')) return;
-    const options = railGroupChoices.map((choice) => h('button', {
-      class: 'menu-item rail-tool-option', type: 'button', role: 'menuitem', 'aria-label': choice.label,
-      ...(choice.key ? { 'aria-keyshortcuts': choice.key } : {}), onclick: () => selectRailGroupChoice(choice.id),
-    }, icon(choice.icon, 20), h('span', null, choice.label), ...(choice.key ? [h('kbd', null, choice.key)] : [])));
-    const list = h('div', { class: 'rail-tool-list', role: 'presentation' }, ...options);
-    list.addEventListener('keydown', (event: KeyboardEvent) => {
-      const buttons = [...list.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
-      const active = buttons.indexOf(event.target as HTMLButtonElement);
-      if (active < 0) return;
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+  /**
+   * A rail button that holds several tools (or one action): its flyout picks one, and the button shows and arms the last
+   * one picked. The choice is remembered under its own storage key; the flyout is a menu of the group's choices.
+   */
+  const railToolGroup = (opts: {
+    choices: { id: string; label: string; icon: IconName; key: string; tool: Tool | null }[];
+    storageKey: string;
+    fallback: string;
+    flyout: string;
+    className: string;
+    /** What picking an action choice (one with no tool, such as Link) does, given the group's button. */
+    onAction: (button: HTMLButtonElement) => void;
+  }) => {
+    const { choices, storageKey } = opts;
+    const state: RailToolChoice[] = choices.map(({ id, tool }) => ({ id, toolKind: tool?.kind }));
+    const loadChoice = () => {
+      try { return typeof localStorage === 'undefined' ? null : localStorage.getItem(storageKey); } catch { return null; }
+    };
+    const saveChoice = (choice: string) => {
+      try { localStorage.setItem(storageKey, choice); } catch { /* grouped tool memory is a convenience */ }
+    };
+    let last = restoreToolChoice(loadChoice(), app.tool.kind, state, opts.fallback);
+    let button: HTMLButtonElement;
+    let closeFlyout: () => void = () => {};
+    let longPressTimer = 0;
+    let suppressClickTimer = 0;
+    let suppressClick = false;
+    const clearClickSuppression = () => {
+      window.clearTimeout(suppressClickTimer);
+      suppressClickTimer = 0;
+      suppressClick = false;
+    };
+    const deferClearClickSuppression = () => {
+      window.clearTimeout(suppressClickTimer);
+      if (!suppressClick) return;
+      suppressClickTimer = window.setTimeout(() => {
+        suppressClick = false;
+        suppressClickTimer = 0;
+      }, 50);
+    };
+    const current = () => choices.find((choice) => choice.id === last) ?? choices[0];
+    const paint = () => {
+      const choice = current();
+      if (choice.tool) button.dataset.tool = choice.tool.kind;
+      else delete button.dataset.tool;
+      const active = !!choice.tool && app.tool.kind === choice.tool.kind;
+      button.classList.toggle('on', active);
+      button.setAttribute('aria-pressed', String(active));
+      button.setAttribute('aria-label', choice.label);
+      if (choice.key) { button.setAttribute('aria-keyshortcuts', choice.key); button.dataset.tipKey = choice.key.toLowerCase(); } else { button.removeAttribute('aria-keyshortcuts'); delete button.dataset.tipKey; }
+      button.replaceChildren(icon(choice.icon, 20), h('span', { class: 'rail-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 10)));
+    };
+    const select = (id: string) => {
+      const choice = choices.find((item) => item.id === id);
+      if (!choice) return;
+      closeFlyout();
+      last = choice.id;
+      saveChoice(choice.id);
+      paint();
+      if (choice.tool) app.setTool(choice.tool);
+      else opts.onAction(button);
+    };
+    const openFlyout = () => {
+      if (document.querySelector('.rail-tool-pop')) return;
+      const options = choices.map((choice) => h('button', {
+        class: 'menu-item rail-tool-option', type: 'button', role: 'menuitem', 'aria-label': choice.label,
+        ...(choice.key ? { 'aria-keyshortcuts': choice.key } : {}), onclick: () => select(choice.id),
+      }, icon(choice.icon, 20), h('span', null, choice.label), ...(choice.key ? [h('kbd', null, choice.key)] : [])));
+      const list = h('div', { class: 'rail-tool-list', role: 'presentation' }, ...options);
+      list.addEventListener('keydown', (event: KeyboardEvent) => {
+        const items = [...list.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+        const active = items.indexOf(event.target as HTMLButtonElement);
+        if (active < 0) return;
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+          event.preventDefault();
+          event.stopPropagation();
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+            : (active + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+          items[next]?.focus();
+        } else if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          event.stopPropagation();
+          items[active]?.click();
+        }
+      });
+      const opened = popover(button, list, {
+        side: 'right', className: 'rail-tool-pop', label: opts.flyout, role: 'menu',
+        onClose: () => {
+          button.setAttribute('aria-expanded', 'false');
+          closeFlyout = () => {};
+        },
+      });
+      button.setAttribute('aria-expanded', 'true');
+      closeFlyout = opened.close;
+    };
+    button = h('button', {
+      class: `rail-btn rail-tool-group ${opts.className}`, type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    });
+    paint();
+    button.addEventListener('click', (event) => {
+      if (suppressClick) {
+        clearClickSuppression();
         event.preventDefault();
-        event.stopPropagation();
-        const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
-          : (active + (event.key === 'ArrowDown' ? 1 : buttons.length - 1)) % buttons.length;
-        buttons[next]?.focus();
-      } else if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        event.stopPropagation();
-        buttons[active]?.click();
+        return;
       }
+      if ((event.target as HTMLElement).closest('.rail-group-chevron')) openFlyout();
+      else select(last);
     });
-    const opened = popover(railGroupButton, list, {
-      side: 'right', className: 'rail-tool-pop', label: 'Text and content tools', role: 'menu',
-      onClose: () => {
-        railGroupButton.setAttribute('aria-expanded', 'false');
-        closeRailGroup = () => {};
-      },
-    });
-    railGroupButton.setAttribute('aria-expanded', 'true');
-    closeRailGroup = opened.close;
-  };
-  railGroupButton = h('button', {
-    class: 'rail-btn rail-tool-group', type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
-  });
-  paintRailGroupButton();
-  railGroupButton.addEventListener('click', (event) => {
-    if (suppressGroupClick) {
-      clearGroupClickSuppression();
+    button.addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowRight') return;
       event.preventDefault();
-      return;
-    }
-    if ((event.target as HTMLElement).closest('.rail-group-chevron')) openRailGroup();
-    else selectRailGroupChoice(lastRailGroupChoice);
-  });
-  railGroupButton.addEventListener('keydown', (event) => {
-    if (event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    event.stopPropagation();
-    openRailGroup();
-  });
-  railGroupButton.addEventListener('pointerdown', (event) => {
-    clearGroupClickSuppression();
-    window.clearTimeout(longPressTimer);
-    if (event.button !== 0) return;
-    longPressTimer = window.setTimeout(() => {
-      suppressGroupClick = true;
-      openRailGroup();
-    }, 500);
-  });
-  const cancelRailGroupPress = () => window.clearTimeout(longPressTimer);
-  const releaseRailGroupPress = () => {
-    cancelRailGroupPress();
-    deferClearGroupClickSuppression();
+      event.stopPropagation();
+      openFlyout();
+    });
+    button.addEventListener('pointerdown', (event) => {
+      clearClickSuppression();
+      window.clearTimeout(longPressTimer);
+      if (event.button !== 0) return;
+      longPressTimer = window.setTimeout(() => {
+        suppressClick = true;
+        openFlyout();
+      }, 500);
+    });
+    const cancelPress = () => window.clearTimeout(longPressTimer);
+    const releasePress = () => {
+      cancelPress();
+      deferClearClickSuppression();
+    };
+    button.addEventListener('pointerup', releasePress);
+    button.addEventListener('pointerleave', releasePress);
+    button.addEventListener('pointercancel', () => {
+      cancelPress();
+      clearClickSuppression();
+    });
+    button.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      cancelPress();
+      openFlyout();
+    });
+    app.lifetime.signal.addEventListener('abort', () => {
+      window.clearTimeout(longPressTimer);
+      window.clearTimeout(suppressClickTimer);
+      closeFlyout();
+    }, { once: true });
+    /** Keeps the choice on the group's tool when the app switches to one of its tools; then shows the state. */
+    const sync = () => {
+      if (choiceForToolKind(app.tool.kind, state)) {
+        const next = rememberToolChoice(last, app.tool.kind, state);
+        if (next !== last) {
+          last = next;
+          saveChoice(next);
+        }
+      }
+      paint();
+    };
+    return { button, sync };
   };
-  railGroupButton.addEventListener('pointerup', releaseRailGroupPress);
-  railGroupButton.addEventListener('pointerleave', releaseRailGroupPress);
-  railGroupButton.addEventListener('pointercancel', () => {
-    cancelRailGroupPress();
-    clearGroupClickSuppression();
+  const textGroup = railToolGroup({
+    choices: [
+      { id: 'text', label: 'Text', icon: 'text', key: 'T', tool: { kind: 'text' } },
+      { id: 'table', label: 'Table', icon: 'table', key: 'G', tool: { kind: 'table' } },
+      { id: 'markdown', label: 'Markdown block', icon: 'markdown', key: '', tool: { kind: 'markdown' } },
+      // Link cards open an address popover instead of arming a tool, and are not offered in the demo
+      ...(demo ? [] : [{ id: 'link', label: 'Link', icon: 'link' as IconName, key: '', tool: null as Tool | null }]),
+      // last in the flyout and without a key: the group's name, its stored choice and its other items stay as they were
+      { id: 'code', label: 'Code block', icon: 'code', key: '', tool: { kind: 'code' } },
+    ],
+    storageKey: 'driftboard:rail-tool-group:text-markdown-link',
+    fallback: 'text',
+    flyout: 'Text and content tools',
+    className: 'rail-text-group',
+    onAction: (button) => {
+      if (app.readOnly) toast("You can't add links to a board you can only view.");
+      else openLinkPopover(app, button);
+    },
   });
-  railGroupButton.addEventListener('contextmenu', (event) => {
-    event.preventDefault();
-    cancelRailGroupPress();
-    openRailGroup();
+  // Connectors and lines: the Connector (an arrow between shapes, bound or free) and the Line (both ends free, no heads)
+  const connectorGroup = railToolGroup({
+    choices: [
+      { id: 'connector', label: 'Connector', icon: 'connector', key: 'L', tool: { kind: 'connector' } },
+      { id: 'line', label: 'Line', icon: 'line', key: 'Shift+L', tool: { kind: 'line' } },
+    ],
+    storageKey: 'driftboard:rail-tool-group:connector-line',
+    fallback: 'connector',
+    flyout: 'Connectors and lines',
+    className: 'rail-connector-group',
+    onAction: () => {},
   });
-  app.lifetime.signal.addEventListener('abort', () => {
-    window.clearTimeout(longPressTimer);
-    window.clearTimeout(suppressGroupClickTimer);
-    closeRailGroup();
-  }, { once: true });
   const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates' | 'layers') => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
@@ -434,7 +481,6 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   templatesBtn.setAttribute('aria-expanded', 'false');
   const stickyBtn = toolBtn('Sticky note', 'sticky', { kind: 'sticky' }, 'N');
   const shapesBtn = h('button', { class: 'rail-btn', 'aria-label': 'Shapes', 'aria-haspopup': 'true', onclick: () => library.open('shapes') }, icon('shapes', 22));
-  const connectorBtn = toolBtn('Connector', 'connector', { kind: 'connector' }, 'L');
   const commentBtn = toolBtn('Comment', 'comment', { kind: 'comment' }, 'C');
   // Images (docs/images.md): hidden when the server says it keeps none
   const imageBtn = h('button', { class: 'rail-btn', 'aria-label': 'Image', 'data-tip': 'Add an image', onclick: () => pickImages(app) }, icon('image', 22));
@@ -493,9 +539,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       toolBtn('Hand', 'hand', { kind: 'hand' }, 'H'),
       h('hr'),
       stickyBtn,
-      railGroupButton,
+      textGroup.button,
       shapesBtn,
-      connectorBtn,
+      connectorGroup.button,
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
       toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
       trackerCommand,
@@ -520,7 +566,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // The phone demo keeps six tools (see .demo-board in styles.css).
   for (const b of [stickyBtn, shapesBtn]) b.classList.add('demo-keep');
   for (const b of rail.querySelectorAll<HTMLElement>('[data-tool="select"], [data-tool="hand"], [data-tool="connector"]')) b.classList.add('demo-keep');
-  railGroupButton.classList.add('demo-keep');
+  textGroup.button.classList.add('demo-keep');
+  connectorGroup.button.classList.add('demo-keep');
   rail.querySelector<HTMLElement>('[data-tool="pen"]')?.classList.add('demo-keep');
   // the tools scroll when the window is short, with nothing else to say so: the edge that has more behind it fades out
   const railTools = rail.querySelector<HTMLElement>('.rail-tools');
@@ -535,14 +582,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     mountRailScrollCue(rail, railTools, chevron, track, thumb);
   }
   const syncRail = () => {
-    if (choiceForToolKind(app.tool.kind, railGroupState)) {
-      const groupChoice = rememberToolChoice(lastRailGroupChoice, app.tool.kind, railGroupState);
-      if (groupChoice !== lastRailGroupChoice) {
-        lastRailGroupChoice = groupChoice;
-        saveRailGroupChoice(groupChoice);
-      }
-    }
-    paintRailGroupButton();
+    textGroup.sync();
+    connectorGroup.sync();
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
       const t = app.tool;
       const on = b.dataset.tool === t.kind;
