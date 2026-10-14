@@ -28,7 +28,7 @@ async function register(h: Harness, name = 'Test Connector') {
   return result.body as { client_id: string; redirect_uris: string[] };
 }
 
-async function authorize(h: Harness, account: Account, clientId: string, boardIds?: string[]) {
+async function authorize(h: Harness, account: Account, clientId: string, boardIds?: string[], tracker?: 'read' | 'write') {
   const verifier = `v${crypto.randomBytes(32).toString('hex')}`;
   const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
   const url = new URL('/oauth/authorize', h.base);
@@ -53,6 +53,7 @@ async function authorize(h: Harness, account: Account, clientId: string, boardId
     nonce: consent.body.nonce,
     scope: 'read',
     ...(boardIds ? { boardIds } : {}),
+    ...(tracker ? { tracker } : {}),
   });
   expect(decision.status).toBe(200);
   const code = new URL(decision.body.redirect).searchParams.get('code');
@@ -101,8 +102,9 @@ describe('connected app grant routes', () => {
       scope: 'read',
       boardCount: null,
     });
+    expect(own.body[0]).toMatchObject({ tracker: null });
     expect(Object.keys(own.body[0]).sort()).toEqual([
-      'boardCount', 'clientId', 'clientName', 'createdAt', 'expiresAt', 'id', 'lastUsedAt', 'redirectHost', 'scope',
+      'boardCount', 'clientId', 'clientName', 'createdAt', 'expiresAt', 'id', 'lastUsedAt', 'redirectHost', 'scope', 'tracker',
     ]);
     expect(JSON.stringify(own.body)).not.toMatch(/boardIds|resource|hash|token/i);
     expect(own.body[0].id).not.toBe(ownerGrant.grant.id);
@@ -153,6 +155,27 @@ describe('connected app grant routes', () => {
     expect(rows.some((row) => row.detail.by === 'admin' && row.detail.userId === person.user.id)).toBe(true);
     const allRows = (await h.api(owner.cookie, 'GET', '/api/admin/audit?limit=100&action=mcp.oauth.revoke_all')).body.entries as { detail: Record<string, unknown> }[];
     expect(allRows[0]?.detail).toMatchObject({ grants: 1 });
+  });
+
+  it('shows each grant’s ticket ceiling in the member and admin lists, and null when none was chosen', async () => {
+    const h = oauthHarness({ TRACKER: 'on' });
+    await h.start();
+    const owner = await h.signInOwner();
+    const person = await member(h, owner);
+    const writer = await register(h, 'Writer Connector');
+    const reader = await register(h, 'Reader Connector');
+    const plain = await register(h, 'Plain Connector');
+    const writerGrant = await authorize(h, owner, writer.client_id, undefined, 'write');
+    const readerGrant = await authorize(h, person, reader.client_id, undefined, 'read');
+    const plainGrant = await authorize(h, person, plain.client_id);
+
+    const own = await h.api(person.cookie, 'GET', '/api/me/grants');
+    expect(own.body.find((row: { id: string }) => row.id === readerGrant.grant.id)).toMatchObject({ tracker: 'read' });
+    expect(own.body.find((row: { id: string }) => row.id === plainGrant.grant.id)).toMatchObject({ tracker: null });
+    const admin = await h.api(owner.cookie, 'GET', '/api/admin/grants');
+    expect(admin.body.find((row: { id: string }) => row.id === writerGrant.grant.id)).toMatchObject({ tracker: 'write' });
+    expect(admin.body.find((row: { id: string }) => row.id === readerGrant.grant.id)).toMatchObject({ tracker: 'read' });
+    expect(admin.body.find((row: { id: string }) => row.id === plainGrant.grant.id)).toMatchObject({ tracker: null });
   });
 
   it('disconnects a person’s grants when revoking all personal tokens and keeps the counts in the audit row', async () => {

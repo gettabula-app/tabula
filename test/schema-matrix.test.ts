@@ -182,20 +182,22 @@ for (const store of stores) {
 }
 
 describe('directory tracker rollback floor', () => {
-  it('keeps schema 19 readable and writable by the v5.0.1 schema 11 reader', () => {
-    expect(MIGRATIONS).toHaveLength(19);
+  it('keeps schema 20 readable and writable by the v5.0.1 schema 11 reader', () => {
+    expect(MIGRATIONS).toHaveLength(20);
     expect(MIGRATIONS[14]).toMatchObject({ minReader: 11 });
     expect(MIGRATIONS[15]).toMatchObject({ minReader: 11 });
     expect(MIGRATIONS[16]).toMatchObject({ minReader: 11 });
     expect(MIGRATIONS[17]).toMatchObject({ minReader: 11 });
     expect(MIGRATIONS[18]).toMatchObject({ minReader: 11 });
+    // migration 20 (OAuth ticket ceiling, TAB-365) is an annotated expand-only string, like migration 12
+    expect(String(MIGRATIONS[19])).toMatch(/-- minReader: 11\s[\s\S]*ALTER TABLE oauth_grants ADD COLUMN tracker/);
     expect(maxReaderOf(MIGRATIONS)).toBe(11);
     const file = realDatabase(stores[0]);
     const before = snapshot(file);
     const oldReader = new DatabaseSync(file);
     try {
       const state = migrate(oldReader, MIGRATIONS.slice(0, 11), 'directory v5.0.1');
-      expect(state).toMatchObject({ version: 19, minReader: 11, legacy: false });
+      expect(state).toMatchObject({ version: 20, minReader: 11, legacy: false });
       oldReader.prepare("INSERT INTO users (id, email, name, role, created_at) VALUES ('rollback-user', 'rollback@example.com', 'Rollback', 'member', 1)").run();
       oldReader.prepare("UPDATE users SET name = 'Rollback reader' WHERE id = 'rollback-user'").run();
       expect(oldReader.prepare("SELECT name FROM users WHERE id = 'rollback-user'").get()).toEqual({ name: 'Rollback reader' });
@@ -238,7 +240,7 @@ describe('directory tracker rollback floor', () => {
     expect(snapshot(file)).toEqual(before);
     const readOnly = new DatabaseSync(file, { readOnly: true });
     try {
-      expect(readOnly.prepare('PRAGMA user_version').get()).toEqual({ user_version: 19 });
+      expect(readOnly.prepare('PRAGMA user_version').get()).toEqual({ user_version: 20 });
     } finally {
       readOnly.close();
     }

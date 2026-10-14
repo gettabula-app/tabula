@@ -131,13 +131,16 @@ describe('api client requests', () => {
     await client.oauthRequest('opaque_123');
     await client.oauthDecision({ request: 'opaque_123', decision: 'deny', nonce: 'session-bound' });
     await client.oauthDecision({ request: 'opaque_123', decision: 'allow', scope: 'comment', nonce: 'session-bound' });
+    await client.oauthDecision({ request: 'opaque_123', decision: 'allow', scope: 'read', nonce: 'session-bound', tracker: 'write' });
     expect(calls.map((call) => `${call.init.method} ${call.url}`)).toEqual([
       'GET /api/oauth/requests?request=opaque_123',
+      'POST /api/oauth/requests/decision',
       'POST /api/oauth/requests/decision',
       'POST /api/oauth/requests/decision',
     ]);
     expect(JSON.parse(String(calls[1].init.body))).toEqual({ request: 'opaque_123', decision: 'deny', nonce: 'session-bound' });
     expect(JSON.parse(String(calls[2].init.body))).toEqual({ request: 'opaque_123', decision: 'allow', scope: 'comment', nonce: 'session-bound' });
+    expect(JSON.parse(String(calls[3].init.body))).toEqual({ request: 'opaque_123', decision: 'allow', scope: 'read', nonce: 'session-bound', tracker: 'write' });
   });
 
   it('maps connected app list and revocation methods to their API routes', async () => {

@@ -3,7 +3,7 @@ import { MCP_SERVER_NAME } from '../server/mcp.mjs';
 import { ADMIN_TABS } from '../src/route';
 import {
   DEFAULT_DAYS, EXPIRY_DAYS, aiToolsAvailable, MAX_BOARDS, NAME_MAX, SCOPE_OPTIONS, SERVER_NAME, boardsLabel, boardsSummary, clientSnippets, draftProblem,
-  emptyDraft, expiryLabel, grantBoardsText, grantExpiryText, grantScopeLabel, lastUsedLabel, mergeAdminAccessRows, needsBoardPick, scopeLabel, toRequest, type Draft,
+  emptyDraft, expiryLabel, grantBoardsText, grantExpiryText, grantScopeLabel, grantTicketsLabel, lastUsedLabel, mergeAdminAccessRows, needsBoardPick, scopeLabel, toRequest, type Draft,
 } from '../src/ui/tokens-logic';
 
 const draft = (extra: Partial<Draft> = {}): Draft => ({ ...emptyDraft(), name: 'Claude Code', ...extra });
@@ -116,6 +116,13 @@ describe('labels', () => {
     expect(grantExpiryText(now + 2.5 * day, now)).toBe('Ends in 3 days');
   });
 
+  it('labels a connected app ticket level, and shows nothing for none', () => {
+    expect(grantTicketsLabel('read')).toBe('Tickets: read');
+    expect(grantTicketsLabel('write')).toBe('Tickets: read and edit');
+    expect(grantTicketsLabel(null)).toBeNull();
+    expect(grantTicketsLabel(undefined)).toBeNull();
+  });
+
   it('merges tokens and connected apps into newest-first admin rows with type labels', () => {
     const token = {
       id: 't1', userId: 'u1', userName: 'Ana', email: 'ana@example.test', userRole: 'member' as const,
@@ -124,7 +131,7 @@ describe('labels', () => {
     };
     const grant = {
       id: 'g1', clientId: 'c1', clientName: 'Claude', redirectHost: 'claude.ai', scope: 'comment' as const,
-      boardCount: 2, createdAt: 20, lastUsedAt: null, expiresAt: 200,
+      boardCount: 2, tracker: null, createdAt: 20, lastUsedAt: null, expiresAt: 200,
       userId: 'u2', userName: 'Bo', email: 'bo@example.test', userRole: 'admin' as const,
     };
     expect(mergeAdminAccessRows([token], [grant])).toEqual([

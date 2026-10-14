@@ -119,6 +119,13 @@ export function grantScopeLabel(scope: AccessScope): string {
   return ({ read: 'Read', comment: 'Read and comment', write: 'Read and edit' } as const)[scope];
 }
 
+/** The ticket level of a connected app's row, or null for none (TAB-365). Shown next to its access level. */
+export function grantTicketsLabel(tracker: 'read' | 'write' | null | undefined): string | null {
+  if (tracker === 'read') return 'Tickets: read';
+  if (tracker === 'write') return 'Tickets: read and edit';
+  return null;
+}
+
 export function grantBoardsText(boardCount: number | null): string {
   if (boardCount === null) return 'All boards you can open';
   return `${boardCount} ${boardCount === 1 ? 'board' : 'boards'}`;

@@ -532,6 +532,12 @@ export const MIGRATIONS = [
   );
   CREATE INDEX card_due_due ON card_due(due);
   `, minReader: 11 },
+  // OAuth connectors may carry a ticket access ceiling chosen at consent (TAB-365). Nullable and additive: a grant from before
+  // this migration stays NULL and gets no ticket tools. Annotated like migration 12, so schema 11 can still read the file.
+  `
+  -- minReader: 11
+  ALTER TABLE oauth_grants ADD COLUMN tracker TEXT CHECK (tracker IN ('read', 'write'));
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

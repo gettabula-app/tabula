@@ -10,7 +10,13 @@ import {
   roleScope,
   scopeOptions,
   titleText,
+  TRACKER_DEFAULT,
+  TRACKER_TEXT,
+  trackerForDecision,
+  trackerOptions,
+  trackerWarning,
   verifiedBadge,
+  type OAuthDecisionInput,
 } from '../src/ui/oauth-consent-logic';
 
 describe('OAuth consent view model', () => {
@@ -101,5 +107,57 @@ describe('OAuth consent view model', () => {
     });
     expect(Object.keys(decisionBody({ request: 'opaque', decision: 'deny', nonce: 'n' })).sort())
       .toEqual(['decision', 'nonce', 'request']);
+  });
+
+  it('offers ticket levels up to the ceiling, lowest first, and always starts on No tickets', () => {
+    expect(trackerOptions(null)).toEqual([]);
+    expect(trackerOptions(undefined)).toEqual([]);
+    expect(trackerOptions('admin' as unknown as 'read')).toEqual([]);
+    expect(trackerOptions('read').map(({ value, label }) => [value, label])).toEqual([
+      ['none', 'No tickets'], ['read', 'Read tickets'],
+    ]);
+    expect(trackerOptions('write').map(({ value, label }) => [value, label])).toEqual([
+      ['none', 'No tickets'], ['read', 'Read tickets'], ['write', 'Read and edit tickets'],
+    ]);
+    expect(TRACKER_DEFAULT).toBe('none');
+    expect(trackerOptions('read')[0].value).toBe(TRACKER_DEFAULT);
+    expect(trackerOptions('write')[0].value).toBe(TRACKER_DEFAULT);
+  });
+
+  it('gives each ticket level its approved help line, which is also its warning', () => {
+    expect(TRACKER_TEXT.heading).toBe('Tickets');
+    expect(trackerWarning('none')).toBe('No access to tickets.');
+    expect(trackerWarning('read')).toBe('This app can read every ticket you can see, as you. Text in tickets written by others may try to instruct the app.');
+    expect(trackerWarning('write')).toBe('This app can create, change and comment on every ticket you can see, as you. Text in tickets written by others may try to instruct the app; review what it does.');
+    expect(trackerOptions('write').map((option) => option.help)).toEqual([
+      trackerWarning('none'), trackerWarning('read'), trackerWarning('write'),
+    ]);
+  });
+
+  it('sends a ticket level only when the ceiling offers it, and never No tickets', () => {
+    expect(trackerForDecision('none', 'write')).toBeUndefined();
+    expect(trackerForDecision('read', 'write')).toBe('read');
+    expect(trackerForDecision('write', 'write')).toBe('write');
+    expect(trackerForDecision('read', 'read')).toBe('read');
+    expect(trackerForDecision('write', 'read')).toBeUndefined();
+    expect(trackerForDecision('read', null)).toBeUndefined();
+    expect(trackerForDecision('write', undefined)).toBeUndefined();
+  });
+
+  it('adds tickets to Allow only as read or write, and never to Deny', () => {
+    expect(decisionBody({ request: 'opaque', decision: 'allow', scope: 'read', nonce: 'n', tracker: 'write' })).toEqual({
+      request: 'opaque', decision: 'allow', scope: 'read', nonce: 'n', tracker: 'write',
+    });
+    expect(decisionBody({ request: 'opaque', decision: 'allow', scope: 'comment', nonce: 'n', boardIds: ['b1'], tracker: 'read' })).toEqual({
+      request: 'opaque', decision: 'allow', scope: 'comment', nonce: 'n', boardIds: ['b1'], tracker: 'read',
+    });
+    // Without a ticket level, or with a value the server does not take, the field is absent.
+    expect(Object.keys(decisionBody({ request: 'opaque', decision: 'allow', scope: 'read', nonce: 'n' })).sort())
+      .toEqual(['decision', 'nonce', 'request', 'scope']);
+    expect(Object.keys(decisionBody({ request: 'opaque', decision: 'allow', scope: 'read', nonce: 'n', tracker: 'none' as unknown as 'read' })).sort())
+      .toEqual(['decision', 'nonce', 'request', 'scope']);
+    const denyWithTickets = { request: 'opaque', decision: 'deny', nonce: 'n', tracker: 'write' } as OAuthDecisionInput;
+    expect(decisionBody(denyWithTickets)).toEqual({ request: 'opaque', decision: 'deny', nonce: 'n' });
+    expect(Object.keys(decisionBody(denyWithTickets)).sort()).toEqual(['decision', 'nonce', 'request']);
   });
 });

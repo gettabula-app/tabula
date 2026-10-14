@@ -7,7 +7,7 @@ import { dialog, fmtAgo, toast } from './common';
 import { h } from './dom';
 import {
   CONNECTED_APP_TEXT, EXPIRY_DAYS, MAX_BOARDS, SCOPE_OPTIONS, boardsLabel, boardsSummary, clientSnippets, draftProblem, emptyDraft, expiryLabel,
-  grantBoardsText, grantExpiryText, grantScopeLabel, lastUsedLabel, mergeAdminAccessRows, scopeLabel, toRequest, type AdminAccessRow, type Draft,
+  grantBoardsText, grantExpiryText, grantScopeLabel, grantTicketsLabel, lastUsedLabel, mergeAdminAccessRows, scopeLabel, toRequest, type AdminAccessRow, type Draft,
 } from './tokens-logic';
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
@@ -194,7 +194,8 @@ export function openTokensDialog(me: Me, onCreated?: () => void): void {
       grants.length
         ? h('div', { class: 'tokens-list' }, grants.map((grant) => h('div', { class: 'tokens-row tokens-grant-row' },
             h('div', { class: 'tokens-who' },
-              h('div', null, h('span', { class: 'tokens-name' }, grant.clientName), h('span', { class: 'tokens-badge' }, grantScopeLabel(grant.scope))),
+              h('div', null, h('span', { class: 'tokens-name' }, grant.clientName), h('span', { class: 'tokens-badge' }, grantScopeLabel(grant.scope)),
+                grantTicketsLabel(grant.tracker) ? h('span', { class: 'tokens-badge' }, grantTicketsLabel(grant.tracker)) : null),
               h('div', { class: 'tokens-meta' }, [grant.redirectHost, grantBoardsText(grant.boardCount)].join(' · ')),
               h('div', { class: 'tokens-meta' }, [
                 `${CONNECTED_APP_TEXT.created} ${fmtAgo(grant.createdAt)}`,
@@ -397,6 +398,7 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
     const token = access.kind === 'token' ? access.token : null;
     const name = client?.clientName ?? token?.name ?? '';
     const accessLabel = client ? grantScopeLabel(client.scope) : scopeLabel(token!.scope);
+    const ticketsLabel = client ? grantTicketsLabel(client.tracker) : null;
     const boardText = client ? grantBoardsText(client.boardCount) : boardsSummary(token!.boardIds);
     const usedText = lastUsedLabel(client ?? token!, fmtAgo);
     const expiresText = client ? grantExpiryText(client.expiresAt, Date.now()) : expiryLabel(token!.expiresAt, Date.now());
@@ -411,7 +413,7 @@ export function tokensAdminPanel(me: Me, kit: AdminKit): HTMLElement {
         h('div', null, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.typeColumn}: `), h('span', { class: 'admin-badge tag tag-blue' }, access.typeLabel)),
         h('div', { class: 'muted small admin-wrap' }, name),
         h('div', { class: 'muted small admin-wrap' }, client ? client.redirectHost : `…${token!.hint}`)),
-      h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.accessColumn}: `), accessLabel),
+      h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.accessColumn}: `), accessLabel, ticketsLabel ? ` · ${ticketsLabel}` : null),
       h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.boardsColumn}: `), boardText),
       h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.lastUsedColumn}: `), usedText),
       h('div', { class: 'admin-cell muted small' }, h('span', { class: 'admin-cell-label' }, `${CONNECTED_APP_TEXT.expiryColumn}: `), expiresText),
