@@ -78,6 +78,15 @@ Kanban boards need care:
 - A tool can connect things to cards and other objects, but not to a lane or to the kanban itself: a new or changed connector end on a lane or kanban is refused (connectors that already exist are left alone).
 - Text a tool writes keeps emoji made of several parts (families, flags such as England, Scotland and Wales) whole, while hidden characters are still removed.
 
+## Seeing an agent at work
+
+When a tool with an access token changes a board, everyone on the board can see it:
+
+- **A cursor and an avatar.** For a short while after each change the tool shows as at work: a cursor named for the member it works for (for example "Ada's agent"), with the token's name in quotes after it, moving to where it is changing the board. In the people list it has its own avatar with a spark; select it to go to where the tool works. People who joined with a join code only see that an agent is at work, not whose it is.
+- **Agent draft.** Whatever a tool creates is marked **Agent draft** until a person edits it or selects it and chooses **Accept draft** in the properties panel (**Accept drafts** for several).
+- **Agent activity.** In a workspace with sign-in, **Agent activity** in the board menu lists what each agent did in the last 7 days, newest first, as a short line such as "created 6 sticky notes". It never shows the text people wrote. **Go there** takes you to the objects. The token's name is shown in quotes, apart from the member's name, so a token cannot pass for a person.
+- **Revert.** Owners and editors can choose **Revert** to take one call back. Objects the call made are removed and objects it removed come back, but anything a person changed since is left as it is, and a message says how many were left. A call can be reverted once, for 48 hours; a very large change, or an older one, says why it cannot be reverted.
+
 ## Daily limit and retrying
 
 In a workspace with sign-in, each token (and each OAuth connection) can make 2,000 changes to boards per day. The count is in items, not calls: creating 10 sticky notes in one call counts as 10. It resets at midnight UTC, and a tool that hits it is told the daily limit has been reached and when it resets. Reading is not limited this way, and neither are tickets. Whoever runs your server can change the number or turn the limit off.
