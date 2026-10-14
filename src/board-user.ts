@@ -10,3 +10,10 @@ export function boardUser(auth: AuthState) {
   const me = auth.mode === 'signed-in' || auth.mode === 'offline' ? auth.me : null;
   return me ? { ...getUser(), id: me.user.id, name: me.user.name, deviceId: getUser().id } : getUser();
 }
+
+/**
+ * What a profile edit saves as this device's identity: the device's own id with the new name and colour. The board's user
+ * (app.user) carries the account id in accounts mode and must never be saved as the device identity, or the next account
+ * on this device would inherit it.
+ */
+export const deviceIdentity = (edit: { name: string; color: string }) => ({ ...getUser(), name: edit.name, color: edit.color });

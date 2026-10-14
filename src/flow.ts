@@ -181,7 +181,7 @@ export class Flow {
 
   myVoteCount(step: Step | null = this.activeStep()): number {
     if (!step) return 0;
-    return this.votesForStep(step.id).filter((v) => v.userId === this.app.user.id).length;
+    return this.votesForStep(step.id).filter((v) => isOwnAuthor(this.app.user, v.userId)).length;
   }
 
   myVotesLeft(): number {
@@ -285,7 +285,7 @@ export class Flow {
     if (remove) {
       let key: string | null = null;
       votes.forEach((v, k) => {
-        if (!key && v.stepId === step.id && v.userId === me && v.itemId === hit.id) key = k;
+        if (!key && v.stepId === step.id && isOwnAuthor(this.app.user, v.userId) && v.itemId === hit.id) key = k;
       });
       if (key) this.app.store.transactAs(() => votes.delete(key!), 'votes');
       return true;
@@ -306,7 +306,7 @@ export class Flow {
     const reveal = this.state().reveal;
     for (const v of this.votesForStep(step.id)) {
       const e = out.get(v.itemId) ?? { mine: 0, total: reveal ? 0 : null };
-      if (v.userId === this.app.user.id) e.mine++;
+      if (isOwnAuthor(this.app.user, v.userId)) e.mine++;
       if (e.total !== null) e.total++;
       out.set(v.itemId, e);
     }
