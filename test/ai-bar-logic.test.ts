@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AiProposal } from '../src/ai-apply';
-import type { AiFeature } from '../src/api';
+import type { AiConfig, AiFeature } from '../src/api';
+import { providerLabel } from '../src/ui/ai-logic';
 import {
   CHIPS, HISTORY_MAX, NO_FACTS, SEND_MAX, addedMessage, aiTop, armedAfter, arrowPos, buildRunBody, canWalkHistory, chipState, clampPos,
   contextAfterSelection, contextIds, contextLabel, contextMenu, createSseParser, disclosure, dockBottom, dragPos, errorPlain, errorView, keyText,
@@ -173,39 +174,67 @@ describe('arming', () => {
 
 describe('the disclosure line', () => {
   const d = (over: Partial<Parameters<typeof disclosure>[0]> = {}) =>
-    disclosure({ ui: 'idle', ctx: 'selection', facts: sel(3), prompt: '', withPrompt: true, keySource: 'workspace', credits: false, privateRun: false, proposalKind: null, ...over });
+    disclosure({ ui: 'idle', ctx: 'selection', facts: sel(3), prompt: '', withPrompt: true, keySource: 'workspace', credits: false, privateRun: false, proposalKind: null, provider: 'Anthropic', ...over });
+  const sends = (ctx: Parameters<typeof sendsText>[0], f: Facts, prompt: string, withPrompt = true) => sendsText(ctx, f, prompt, withPrompt, 'Anthropic');
 
   it('says what is sent for each context', () => {
-    expect(sendsText('selection', sel(3), '')).toBe('Sends 3 selected stickies to Anthropic');
-    expect(sendsText('selection', sel(1), '')).toBe('Sends 1 selected sticky to Anthropic');
-    expect(sendsText('selection', facts({ selected: 3, selectedStickies: 1 }), '')).toBe('Sends 3 selected items to Anthropic');
-    expect(sendsText('view', facts({ inView: 23 }), '')).toBe('Sends the 23 stickies in view to Anthropic');
-    expect(sendsText('board', facts({ onBoard: 42 }), '')).toBe('Sends all 42 stickies to Anthropic');
-    expect(sendsText('none', facts({ onBoard: 42 }), '')).toBe('Sends only what you type to Anthropic');
-    expect(sendsText('none', NO_FACTS, 'ten risks')).toBe('Sends only your prompt to Anthropic');
+    expect(sends('selection', sel(3), '')).toBe('Sends 3 selected stickies to Anthropic');
+    expect(sends('selection', sel(1), '')).toBe('Sends 1 selected sticky to Anthropic');
+    expect(sends('selection', facts({ selected: 3, selectedStickies: 1 }), '')).toBe('Sends 3 selected items to Anthropic');
+    expect(sends('view', facts({ inView: 23 }), '')).toBe('Sends the 23 stickies in view to Anthropic');
+    expect(sends('board', facts({ onBoard: 42 }), '')).toBe('Sends all 42 stickies to Anthropic');
+    expect(sends('none', facts({ onBoard: 42 }), '')).toBe('Sends only what you type to Anthropic');
+    expect(sends('none', NO_FACTS, 'ten risks')).toBe('Sends only your prompt to Anthropic');
   });
 
   it('adds the prompt before "to Anthropic", except for Prompt only', () => {
-    expect(sendsText('selection', sel(3), 'as action items')).toBe('Sends 3 selected stickies and your prompt to Anthropic');
-    expect(sendsText('board', facts({ onBoard: 42 }), 'x')).toBe('Sends all 42 stickies and your prompt to Anthropic');
-    expect(sendsText('none', NO_FACTS, 'x')).toBe('Sends only your prompt to Anthropic');
-    expect(sendsText('selection', sel(3), '   ')).toBe('Sends 3 selected stickies to Anthropic');
+    expect(sends('selection', sel(3), 'as action items')).toBe('Sends 3 selected stickies and your prompt to Anthropic');
+    expect(sends('board', facts({ onBoard: 42 }), 'x')).toBe('Sends all 42 stickies and your prompt to Anthropic');
+    expect(sends('none', NO_FACTS, 'x')).toBe('Sends only your prompt to Anthropic');
+    expect(sends('selection', sel(3), '   ')).toBe('Sends 3 selected stickies to Anthropic');
   });
 
   it('leaves the prompt out when the action takes none', () => {
-    expect(sendsText('selection', sel(3), 'x', false)).toBe('Sends 3 selected stickies to Anthropic');
+    expect(sends('selection', sel(3), 'x', false)).toBe('Sends 3 selected stickies to Anthropic');
   });
 
   it('shows the capped count when the relay will cut the content', () => {
-    expect(sendsText('board', facts({ onBoard: 450 }), '')).toBe('Sends the 400 stickies nearest the middle of the board to Anthropic');
-    expect(sendsText('view', facts({ inView: 401 }), '')).toBe('Sends the 400 stickies nearest the middle of the view to Anthropic');
-    expect(sendsText('selection', sel(450), '')).toBe('Sends 400 of the 450 selected stickies to Anthropic');
-    expect(sendsText('board', facts({ onBoard: 400 }), '')).toBe('Sends all 400 stickies to Anthropic');
+    expect(sends('board', facts({ onBoard: 450 }), '')).toBe('Sends the 400 stickies nearest the middle of the board to Anthropic');
+    expect(sends('view', facts({ inView: 401 }), '')).toBe('Sends the 400 stickies nearest the middle of the view to Anthropic');
+    expect(sends('selection', sel(450), '')).toBe('Sends 400 of the 450 selected stickies to Anthropic');
+    expect(sends('board', facts({ onBoard: 400 }), '')).toBe('Sends all 400 stickies to Anthropic');
   });
 
   it('sends only the prompt when the context holds nothing', () => {
-    expect(sendsText('view', NO_FACTS, 'x')).toBe('Sends only your prompt to Anthropic');
-    expect(sendsText('board', NO_FACTS, '')).toBe('Sends only what you type to Anthropic');
+    expect(sends('view', NO_FACTS, 'x')).toBe('Sends only your prompt to Anthropic');
+    expect(sends('board', NO_FACTS, '')).toBe('Sends only what you type to Anthropic');
+  });
+
+  it('names the party that receives the request, for each kind of key', () => {
+    const who = (config: Pick<AiConfig, 'provider' | 'endpoint' | 'keySource' | 'credits'>) => providerLabel(config);
+    const line = (config: Pick<AiConfig, 'provider' | 'endpoint' | 'keySource' | 'credits'>, over: Partial<Parameters<typeof disclosure>[0]> = {}) =>
+      d({ ctx: 'none', facts: NO_FACTS, provider: who(config), keySource: config.keySource, credits: config.credits, ...over })[0];
+
+    // an Anthropic key
+    expect(line({ provider: 'anthropic', endpoint: null, keySource: 'workspace', credits: false })).toBe('Sends only what you type to Anthropic');
+    // an OpenAI-compatible key: the host, port included, and never a path
+    expect(line({ provider: 'openai-compatible', endpoint: 'integrate.api.nvidia.com', keySource: 'workspace', credits: false }))
+      .toBe('Sends only what you type to integrate.api.nvidia.com');
+    expect(line({ provider: 'openai-compatible', endpoint: 'llm.example.test:8443', keySource: 'user', credits: false }))
+      .toBe('Sends only what you type to llm.example.test:8443');
+    // an OpenAI-compatible key whose address the server did not send (not https, or unknown): no guess at its name
+    expect(line({ provider: 'openai-compatible', endpoint: null, keySource: 'workspace', credits: false })).toBe('Sends only what you type to the provider of this key');
+    // no key and no credits: nothing is sent, and the label is still not Anthropic
+    expect(line({ provider: null, endpoint: null, keySource: null, credits: false })).toBe('Sends only what you type to the provider of this key');
+    // hosted credits: Anthropic, reached through Tabula
+    expect(line({ provider: null, endpoint: null, keySource: null, credits: true })).toBe('Sends only what you type to Anthropic through Tabula');
+    expect(d({ ctx: 'none', provider: 'Anthropic through Tabula', keySource: null, credits: true })).toEqual(['Sends only what you type to Anthropic through Tabula', 'Uses AI credits']);
+    expect(d({ ui: 'running', ctx: 'none', provider: 'integrate.api.nvidia.com' })).toEqual(['Sends only what you type to integrate.api.nvidia.com', 'Esc stops']);
+  });
+
+  it('names the receiver in a prompt-only send and in a selection too', () => {
+    expect(sendsText('selection', sel(3), 'x', true, 'llm.example.test:8443')).toBe('Sends 3 selected stickies and your prompt to llm.example.test:8443');
+    expect(sendsText('none', NO_FACTS, 'x', true, 'the provider of this key')).toBe('Sends only your prompt to the provider of this key');
   });
 
   it('names who pays', () => {
@@ -284,16 +313,22 @@ describe('the estimate', () => {
 });
 
 describe('the model chip', () => {
-  const o = { armed: null, model: 'claude-opus-5-5', ctx: 'selection' as const, facts: sel(3), prompt: '' };
+  const o = { armed: null, model: 'claude-opus-5-5', provider: 'anthropic', ctx: 'selection' as const, facts: sel(3), prompt: '' };
 
   it('maps the model id to its short name and shows an unknown id as it is', () => {
-    expect(modelShort('claude-opus-5-5')).toBe('Opus 5.5');
-    expect(modelShort('claude-sonnet-5-5')).toBe('Sonnet 5.5');
-    expect(modelShort('claude-haiku-5-5')).toBe('Haiku 5.5');
-    expect(modelShort('claude-mystery-9')).toBe('claude-mystery-9');
-    expect(modelShort('moonshotai/kimi-k3')).toBe('kimi-k3');
-    expect(modelShort('provider/a-very-long-custom-model-id')).toBe('a-very-long-custom-model-id');
-    expect(modelShort('provider/')).toBe('provider/');
+    expect(modelShort('claude-opus-5-5', 'anthropic')).toBe('Opus 5.5');
+    expect(modelShort('claude-sonnet-5-5', 'anthropic')).toBe('Sonnet 5.5');
+    expect(modelShort('claude-haiku-5-5', 'anthropic')).toBe('Haiku 5.5');
+    expect(modelShort('claude-mystery-9', 'anthropic')).toBe('claude-mystery-9');
+    expect(modelShort('moonshotai/kimi-k3', 'openai-compatible')).toBe('kimi-k3');
+    expect(modelShort('provider/a-very-long-custom-model-id', 'openai-compatible')).toBe('a-very-long-custom-model-id');
+    expect(modelShort('provider/', 'openai-compatible')).toBe('provider/');
+  });
+
+  it('gives a Claude product name only to an Anthropic model, never to another provider\'s id', () => {
+    expect(modelShort('claude-opus-5-5', 'openai-compatible')).toBe('claude-opus-5-5');
+    expect(modelShort('claude-haiku-5-5', 'openai-compatible')).toBe('claude-haiku-5-5');
+    expect(modelChipText({ armed: null, model: 'claude-opus-5-5', provider: 'openai-compatible', ctx: 'none', facts: NO_FACTS, prompt: '' })).toBe('claude-opus-5-5 · ~1k tokens');
   });
 
   it('shows the model and the estimate', () => {
@@ -537,7 +572,7 @@ describe('runAi and resolveAiRun', () => {
     const out = await runAi(fake(() => json(429, { error: 'rate_limited', message: 'Wait' }, { 'retry-after': '40' })).fn, body);
     expect(out).toEqual({ ok: false, failure: { code: 'rate_limited', status: 429, message: 'Wait', retryAfter: 40 } });
     const failure = (out as Extract<AiOutcome, { ok: false }>).failure;
-    expect(errorView(failure.code, { admin: false, keySource: null, message: failure.message, retryAfter: failure.retryAfter })).toMatchObject({ text: 'Wait', retry: true, wait: 40, staticText: true });
+    expect(errorView(failure.code, { admin: false, keySource: null, provider: 'Anthropic', message: failure.message, retryAfter: failure.retryAfter })).toMatchObject({ text: 'Wait', retry: true, wait: 40, staticText: true });
     const missing = (await runAi(fake(() => json(429, { error: 'rate_limited' })).fn, body)) as Extract<AiOutcome, { ok: false }>;
     expect(missing.failure.retryAfter).toBeNull();
   });
@@ -551,7 +586,7 @@ describe('runAi and resolveAiRun', () => {
     for (const outcome of outcomes) {
       const failure = outcome as Extract<AiOutcome, { ok: false }>;
       expect(failure.failure).toMatchObject({ code: 'credits_exhausted', message });
-      expect(errorView(failure.failure.code, { admin: false, keySource: null, message: failure.failure.message }).text).toBe(message);
+      expect(errorView(failure.failure.code, { admin: false, keySource: null, provider: 'Anthropic', message: failure.failure.message }).text).toBe(message);
     }
   });
 
@@ -620,7 +655,16 @@ describe('runAi and resolveAiRun', () => {
 });
 
 describe('errors', () => {
-  const view = (code: string, over: Partial<Parameters<typeof errorView>[1]> = {}) => errorView(code, { admin: false, keySource: 'workspace', ...over });
+  const view = (code: string, over: Partial<Parameters<typeof errorView>[1]> = {}) => errorView(code, { admin: false, keySource: 'workspace', provider: 'Anthropic', ...over });
+
+  it('names the provider that did not answer, with a capital only when the name is a description', () => {
+    expect(view('ai_timeout').text).toBe("Anthropic isn't responding. Try again in a moment.");
+    expect(view('internal').text).toBe("Anthropic isn't responding. Try again in a moment.");
+    expect(view('ai_timeout', { provider: 'integrate.api.nvidia.com' })).toMatchObject({ kind: 'down', text: "integrate.api.nvidia.com isn't responding. Try again in a moment.", retry: true });
+    expect(view('ai_timeout', { provider: 'llm.example.test:8443' }).text).toBe("llm.example.test:8443 isn't responding. Try again in a moment.");
+    expect(view('ai_timeout', { provider: 'the provider of this key' }).text).toBe("The provider of this key isn't responding. Try again in a moment.");
+    expect(view('ai_timeout', { provider: 'Anthropic through Tabula' }).text).toBe("Anthropic through Tabula isn't responding. Try again in a moment.");
+  });
 
   it('says AI is not set up without adding a board link for an admin', () => {
     for (const code of ['ai_disabled', 'ai_feature_disabled', 'ai_no_key', 'ai_key_unreadable', 'ai_unconfigured']) {

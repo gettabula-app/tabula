@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import * as Y from 'yjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../server/config.mjs';
+import { openAiConfig } from '../server/ai/routes.mjs';
 import { createOpenRun } from '../server/ai/run.mjs';
 import { KEY, canary, deferred, fenced, parseEvents, sticky, until, type Script } from './ai-run-harness';
 
@@ -246,5 +247,25 @@ describe('when AI is on', () => {
     };
     const res = await post(generate());
     expect(res.events.at(-1)).toEqual({ event: 'error', data: { error: 'ai_refused', message: 'The AI declined this request. Nothing was changed.' } });
+  });
+});
+
+describe('GET /api/ai/config in open mode names the host of the operator\'s address', () => {
+  const env = (extra: Record<string, string>) => ({ TABULA_AI_API_KEY: KEY, TABULA_AI_OPEN: '1', TABULA_AI_PROVIDER: 'openai-compatible', TABULA_AI_MODEL: 'moonshotai/kimi-k3', ...extra });
+
+  it('gives the host and port of TABULA_AI_BASE_URL, never its path', () => {
+    const body = openAiConfig(loadConfig(env({ TABULA_AI_BASE_URL: 'https://llm.example.test:8443/v1/secret-path' }), () => {}));
+    expect(body).toMatchObject({ enabled: true, keySource: 'workspace', provider: 'openai-compatible', endpoint: 'llm.example.test:8443' });
+    expect(JSON.stringify(body)).not.toContain('secret-path');
+    expect(JSON.stringify(body)).not.toContain(KEY);
+  });
+
+  it('is null for a plain-http loopback address, which the disclosure line cannot name by host', () => {
+    expect(openAiConfig(loadConfig(env({ TABULA_AI_BASE_URL: 'http://127.0.0.1:11434/v1' }), () => {})).endpoint).toBeNull();
+  });
+
+  it('is null without the operator switch, and for an Anthropic operator key', () => {
+    expect(openAiConfig(loadConfig(env({ TABULA_AI_BASE_URL: 'https://llm.example.test/v1', TABULA_AI_OPEN: '' }), () => {}))).toMatchObject({ enabled: false, provider: null, endpoint: null });
+    expect(openAiConfig(loadConfig({ TABULA_AI_API_KEY: KEY, TABULA_AI_OPEN: '1' }, () => {})).endpoint).toBeNull();
   });
 });

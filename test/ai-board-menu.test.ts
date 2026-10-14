@@ -81,7 +81,7 @@ function prepareBoard(role: 'member' | 'admin' | 'owner') {
     user: { id: 'u1', name: 'Johan', color: '#2F6FED' },
   };
   const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
-    enabled: true, features: ['generate', 'summarise', 'cluster'], keySource: null, provider: null, model: 'claude-haiku-5-5',
+    enabled: true, features: ['generate', 'summarise', 'cluster'], keySource: null, provider: null, endpoint: null, model: 'claude-haiku-5-5',
     personalKeys: false, hasSecret: true, myKey: null, credits: false,
   }), { status: 200, headers: { 'content-type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);

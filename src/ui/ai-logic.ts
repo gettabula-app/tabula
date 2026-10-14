@@ -22,7 +22,7 @@ export const MODEL_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export const PROVIDER = 'anthropic';
-export const PROVIDER_LABEL = 'Anthropic';
+const PROVIDER_LABEL = 'Anthropic';
 export const OPENAI_COMPATIBLE_PROVIDER = 'openai-compatible';
 export const PROVIDER_OPTIONS: { value: string; label: string }[] = [
   { value: PROVIDER, label: 'Anthropic' },
@@ -149,6 +149,10 @@ export function patchOf(saved: AdminAi, draft: AdminDraft): AdminAiPatch | null 
 
 export const modelLabel = (id: string): string => MODEL_OPTIONS.find((o) => o.value === id)?.label ?? id;
 
+/** The model as the Model popover names it: a Claude product name only for Anthropic (or hosted credits), any other provider's id as it is. */
+export const modelDisplay = (config: Pick<AiConfig, 'provider' | 'model'>): string =>
+  config.provider === OPENAI_COMPATIBLE_PROVIDER ? config.model : modelLabel(config.model);
+
 /** A host without its path, credentials, query or fragment; only HTTPS addresses are useful here. */
 export function hostOf(baseUrl: string | null | undefined): string | null {
   if (!baseUrl) return null;
@@ -158,6 +162,31 @@ export function hostOf(baseUrl: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/** The name for a provider Tabula cannot name: an OpenAI-compatible address that is not https, or no key at all. */
+export const UNKNOWN_PROVIDER = 'the provider of this key';
+
+/**
+ * Who receives an AI request, for the disclosure line and the error row. An OpenAI-compatible key names its host (the server sends
+ * one only for an https address); hosted credits are Anthropic's, reached through Tabula.
+ */
+export function providerLabel(config: Pick<AiConfig, 'provider' | 'endpoint' | 'keySource' | 'credits'>): string {
+  if (config.provider === PROVIDER) return PROVIDER_LABEL;
+  if (config.provider === OPENAI_COMPATIBLE_PROVIDER) return config.endpoint || UNKNOWN_PROVIDER;
+  if (config.provider === null && config.credits) return `${PROVIDER_LABEL} through Tabula`;
+  return UNKNOWN_PROVIDER;
+}
+
+/** The label of a key that is being checked or was just typed: its provider, and its address when it has one. */
+export function keyProviderLabel(provider: string, baseUrl: string | null | undefined): string {
+  return providerLabel({ provider, endpoint: hostOf(baseUrl), keySource: null, credits: false });
+}
+
+/** "<provider> isn't responding", for the error row and the key checks. A label that is only a description opens the sentence. */
+export function notResponding(label: string): string {
+  const subject = label === UNKNOWN_PROVIDER ? 'The provider of this key' : label;
+  return `${subject} isn't responding. Try again in a moment.`;
 }
 
 /** A stored key is shown only by its hint, provider and non-secret endpoint/model details. */
@@ -180,13 +209,13 @@ export function sourceLabel(source: AiConfig['keySource']): string {
 }
 
 /** A plain message for a stored-key check, or null when the shared screen message is more useful. */
-export function keyTestErrorMessage(error: unknown): string | null {
+export function keyTestErrorMessage(error: unknown, label: string): string | null {
   if (typeof error !== 'object' || error === null) return null;
   const e = error as { code?: unknown; status?: unknown; facts?: Record<string, unknown> };
   if (e.code === 'ai_key_invalid') return 'The AI key was rejected.';
   if (e.code === 'ai_model_invalid') return 'The provider does not know this model or this address. Check the base URL and the model.';
   if (e.code === 'ai_bad_output') return 'This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.';
-  if (e.code === 'ai_unavailable') return "Anthropic isn't responding. Try again in a moment.";
+  if (e.code === 'ai_unavailable') return notResponding(label);
   if (e.code === 'ai_key_unreadable') return "The key can't be read. Enter it again.";
   if (e.status === 429 || e.code === 'ai_rate_limited' || e.code === 'rate_limited') {
     const wait = Number(e.facts?.retryAfter);

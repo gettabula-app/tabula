@@ -264,6 +264,8 @@ export interface AiConfig {
   features: AiFeature[];
   keySource: 'user' | 'workspace' | null;
   provider: string | null;
+  /** The host (host[:port], no path or credentials) that receives an OpenAI-compatible key's requests; null for anything else. */
+  endpoint: string | null;
   model: string;
   /** Whether this person may add a key of their own. */
   personalKeys: boolean;

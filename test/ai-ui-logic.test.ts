@@ -3,7 +3,7 @@ import { createApi, type AdminAi } from '../src/api';
 import { ADMIN_TABS } from '../src/route';
 import {
   DATA_NOTICE, FEATURE_OPTIONS, KEY_MAX, KEY_MIN, LIMIT_CAPS, MODEL_OPTIONS, OPENAI_COMPATIBLE_PROVIDER, PROVIDER, PROVIDER_OPTIONS, UNCONFIGURED_TEXT,
-  draftOf, draftProblem, hostOf, keyDates, keyLine, keyProblem, keyTestErrorMessage, limitProblem, modelLabel, patchOf, sourceLabel,
+  UNKNOWN_PROVIDER, draftOf, draftProblem, hostOf, keyDates, keyLine, keyProblem, keyProviderLabel, keyTestErrorMessage, limitProblem, modelDisplay, modelLabel, patchOf, sourceLabel,
 } from '../src/ui/ai-logic';
 import { MODELS } from '../server/ai/anthropic.mjs';
 import { PROVIDERS } from '../server/ai/providers.mjs';
@@ -127,6 +127,14 @@ describe('what the screens say about a key', () => {
     expect(keyLine({ provider: 'other', hint: 'zzzz', baseUrl: null, model: null })).toBe('other key ending …zzzz');
   });
 
+  it('names the provider of a key from its address, for a message about that key', () => {
+    expect(keyProviderLabel('anthropic', null)).toBe('Anthropic');
+    expect(keyProviderLabel('openai-compatible', 'https://integrate.api.nvidia.com/v1')).toBe('integrate.api.nvidia.com');
+    expect(keyProviderLabel('openai-compatible', 'https://llm.example.test:8443/v1')).toBe('llm.example.test:8443');
+    expect(keyProviderLabel('openai-compatible', 'http://llm.example.test')).toBe(UNKNOWN_PROVIDER);
+    expect(keyProviderLabel('openai-compatible', null)).toBe(UNKNOWN_PROVIDER);
+  });
+
   it('shows only a safe HTTPS host for a compatible key', () => {
     expect(hostOf('https://user:pass@example.com/v1?secret=x#part')).toBe('example.com');
     expect(hostOf('https://user:pass@example.com:8443/v1')).toBe('example.com:8443');
@@ -148,14 +156,16 @@ describe('what the screens say about a key', () => {
   });
 
   it('maps stored-key check errors to short messages', () => {
-    expect(keyTestErrorMessage({ code: 'ai_key_invalid' })).toBe('The AI key was rejected.');
-    expect(keyTestErrorMessage({ code: 'ai_model_invalid' })).toBe('The provider does not know this model or this address. Check the base URL and the model.');
-    expect(keyTestErrorMessage({ code: 'ai_bad_output' })).toBe('This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.');
-    expect(keyTestErrorMessage({ code: 'ai_rate_limited', facts: { retryAfter: 12 } })).toBe('Too many checks. Try again in 12 s.');
-    expect(keyTestErrorMessage({ status: 429, facts: { retryAfter: 1.2 } })).toBe('Too many checks. Try again in 2 s.');
-    expect(keyTestErrorMessage({ code: 'ai_unavailable' })).toBe("Anthropic isn't responding. Try again in a moment.");
-    expect(keyTestErrorMessage({ code: 'ai_key_unreadable' })).toBe("The key can't be read. Enter it again.");
-    expect(keyTestErrorMessage({ code: 'forbidden' })).toBeNull();
+    expect(keyTestErrorMessage({ code: 'ai_key_invalid' }, 'Anthropic')).toBe('The AI key was rejected.');
+    expect(keyTestErrorMessage({ code: 'ai_model_invalid' }, 'Anthropic')).toBe('The provider does not know this model or this address. Check the base URL and the model.');
+    expect(keyTestErrorMessage({ code: 'ai_bad_output' }, 'Anthropic')).toBe('This model did not answer in the required JSON format. Try a stronger instruction-following model. Nothing was changed.');
+    expect(keyTestErrorMessage({ code: 'ai_rate_limited', facts: { retryAfter: 12 } }, 'Anthropic')).toBe('Too many checks. Try again in 12 s.');
+    expect(keyTestErrorMessage({ status: 429, facts: { retryAfter: 1.2 } }, 'Anthropic')).toBe('Too many checks. Try again in 2 s.');
+    expect(keyTestErrorMessage({ code: 'ai_unavailable' }, 'Anthropic')).toBe("Anthropic isn't responding. Try again in a moment.");
+    expect(keyTestErrorMessage({ code: 'ai_unavailable' }, 'integrate.api.nvidia.com')).toBe("integrate.api.nvidia.com isn't responding. Try again in a moment.");
+    expect(keyTestErrorMessage({ code: 'ai_unavailable' }, UNKNOWN_PROVIDER)).toBe("The provider of this key isn't responding. Try again in a moment.");
+    expect(keyTestErrorMessage({ code: 'ai_key_unreadable' }, 'Anthropic')).toBe("The key can't be read. Enter it again.");
+        expect(keyTestErrorMessage({ code: 'forbidden' }, 'Anthropic')).toBeNull();
   });
 });
 
@@ -202,5 +212,14 @@ describe('the API client', () => {
   it('reports a rejected key with the server code', async () => {
     const { api } = client(() => json({ error: 'ai_key_invalid', message: 'The provider did not accept this key' }, 400));
     await expect(api.saveMyAiKey({ provider: 'anthropic', apiKey: 'sk-ant-12345678' })).rejects.toMatchObject({ status: 400, code: 'ai_key_invalid', message: 'The provider did not accept this key' });
+  });
+});
+
+describe('the model the popover names', () => {
+  it('gives a Claude product name only for Anthropic or hosted credits, any other provider\'s id as it is', () => {
+    expect(modelDisplay({ provider: 'anthropic', model: 'claude-opus-5-5' })).toBe('Claude Opus 5.5');
+    expect(modelDisplay({ provider: null, model: 'claude-haiku-5-5' })).toBe('Claude Haiku 5.5');
+    expect(modelDisplay({ provider: 'openai-compatible', model: 'claude-opus-5-5' })).toBe('claude-opus-5-5');
+    expect(modelDisplay({ provider: 'openai-compatible', model: 'nemotron-3.5-lightning-30b-a3b' })).toBe('nemotron-3.5-lightning-30b-a3b');
   });
 });

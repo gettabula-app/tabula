@@ -91,7 +91,7 @@ function prepareBoard(authMode: 'signed-in' | 'guest') {
     user: { id: authMode === 'guest' ? 'guest_1' : 'u1', name: 'Johan', color: '#2F6FED' },
   };
   const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
-    enabled: true, features: [], keySource: null, provider: null, model: 'test', personalKeys: false, hasSecret: false, myKey: null, credits: false,
+    enabled: true, features: [], keySource: null, provider: null, endpoint: null, model: 'test', personalKeys: false, hasSecret: false, myKey: null, credits: false,
   }), { status: 200, headers: { 'content-type': 'application/json' } }));
   vi.stubGlobal('fetch', fetchMock);
   return { root, app, fetchMock };

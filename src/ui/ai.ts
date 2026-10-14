@@ -6,14 +6,15 @@ import { h, icon } from './dom';
 import type { AdminKit } from './tokens';
 import {
   DATA_NOTICE, FEATURE_OPTIONS, LIMIT_CAPS, LIMIT_LABELS, MODEL_OPTIONS, OPENAI_COMPATIBLE_PROVIDER, PROVIDER, PROVIDER_OPTIONS, UNCONFIGURED_TEXT,
-  draftOf, draftProblem, keyDates, keyLine, keyProblem, keyTestErrorMessage, patchOf, sourceLabel, type AdminDraft, type LimitName,
+  UNKNOWN_PROVIDER, draftOf, draftProblem, keyDates, keyLine, keyProblem, keyProviderLabel, keyTestErrorMessage, patchOf, sourceLabel, type AdminDraft, type LimitName,
 } from './ai-logic';
 
 const NETWORK = 'Could not reach the server. Check your connection and try again.';
 const GENERIC = 'Something went wrong. Try again.';
 
-function describe(e: unknown): string {
-  const keyMessage = keyTestErrorMessage(e);
+/** `label` names who the request went to (providerLabel), for a provider that did not answer. */
+function describe(e: unknown, label: string): string {
+  const keyMessage = keyTestErrorMessage(e, label);
   if (keyMessage) return keyMessage;
   const hosted = cloudErrorMessage(e);
   if (hosted) return hosted;
@@ -78,7 +79,7 @@ function keyField(label: string, onInput: () => void, onEnter: () => void) {
 }
 
 /** Check the stored key without asking the person to enter or expose it again. */
-function keyTest(run: () => Promise<unknown>) {
+function keyTest(run: () => Promise<unknown>, label: string) {
   const status = h('p', { class: 'ai-problem', role: 'status', 'aria-live': 'polite' });
   const button = h('button', { class: 'btn' }, 'Test key');
   button.addEventListener('click', async () => {
@@ -92,7 +93,7 @@ function keyTest(run: () => Promise<unknown>) {
       status.textContent = 'The key works.';
     } catch (e) {
       status.classList.add('bad');
-      status.textContent = keyTestErrorMessage(e) ?? describe(e);
+      status.textContent = keyTestErrorMessage(e, label) ?? describe(e, label);
     } finally {
       button.disabled = false;
       button.textContent = 'Test key';
@@ -124,7 +125,7 @@ export function openAiKeyDialog(): void {
         if (alive()) show(config);
       },
       (e: unknown) => {
-        if (alive()) body.replaceChildren(intro, h('div', { class: 'ai-error', role: 'alert' }, h('span', null, describe(e)), h('button', { class: 'btn', onclick: load }, 'Retry')));
+        if (alive()) body.replaceChildren(intro, h('div', { class: 'ai-error', role: 'alert' }, h('span', null, describe(e, UNKNOWN_PROVIDER)), h('button', { class: 'btn', onclick: load }, 'Retry')));
       },
     );
   };
@@ -135,7 +136,7 @@ export function openAiKeyDialog(): void {
       toast('Key removed');
       load();
     } catch (e) {
-      toast(describe(e));
+      toast(describe(e, UNKNOWN_PROVIDER));
     }
   };
 
@@ -203,7 +204,7 @@ export function openAiKeyDialog(): void {
         if (alive()) load();
       } catch (e) {
         if (!alive()) return;
-        const message = describe(e);
+        const message = describe(e, keyProviderLabel(provider.value, baseUrl.value));
         problem.classList.add('bad');
         problem.textContent = message;
         save.textContent = 'Save key';
@@ -218,7 +219,7 @@ export function openAiKeyDialog(): void {
     provider.addEventListener('change', renderProviderFields);
     save.addEventListener('click', () => void submit());
     renderProviderFields();
-    const tested = mine ? keyTest(() => api.testMyAiKey()) : null;
+    const tested = mine ? keyTest(() => api.testMyAiKey(), keyProviderLabel(mine.provider, mine.baseUrl)) : null;
 
     body.replaceChildren(...nodes(
       intro,
@@ -389,7 +390,7 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
         // what was typed stays, so a typo can be fixed
         saveKey.textContent = state.key ? 'Replace key' : 'Save key';
         checkKey();
-        const message = keyTestErrorMessage(keyError);
+        const message = keyTestErrorMessage(keyError, keyProviderLabel(keyProvider.value, baseUrl.value));
         if (message) {
           keyStatus.classList.add('bad');
           keyStatus.textContent = message;
@@ -412,7 +413,7 @@ export function aiAdminPanel(kit: AdminKit): HTMLElement {
     };
 
     const key = state.key;
-    const tested = key ? keyTest(() => api.testAdminAiKey()) : null;
+    const tested = key ? keyTest(() => api.testAdminAiKey(), keyProviderLabel(key.provider, key.baseUrl)) : null;
     const modelSetting = key?.provider === OPENAI_COMPATIBLE_PROVIDER
       ? h('div', null, h('div', null, key.model ?? ''), h('div', { class: 'ai-meta' }, 'From the key'))
       : h('div', { class: 'admin-select ai-model' }, model, icon('chevron', 16));
