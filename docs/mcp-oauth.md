@@ -1,6 +1,6 @@
 # OAuth 2.1 for the MCP endpoint
 
-Status: **slice 1 in progress.** Extends [docs/mcp.md](mcp.md). Read that first: the permission model, fencing, rate limits and the `tbl_` personal tokens described there are reused, not redefined, here.
+Status: **slices 1 to 3 are implemented and in v5.4** (server core, consent screen with the board picker, grants in AI tool access); off unless `TABULA_MCP_OAUTH=on`. Slice 5 (end-to-end test) gates the default; section 14.2 records what a real connector did. Extends [docs/mcp.md](mcp.md). Read that first: the permission model, fencing, rate limits and the `tbl_` personal tokens described there are reused, not redefined, here.
 
 ## 1. Problem and decision
 
