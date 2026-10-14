@@ -51,7 +51,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          NIGHTLY_OS: ${{ matrix.os }}
+          NIGHTLY_OS: ${{ matrix.os }}-node${{ matrix.node }}
           NIGHTLY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           NIGHTLY_RUN_1_OUTCOME: ${{ steps.run1.outcome }}
           NIGHTLY_RUN_2_OUTCOME: ${{ steps.run2.outcome }}
@@ -66,7 +66,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: nightly-${{ matrix.os }}
+          name: nightly-${{ matrix.os }}-node${{ matrix.node }}
           path: nightly-summary.json
           if-no-files-found: ignore
           retention-days: 14
