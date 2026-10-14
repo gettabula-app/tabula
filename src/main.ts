@@ -144,7 +144,7 @@ const isNewBoard = (id: string, opts: { template?: string; imported?: ImportedBo
 function replaceResolvedTrackerPath(target: import('./tracker-route').TrackerPathRoute, resolvedKey: string | undefined) {
   if (!resolvedKey) return;
   const path = resolvedTrackerDestination(target, resolvedKey);
-  if (path && path !== location.pathname + location.search) history.replaceState(null, '', path);
+  if (path && path !== location.pathname + location.search) history.replaceState(history.state, '', path);
 }
 
 function registerTrackerRouteHost(): () => void {
@@ -181,7 +181,7 @@ function registerTrackerRouteHost(): () => void {
     const closedRoute = (): TrackerPathRoute => (routeViewId
       ? { kind: 'view', view: routeTab === 'projects' ? 'projects' : 'views', id: routeViewId }
       : { kind: 'view', view: routeTab });
-    const ticketNavigator = createTicketRouteNavigator(key, closedRoute);
+    const ticketNavigator = createTicketRouteNavigator(closedRoute);
     const shell = mountTrackerShell(host, {
       store, api: trackerRouteApi, viewerId, trackerId: 'workspace', windowId: 'workspace',
       initialTab: view as TrackerView, initialViewId: viewId, initialTicketKey: key ?? undefined,
@@ -707,7 +707,7 @@ if (trackerMockVisual) {
     const api = mock.createMockTrackerApi(seed.createTrackerVisualSeed());
     const store: TrackerStore = createTrackerStore(api);
     let mockTab: TrackerView = 'all';
-    const mockTicketNavigator = createTicketRouteNavigator(null, () => ({ kind: 'view', view: mockTab }));
+    const mockTicketNavigator = createTicketRouteNavigator(() => ({ kind: 'view', view: mockTab }));
     const shell = mountTrackerShell(root, {
       store, api, viewerId: 'visual-user', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true, routeMode: true,
       account: { user: { id: 'visual-user', name: 'Johan Saldes', email: 'johan@example.test', role: 'owner' }, teams: [], mcp: true, mcpOauth: false, tracker: true } as never,
