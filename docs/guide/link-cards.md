@@ -9,7 +9,7 @@ Link cards appear where your workspace has link previews turned on. Without prev
 There are three ways.
 
 - **Paste.** Copy a web address, then press `Ctrl+V` (`Cmd+V` on Mac) with the board in front. The card lands where your pointer is, or in the middle of your view. A short message says "Link added" and offers **Turn into text**.
-- **Link.** Open the **Text**, **Markdown block** and **Link** group in the left toolbar, then choose **Link**. Type or paste the address and press `Enter` or **Add**.
+- **Link.** Open the **Text**, **Table**, **Code block**, **Markdown block** and **Link** group in the left toolbar, then choose **Link**. Type or paste the address and press `Enter` or **Add**.
 - **Drop.** Drag a link from another browser tab onto the board. You get one card for each address, up to 10 at a time.
 
 The card appears at once with the address and the site name. A thin line along its bottom edge runs while Tabula reads the page, usually for a second or two. Then the title, description and picture fill in. `Ctrl+Z` takes the whole card away again, not an empty card.

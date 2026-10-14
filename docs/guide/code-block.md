@@ -6,7 +6,7 @@ A code block puts code on the board as a card of coloured, fixed-width text: a t
 
 ## Add one
 
-Open the **Text and content** tool in the tool rail (the first button, with a small arrow) and choose **Code block**, then click the board for a block 520 wide, or drag to set its width. It opens for typing at once. A new block starts in the language you used last on this board, or in Plain text; on a phone or tablet it wraps long lines.
+Open the **Text** group in the left toolbar (the button with a small arrow, below the sticky note) and choose **Code block**, then click the board for a block 520 wide, or drag to set its width. It opens for typing at once. A new block starts in the language you used last on this board, or in Plain text; on a phone or tablet it wraps long lines.
 
 ## Type in it
 
