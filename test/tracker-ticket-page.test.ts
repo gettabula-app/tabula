@@ -562,7 +562,7 @@ describe('ticket page', () => {
       expect(row.getAttribute('class')).toBe('tk-relation-row');
       // the key is shown once in the row (the chip), not again in a label beside it
       expect(row.textContent.split(key), `key once in the ${kind} row`).toHaveLength(2);
-      expect(link!.querySelector('.tk-relation-kind')?.textContent).toBe(label);
+      expect(link!.querySelector('.tk-relation-kind')).toBeNull(); // the group heading above already names the kind
       const remove = row.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Remove relation to ${key}`);
       expect(remove, `remove named for ${kind}`).toBeDefined();
       expect(remove!.textContent).toBe('×');
