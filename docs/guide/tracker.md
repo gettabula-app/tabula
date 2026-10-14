@@ -8,6 +8,9 @@ The tracker is the same list of tickets wherever you see it. A change in the boa
 
 Choose **Tracker** in the left toolbar. The tracker appears in the middle of what you see and is selected. If your toolbar has no **Tracker** button, your workspace does not have the tracker, or you are only viewing the board. You can add more than one tracker to a board; they all show the same tickets.
 
+![A live tracker on a board on the All tab: seven tickets grouped by state under Done, In review, In progress and To do, with the All, My and Board tabs, the New ticket button and the Open full screen button at the top](images/tracker-board.png)
+
+
 ## Live and snapshot
 
 A tracker is **live** when you can use it in place, and a **snapshot** when it is only a picture of it.
@@ -41,6 +44,9 @@ Each row in the list shows the ticket's priority, labels, project, milestone and
 **Board** shows the states as lanes side by side, with the number of tickets in each. Drag a ticket from one lane to another to change its state. Press `Esc` before you let go to cancel the drag. Each lane has a **+** to create a ticket in that state. Each card has a **⋯** menu that opens a list of states to move it to, which is also the way to change a state with the keyboard.
 
 When you move a ticket, a message "State changed" appears with **Undo**; choose **Undo** to put the ticket back in its old state.
+
+![The Board tab of a tracker on a board: lanes To do, In progress and In review with a card for each ticket, its number and its priority, and a plus button on every lane](images/tracker-board-lanes.png)
+
 
 ### Open it full screen
 

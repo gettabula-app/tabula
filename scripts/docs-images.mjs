@@ -71,8 +71,9 @@ async function startRelay(mode, distDir) {
   // nothing from the caller's shell may reach the relay
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(TABULA_|MIRA_|PORT$|HOST$|DATA_DIR$|DIST_DIR$|QUIET$)/.test(k)));
   Object.assign(env, { PORT: String(port), HOST: '127.0.0.1', DATA_DIR: dataDir, DIST_DIR: distDir, QUIET: '1' });
-  if (mode === 'accounts' || mode === 'chat') Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: base, ...(mode === 'accounts' ? { TABULA_MCP: 'on', TABULA_AI_SECRET: crypto.randomBytes(32).toString('base64') } : {}) });
+  if (mode === 'accounts' || mode === 'chat' || mode === 'tracker') Object.assign(env, { TABULA_AUTH: 'on', TABULA_MAIL: 'file', TABULA_OWNER_EMAIL: OWNER_EMAIL, TABULA_BASE_URL: base, ...(mode === 'accounts' ? { TABULA_MCP: 'on', TABULA_AI_SECRET: crypto.randomBytes(32).toString('base64') } : {}) });
   if (mode === 'chat') env.TABULA_CHAT = 'on';
+  if (mode === 'tracker') env.TABULA_TRACKER = 'on';
   let stderr = '';
   const child = spawn(process.execPath, [path.join(root, 'server', 'relay.mjs')], { cwd: dataDir, env, stdio: ['ignore', 'ignore', 'pipe'] });
   child.stderr.on('data', (c) => (stderr += String(c)));
@@ -151,6 +152,21 @@ async function seedAccounts(relay) {
   await api(b, owner, 'POST', '/api/boards/roadmap/shares', { principalType: 'team', principalId: design.id, role: 'editor' });
   await api(b, owner, 'POST', '/api/boards/roadmap/shares', { principalType: 'user', principalId: ana.user.id, role: 'commenter' });
   return { owner, ana, design };
+}
+
+
+/** A workspace with the tracker on: a board and a handful of tickets in different states. */
+async function seedTracker(relay) {
+  const owner = await signIn(relay, OWNER_EMAIL);
+  await api(relay.base, owner, 'PATCH', '/api/me', { name: 'Maya' });
+  await api(relay.base, owner, 'POST', '/api/boards', { id: 'retro', title: 'Sprint retro' });
+  await api(relay.base, owner, 'POST', '/api/boards', { id: 'planning', title: 'Sprint planning' });
+  const rows = [
+    ['Fix the login loop on Safari', 'in_progress', 'high'], ['Write the migration guide', 'todo', 'medium'], ['Spike: caching layer', 'todo', 'low'],
+    ['CSV export with formula guards', 'in_progress', 'medium'], ['Lane menu and WIP warning', 'in_review', 'medium'], ['Update the onboarding hint', 'done', 'low'], ['Docker image for the relay', 'done', 'high'],
+  ];
+  for (const [i, [title, state, priority]] of rows.entries()) await api(relay.base, owner, 'POST', '/api/tracker/tickets', { title, state, priority, idempotencyKey: `docs-seed-${i}-xxxxxxxx` });
+  return { owner };
 }
 
 /** Real chat storage and HTTP reads, with fixed times, IDs and synthetic participants for repeatable pixels. */
@@ -1016,6 +1032,51 @@ const SHOTS = {
     await save(page, 'print-dialog', pad(await boxOf(dlg), 8, W, H));
     await context.close();
   },
+
+  // the tracker on a board (docs/guide/tracker.md): live in place on the All tab, then the Board tab with a ticket open beside it
+  async 'tracker-board'({ browser, trk, trkPeople }) {
+    const W = 1200, H = 720;
+    const { context, page } = await newPage(browser, { base: trk.base, width: W, height: H, session: trkPeople.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
+    await openBoard(page, trk.base, 'retro');
+    await page.getByRole('button', { name: 'Tracker', exact: true }).click();
+    await page.getByText('Workspace tickets', { exact: true }).waitFor({ timeout: 20_000 });
+    await page.getByText('Fix the login loop on Safari').waitFor({ timeout: 20_000 });
+    await page.evaluate(() => {
+      const app = window.__board;
+      const t = [...app.store.cache.values()].find((o) => o.type === 'tracker');
+      app.setSelection([]);
+      app.r.fit(app.r.contentBounds([t.id]), 90, 1);
+    });
+    await sleep(600);
+    await page.evaluate(() => document.activeElement?.blur());
+    await park(page);
+    await settle(page);
+    await save(page, 'tracker-board', { x: 0, y: 0, width: W, height: H });
+    await context.close();
+  },
+
+  async 'tracker-board-lanes'({ browser, trk, trkPeople }) {
+    const W = 1400, H = 760;
+    const { context, page } = await newPage(browser, { base: trk.base, width: W, height: H, session: trkPeople.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
+    await openBoard(page, trk.base, 'planning');
+    await page.getByRole('button', { name: 'Tracker', exact: true }).click();
+    await page.getByText('Workspace tickets', { exact: true }).waitFor({ timeout: 20_000 });
+    await page.evaluate(() => {
+      const app = window.__board;
+      const t = [...app.store.cache.values()].find((o) => o.type === 'tracker');
+      app.store.update(t.id, { w: 1040, h: 520 }); // wide enough for all four lanes
+      app.setSelection([]);
+      app.r.fit(app.r.contentBounds([t.id]), 90, 1);
+    });
+    await sleep(600);
+    await page.getByText('Board', { exact: true }).first().click();
+    await sleep(1200);
+    await page.evaluate(() => { window.__board.setSelection([]); document.activeElement?.blur(); });
+    await park(page);
+    await settle(page);
+    await save(page, 'tracker-board-lanes', { x: 0, y: 0, width: W, height: H });
+    await context.close();
+  },
 };
 
 // ---------------------------------------------------------------- main
@@ -1045,12 +1106,13 @@ async function main() {
     if (status !== 0) throw new Error('npm run build:app failed');
   }
   fs.mkdirSync(outDir, { recursive: true });
-  let browser = null, open = null, acc = null, chat = null;
+  let browser = null, open = null, acc = null, chat = null, trk = null;
   const cleanup = async () => {
     await browser?.close().catch(() => undefined);
     await stopRelay(open);
     await stopRelay(acc);
     await stopRelay(chat);
+    await stopRelay(trk);
   };
   const interrupted = () => cleanup().finally(() => process.exit(130));
   process.on('SIGINT', interrupted);
@@ -1066,6 +1128,11 @@ async function main() {
       acc = await startRelay('accounts', distDir);
       people = await seedAccounts(acc);
     }
+    let trk = null, trkPeople = null;
+    if (names.includes('tracker-board') || names.includes('tracker-board-lanes')) {
+      trk = await startRelay('tracker', distDir);
+      trkPeople = await seedTracker(trk);
+    }
     let chatPeople = null;
     if (names.some((n) => ['chat-tray', 'chat-page', 'admin-chat'].includes(n))) {
       chat = await startRelay('chat', distDir);
@@ -1074,7 +1141,7 @@ async function main() {
     for (const name of names) {
       try {
         pages.length = 0;
-        await SHOTS[name]({ browser, open, acc, people, chat, chatPeople });
+        await SHOTS[name]({ browser, open, acc, people, chat, chatPeople, trk, trkPeople });
         console.log(`ok ${name}`);
       } catch (err) {
         failed.push(name);
