@@ -14,7 +14,7 @@ The bar sits at the bottom centre of the board. From left to right it has:
 - The model and an estimate of the cost, for example "Summarise · ~1.3k tokens". Select it to see the model your admin chose, who can see that you are asking, and "About 1,300 tokens go in; the reply is capped at 8,000. An estimate, not a bill."
 - **Run**, and a button to collapse the bar.
 
-Above them are the three actions as chips: **Summarise**, **Cluster** and **Generate ideas**. Selecting one arms it, and the bar shows its cost. A line at the bottom says what will be sent and who pays, for example "Sends 3 selected stickies to Anthropic. Uses the workspace key." On a phone the bar takes the full width, the prompt gets a row of its own, and the model and cost move down into the line at the bottom.
+Above them are the three actions as chips: **Summarise**, **Cluster** and **Generate ideas**. Selecting one arms it, and the bar shows its cost. A line at the bottom says what will be sent and who pays, for example "Sends 3 selected stickies to Anthropic. Uses the workspace key." The line names who receives the request: with a custom key that is the server's address instead of Anthropic. On a phone the bar takes the full width, the prompt gets a row of its own, and the model and cost move down into the line at the bottom.
 
 Collapsing the bar leaves a small spark button, **Ask AI**. Select it, or press `Ctrl+K` (`Cmd+K` on a Mac), to open the bar again.
 
@@ -35,7 +35,7 @@ The bar shows a message in place of the prompt, and nothing on the board changes
 - **AI is unavailable:** the bar and its board entry points do not appear. Workspace owners and admins can set up AI in **Admin → AI**.
 - **The key was rejected:** "The AI key was rejected. Ask a workspace admin to check it."
 - **Too many requests:** "Too many requests. Try again in 30 s." **Retry** stays greyed out until the countdown ends.
-- **The provider is down or busy:** "Anthropic isn't responding. Try again in a moment."
+- **The provider is down or busy:** "Anthropic isn't responding. Try again in a moment." With a custom key the message names that server instead of Anthropic.
 - **The answer could not be used:** "The AI's answer could not be used. Nothing was changed."
 
 Each message has **Retry** where it helps, and a button to dismiss it.
