@@ -12,7 +12,7 @@
 .ai-field .input, .ai-limit .input { width: 100%; }
 
 /* on the admin page the label sits on the page ground (graphite); in the dialog it sits on the tray */
-.ai-label { display: block; margin-bottom: 8px; color: var(--graphite); font-size: 12px; font-weight: 600; }
+.ai-label { display: block; margin-bottom: 6px; color: var(--graphite); font-size: 12px; font-weight: 600; }
 .ai-dialog .ai-label { color: var(--tray-muted); }
 /* the OpenAI-compatible fields, a group inside a key form (TAB-222): spaced the same in both screens, and gone when empty */
 .ai-fields { display: grid; gap: 16px; min-width: 0; margin: 8px 0; }
@@ -52,8 +52,8 @@
 .ai-dialog .modal-body { padding: 8px 24px 24px; }
 .ai-dialog .ai-intro, .ai-dialog .ai-state, .ai-dialog .ai-meta { color: var(--tray-muted); }
 .ai-dialog .ai-key { border-top-color: var(--tray-text); border-bottom-color: var(--tray-line); }
-.ai-dialog .input { height: 32px; padding: 0 8px; border-radius: var(--radius-sm); }
-.ai-dialog :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+.ai-dialog .input { height: 34px; padding: 0 8px; border-radius: var(--radius-sm); }
+.ai-dialog :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .ai-dialog .input:focus-visible { outline: none; }
 .ai-dialog .btn-row { gap: 8px; }
 .ai-dialog .btn {
@@ -66,7 +66,6 @@
 .ai-admin .admin-fact { align-items: start; }
 .ai-checks { display: grid; gap: 8px; }
 .ai-check { display: flex; align-items: flex-start; gap: 8px; min-width: 0; line-height: 1.4; }
-.ai-check input { flex: none; width: 16px; height: 16px; margin-top: 2px; accent-color: var(--ink); }
 .ai-check span { min-width: 0; overflow-wrap: anywhere; }
 .ai-model { max-width: 280px; }
 .ai-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 200px)); gap: 24px; }

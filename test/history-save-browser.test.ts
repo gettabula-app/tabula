@@ -51,6 +51,18 @@ async function openHistory(): Promise<{ page: Page; saves: string[] }> {
 const dialogs = (page: Page) => page.locator('.modal-back:has(input[aria-label="Version name"])').count();
 
 describe.skipIf(!available)('Save version in version history', { timeout: 120_000 }, () => {
+  it('puts the focus in the name field at once: typing straight after the click, then Enter, saves what was typed', async () => {
+    const { page, saves } = await openHistory();
+    await page.getByRole('button', { name: 'Save version' }).click();
+    await page.keyboard.type('Typed at once');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(800);
+    expect(saves).toEqual(['Typed at once']);
+    expect(await dialogs(page)).toBe(0);
+    await page.context().close();
+  });
+
+
   it('saves once on Enter and closes, without opening a second dialog', async () => {
     const { page, saves } = await openHistory();
     await page.getByRole('button', { name: 'Save version' }).click();
@@ -66,7 +78,6 @@ describe.skipIf(!available)('Save version in version history', { timeout: 120_00
   it('closes on Esc and on Cancel without saving, and an empty name does not save', async () => {
     const { page, saves } = await openHistory();
     await page.getByRole('button', { name: 'Save version' }).click();
-    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Version name'); // the dialog moves focus a frame after it opens
     await page.keyboard.press('Enter'); // empty: stays open
     expect(await dialogs(page)).toBe(1);
     await page.keyboard.press('Escape');

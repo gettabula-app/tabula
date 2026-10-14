@@ -75,7 +75,7 @@ export function updatesAdminPanel(me: Me): HTMLElement {
     }
 
     const checked = pendingAuto ?? saved.auto;
-    const control = h('label', { class: 'updates-toggle' },
+    const control = h('label', { class: 'check updates-toggle' },
       h('input', {
         type: 'checkbox',
         checked,

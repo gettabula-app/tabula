@@ -372,7 +372,9 @@ describe('static demo icon build', () => {
     const all = files(out);
     const manifest = JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8'));
     expect(manifest.sets.map((set: { p: string }) => set.p)).toEqual(DEMO_SETS);
-    expect(manifest.sets.map((set: { n: number }) => set.n)).toEqual([1941, expect.any(Number)]);
+    // lucide gains an icon or two with almost every @iconify/json release, so the count is a range, not an exact number (an exact one failed every dependabot bump)
+    expect(manifest.sets[0].n).toBeGreaterThanOrEqual(1900);
+    expect(manifest.sets[0].n).toBeLessThan(2300);
     expect(manifest.sets[1].n).toBeGreaterThanOrEqual(300);
     expect(manifest.sets[1].n).toBeLessThan(400);
     expect(manifest.sets[0].lic.tier).toBe('notice');

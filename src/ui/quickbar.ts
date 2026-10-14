@@ -2,6 +2,7 @@ import type { BoardApp } from '../app';
 import { copyMarkdownSource, copyTable } from './markdown-actions';
 import type { Align, BaseObj, ConnectorObj, Obj, Route, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
+import { isLine } from '../line-geometry';
 import { h, icon } from './dom';
 import { kbdHint } from './kbd';
 import { closePopover, field, popover, segmented, swatches } from './common';
@@ -363,7 +364,8 @@ export function mountQuickbar(app: BoardApp, parent: HTMLElement, props: ReturnT
         app.store.undo.stopCapturing();
       }, { label: 'Line colour' }))));
     }
-    if (sel.every(isConnector)) {
+    // a line has no route (only its heads, colour, width and style: line-geometry.ts)
+    if (sel.every(isConnector) && !sel.every(isLine)) {
       style.push(menu('connector', 'Route', () => field('Route', segmented<Route>([
         { value: 'straight', label: 'Straight' }, { value: 'elbow', label: 'Elbow' }, { value: 'curved', label: 'Curved' },
       ], (app.selected()[0] as ConnectorObj).route, (v) => {

@@ -1,5 +1,5 @@
 // Small Markdown export for MCP. Every board-authored string is cleaned before formatting.
-import { boardTitle, cleanForModel, readAll } from './board-ops.mjs';
+import { boardTitle, cleanForModel, isLine, readAll } from './board-ops.mjs';
 import { parseTableKey, toMarkdownTable } from '../shared/tables.mjs';
 
 function inline(value, max = 20_000) {
@@ -43,6 +43,11 @@ export function exportBoardMarkdown(doc, titleOverride = undefined) {
   const rendered = new Set();
 
   const itemLine = (object) => {
+    if (isLine(object)) {
+      // a line is shown as a line with its two points, not as a connector between ends
+      const point = (end) => '(' + String(Math.round(end.x * 100) / 100) + ', ' + String(Math.round(end.y * 100) / 100) + ')';
+      return '- Line ' + point(object.from) + ' to ' + point(object.to);
+    }
     if (object.type === 'connector') {
       const endpoint = (end) => {
         if (end?.kind === 'bound') return objectLabel(byId.get(end.id) || { id: end.id, type: 'Object' });

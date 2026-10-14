@@ -1,5 +1,6 @@
 import type { BaseObj, ConnectorObj, Obj } from './types';
 import { isConnector } from './types';
+import { isLine } from './line-geometry';
 import { TYPE_LABEL } from './layers';
 import { STICKY_COLORS } from './palette';
 import { markdownReading, markdownTitle } from './markdown';
@@ -59,6 +60,13 @@ export function describeObject(o: Obj, ctx: DescribeContext): Description {
   const quoted = text ? `, "${cut(text)}"` : '';
   if (text.length > NAME_TEXT_MAX) rest.unshift(`${text}`);
 
+  if (isLine(o)) {
+    // a line names its ends by where they are: it has no shape to name
+    const at = (p: { x: number; y: number }) => `${Math.round(p.x)},${Math.round(p.y)}`;
+    const from = o.from.kind === 'free' ? at(o.from) : '';
+    const to = o.to.kind === 'free' ? at(o.to) : '';
+    return { name: `Line from ${from} to ${to}${suffix}`, description: rest.join(' ') };
+  }
   if (isConnector(o)) {
     const label = oneLine(o.label ?? '');
     return {

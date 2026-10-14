@@ -3,10 +3,10 @@
 
 .home-root { min-height: 100%; background: var(--canvas); padding-right: var(--dock-inset, 0px); } /* room for the chat dock */
 .home-page { color: var(--ink); }
-.topbar :focus-visible,
-.home :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.topbar :focus-visible:not(input):not(textarea):not(select):not(.combo),
+.home :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--ink); outline-offset: 2px; }
 
-/* Label style: 11px uppercase meta for nav, column heads, categories, badges and counts. */
+/* Small, sentence case labels shared by navigation, column heads and counts. */
 .topbar-link,
 .topbar-me,
 .board-head,
@@ -15,7 +15,7 @@
 .tpl-scope,
 .tpl-count,
 .tpl-chip {
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none;
 }
 .topbar-me,
 .board-head,
@@ -66,15 +66,15 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 }
 .home .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
 .home .btn:disabled:hover { background: transparent; }
-.home .btn.primary { border-color: var(--signal); background: var(--signal); color: var(--on-signal); }
-.home .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }
-.home .btn.primary:disabled:hover { background: var(--signal); }
+.home .btn.primary { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+.home .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 88%, var(--paper)); color: var(--paper); }
+.home .btn.primary:disabled:hover { background: var(--ink); }
 .home .btn.sm { height: 32px; padding: 0 12px; }
 .topbar .btn.ghost { height: 32px; padding: 0; border: 0; background: none; }
 .topbar .btn.ghost:hover { background: none; text-decoration: underline; text-underline-offset: 4px; }
 
 .home .input {
-  width: 100%; height: 36px; padding: 0 10px 0 34px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper));
+  width: 100%; height: 34px; padding: 0 10px 0 34px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper));
   --placeholder: var(--ink); color: var(--ink); appearance: none; -webkit-appearance: none;
 }
 .home .input::placeholder { color: var(--placeholder); opacity: 1; }
@@ -262,7 +262,7 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
 .home-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 20px; }
 .home-toolbar[hidden] { display: none; }
 .home .home-search { flex: 1 1 280px; max-width: 360px; margin: 0; }
-.home .input { height: 36px; padding-right: 42px; background: color-mix(in srgb, var(--ink) 5%, var(--paper)); color: var(--ink); }
+.home .input { height: 34px; padding-right: 42px; background: color-mix(in srgb, var(--ink) 5%, var(--paper)); color: var(--ink); }
 .home .input:hover { background: color-mix(in srgb, var(--ink) 8%, var(--paper)); }
 .home-search-key {
   position: absolute; top: 50%; right: 10px; display: inline-grid; place-items: center; min-width: 20px; height: 20px;
@@ -301,7 +301,7 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
 .board-row:hover .board-title { text-decoration: none; }
 .badge.tag, .board-access .badge.tag { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 9999px; padding: 0 10px; line-height: 1.4; }
 .board-access .badge.tag,
-.tpl-label.tag { font: 600 10px/1.4 var(--ui); letter-spacing: 0.05em; text-transform: uppercase; }
+.tpl-label.tag { font: 600 11px/1.4 var(--ui); letter-spacing: normal; text-transform: none; }
 /* the page's grey label colours above must not win over the pastel tag pair (the dark themes read it at under 3:1 otherwise) */
 .tpl-label.tag-yellow { background: var(--tag-yellow); color: var(--on-tag-yellow); }
 .tpl-label.tag-blue { background: var(--tag-blue); color: var(--on-tag-blue); }
@@ -367,7 +367,6 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
   .link-more { min-height: 44px; }
   .home .btn,
   .home .tpl-chip { min-height: 44px; }
-  .home .input { min-height: 44px; height: 44px; }
   .tpl-card .btn { min-height: 44px; }
   .tpl-actions .icon-btn { width: 44px; height: 44px; }
   .home-empty-actions .btn { min-height: 44px; }

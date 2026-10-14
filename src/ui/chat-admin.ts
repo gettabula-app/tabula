@@ -45,7 +45,7 @@ export function chatAdminPanel(kit: AdminKit): HTMLElement {
     }
     const state = saved;
     const check = (label: string, checked: boolean, onChange: (on: boolean) => void) =>
-      h('label', { class: 'ai-check' },
+      h('label', { class: 'check ai-check' },
         h('input', { type: 'checkbox', checked, onchange: (e: Event) => onChange((e.currentTarget as HTMLInputElement).checked) }),
         h('span', null, label));
     const keep = h('div', { class: 'chat-admin-keep', role: 'radiogroup', 'aria-label': 'Keep chat messages' },

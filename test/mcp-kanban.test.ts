@@ -640,7 +640,7 @@ describe('kanban MCP card tools', () => {
     const token = await addToken('generic object refusals');
     const listed = await h.call(token.token, 'tools/list');
     const createTool = listed.body.result.tools.find((tool: Body) => tool.name === 'create_objects');
-    expect(createTool.inputSchema.properties.objects.items.properties.type.enum).toEqual(['sticky', 'shape', 'text', 'markdown', 'table', 'frame', 'connector', 'link']);
+    expect(createTool.inputSchema.properties.objects.items.properties.type.enum).toEqual(['sticky', 'shape', 'text', 'markdown', 'table', 'frame', 'connector', 'line', 'link']);
 
     const before = (await h.tool(token.token, 'get_board', { boardId: board })).data.counts.total;
     for (const type of ['container', 'lane', 'card', 'group', 'image', 'tracker']) {

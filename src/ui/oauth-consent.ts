@@ -48,7 +48,7 @@ function requestFailure(root: HTMLElement, error: unknown, retry: () => void): v
   root.replaceChildren(page(
     heading,
     h('p', { class: 'oauth-consent-error', 'aria-live': 'polite' }, sentence),
-    h('button', { type: 'button', class: 'oauth-consent-button', onclick: retry }, 'Try again'),
+    h('button', { type: 'button', class: 'btn', onclick: retry }, 'Try again'),
   ));
   heading.focus();
 }
@@ -118,7 +118,7 @@ function consentPage(
         onchange: () => { selectedScope = option.value; },
       });
       scopeRadios.push(radio);
-      return h('label', { class: 'oauth-consent-scope' }, radio,
+      return h('label', { class: 'check oauth-consent-scope' }, radio,
         h('span', { class: 'oauth-consent-scope-copy' },
           h('span', { class: 'oauth-consent-scope-label' }, option.label),
           h('span', { class: 'oauth-consent-scope-help' }, option.help)));
@@ -179,23 +179,23 @@ function consentPage(
         syncControls();
       });
       boardCheckboxes.push(checkbox);
-      boardList.appendChild(h('label', { class: 'oauth-consent-board' }, checkbox,
+      boardList.appendChild(h('label', { class: 'check oauth-consent-board' }, checkbox,
         h('span', { class: 'oauth-consent-board-name' }, board.name),
         h('span', { class: 'oauth-consent-board-role' }, roleLabel(board.role))));
     }
     boardCount.textContent = 'Choose at least one board.';
     const picker = h('fieldset', { class: 'oauth-consent-picker' },
       h('legend', null, 'Which boards'),
-      h('label', { class: 'oauth-consent-mode' }, allBoardsRadio, 'All boards I can open'),
-      h('label', { class: 'oauth-consent-mode' }, chosenBoardsRadio, 'Only boards I choose'),
+      h('label', { class: 'check oauth-consent-mode' }, allBoardsRadio, 'All boards I can open'),
+      h('label', { class: 'check oauth-consent-mode' }, chosenBoardsRadio, 'Only boards I choose'),
       boardSelection);
     // Stored separately so the fieldset is inserted only for responses that contain a usable board list.
     pickerFieldset = picker;
   }
 
-  const deny = h('button', { type: 'button', class: 'oauth-consent-button', onclick: () => { void decide('deny'); } }, 'Deny');
+  const deny = h('button', { type: 'button', class: 'btn ghost', onclick: () => { void decide('deny'); } }, 'Deny');
   const allow = h('button', {
-    type: 'button', class: 'oauth-consent-button primary', disabled: request.readOnly,
+    type: 'button', class: 'btn primary', disabled: request.readOnly,
     onclick: () => { void decide('allow'); },
   }, 'Allow');
 

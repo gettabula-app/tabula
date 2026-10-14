@@ -16,11 +16,8 @@ const SWITCHES: { key: keyof NotificationPrefs; label: string }[] = [
  * mention email (docs/chat.md, Mentions), on until turned off. Each switch is saved as it is changed. The email section says what
  * the email holds and when it goes, so the switch is not a guess.
  */
-/** The same switch control the mention-email row uses: the checkbox with role switch, a track and a thumb. */
-function switchControlOf(box: HTMLInputElement): HTMLElement {
-  return h('span', { class: 'chat-switch-control' }, box,
-    h('span', { class: 'chat-switch-track', 'aria-hidden': 'true' }, h('span', { class: 'chat-switch-thumb' })));
-}
+/** The switch is the shared one (styled on input[role=switch] in styles.css); the row is a shared .check row. */
+const switchControlOf = (box: HTMLInputElement): HTMLInputElement => box;
 
 /** The hours of the day, each as the user's locale shows the time (08:00 or 8:00 AM). */
 const hourLabel = (hour: number): string =>
@@ -48,7 +45,7 @@ export function openChatNotifications(): void {
         box.disabled = false;
       }
     });
-    return h('label', { class: 'chat-prefs-switch' }, h('span', null, label), switchControlOf(box));
+    return h('label', { class: 'check chat-prefs-switch' }, h('span', null, label), switchControlOf(box));
   });
 
   // The daily digest (docs/notifications.md, Digest): off by default; the time select shows only while it is on.
@@ -95,7 +92,7 @@ export function openChatNotifications(): void {
   });
   const digestSection = h('div', { class: 'stack' },
     h('h3', { class: 'admin-sub' }, 'Email digest'),
-    h('label', { class: 'chat-prefs-switch', 'aria-describedby': 'chat-digest-note' }, h('span', null, 'Email me a daily summary'), switchControlOf(digestBox)),
+    h('label', { class: 'check chat-prefs-switch', 'aria-describedby': 'chat-digest-note' }, h('span', null, 'Email me a daily summary'), switchControlOf(digestBox)),
     digestHourRow,
     h('p', { class: 'muted small', id: 'chat-digest-note' },
       'One email a day with a list of what is new in your notifications: who and where, never what was written. Sent at the hour you choose, in your time zone. Off by default.'),
@@ -129,7 +126,7 @@ export function openChatNotifications(): void {
   if (chat) {
     sections.push(h('div', { class: 'stack' },
       h('h3', { class: 'admin-sub' }, 'Email'),
-      h('label', { class: 'chat-prefs-switch' }, h('span', null, 'Email me when I am mentioned in chat'), switchControl),
+      h('label', { class: 'check chat-prefs-switch' }, h('span', null, 'Email me when I am mentioned in chat'), switchControl),
       note, status));
   }
   dialog('Notification settings', h('div', { class: 'stack' }, ...sections), [{ label: 'Done', primary: true }]);
