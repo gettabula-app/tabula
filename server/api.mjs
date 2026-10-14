@@ -589,6 +589,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const oauthTrackerCeiling = (user) => {
     if (!config.tracker || !user || user.role === 'guest') return null;
     if (user.role === 'owner' || user.role === 'admin' || user.role === 'member') return 'write';
+    // No workspace role is called viewer today (users.role is owner, admin, member or guest; viewer is only a board-share role), so
+    // this line is unreachable; it keeps the ceiling right if a read-only workspace role is ever added.
     return user.role === 'viewer' ? 'read' : null;
   };
 

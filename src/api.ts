@@ -68,6 +68,8 @@ export interface OAuthConsentRequest {
   pickerAvailable?: boolean;
   scopes?: { unrestricted: OAuthScope; boards: OAuthScope };
   boards?: { id: string; name: string; role: string }[];
+  /** Highest ticket access the person may give this app (TAB-365). Missing or null offers no Tickets section. */
+  trackerCeiling?: 'read' | 'write' | null;
   nonce: string;
   readOnly: boolean;
 }
@@ -227,6 +229,8 @@ export interface ConnectedGrant {
   scope: AccessScope;
   /** null means every board the person can open. */
   boardCount: number | null;
+  /** Ticket access given at consent (TAB-365); null means no ticket tools. */
+  tracker: 'read' | 'write' | null;
   createdAt: number;
   lastUsedAt: number | null;
   expiresAt: number;

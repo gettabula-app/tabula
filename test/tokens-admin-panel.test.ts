@@ -103,11 +103,11 @@ describe('Admin access tokens panel', () => {
     browser = installFakeBrowser();
     const me: Me = { user: { id: 'u1', name: 'Admin', email: 'admin@example.test', role: 'owner' }, teams: [], mcp: true, mcpOauth: true };
     const first: AdminGrant = {
-      id: 'g1', clientId: 'c1', clientName: 'Claude Desktop', redirectHost: 'claude.ai', scope: 'read', boardCount: null,
+      id: 'g1', clientId: 'c1', clientName: 'Claude Desktop', redirectHost: 'claude.ai', scope: 'read', boardCount: null, tracker: 'read',
       createdAt: 1_800_000_000_000, lastUsedAt: null, expiresAt: 1_802_592_000_000,
       userId: 'u2', userName: 'Member', email: 'member@example.test', userRole: 'member',
     };
-    const second: AdminGrant = { ...first, id: 'g2', clientId: 'c2', clientName: 'Editor App', boardCount: 2, userId: 'u3', userName: 'Other', email: 'other@example.test' };
+    const second: AdminGrant = { ...first, id: 'g2', clientId: 'c2', clientName: 'Editor App', boardCount: 2, tracker: null, userId: 'u3', userName: 'Other', email: 'other@example.test' };
     let grantList = [first, second];
     const grantFetch = vi.spyOn(api, 'adminGrants').mockImplementation(async () => [...grantList]);
     vi.spyOn(api, 'adminAccessTokens').mockResolvedValue([]);
@@ -155,6 +155,11 @@ describe('Admin access tokens panel', () => {
     const root = browser.mount();
     root.appendChild(tokensAdminPanel(me, kit) as unknown as FakeElement);
     await vi.waitFor(() => expect(textOf(root)).toContain('Claude Desktop'));
+    // Each row shows its own ticket level; a row with no tickets shows none. The read row must not mention read and edit.
+    const rowOf = (name: string) => root.querySelectorAll('.admin-row').find((row) => textOf(row).includes(name))!;
+    expect(textOf(rowOf('Claude Desktop'))).toContain('Tickets: read');
+    expect(textOf(rowOf('Claude Desktop'))).not.toContain('read and edit');
+    expect(textOf(rowOf('Editor App'))).not.toContain('Tickets:');
     expect(textOf(root)).toContain('Type');
     expect(textOf(root)).toContain('Person');
     expect(textOf(root)).toContain('Connector');
@@ -188,7 +193,7 @@ describe('Admin access tokens panel', () => {
     vi.stubGlobal('requestAnimationFrame', (fn: () => void) => { fn(); return 0; });
     const me: Me = { user: { id: 'u1', name: 'Member', email: 'member@example.test', role: 'member' }, teams: [], mcp: true, mcpOauth: true };
     const grant: ConnectedGrant = {
-      id: 'g1', clientId: 'c1', clientName: '<Claude>', redirectHost: 'claude.ai', scope: 'comment', boardCount: 1,
+      id: 'g1', clientId: 'c1', clientName: '<Claude>', redirectHost: 'claude.ai', scope: 'comment', boardCount: 1, tracker: 'write',
       createdAt: 1_800_000_000_000, lastUsedAt: null, expiresAt: 1_802_592_000_000,
     };
     const myGrants = vi.spyOn(api, 'myGrants').mockResolvedValueOnce([grant]).mockResolvedValue([]);
@@ -201,6 +206,7 @@ describe('Admin access tokens panel', () => {
     expect(textOf(modal)).toContain('<Claude>');
     expect(textOf(modal)).toContain('claude.ai');
     expect(textOf(modal)).toContain('Read and comment');
+    expect(textOf(modal)).toContain('Tickets: read and edit');
     expect(textOf(modal)).toContain('1 board');
     expect(textOf(modal)).toContain('Never used');
     expect(modal.querySelector('.tokens-name')?.textContent).toBe('<Claude>');

@@ -104,6 +104,17 @@ function choose(value: string): void {
   target.dispatchEvent(new FakeEvent('change'));
 }
 
+// Ticket radios reuse the values read, write and none, so they are picked by their own group name.
+function chooseTicket(value: string): void {
+  const radios = page().querySelectorAll('input[name="oauth-tracker"]');
+  const target = radios.find((radio) => radio.value === value)!;
+  for (const radio of radios) radio.checked = radio === target;
+  target.dispatchEvent(new FakeEvent('change'));
+}
+
+const checkedTickets = () => page().querySelectorAll('input[name="oauth-tracker"]').filter((radio) => radio.checked).map((radio) => radio.value);
+const ticketOption = (label: string) => page().querySelectorAll('label').find((el) => textOf(el).startsWith(label))!;
+
 function checkBoard(id: string): FakeElement {
   const checkbox = page().querySelectorAll('input[type="checkbox"]').find((input) => input.value === id)!;
   checkbox.checked = true;
@@ -389,6 +400,91 @@ describe('OAuth consent panel', () => {
     expect(textOf(root)).toBe('This page cannot be shown inside another page.');
     expect(root.children).toHaveLength(1);
     expect(calls).toHaveLength(0);
+  });
+
+  it('shows the Tickets section only when the server offers a ticket ceiling', async () => {
+    await open({ requests: [consentRequest({ trackerCeiling: null })] });
+    expect(page().querySelector('.oauth-consent-tickets')).toBeNull();
+    expect(page().querySelectorAll('input[name="oauth-tracker"]')).toHaveLength(0);
+    await open({ requests: [consentRequest({ trackerCeiling: 'read' })] });
+    const section = need(page(), '.oauth-consent-tickets');
+    expect(textOf(need(section, 'legend'))).toBe('Tickets');
+    expect(section.querySelectorAll('input[name="oauth-tracker"]').map((radio) => radio.value)).toEqual(['none', 'read']);
+    await open({ requests: [consentRequest({ trackerCeiling: 'write' })] });
+    expect(need(page(), '.oauth-consent-tickets').querySelectorAll('input[name="oauth-tracker"]').map((radio) => radio.value))
+      .toEqual(['none', 'read', 'write']);
+  });
+
+  it('starts on No tickets for every app, verified or not', async () => {
+    for (const verified of [true, false]) {
+      await open({ requests: [consentRequest({ trackerCeiling: 'write', verified })] });
+      expect(checkedTickets()).toEqual(['none']);
+    }
+  });
+
+  it('shows the warning under the chosen ticket level and sends read and edit on Allow', async () => {
+    await open({ requests: [consentRequest({ trackerCeiling: 'write' })] });
+    chooseTicket('write');
+    expect(checkedTickets()).toEqual(['write']);
+    expect(ticketOption('Read and edit tickets').querySelector('input')!.checked).toBe(true);
+    expect(textOf(ticketOption('Read and edit tickets'))).toContain('This app can create, change and comment on every ticket you can see, as you.');
+    button('Allow').click();
+    await flush();
+    expect(apiCalls('POST', '/api/oauth/requests/decision')[0].body).toEqual({
+      request: ENVELOPE, decision: 'allow', scope: 'read', nonce: 'nonce-first', tracker: 'write',
+    });
+  });
+
+  it('sends read tickets on Allow when read is chosen under a write ceiling', async () => {
+    await open({ requests: [consentRequest({ trackerCeiling: 'write' })] });
+    chooseTicket('read');
+    button('Allow').click();
+    await flush();
+    expect(apiCalls('POST', '/api/oauth/requests/decision')[0].body).toEqual({
+      request: ENVELOPE, decision: 'allow', scope: 'read', nonce: 'nonce-first', tracker: 'read',
+    });
+  });
+
+  it('sends no tickets field on Allow when No tickets is chosen', async () => {
+    await open({ requests: [consentRequest({ trackerCeiling: 'read' })] });
+    chooseTicket('none');
+    expect(textOf(ticketOption('No tickets'))).toContain('No access to tickets.');
+    button('Allow').click();
+    await flush();
+    const body = apiCalls('POST', '/api/oauth/requests/decision')[0].body!;
+    expect(body).toEqual({ request: ENVELOPE, decision: 'allow', scope: 'read', nonce: 'nonce-first' });
+    expect(body).not.toHaveProperty('tracker');
+  });
+
+  it('never sends tickets on Deny, even after a ticket level was chosen', async () => {
+    await open({ requests: [consentRequest({ trackerCeiling: 'write' })] });
+    chooseTicket('write');
+    button('Deny').click();
+    await flush();
+    expect(apiCalls('POST', '/api/oauth/requests/decision')[0].body).toEqual({
+      request: ENVELOPE, decision: 'deny', nonce: 'nonce-first',
+    });
+  });
+
+  it('keeps No tickets for an unverified app and adds no label beside the section', async () => {
+    await open({ requests: [consentRequest({ trackerCeiling: 'write', verified: false })] });
+    expect(checkedTickets()).toEqual(['none']);
+    expect(textOf(page())).toContain('Tabula has not verified this destination.');
+    const section = need(page(), '.oauth-consent-tickets');
+    expect(textOf(need(section, 'legend'))).toBe('Tickets');
+    expect(textOf(section)).not.toContain('Unverified');
+  });
+
+  it('resets tickets to No tickets when consent is re-fetched after a refused decision', async () => {
+    await open({
+      requests: [consentRequest({ trackerCeiling: 'write' }), consentRequest({ trackerCeiling: 'write', nonce: 'nonce-fresh' })],
+      decisions: [{ status: 400, body: { error: 'invalid_scope', message: 'server details' } }],
+    });
+    chooseTicket('write');
+    button('Allow').click();
+    await flush();
+    expect(textOf(page())).toContain('The available access level changed. Review the updated request.');
+    expect(checkedTickets()).toEqual(['none']);
   });
 
   it('rejects a malformed envelope before making any API call', () => {

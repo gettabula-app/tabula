@@ -380,7 +380,8 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const app = name ? quote(clip(name, 60)) : 'an app';
       if (d.decision === 'deny') return `${who} declined to connect ${app}`;
       const scope = ({ read: ' with read only access', comment: ' with read and comment access', write: ' with read and edit access', none: ' with no access' } as Record<string, string>)[text(d.scope) ?? ''] ?? '';
-      return `${who} connected ${app}${scope}`;
+      const tickets = ({ read: ', and read access to tickets', write: ', and read and edit access to tickets' } as Record<string, string>)[text(d.tracker) ?? ''] ?? '';
+      return `${who} connected ${app}${scope}${tickets}`;
     }
     case 'mcp.oauth.revoke': {
       const name = text(d.clientName);

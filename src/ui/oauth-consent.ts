@@ -13,8 +13,13 @@ import {
   OAUTH_REQUEST_INVALID,
   scopeOptions,
   titleText,
+  TRACKER_DEFAULT,
+  TRACKER_TEXT,
+  trackerForDecision,
+  trackerOptions,
   verifiedBadge,
   type OAuthScope,
+  type TrackerLevel,
 } from './oauth-consent-logic';
 
 function page(...children: (Node | null)[]): HTMLElement {
@@ -80,6 +85,7 @@ function consentPage(
   const badge = verifiedBadge(request.provider, host.verified);
   const alert = h('p', { class: 'oauth-consent-error', 'aria-live': 'polite' }, notice);
   const boards = Array.isArray(request.boards) ? request.boards : [];
+  const trackerCeiling = request.trackerCeiling ?? null;
   const pickerAvailable = request.pickerAvailable === true && boards.length > 0;
   const unrestrictedScope = request.scopes?.unrestricted ?? request.maxScope;
   // A missing scopes.boards on a malformed newer response fails closed at the unrestricted ceiling.
@@ -97,11 +103,17 @@ function consentPage(
   const disclosure = h('p', { class: 'oauth-consent-disclosure' });
   const accessNote = h('p', { class: 'oauth-consent-note', hidden: true });
   const pickerRadios: HTMLInputElement[] = [];
+  const trackerRadios: HTMLInputElement[] = [];
   let pickerFieldset: HTMLFieldSetElement | null = null;
 
   function checkedScope(): OAuthScope {
     const value = scopeRadios.find((radio) => radio.checked)?.value;
     return value === 'comment' || value === 'write' ? value : 'read';
+  }
+
+  function checkedTracker(): TrackerLevel {
+    const value = trackerRadios.find((radio) => radio.checked)?.value;
+    return value === 'read' || value === 'write' ? value : TRACKER_DEFAULT;
   }
 
   function renderScopeOptions(): void {
@@ -133,6 +145,7 @@ function consentPage(
     boardSelection.hidden = mode !== 'boards';
     pickerRadios.forEach((radio) => { radio.disabled = busy; });
     scopeRadios.forEach((radio) => { radio.disabled = busy; });
+    trackerRadios.forEach((radio) => { radio.disabled = busy; });
     boardCheckboxes.forEach((input) => {
       input.disabled = busy || (!input.checked && chosenCount >= MAX_OAUTH_BOARD_IDS);
     });
@@ -208,6 +221,8 @@ function consentPage(
     if (deny.disabled || allow.disabled && decision === 'allow') return;
     setBusy(true);
     alert.textContent = '';
+    // Deny sends neither a scope nor tickets. Allow sends tickets only for a level the server offered.
+    const tracker = trackerForDecision(checkedTracker(), trackerCeiling);
     const input = decision === 'deny'
       ? { request: envelope, decision, nonce: request.nonce } as const
       : {
@@ -216,6 +231,7 @@ function consentPage(
         scope: checkedScope(),
         nonce: request.nonce,
         ...(pickerAvailable && mode === 'boards' ? { boardIds: boards.filter((board) => selected.has(board.id)).map((board) => board.id) } : {}),
+        ...(tracker ? { tracker } : {}),
       } as const;
     try {
       const answer = await api.oauthDecision(input);
@@ -249,6 +265,22 @@ function consentPage(
     }
   }
 
+  // Ticket choice (TAB-365). Each option's help line is inside its label, as for Access level, so a screen reader
+  // announces it when the option gets focus or is chosen. Absent when the server offers no ticket access.
+  const trackerChoices = trackerOptions(trackerCeiling);
+  const ticketsFieldset = trackerChoices.length > 0
+    ? h('fieldset', { class: 'oauth-consent-level oauth-consent-tickets' },
+      h('legend', null, TRACKER_TEXT.heading),
+      trackerChoices.map((option) => {
+        const radio = h('input', { type: 'radio', name: 'oauth-tracker', value: option.value, checked: option.value === TRACKER_DEFAULT });
+        trackerRadios.push(radio);
+        return h('label', { class: 'check oauth-consent-scope' }, radio,
+          h('span', { class: 'oauth-consent-scope-copy' },
+            h('span', { class: 'oauth-consent-scope-label' }, option.label),
+            h('span', { class: 'oauth-consent-scope-help' }, option.help)));
+      }))
+    : null;
+
   const account = h('div', { class: 'oauth-consent-account' },
     h('p', null, `Signed in as ${me.user.name} (${me.user.email})`),
     h('button', {
@@ -273,6 +305,7 @@ function consentPage(
     pickerFieldset,
     scopeFieldset,
     accessNote,
+    ticketsFieldset,
     disclosure,
     request.readOnly
       ? h('p', { class: 'oauth-consent-note' }, 'This workspace is read-only. Ask the workspace owner to check billing.')
