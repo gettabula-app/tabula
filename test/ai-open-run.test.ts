@@ -125,6 +125,28 @@ describe('when AI is on', () => {
     expect(JSON.stringify(res.headers)).not.toContain(KEY);
   });
 
+  it('returns a visualization through the operator provider without a live board proposal', async () => {
+    const w = world();
+    const post = await serve(w);
+    const visualization = {
+      title: 'A diagram', description: 'An offline diagram.', initialHeight: 320,
+      css: '', html: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40"/></svg>',
+      jsFunctions: '', jsExpressions: [],
+    };
+    w.state.answer = visualization;
+    const changes: unknown[] = [];
+    w.open.live.onChange((change: unknown) => changes.push(change));
+    const res = await post({ feature: 'visualise', boardId: 'board1', input: { prompt: 'draw a diagram' } });
+    expect(res.status).toBe(200);
+    expect(res.events.at(-1)).toEqual({ event: 'result', data: { visualization, cut: false, usage: {
+      model: w.config.ai.model, inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0,
+    } } });
+    expect(res.events.every((event) => !Object.hasOwn(event.data, 'runId'))).toBe(true);
+    expect(changes).toEqual([]);
+    expect(w.calls[0].maxTokens).toBe(16000);
+    expect(w.lines[0][0]).toMatch(/^ai\.visualise /);
+  });
+
   it('refuses a board that does not exist, a body that is not valid, and a body that is too large', async () => {
     const w = world();
     const post = await serve(w);

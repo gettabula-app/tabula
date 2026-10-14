@@ -46,6 +46,7 @@ import { scrubText } from './ai/errors.mjs';
 import { openAiConfig } from './ai/routes.mjs';
 import { createOpenRun } from './ai/run.mjs';
 import { createLiveRuns } from './ai/live.mjs';
+import { handleVisualizationFrame } from './ai/visual-frame.mjs';
 import { createAssetStore, createJsonAssetIndex, createUploadLimiter } from './assets.mjs';
 import { createAssetGc } from './assets-gc.mjs';
 import { createAssetHandlers, createOpenAssetRoutes } from './asset-routes.mjs';
@@ -1696,6 +1697,8 @@ async function onRequest(req, res) {
       req.socket.destroy();
       return;
     }
+    // An empty, isolated bootstrap document: generated content arrives only inside the browser frame.
+    if (handleVisualizationFrame(req, res, url.pathname)) return;
     const oauthPath = url.pathname === '/oauth' || url.pathname.startsWith('/oauth/')
       || url.pathname === '/.well-known/oauth' || url.pathname.startsWith('/.well-known/oauth-')
       // no OpenID Connect (spec 1): a discovery probe gets a JSON 404, never the single-page app

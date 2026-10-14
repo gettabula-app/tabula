@@ -41,6 +41,7 @@
   "packageManager": "npm@11.6.1",
   "dependencies": {
     "@anthropic-ai/sdk": "0.128.0",
+    "@jetbrains/websandbox": "1.4.3",
     "@tauri-apps/api": "2.12.1",
     "fflate": "^0.8.3",
     "fractional-indexing": "^4.0.0",

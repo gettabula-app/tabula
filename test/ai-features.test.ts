@@ -21,7 +21,7 @@ const thrown = (fn: () => unknown): Error => {
 };
 
 describe('the features', () => {
-  it('are the three v1 features, each with a frozen prompt and schema', () => {
+  it('have frozen prompts and schemas for every feature', () => {
     expect(Object.keys(FEATURE_SPECS)).toEqual(FEATURES);
     expect(Object.isFrozen(FEATURE_SPECS)).toBe(true);
     for (const spec of Object.values(FEATURE_SPECS) as any[]) {

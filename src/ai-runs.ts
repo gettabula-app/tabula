@@ -7,11 +7,13 @@ import { layoutProposal, type AiProposal, type Existing, type Layout, type Rect 
 // a patch per change. Everything that arrives is checked here, because it is drawn on the canvas. Pure: no DOM.
 
 export interface RunPerson { id: string | null; name: string | null; color: string | null }
+/** Visualisations stay in the requesting tab, outside the shared board proposal flow. */
+type BoardAiFeature = Exclude<AiFeature, 'visualise'>;
 export type RunTarget = { ids: string[] } | { frameId: string } | null;
 
 export interface LiveRun {
   id: string;
-  feature: AiFeature;
+  feature: BoardAiFeature;
   status: 'running' | 'ready';
   by: RunPerson;
   private: boolean;
@@ -24,14 +26,14 @@ export interface LiveRun {
 
 export interface SettledRun {
   id: string;
-  feature: AiFeature;
+  feature: BoardAiFeature;
   status: 'accepted' | 'discarded' | 'failed' | 'expired';
   by: RunPerson;
   resolvedBy: { id: string | null; name: string | null } | null;
   error: string | null;
 }
 
-const FEATURES = new Set<AiFeature>(['generate', 'summarise', 'cluster']);
+const FEATURES = new Set<BoardAiFeature>(['generate', 'summarise', 'cluster']);
 const SETTLED = new Set(['accepted', 'discarded', 'failed', 'expired']);
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -77,7 +79,7 @@ function target(v: unknown): RunTarget {
 export function parseRun(v: unknown): LiveRun | SettledRun | null {
   if (!isRecord(v)) return null;
   const id = idOf(v.id);
-  const feature = v.feature as AiFeature;
+  const feature = v.feature as BoardAiFeature;
   if (!id || !FEATURES.has(feature) || typeof v.status !== 'string') return null;
   if (SETTLED.has(v.status)) {
     const rb = isRecord(v.resolvedBy) ? { id: typeof v.resolvedBy.id === 'string' ? v.resolvedBy.id : null, name: cleanName(v.resolvedBy.name) } : null;

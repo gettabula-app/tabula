@@ -12,6 +12,7 @@ export const FEATURE_OPTIONS: { id: AiFeature; label: string }[] = [
   { id: 'generate', label: 'Generate stickies' },
   { id: 'summarise', label: 'Summarise' },
   { id: 'cluster', label: 'Cluster stickies' },
+  { id: 'visualise', label: 'Create a visualisation' },
 ];
 
 /** The models an admin can pick; the ids match MODELS in server/ai/anthropic.mjs (a test keeps them equal). */

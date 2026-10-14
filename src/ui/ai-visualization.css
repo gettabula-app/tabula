@@ -1,0 +1,17 @@
+/* Existing dialog chrome frames the answer. The generated tool is the only large surface. */
+.ai-visualization .modal { width: min(960px, 100%); }
+.ai-visualization .modal-body { min-width: 0; padding-top: 8px; }
+.ai-visualization-content { display: grid; gap: 16px; min-width: 0; }
+.ai-visualization-description, .ai-visualization-note, .ai-visualization-status {
+  margin: 0; color: var(--tray-muted); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere;
+}
+.ai-visualization-description:empty { display: none; }
+.ai-visualization-note { font-size: 13px; }
+.ai-visualization-surface { min-width: 0; border: 1px solid var(--tray-line); border-radius: var(--radius-sm); overflow: hidden; }
+.ai-visualization-surface iframe { display: block; width: 100%; border: 0; background: var(--tray); }
+.ai-visualization-status[hidden], .ai-visualization-surface[hidden] { display: none; }
+.ai-visualization .modal-actions .btn { min-height: 36px; }
+@media (max-width: 640px) {
+  .ai-visualization .modal { width: 100%; }
+  .ai-visualization .modal-actions .btn { min-height: 44px; }
+}

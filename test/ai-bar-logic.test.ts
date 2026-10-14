@@ -62,8 +62,22 @@ describe('context', () => {
 });
 
 describe('chips', () => {
-  it('lists Summarise, Cluster and Generate ideas, in that order', () => {
-    expect(CHIPS.map((c) => c.label)).toEqual(['Summarise', 'Cluster', 'Generate ideas']);
+  it('lists board actions followed by Visualise', () => {
+    expect(CHIPS.map((c) => c.label)).toEqual(['Summarise', 'Cluster', 'Generate ideas', 'Visualise']);
+  });
+
+  it('visualises with a prompt, any context and workspace permission', () => {
+    const allowed: AiFeature[] = [...ALL, 'visualise'];
+    for (const ctx of ['selection', 'view', 'board', 'none'] as const) {
+      expect(runTarget('visualise', 'Explain how gears work', ctx, NO_FACTS, allowed)).toBe('visualise');
+      expect(runTarget('visualise', '  ', ctx, NO_FACTS, allowed)).toBeNull();
+      expect(runTarget('visualise', 'Explain gears', ctx, NO_FACTS, ALL)).toBeNull();
+    }
+    expect(placeholderFor('visualise')).toContain('interactive example');
+    expect(runningText('visualise', 'none', NO_FACTS)).toBe('Creating a visualisation…');
+    const body = buildRunBody({ feature: 'visualise', boardId: BOARD, ctx: 'none', prompt: 'Explain gears', selection: [], selectionStickies: [], view: [], person: {}, keySource: 'workspace', privateRun: false });
+    expect(body).toEqual({ feature: 'visualise', boardId: BOARD, input: { prompt: 'Explain gears' } });
+    expect(parseRequest(body)).toMatchObject({ feature: 'visualise', input: { prompt: 'Explain gears' } });
   });
 
   it('needs two stickies in the context to summarise, with a reason for each way it fails', () => {
@@ -513,6 +527,16 @@ describe('runAi and resolveAiRun', () => {
     expect(f.calls[0].init.method).toBe('POST');
     expect((f.calls[0].init.headers as Record<string, string>)['x-tabula']).toBe('1');
     expect(JSON.parse(f.calls[0].init.body as string)).toEqual(body);
+  });
+
+  it('receives a session visualisation separately from board proposals and rejects malformed code fields', async () => {
+    const visualization = { title: 'Gears', description: 'Change the speed.', initialHeight: 360, css: '', html: '<p>Gears</p>', jsFunctions: '', jsExpressions: [] };
+    const ids: string[] = [];
+    const visualBody = { ...body, feature: 'visualise' as const };
+    const response = (value: unknown) => sse(`event: progress\ndata: {"n":0}\n\nevent: result\ndata: ${JSON.stringify({ visualization: value, cut: true })}\n\n`);
+    expect(await runAi(fake(() => response(visualization)).fn, visualBody, { onRunId: (id) => ids.push(id) })).toEqual({ ok: true, visualization, cut: true });
+    expect(ids).toEqual([]);
+    expect(await runAi(fake(() => response({ ...visualization, jsFunctions: {} })).fn, visualBody)).toMatchObject({ ok: false, failure: { code: 'internal' } });
   });
 
   it('reads a stream cut in the middle of an event, and of a multibyte character', async () => {

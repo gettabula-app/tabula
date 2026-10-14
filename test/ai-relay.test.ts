@@ -82,7 +82,7 @@ describe('open mode', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       enabled: false,
-      features: ['generate', 'summarise', 'cluster'],
+      features: ['generate', 'summarise', 'cluster', 'visualise'],
       keySource: null,
       provider: null,
       model: 'claude-opus-5-5',
@@ -112,7 +112,7 @@ describe('open mode', () => {
     const res = await get(relay, '/api/ai/config');
     expect(res.body).toEqual({
       enabled: true,
-      features: ['generate', 'summarise', 'cluster'],
+      features: ['generate', 'summarise', 'cluster', 'visualise'],
       keySource: 'workspace',
       provider: 'anthropic',
       model: 'claude-sonnet-5-5',

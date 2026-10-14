@@ -118,7 +118,7 @@ describe('GET /api/ai/config', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       enabled: false,
-      features: ['generate', 'summarise', 'cluster'],
+      features: ['generate', 'summarise', 'cluster', 'visualise'],
       keySource: null,
       provider: null,
       model: 'claude-opus-5-5',
@@ -182,7 +182,7 @@ describe('PUT /api/admin/ai', () => {
     const { owner } = people(w);
     expect((await w.call(owner, 'GET', '/api/admin/ai')).body).toEqual({
       enabled: false,
-      features: ['generate', 'summarise', 'cluster'],
+      features: ['generate', 'summarise', 'cluster', 'visualise'],
       model: 'claude-opus-5-5',
       personalKeys: false,
       membersOnly: false,
@@ -241,7 +241,7 @@ describe('PUT /api/admin/ai', () => {
     w.directory.setSetting('ai.limits.perWorkspaceHour', 'many');
     expect((await w.call(owner, 'GET', '/api/admin/ai')).body).toMatchObject({
       model: 'claude-opus-5-5',
-      features: ['generate', 'summarise', 'cluster'],
+      features: ['generate', 'summarise', 'cluster', 'visualise'],
       limits: { perPersonHour: 20, perWorkspaceHour: 200 },
     });
   });

@@ -239,7 +239,7 @@ export interface AdminGrant extends ConnectedGrant {
   userRole: UserRole;
 }
 
-export type AiFeature = 'generate' | 'summarise' | 'cluster';
+export type AiFeature = 'generate' | 'summarise' | 'cluster' | 'visualise';
 
 /** A stored AI key as the server shows it: never the key, only its last four characters. */
 export interface AiKeyInfo {
