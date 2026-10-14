@@ -11,8 +11,10 @@ let readToken: string;
 
 // TAB-161 package 3 intentionally adds three read tools: the count is 50 and Q5 (the tool budget) remains open.
 // The measured 46,110 definition bytes have 3% headroom; a future package must still remove or merge tools.
-const TOOL_COUNT_LIMIT = 48; // TAB-369: ticket_meta replaced two list tools and delete_saved_view left the AI set (50 before)
-const TOOL_BYTES_LIMIT = 48_520;
+const TOOL_COUNT_LIMIT = 49; // TAB-369: ticket_meta replaced two list tools and delete_saved_view left the AI set (50 before); update_tickets is the bulk form (49)
+// TAB-369 update_tickets: measured 48,983 definition bytes (48,511 before it, so the bulk tool costs about 470 bytes). Its description and
+// schema are kept short for that, and the limit is the measured value rounded up to the next ten.
+const TOOL_BYTES_LIMIT = 48_990;
 // lines (docs/lines.md) added 709 measured bytes to the create and update schemas: 47,475 before, 48,184 after; the code block adds 327 more (48,511 measured).
 // Explicit exceptions for definitions over 700 characters; TODO: remove each name when it is shortened. Empty today.
 const LONG_DESCRIPTION_ALLOWLIST: string[] = [];

@@ -9,7 +9,7 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 const REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
 const TICKET_TOOLS = [
-  'create_ticket', 'get_ticket', 'list_tickets', 'search_tickets', 'update_ticket', 'transition_ticket',
+  'create_ticket', 'get_ticket', 'list_tickets', 'search_tickets', 'update_ticket', 'transition_ticket', 'update_tickets',
   'comment_ticket', 'ticket_meta', 'create_ticket_label',
   'relate_tickets', 'list_saved_views', 'get_saved_view', 'create_saved_view', 'update_saved_view',
   'list_projects', 'create_project', 'update_project', 'list_milestones', 'create_milestone', 'update_milestone',

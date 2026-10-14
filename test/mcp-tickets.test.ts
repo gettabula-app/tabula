@@ -8,7 +8,7 @@ import { ASSIGNABLE_MEMBER_LIMIT, assignableMembers } from '../server/mcp.mjs';
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
 const TICKET_TOOLS = [
-  'create_ticket', 'get_ticket', 'list_tickets', 'search_tickets', 'update_ticket', 'transition_ticket',
+  'create_ticket', 'get_ticket', 'list_tickets', 'search_tickets', 'update_ticket', 'update_tickets', 'transition_ticket',
   'comment_ticket', 'ticket_meta', 'create_ticket_label',
   'relate_tickets', 'list_saved_views', 'get_saved_view', 'create_saved_view', 'update_saved_view',
   'list_projects', 'create_project', 'update_project', 'list_milestones', 'create_milestone', 'update_milestone',
@@ -332,7 +332,7 @@ describe('agent ticket text limits and tool surface (TAB-330)', () => {
     expect(longest.error).toBeUndefined();
   });
 
-  it('gives the tracker toolset no delete_ tool and no bulk tool', async () => {
+  it('gives the tracker toolset no delete_ tool and no bulk tool but update_tickets (TAB-369)', async () => {
     const plain = await makeToken(owner);
     const writer = await makeToken(owner, 'write');
     const names = async (token: string): Promise<string[]> => (await h.call(token, 'tools/list')).body.result.tools.map((tool: Body) => tool.name as string);
@@ -522,6 +522,331 @@ describe('hourly cap on agent ticket edits and token attribution (TAB-330)', () 
     const key = await ticketFor(free.token, 'No cap');
     for (let i = 1; i <= 5; i++) expect((await capped.tool(free.token, 'update_ticket', { key, title: `Free ${i}` })).error).toBeUndefined();
     expect((await capped.tool(free.token, 'get_ticket', { key })).data.ticket.title).toBe('Free 5');
+  });
+});
+
+describe('update_tickets on the default caps (TAB-369)', () => {
+  it('a bulk of 25 is one call that changes all 25 tickets', async () => {
+    // made over the REST API: an MCP token may create only ten tickets a minute
+    const keys: string[] = [];
+    for (let i = 1; i <= 25; i++) {
+      const made = await h.api(owner.cookie, 'POST', '/api/tracker/tickets', { title: `Bulk of 25 ${i}`, idempotencyKey: `bulk-of-25-ticket-${i}` });
+      expect(made.status).toBe(201);
+      keys.push(made.body.ticket.key as string);
+    }
+    const bot = await makeToken(owner, 'write');
+    const res = await h.tool(bot.token, 'update_tickets', { keys, patch: { priority: 'high' } });
+    expect(res.error).toBeUndefined();
+    expect(res.data.count).toBe(25);
+    expect(res.data.tickets.map((ticket: Body) => ticket.priority)).toEqual(Array(25).fill('high'));
+  });
+
+  // a guest is refused at the tracker gate, so this compares a real key with an unknown one for a token that sees no ticket. A
+  // single member sees every ticket, so a ticket hidden from one key in a list cannot be set up in this harness.
+  it('answers a real key and an unknown key alike for a token with no ticket access, and changes nothing', async () => {
+    const outsider = await makeToken(guest, 'write');
+    const hidden = await h.tool(outsider.token, 'update_tickets', { keys: [baselineTicket.key], patch: { priority: 'low' } });
+    const absent = await h.tool(outsider.token, 'update_tickets', { keys: ['TAB-999999'], patch: { priority: 'low' } });
+    expect(hidden.error).toBe('not_found');
+    expect(hidden.text).toBe(absent.text);
+    const reader = await makeToken(owner, 'read');
+    const current = await h.tool(reader.token, 'get_ticket', { key: baselineTicket.key });
+    expect(current.data.ticket.priority).toBe(baselineTicket.priority);
+  });
+
+  it('is an unknown tool for a token without tracker write, and for a tracker read token', async () => {
+    const plain = await makeToken(member);
+    const reader = await makeToken(member, 'read');
+    for (const token of [plain.token, reader.token]) {
+      const listed = (await h.call(token, 'tools/list')).body.result.tools.map((tool: Body) => tool.name);
+      expect(listed).not.toContain('update_tickets');
+      const hidden = await h.call(token, 'tools/call', { name: 'update_tickets', arguments: { keys: [baselineTicket.key], patch: { priority: 'low' } } });
+      const missing = await h.call(token, 'tools/call', { name: 'tool_that_does_not_exist', arguments: {} });
+      expect(hidden.body.error).toEqual(missing.body.error);
+    }
+  });
+});
+
+describe('update_tickets budgets, all or nothing, and what a bulk may change (TAB-369)', () => {
+  // three of each hourly call, so every budget can run out inside one test
+  const cap = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on', MCP_TICKET_HOURLY: '3' } });
+  let capOwner: Account;
+  let pat: Account;
+  let twinA: Account;
+  let twinB: Account;
+
+  beforeAll(async () => {
+    await cap.start();
+    capOwner = await cap.signInOwner();
+    const team = await cap.newTeam(capOwner.cookie);
+    pat = await cap.joinTeam(capOwner.cookie, team.id);
+    twinA = await cap.joinTeam(capOwner.cookie, team.id);
+    twinB = await cap.joinTeam(capOwner.cookie, team.id);
+    // members name themselves: two members share one display name, so a bare name must never pick one of them
+    const names: [Account, string][] = [[pat, 'Pat Bulk'], [twinA, 'Sam Twin'], [twinB, 'Sam Twin']];
+    for (const [account, name] of names) {
+      const renamed = await cap.api(account.cookie, 'PATCH', '/api/me', { name });
+      if (renamed.status !== 200) throw new Error(`could not name a member (${renamed.status})`);
+    }
+  });
+
+  afterAll(async () => {
+    await cap.cleanup();
+  });
+
+  // each test's tokens are revoked afterwards: a workspace owner has at most 20 active tokens
+  const minted: string[] = [];
+  afterEach(async () => {
+    for (const id of minted.splice(0)) await cap.api(capOwner.cookie, 'DELETE', `/api/me/tokens/${id}`);
+  });
+
+  async function tokenFor(name: string, tracker: 'read' | 'write' = 'write') {
+    const made = await cap.api(capOwner.cookie, 'POST', '/api/me/tokens', { name, scope: 'read', tracker });
+    expect(made.status).toBe(201);
+    minted.push(made.body.id as string);
+    return { id: made.body.id as string, token: made.body.token as string };
+  }
+
+  // made over the REST API, so creating them spends none of the token's MCP budgets
+  async function ticketsFor(count: number, label: string) {
+    const keys: string[] = [];
+    for (let i = 1; i <= count; i++) {
+      const made = await cap.api(capOwner.cookie, 'POST', '/api/tracker/tickets', { title: `${label} ${i}`, idempotencyKey: `${label.replace(/\W/g, '-').toLowerCase()}-${i}-key` });
+      expect(made.status).toBe(201);
+      keys.push(made.body.ticket.key as string);
+    }
+    return keys;
+  }
+
+  async function snapshot(token: string, keys: string[]) {
+    const tickets: Body[] = [];
+    for (const key of keys) tickets.push((await cap.tool(token, 'get_ticket', { key })).data.ticket);
+    return tickets;
+  }
+
+  async function ticketOf(token: string, key: string) {
+    return (await snapshot(token, [key]))[0];
+  }
+
+  function eventsOf(key: string): Body[] {
+    const db = new DatabaseSync(path.join(cap.dir, 'directory.sqlite'));
+    try {
+      const ticketId = (db.prepare('SELECT id FROM tickets WHERE key = ?').get(key) as Body).id;
+      return db.prepare('SELECT event_type, actor_type, actor_id, details_json FROM ticket_events WHERE ticket_id = ? ORDER BY id').all(ticketId) as Body[];
+    } finally {
+      db.close();
+    }
+  }
+
+  function bulkAuditRows(tokenId: string): Body[] {
+    const db = new DatabaseSync(path.join(cap.dir, 'directory.sqlite'));
+    try {
+      return db.prepare("SELECT detail FROM audit WHERE action = 'mcp.update_tickets' ORDER BY id").all()
+        .map((row) => JSON.parse(String(row.detail)))
+        .filter((detail) => detail.tokenId === tokenId);
+    } finally {
+      db.close();
+    }
+  }
+
+  function notificationsFor(userId: string): Body[] {
+    const db = new DatabaseSync(path.join(cap.dir, 'directory.sqlite'));
+    try {
+      return db.prepare('SELECT kind, dedupe_key, ticket_id FROM notifications WHERE user_id = ?').all(userId) as Body[];
+    } finally {
+      db.close();
+    }
+  }
+
+  const labelNames = (ticket: Body): string[] => ticket.labels.map((label: Body) => label.name as string).sort();
+
+  it('a bulk of two sets the priority and the assignee on both, with one batch id on their events, one audit row and one notice', async () => {
+    const [a, b] = await ticketsFor(2, 'Bulk pair');
+    const bot = await tokenFor('Bulk pair bot');
+    const res = await cap.tool(bot.token, 'update_tickets', { keys: [a, b], patch: { priority: 'urgent', assignee: 'Pat Bulk' } });
+    expect(res.error).toBeUndefined();
+    expect(res.data.count).toBe(2);
+    expect(res.data.batchId).toMatch(/^bulk_[A-Za-z0-9_-]{12}$/);
+    expect(res.data.tickets.map((ticket: Body) => ticket.key).sort()).toEqual([a, b].sort());
+    for (const ticket of res.data.tickets) {
+      expect(ticket.priority).toBe('urgent');
+      expect(ticket.assignee).toEqual({ userId: pat.user.id, name: 'Pat Bulk' });
+    }
+    for (const key of [a, b]) {
+      const updated = eventsOf(key).filter((event) => event.event_type === 'updated');
+      expect(updated).toHaveLength(1);
+      expect(updated[0]).toMatchObject({ actor_type: 'mcp_token', actor_id: bot.id });
+      expect(JSON.parse(String(updated[0].details_json))).toMatchObject({ batchId: res.data.batchId });
+    }
+    expect(bulkAuditRows(bot.id)).toEqual([expect.objectContaining({ room: 'tracker', count: 2 })]);
+    // the new assignee hears once for the batch, not once per ticket
+    expect(notificationsFor(pat.user.id).filter((row) => row.dedupe_key === `batch:${res.data.batchId}`))
+      .toEqual([expect.objectContaining({ kind: 'assigned' })]);
+  });
+
+  it('gives the new assignee one notice for a bulk that both assigns and moves the tickets', async () => {
+    const [a, b] = await ticketsFor(2, 'Assign and move');
+    const bot = await tokenFor('Assign and move bot');
+    const res = await cap.tool(bot.token, 'update_tickets', { keys: [a, b], patch: { assignee: 'Pat Bulk', state: 'In progress' } });
+    expect(res.error).toBeUndefined();
+    // each ticket also reports the move to its subscribers, and the assignee is one of them: still one notice
+    expect(notificationsFor(pat.user.id).filter((row) => row.dedupe_key === `batch:${res.data.batchId}`))
+      .toEqual([expect.objectContaining({ kind: 'assigned' })]);
+    expect(eventsOf(a).filter((event) => event.event_type === 'transitioned')).toHaveLength(1);
+  });
+
+  it('shares the update budget with single calls: a bulk of two leaves one, and transitions keep their own budget', async () => {
+    const [a, b, c] = await ticketsFor(3, 'Shared budget');
+    const bot = await tokenFor('Shared budget bot');
+    expect((await cap.tool(bot.token, 'update_tickets', { keys: [a, b], patch: { priority: 'high' } })).error).toBeUndefined();
+    expect((await cap.tool(bot.token, 'update_ticket', { key: c, title: 'Shared 1' })).error).toBeUndefined();
+    expectRateLimited(await cap.call(bot.token, 'tools/call', { name: 'update_ticket', arguments: { key: c, title: 'Shared 2' } }));
+    expectRateLimited(await cap.call(bot.token, 'tools/call', { name: 'update_tickets', arguments: { keys: [a], patch: { priority: 'low' } } }));
+    expect((await cap.tool(bot.token, 'transition_ticket', { key: a, state: 'In progress' })).error).toBeUndefined();
+  });
+
+  it('refuses a bulk larger than the budget left as a whole, and the refusal changes and spends nothing', async () => {
+    const keys = await ticketsFor(4, 'Too many');
+    const bot = await tokenFor('Too many bot');
+    const before = await snapshot(bot.token, keys);
+    const countsBefore = ticketCounts(cap.dir);
+    expectRateLimited(await cap.call(bot.token, 'tools/call', { name: 'update_tickets', arguments: { keys, patch: { priority: 'urgent' } } }));
+    expect(ticketCounts(cap.dir)).toEqual(countsBefore);
+    expect(await snapshot(bot.token, keys)).toEqual(before);
+    // one mcp.limit row for the refused update budget, the same row a single update_ticket refusal writes
+    expect(limitAuditRows(cap.dir, bot.id)).toEqual([expect.objectContaining({ tool: 'update_ticket', cap: 3, window: 'hour' })]);
+    // the three the budget holds are all still there for single calls
+    for (let i = 1; i <= 3; i++) expect((await cap.tool(bot.token, 'update_ticket', { key: keys[0], title: `Too many ${i}` })).error).toBeUndefined();
+  });
+
+  it('refuses a bulk the per-minute writes cannot cover, and the hourly budget keeps its room', async () => {
+    const [a, b, c] = await ticketsFor(3, 'Per minute');
+    const bot = await tokenFor('Per minute bot');
+    // labels have no hourly cap of their own, so 28 of the 30 writes a minute can go on them
+    for (let i = 1; i <= 28; i++) expect((await cap.tool(bot.token, 'create_ticket_label', { name: `Minute ${i}` })).error).toBeUndefined();
+    const countsBefore = ticketCounts(cap.dir);
+    expectRateLimited(await cap.call(bot.token, 'tools/call', { name: 'update_tickets', arguments: { keys: [a, b, c], patch: { priority: 'high' } } }));
+    expect(ticketCounts(cap.dir)).toEqual(countsBefore);
+    // two writes are left and the refusal took neither, so a bulk of two fits
+    expect((await cap.tool(bot.token, 'update_tickets', { keys: [a, b], patch: { priority: 'high' } })).error).toBeUndefined();
+  });
+
+  it('is all or nothing: one unknown key among three leaves all three unchanged, and answers as a single call does', async () => {
+    const [a, b] = await ticketsFor(2, 'All or nothing');
+    const bot = await tokenFor('All or nothing bot');
+    const before = await snapshot(bot.token, [a, b]);
+    const countsBefore = ticketCounts(cap.dir);
+    const res = await cap.tool(bot.token, 'update_tickets', { keys: [a, 'TAB-999999', b], patch: { priority: 'urgent' } });
+    expect(res.error).toBe('not_found');
+    expect(res.data).toMatchObject({ path: 'keys[1]' });
+    const other = await tokenFor('All or nothing single');
+    const single = await cap.tool(other.token, 'update_ticket', { key: 'TAB-999999', title: 'Nobody' });
+    expect(res.data.message).toBe(single.data.message);
+    expect(ticketCounts(cap.dir)).toEqual(countsBefore);
+    expect(await snapshot(bot.token, [a, b])).toEqual(before);
+  });
+
+  it('names the key in every other refusal of one of its tickets', async () => {
+    const [a, b] = await ticketsFor(2, 'Naming');
+    const bot = await tokenFor('Naming bot');
+    const res = await cap.tool(bot.token, 'update_tickets', { keys: [a, b], patch: { state: 'No such state' } });
+    expect(res.error).toBe('invalid_input');
+    expect(res.data).toMatchObject({ message: `${a}: No active workflow state matches this name or key`, path: 'state' });
+  });
+
+  it('refuses archiving in bulk without changing anything, and restores archived tickets in bulk', async () => {
+    const [a, b] = await ticketsFor(2, 'Archive bulk');
+    const archiver = await tokenFor('Archive bulk archiver');
+    for (const key of [a, b]) expect((await cap.tool(archiver.token, 'update_ticket', { key, archived: true })).error).toBeUndefined();
+    const bot = await tokenFor('Archive bulk bot');
+    const countsBefore = ticketCounts(cap.dir);
+    const refused = await cap.tool(bot.token, 'update_tickets', { keys: [a, b], patch: { archived: true } });
+    expect(refused.error).toBe('forbidden');
+    expect(refused.data.message).toBe('Bulk changes cannot archive tickets; archive them one at a time.');
+    expect(ticketCounts(cap.dir)).toEqual(countsBefore);
+    expect((await ticketOf(bot.token, a)).archivedAt).not.toBeNull();
+    const restored = await cap.tool(bot.token, 'update_tickets', { keys: [a, b], patch: { archived: false } });
+    expect(restored.error).toBeUndefined();
+    expect(restored.data.tickets.map((ticket: Body) => ticket.archivedAt)).toEqual([null, null]);
+    expect(eventsOf(a).map((event) => event.event_type)).toEqual(['created', 'archived', 'restored']);
+  });
+
+  it('refuses every malformed bulk call before anything is counted, so three valid tickets still fit afterwards', async () => {
+    const [a, b, c] = await ticketsFor(3, 'Refusals');
+    const bot = await tokenFor('Refusals bot');
+    const refusals: [Record<string, unknown>, string][] = [
+      [{ keys: [a, a], patch: { priority: 'low' } }, 'keys[1]'],
+      [{ keys: [a, a.toLowerCase()], patch: { priority: 'low' } }, 'keys[1]'],
+      [{ keys: Array.from({ length: 26 }, (_, index) => `TAB-${index + 1}`), patch: { priority: 'low' } }, 'keys'],
+      [{ keys: [], patch: { priority: 'low' } }, 'keys'],
+      [{ keys: [a], patch: {} }, 'patch'],
+      [{ keys: [a], patch: { title: 'Renamed' } }, 'patch.title'],
+      [{ keys: [a], patch: { description: 'Text' } }, 'patch.description'],
+      [{ keys: [a], patch: { parent: b } }, 'patch.parent'],
+      [{ keys: [a], patch: { ifUpdatedSeq: 1 } }, 'patch.ifUpdatedSeq'],
+      [{ keys: [a], patch: { labels: ['bulk-a'] } }, 'patch.labels'],
+      [{ keys: [a], patch: { archived: 'yes' } }, 'patch.archived'],
+      [{ keys: [a], patch: { priority: 'critical' } }, 'patch.priority'],
+    ];
+    for (const [args, path] of refusals) {
+      const res = await cap.tool(bot.token, 'update_tickets', args);
+      expect(res.error).toBe('invalid_input');
+      expect(res.data.path).toBe(path);
+    }
+    const archived = await cap.tool(bot.token, 'update_tickets', { keys: [a], patch: { archived: true } });
+    expect(archived.error).toBe('forbidden');
+    // none of them spent the hourly budget or a write: a bulk of all three still fits
+    expect((await cap.tool(bot.token, 'update_tickets', { keys: [a, b, c], patch: { priority: 'high' } })).error).toBeUndefined();
+  });
+
+  it('moves every ticket of a bulk to a state and spends only the transition budget, and refuses an archived ticket for the whole list', async () => {
+    const [a, b, c] = await ticketsFor(3, 'State bulk');
+    const archiver = await tokenFor('State bulk archiver');
+    expect((await cap.tool(archiver.token, 'update_ticket', { key: c, archived: true })).error).toBeUndefined();
+    const mover = await tokenFor('State bulk mover');
+    const before = (await ticketOf(mover.token, a)).state.name;
+    const conflict = await cap.tool(mover.token, 'update_tickets', { keys: [a, c], patch: { state: 'In progress' } });
+    expect(conflict.error).toBe('conflict');
+    expect(conflict.data.message).toBe(`${c}: Archived tickets cannot be transitioned`);
+    expect((await ticketOf(mover.token, a)).state.name).toBe(before);
+    const moved = await cap.tool(mover.token, 'update_tickets', { keys: [a], patch: { state: 'In review' } });
+    expect(moved.error).toBeUndefined();
+    expect(moved.data.tickets[0].state.name).toBe('In review');
+    const transitioned = eventsOf(a).filter((event) => event.event_type === 'transitioned');
+    expect(transitioned.map((event) => JSON.parse(String(event.details_json)).batchId)).toEqual([moved.data.batchId]);
+    // the conflict and the move spent two and one of the three transitions; no update was charged for a state-only bulk
+    expectRateLimited(await cap.call(mover.token, 'tools/call', { name: 'transition_ticket', arguments: { key: b, state: 'Done' } }));
+    expect((await cap.tool(mover.token, 'update_ticket', { key: b, title: 'Still editable' })).error).toBeUndefined();
+  });
+
+  it('adds and removes labels without wiping the others, and matches a removed name without case', async () => {
+    const [a] = await ticketsFor(1, 'Labels');
+    const bot = await tokenFor('Labels bot');
+    for (const name of ['bulk-a', 'bulk-b', 'bulk-c']) expect((await cap.tool(bot.token, 'create_ticket_label', { name })).error).toBeUndefined();
+    expect((await cap.tool(bot.token, 'update_ticket', { key: a, labels: ['bulk-a', 'bulk-b'] })).error).toBeUndefined();
+    expect((await cap.tool(bot.token, 'update_tickets', { keys: [a], patch: { addLabels: ['bulk-c'] } })).error).toBeUndefined();
+    expect(labelNames(await ticketOf(bot.token, a))).toEqual(['bulk-a', 'bulk-b', 'bulk-c']);
+    expect((await cap.tool(bot.token, 'update_tickets', { keys: [a], patch: { removeLabels: ['BULK-A'] } })).error).toBeUndefined();
+    expect(labelNames(await ticketOf(bot.token, a))).toEqual(['bulk-b', 'bulk-c']);
+
+    const other = await tokenFor('Unknown label bot');
+    const unknown = await cap.tool(other.token, 'update_tickets', { keys: [a], patch: { addLabels: ['Nope'] } });
+    expect(unknown.error).toBe('invalid_input');
+    expect(unknown.data.message).toBe(`${a}: Unknown label: Nope`);
+  });
+
+  it('refuses a name two members share, never guesses one, and takes the same member by email', async () => {
+    const [a] = await ticketsFor(1, 'Assignee');
+    const bot = await tokenFor('Assignee bot');
+    const ambiguous = await cap.tool(bot.token, 'update_tickets', { keys: [a], patch: { assignee: 'Sam Twin' } });
+    expect(ambiguous.error).toBe('invalid_input');
+    expect(ambiguous.data.message).toBe(`${a}: Member name is ambiguous; use an email address`);
+    expect((await ticketOf(bot.token, a)).assignee).toBeNull();
+    const single = await cap.tool(bot.token, 'update_ticket', { key: a, assignee: 'Sam Twin' });
+    expect(single.data.message).toBe('Member name is ambiguous; use an email address');
+    const byEmail = await cap.tool(bot.token, 'update_tickets', { keys: [a], patch: { assignee: twinB.email } });
+    expect(byEmail.error).toBeUndefined();
+    expect(byEmail.data.tickets[0].assignee).toEqual({ userId: twinB.user.id, name: 'Sam Twin' });
   });
 });
 

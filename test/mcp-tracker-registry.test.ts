@@ -17,7 +17,9 @@ const TRACKER_TOOLS: Record<string, Kind> = {
   list_saved_views: 'read', get_saved_view: 'read', list_projects: 'read', list_milestones: 'read',
   create_ticket: 'create', create_ticket_label: 'create', create_saved_view: 'create', create_project: 'create', create_milestone: 'create',
   // 'change' tools edit or add; none of them removes a row. `archived` is the only way to hide something and it is a reversible flag.
-  update_ticket: 'change', transition_ticket: 'change', comment_ticket: 'change', update_saved_view: 'change', update_project: 'change', update_milestone: 'change',
+  update_ticket: 'change', update_tickets: 'change', transition_ticket: 'change', comment_ticket: 'change', update_saved_view: 'change', update_project: 'change', update_milestone: 'change',
+  // update_tickets is the only bulk form: up to 25 tickets, all or nothing. Its patch has no title, description, parent or ifUpdatedSeq
+  // and refuses `archived: true` (tested below), so one call cannot hide a backlog.
   // relate_tickets can remove a link: a hard DELETE of one relation row, which carries no content of its own. It counts as reversible
   // only because the 'unrelated' event keeps both ticket keys and the kind (tested), so a person can add the link again. A tool
   // that deletes a row with real content must not use this label. It is also in the hourly cap set and has no bulk form.
@@ -75,6 +77,23 @@ describe('the tracker tools an AI token gets', () => {
     const withArchived = tracker.filter((tool) => tool.inputSchema?.properties && Object.hasOwn(tool.inputSchema.properties, 'archived'));
     expect(withArchived.map((tool) => tool.name).sort()).toEqual(['update_milestone', 'update_project', 'update_ticket']);
     for (const tool of withArchived) expect(tool.inputSchema.properties.archived).toEqual({ type: 'boolean' });
+  });
+
+  it('give the bulk tool a patch that cannot archive or edit text, parents or sequence guards', () => {
+    const bulk = tracker.find((tool) => tool.name === 'update_tickets');
+    expect(Object.keys(bulk?.inputSchema.properties).sort()).toEqual(['keys', 'patch']);
+    const patch = bulk?.inputSchema.properties.patch.properties;
+    for (const field of ['title', 'description', 'parent', 'ifUpdatedSeq']) expect(Object.keys(patch)).not.toContain(field);
+    expect(patch.archived).toEqual({ type: 'boolean' });
+    expect(bulk?.inputSchema.properties.keys).toMatchObject({ maxItems: 25, items: { maxLength: 128 } });
+  });
+
+  it('refuses archiving in bulk at runtime, and archives nothing', async () => {
+    const made = await h.tool(writeToken, 'create_ticket', { title: 'Registry bulk archive', idempotencyKey: 'registry-bulk-archive' });
+    const key = made.data.ticket.key as string;
+    const refused = await h.tool(writeToken, 'update_tickets', { keys: [key], patch: { archived: true } });
+    expect(refused.error).toBe('forbidden');
+    expect((await h.tool(writeToken, 'get_ticket', { key })).data.ticket.archivedAt).toBeNull();
   });
 });
 
