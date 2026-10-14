@@ -836,7 +836,10 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const wasEmpty = elementEmpty;
     elementEmpty = elementMode && !cache.loading && tickets.length === 0 && state.tab === 'all' && !filterActive && !elementView();
     if (elementMode && wasEmpty !== elementEmpty) updateActions(); // the header's New ticket comes and goes with the empty state
-    const columns: Column[] = elementMode ? elementColumns(peekAllowed() && state.ticketKey ? Math.round(layoutWidth * 0.48) : layoutWidth) : visibleColumns(layoutWidth, state.columns);
+    // with a ticket open the list is one half of the split (its share of the width, as the peek layout CSS sets it), so its columns fit that half (TAB-357)
+    const listShare = peekAllowed() && state.ticketKey ? (elementMode ? 0.48 : 0.6) : 1;
+    const listWidth = Math.round(layoutWidth * listShare);
+    const columns: Column[] = elementMode ? elementColumns(listWidth) : visibleColumns(listWidth, state.columns);
     if (elementMode && !cache.loading && tickets.length === 0) {
       listRenderHost.replaceChildren(h('div', { class: 'trk-element-empty' },
         h('h2', null, state.tab === 'my' ? (state.mySubtab === 'active' ? 'Nothing assigned to you.' : 'Nothing created by you yet.') : 'No tickets yet'),

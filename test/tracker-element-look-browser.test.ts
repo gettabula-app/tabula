@@ -240,6 +240,42 @@ describe.skipIf(!available)('tracker element look in a real browser', { timeout:
     }
   });
 
+  it('keeps the element list inside its width at 390, 768 and 1280 with long titles and Load more showing, and the titles still ellipsis', async () => {
+    const { page, close } = await openElementPage();
+    try {
+      // more tickets than one page (the list asks for 50), so Load more sits at the foot of the list; every title is long
+      await page.evaluate(() => {
+        const seed = (window as any).__elementSeed;
+        const first = seed.tickets[0];
+        seed.tickets = Array.from({ length: 120 }, (_, i) => ({ ...first, id: `look-${i}`, key: `TAB-${9000 + i}`, title: `A long ticket title that needs an ellipsis, number ${i}. ${'More words in the title. '.repeat(30)}` }));
+      });
+      for (const width of [390, 768, 1280] as const) {
+        await mountAt(page, width);
+        await page.locator('.trk.trk-element .trk-load-more').waitFor();
+        const measured = await page.evaluate(() => {
+          const host = document.querySelector<HTMLElement>('.trk.trk-element .trk-list-host')!;
+          const more = document.querySelector<HTMLElement>('.trk.trk-element .trk-load-more')!;
+          const title = document.querySelector<HTMLElement>('.trk.trk-element .trk-title-link')!;
+          return {
+            scrollWidth: host.scrollWidth,
+            clientWidth: host.clientWidth,
+            moreShown: more.getClientRects().length > 0,
+            moreRight: more.getBoundingClientRect().right - host.getBoundingClientRect().left,
+            titleOverflow: getComputedStyle(title).textOverflow,
+            titleClipped: title.scrollWidth > title.clientWidth,
+          };
+        });
+        expect(measured.moreShown, `Load more shows at ${width}`).toBe(true);
+        expect(measured.scrollWidth, `list scroll width at ${width}`).toBeLessThanOrEqual(measured.clientWidth);
+        expect(measured.moreRight, `Load more inside the list at ${width}`).toBeLessThanOrEqual(measured.clientWidth + 0.5);
+        expect(measured.titleOverflow, `title ellipsis at ${width}`).toBe('ellipsis');
+        expect(measured.titleClipped, `long title is cut at ${width}`).toBe(true);
+      }
+    } finally {
+      await close();
+    }
+  });
+
   it('the board frame has no separate Open full screen text button; the element header has the icon button', async () => {
     const context = await browser!.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();

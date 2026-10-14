@@ -717,14 +717,21 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
   }
   function relationRow(relation: { kind: TrackerRelationKind; key: string }): HTMLElement {
     const target = opts.store.ticket(relation.key).ticket;
+    const kind = RELATION_LABELS[relation.kind];
     const row = h('div', { class: 'tk-relation-row' });
-    const link = button(`${relation.key} · ${RELATION_LABELS[relation.kind]}`, 'tk-ticket-link', false, (event) => {
+    // the visible row shows the kind, the key once (the chip), the state and the title; the name says the kind and the key
+    const link = button(`Open ${relation.key}, ${kind.toLocaleLowerCase()}`, 'tk-ticket-link', false, (event) => {
       event.preventDefault(); opts.onNavigate(relation.key);
-    });
-    link.append(keyChip(relation.key));
-    if (target) link.append(stateGlyph(target.state.category, target.state.key), h('span', { class: 'tk-list-title' }, target.title));
+    }, `relation-link:${relation.kind}:${relation.key}`);
+    link.replaceChildren(
+      h('span', { class: 'tk-relation-kind' }, kind),
+      keyChip(relation.key),
+      ...(target ? [stateGlyph(target.state.category, target.state.key), h('span', { class: 'tk-list-title' }, target.title)] : []),
+    );
     row.append(link);
-    row.append(describeDisabled(button(`Remove ${RELATION_LABELS[relation.kind].toLocaleLowerCase()} relation to ${relation.key}`, 'tk-remove-relation', !canWrite(), () => removeRelation(relation)), !canWrite()));
+    const remove = button(`Remove relation to ${relation.key}`, 'tk-remove-relation', !canWrite(), () => removeRelation(relation), `relation-remove:${relation.kind}:${relation.key}`);
+    remove.replaceChildren(h('span', { 'aria-hidden': 'true' }, '×'));
+    row.append(describeDisabled(remove, !canWrite()));
     return row;
   }
 

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { TrackerError, createHttpTrackerApi, createTrackerStore, type TrackerEvent, type TrackerMeta, type TrackerTicket } from '../src/tracker-data';
 import { createMockTrackerApi } from '../src/tracker-mock';
 import { describeEvent } from '../src/tracker/ui/ticket-events';
@@ -523,6 +524,37 @@ describe('ticket page', () => {
     expect(buttonByText(host, '+ Add relation')).toBeDefined();
     expect(host.querySelector('.tk-linked-work-section')).toBeNull();
     expect(host.querySelector('.tk-linked-cards-section')).toBeNull();
+  });
+
+  it('names each relation row by its kind, shows the key once, and labels its remove button by key for all five kinds', async () => {
+    const kinds = [
+      { kind: 'blocks', label: 'Blocks' },
+      { kind: 'blocked_by', label: 'Blocked by' },
+      { kind: 'relates_to', label: 'Related to' },
+      { kind: 'duplicates', label: 'Duplicate of' },
+      { kind: 'duplicated_by', label: 'Duplicates' },
+    ] as const;
+    const relations = kinds.map(({ kind }, i) => ({ kind, key: `TAB-${i + 2}` }));
+    const issue = ticket({ relations });
+    const targets = relations.map(({ key }, i) => ticket({ id: `target-${i}`, key, title: `Linked work ${i + 1}` }));
+    const api = createMockTrackerApi({ meta: META, tickets: [issue, ...targets], now: () => NOW });
+    const { host } = await setup({ issue, api });
+    for (const [i, { kind, label }] of kinds.entries()) {
+      const { key } = relations[i];
+      const link = host.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Open ${key}, ${label.toLocaleLowerCase()}`);
+      expect(link, `link named for ${kind}`).toBeDefined();
+      const row = link!.parentNode as FakeElement;
+      expect(row.getAttribute('class')).toBe('tk-relation-row');
+      // the key is shown once in the row (the chip), not again in a label beside it
+      expect(row.textContent.split(key), `key once in the ${kind} row`).toHaveLength(2);
+      expect(link!.querySelector('.tk-relation-kind')?.textContent).toBe(label);
+      const remove = row.querySelectorAll('button').find((b) => b.getAttribute('aria-label') === `Remove relation to ${key}`);
+      expect(remove, `remove named for ${kind}`).toBeDefined();
+      expect(remove!.textContent).toBe('×');
+    }
+    // the key chip never breaks across lines (TAB- / 250)
+    const css = readFileSync(new URL('../src/tracker/ui/ticket-page.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.trk\.tk-page \.tk-relation-row \.trk-key-chip \{[^}]*white-space: nowrap;/);
   });
 
   it('creates one sub-issue in the default state even when Create is pressed twice', async () => {

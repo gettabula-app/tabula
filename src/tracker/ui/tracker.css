@@ -302,7 +302,8 @@
 .trk-ticket-stub p { margin: 0; }
 .trk-ticket-back { min-height: 40px; padding: 0 10px; border: 1px solid var(--trk-rule); border-radius: var(--radius-sm, 8px); background: transparent; color: var(--ink); }
 .trk-peek-layout { display: grid; flex: 1 1 auto; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1.2fr) minmax(340px, .8fr); }
-.trk-peek-list { display: flex; min-width: 0; min-height: 0; overflow: hidden; }
+/* TAB-357: the title takes what the split leaves (no 220px floor), so the columns that fit the half never push the time out of view */
+.trk-peek-list { display: flex; min-width: 0; min-height: 0; overflow: hidden; --trk-title-width: minmax(0, 1fr); }
 .trk-peek-list > .trk-all-issues { min-width: 0; }
 .trk-peek-panel { min-width: 0; min-height: 0; overflow: auto; border-left: 1px solid var(--trk-rule); background: var(--trk-ground); }
 .trk-ticket-page-host { display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; }
@@ -716,7 +717,8 @@
 .trk.trk-element .trk-list-error > span { color: var(--danger); }
 .trk.trk-element .trk-list-error .trk-small-button { height: 30px; min-height: 30px; padding: 0 8px; border: 0; background: transparent; color: var(--graphite); }
 .trk.trk-element .trk-list-error .trk-small-button:hover { background: var(--tray-hover); }
-.trk.trk-element .trk-load-more { margin: 8px 14px; }
+/* TAB-356: width:100% plus 14px side margins pushed the button 28px past the list and gave it a horizontal scrollbar */
+.trk.trk-element .trk-load-more { width: calc(100% - 28px); margin: 8px 14px; }
 @media (pointer: coarse) {
   .trk.trk-element .trk-element-header { height: auto; min-height: 44px; padding-block: 4px; }
   .trk.trk-element .trk-primary-button, .trk.trk-element .trk-element-back, .trk.trk-element .trk-element-expand,

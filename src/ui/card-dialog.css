@@ -103,6 +103,8 @@
 }
 .k-swatch[aria-checked='true'] { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .k-label-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin-top: 16px; }
+/* TAB-353: the palette row sits 12px under the add row; the modal's own `.modal .field { margin-top: 0 }` closed that gap */
+.k-labels-dialog .k-label-add + .field { margin-top: 12px; }
 .k-label-count { margin-top: 8px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
 
 @media (max-width: 860px) {

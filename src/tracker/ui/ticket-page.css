@@ -180,6 +180,10 @@
 .trk.tk-page .tk-subissue-editor .tk-inline-input { flex: 1 1 200px; }
 .trk.tk-page .tk-relations-section .tk-section-head { justify-content: flex-start; }
 .trk.tk-page .tk-relation-row { justify-content: space-between; }
+/* TAB-357: the kind label is small and muted; the key chip never breaks (TAB- / 250); the title takes the free width and ellipses */
+.trk.tk-page .tk-relation-kind { flex: none; color: var(--trk-muted); font-size: 12px; white-space: nowrap; }
+.trk.tk-page .tk-relation-row .trk-key-chip { flex: none; white-space: nowrap; }
+.trk.tk-page .tk-relation-row .tk-list-title { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--trk-text); text-overflow: ellipsis; white-space: nowrap; }
 .trk.tk-page .tk-ticket-link { min-height: 32px; flex: 1; padding: 4px 6px; }
 .trk.tk-page .tk-remove-relation { min-width: 28px; min-height: 28px; border: 0; border-radius: var(--radius-sm, 8px); background: transparent; color: var(--trk-muted); cursor: pointer; }
 .trk.tk-page .tk-relation-search { display: grid; gap: 6px; margin-top: 8px; }
