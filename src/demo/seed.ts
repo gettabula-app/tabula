@@ -63,7 +63,7 @@ function base(
 }
 
 function frame(id: string, name: string, x: number, y: number, w: number, h: number, createdBy: string, fill: string): BaseObj {
-  return base(id, 'frame', x, y, w, h, createdBy, { name, fill, font: 'cabinet-grotesk' });
+  return base(id, 'frame', x, y, w, h, createdBy, { name, fill, font: 'gambetta' });
 }
 
 function sticky(
@@ -145,17 +145,17 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
 
   objects.push(
     base('demo-title', 'text', 40, 25, phone ? 300 : 1030, phone ? 45 : 55, me, {
-      text: 'A board to play with', font: 'cabinet-grotesk', fontSize: phone ? 30 : 40, fontWeight: 700,
-      textColor: '#18212B', align: 'left', valign: 'middle',
+      text: 'A board to play with', font: 'gambetta', fontSize: phone ? 30 : 40, fontWeight: 500,
+      textColor: 'var(--canvas-ink, #18212B)', align: 'left', valign: 'middle',
     }),
     base('demo-instructions', 'text', 40, phone ? 76 : 96, phone ? 300 : 1080, phone ? 30 : 38, me, {
       text: phone ? 'Tap a note to edit it. Drag to move it.' : 'Try it: click, drag, double-click, Cmd/Ctrl+G to group, place a dot, then Esc.',
-      fontSize: phone ? 15 : 17, fontWeight: 400, textColor: '#5B6672', align: 'left', valign: 'middle',
+      fontSize: phone ? 15 : 17, fontWeight: 400, textColor: 'var(--graphite, #5B6672)', align: 'left', valign: 'middle',
     }),
-    frame(wellId, 'What went well', 40, frameY, introFrameWidth, introFrameHeight, me, '#FFF8D7'),
-    frame(improveId, 'To improve', phone ? 40 : 680, improveFrameY, improveFrameWidth, improveFrameHeight, me, '#F6F1FF'),
-    frame(flowId, 'A tiny flow', 40, flowY, phone ? 300 : 1110, flowHeight, me, '#F5F8FC'),
-    frame(toolkitId, 'More to try', 40, toolkitY(990), 400, 650, me, '#F7F8FA'),
+    frame(wellId, 'What went well', 40, frameY, introFrameWidth, introFrameHeight, me, 'var(--paper, #FFFFFF)'),
+    frame(improveId, 'To improve', phone ? 40 : 680, improveFrameY, improveFrameWidth, improveFrameHeight, me, 'var(--paper, #FFFFFF)'),
+    frame(flowId, 'A tiny flow', 40, flowY, phone ? 300 : 1110, flowHeight, me, 'var(--paper, #FFFFFF)'),
+    frame(toolkitId, 'More to try', 40, toolkitY(990), 400, 650, me, 'var(--paper, #FFFFFF)'),
   );
 
   const wellNotes = [
@@ -225,8 +225,8 @@ function makeObjects(app: BoardApp): { objects: Obj[]; labels: { id: string; nam
     }));
   });
   objects.push(base('demo-font-example', 'text', 70, toolkitY(1335), 330, 48, me, {
-    parent: toolkitId, text: 'A bigger headline', font: 'cabinet-grotesk', fontSize: 28, fontWeight: 700,
-    textColor: '#18212B', align: 'left', valign: 'middle',
+    parent: toolkitId, text: 'A bigger headline', font: 'gambetta', fontSize: 28, fontWeight: 500,
+    textColor: 'var(--canvas-ink, #18212B)', align: 'left', valign: 'middle',
   }));
 
   const groupId = 'demo-crew';
