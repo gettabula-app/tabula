@@ -31,7 +31,7 @@ async function openBoard(width = 1280, height = 900, coarsePointer = false): Pro
     try {
       await page.goto(`${base}?debug`);
       await page.getByRole('button', { name: 'New board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
-      await page.locator('.rail-tool-group').waitFor({ timeout: 25_000 });
+      await page.locator('.rail-text-group').waitFor({ timeout: 25_000 });
       await page.locator('.empty-hint').waitFor();
       return page;
     } catch (error) {

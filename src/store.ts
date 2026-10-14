@@ -4,6 +4,7 @@ import { FEATURES, featureKey, isContainerType, layoutContainer, orphanHome, unk
 import type { BaseObj, BoardMeta, ConnectorObj, Group, Id, Label, Obj, Poll, PollAnswer, Rect, Step, Timer, Vote } from './types';
 import { SCHEMA_VERSION, isConnector } from './types';
 import { boxBounds, rectContains } from './geometry';
+import { lineFlag } from './line-geometry';
 import { descendantsOf as walkDescendants, frameOf as findFrame, isGroup, membersBounds } from './groups';
 import { cleanColor } from '../shared/colors';
 import { customStickyColors } from './palette';
@@ -534,7 +535,8 @@ export class Store {
         && k !== 'tracker'
         && (!checked(k) || cleanColor(v) !== null)
         && (!FLAG_FIELDS.has(k) || typeof v === 'boolean')
-        && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored))))
+        && (!BOX_FLAG_FIELDS.has(k) || (!isConnector(stored) && !isGroup(stored)))
+        && (k !== 'line' || (isConnector(stored) && lineFlag(stored))))
       .map(([k, v]): [string, unknown] => [k, checked(k) ? cleanColor(v) : v]);
     this.objects.set(o.id, new Y.Map(entries));
     if (isContainerType(o.type)) this.needFeature(FEATURES.containers);
@@ -578,6 +580,11 @@ export class Store {
         if (typeof value === 'number' && Number.isFinite(value) && value < min) { m.set(key, min); wroteField = true; }
       }
       if (m.get('rotation') !== 0) { m.set('rotation', 0); wroteField = true; }
+    }
+    // a line stops being one as soon as it is bound, or routed elbow or curved (line-geometry.ts): it is a plain connector again
+    if (m.get('type') === 'connector' && m.has('line') && !lineFlag({ line: m.get('line'), route: m.get('route'), from: m.get('from'), to: m.get('to') })) {
+      m.delete('line');
+      wroteField = true;
     }
     if (m.size && (!group || wroteField)) m.set('updatedAt', Date.now());
     const type = (patch as Record<string, unknown>).type;

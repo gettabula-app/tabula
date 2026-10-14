@@ -16,6 +16,7 @@ Each tool has a one-letter shortcut. Hover over a button, or move keyboard focus
 | `O` | Ellipse |
 | `D` | Diamond |
 | `L` or `X` | **Connector** (see [Connectors](connectors.md)) |
+| `Shift+L` | **Line** (see [Lines](lines.md)) |
 | `P` | **Pen** |
 | `F` | **Frame** |
 | `C` | **Comment** (see [Comments](comments.md)) |

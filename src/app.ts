@@ -42,6 +42,7 @@ import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
+import { LINE_HIT_PX, LINE_HIT_PX_COARSE, LINE_MIN_SCREEN_PX, axisLock, isLine, lineFlag, lineLabel, snapAngle } from './line-geometry';
 import { guestMark } from './ui/guest-mark';
 import { escapeAction } from './ui/escape-priority';
 import { watchCardHeights } from './card-height-heal';
@@ -57,6 +58,8 @@ import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 import { sanitizeImportedObjects, tableProblem } from './import-sanitize';
 import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from './tracker/linked-lane';
 
+/** A finger, not a mouse: the pointer that targets are sized for (handles and line hit areas grow). */
+const coarsePointer = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
 /** A link or a task box of a Markdown block under the pointer (src/markdown-svg.ts): the block's id, or null. */
 const markdownTargetOf = (target: EventTarget | null): string | null => {
@@ -89,6 +92,7 @@ export type Tool =
   | { kind: 'table' }
   | { kind: 'shape'; shape: ShapeKind }
   | { kind: 'connector'; relation?: UmlRelation }
+  | { kind: 'line' }
   | { kind: 'pen' }
   | { kind: 'frame' }
   | { kind: 'kanban' }
@@ -103,6 +107,8 @@ type Drag =
   | { mode: 'marquee'; start: Point; base: Id[]; moved: boolean }
   | { mode: 'create'; start: Point; tool: Tool; guides?: GuideSession }
   | { mode: 'connect'; from: End; relation?: UmlRelation; moved: boolean }
+  // a line being drawn by a drag; `moved` once the pointer has gone far enough to be a drag, not a click
+  | { mode: 'line'; start: Point; moved: boolean }
   | { mode: 'endpoint'; id: Id; end: 'from' | 'to'; lock?: AxisLock; last?: Point; fix?: Point }
   | { mode: 'pen'; pts: Point[] }
   // cards dragged as a ghost: nothing is written until the drop (docs/kanban.md, Decisions 4)
@@ -661,6 +667,10 @@ export class BoardApp {
     const allowed = t.kind === 'select' || t.kind === 'hand' || (t.kind === 'comment' ? !this.comments.readOnly() : !this.readOnly);
     const next: Tool = allowed ? t : { kind: 'select' };
     this.cancelLongPress();
+    if (this.linePending) {
+      this.linePending = null;
+      this.r.setOverlay({ preview: '' });
+    }
     this.tool = next;
     this.r.root.dataset.tool = next.kind;
     this.r.setOverlay({ anchorsFor: null, anchorHot: null });
@@ -698,6 +708,14 @@ export class BoardApp {
       if (o.type === 'group') continue;
       if (effectiveLocked(o, (id) => this.store.get(id)) && !opts.locked) continue;
       if (opts.skip?.has(o.id)) continue;
+      // a line is reached within LINE_HIT_PX either side of it (wider on a coarse pointer), beyond its bounds too
+      if (isLine(o)) {
+        if (opts.connectors === false) continue;
+        const g = connectorGeom((id) => this.store.getPlaced(id), o, this.r.connectorLayout());
+        const reach = (coarsePointer() ? LINE_HIT_PX_COARSE : LINE_HIT_PX) / this.zoom;
+        if (g && distToPolyline(p, g.pts) <= reach) return o;
+        continue;
+      }
       const b = this.r.bounds(o);
       if (!b || p.x < b.x - tol * 3 || p.y < b.y - tol * 3 || p.x > b.x + b.w + tol * 3 || p.y > b.y + b.h + tol * 3) continue;
       if (isConnector(o)) {
@@ -962,7 +980,7 @@ export class BoardApp {
     }
 
     // Handles of the current selection (the comment tool never starts a drag)
-    const hh = this.tool.kind === 'comment' ? undefined : this.handleAt(p, e.pointerType === 'touch');
+    const hh = this.tool.kind === 'comment' || this.tool.kind === 'line' ? undefined : this.handleAt(p, e.pointerType === 'touch');
     if (hh) {
       const o = this.store.getPlaced(hh.id)!;
       if (hh.h === 'from' || hh.h === 'to') this.drag = { mode: 'endpoint', id: o.id, end: hh.h };
@@ -1049,6 +1067,17 @@ export class BoardApp {
         const hit = this.hit(p, { connectors: false, frames: false });
         const from: End = CONNECTABLE(hit) ? { kind: 'bound', id: hit.id, anchor: 'auto' } : { kind: 'free', ...this.snapPoint(p, e) };
         this.drag = { mode: 'connect', from, relation: t.relation, moved: false };
+        return;
+      }
+      case 'line': {
+        // the second click of click-then-click ends the line; a click that is too short to be a line changes nothing
+        if (this.linePending) {
+          const from = this.linePending;
+          const end = this.lineEnd(from, p, e);
+          if (this.finishLine(from, end)) this.linePending = null;
+          return;
+        }
+        this.drag = { mode: 'line', start: this.snapPoint(p, e), moved: false };
         return;
       }
       case 'comment': {
@@ -1802,6 +1831,10 @@ export class BoardApp {
     this.broadcastCursor(p);
     if (e.pointerType === 'touch' && this.isPinching()) return;
     const d = this.drag;
+    if (!d && this.tool.kind === 'line') {
+      if (this.linePending) this.previewLine(this.linePending, p, e);
+      return;
+    }
     if (!d) return this.updateHover(p);
 
     switch (d.mode) {
@@ -1842,6 +1875,12 @@ export class BoardApp {
         this.r.setOverlay({ preview: preview ? objectMarkup(preview, this.r.ctx) : '', guides });
         return;
       }
+      case 'line': {
+        if (!d.moved && Math.hypot(p.x - d.start.x, p.y - d.start.y) * this.zoom < 3) return;
+        d.moved = true;
+        this.previewLine(d.start, p, e);
+        return;
+      }
       case 'connect': {
         d.moved = true;
         const target = this.hit(p, { connectors: false, frames: false });
@@ -1854,6 +1893,14 @@ export class BoardApp {
       case 'endpoint': {
         const c = this.store.get(d.id);
         if (!isConnector(c)) return;
+        // a line's ends are free: an end never binds to a shape, and Shift or Ctrl/Cmd constrain it (lineEnd)
+        if (lineFlag(c)) {
+          const far = d.end === 'from' ? c.to : c.from;
+          if (far.kind !== 'free') return;
+          const at = this.lineEnd({ x: far.x, y: far.y }, p, e);
+          this.queue(() => this.store.transact(() => this.store.update(c.id, { [d.end]: { kind: 'free', x: at.x, y: at.y } })));
+          return;
+        }
         const other = d.end === 'from' ? c.to : c.from;
         const otherId = other.kind === 'bound' ? other.id : null;
         const target = this.hit(p, { connectors: false, frames: false, skip: new Set([c.id]) });
@@ -2199,6 +2246,12 @@ export class BoardApp {
       case 'create':
         this.finishCreate(d, p, e);
         break;
+      case 'line': {
+        // a click (no drag) fixes the start: the second click ends the line; a drag ends it where the pointer is
+        if (!d.moved) { this.linePending = d.start; break; }
+        if (this.finishLine(d.start, this.lineEnd(d.start, p, e))) this.linePending = null;
+        break;
+      }
       case 'connect': {
         const target = this.hit(p, { connectors: false, frames: false });
         const fromId = d.from.kind === 'bound' ? d.from.id : null;
@@ -2265,6 +2318,48 @@ export class BoardApp {
     if (copy.type !== 'uml-class') this.editor.start(copy.id);
   }
 
+  /**
+   * Where a line's free end goes while the pointer is at `p` (the start is `start`): grid snapping as everywhere, Shift
+   * snaps the angle to 15 degree steps from `start`, and Ctrl/Cmd forces it horizontal or vertical (which wins over Shift).
+   */
+  private lineEnd(start: Point, p: Point, e: { altKey: boolean; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): Point {
+    if (e.ctrlKey || e.metaKey) return axisLock(start, this.snapPoint(p, e));
+    if (e.shiftKey) return snapAngle(start, p);
+    return this.snapPoint(p, e);
+  }
+
+  /** A line from `start` to `end` in the stored form (a connector with both ends free, see ConnectorObj.line). */
+  private lineObj(start: Point, end: Point): ConnectorObj {
+    return {
+      id: newId(), type: 'connector', z: this.store.topZ(),
+      from: { kind: 'free', x: start.x, y: start.y }, to: { kind: 'free', x: end.x, y: end.y },
+      route: 'straight', startHead: 'none', endHead: 'none', line: true, strokeWidth: 2, dash: 'solid',
+      createdBy: this.user.id, updatedAt: Date.now(),
+    };
+  }
+
+  /** The line as it is drawn while it is made, with a dot at its start and the length and angle beside the pointer. */
+  private previewLine(start: Point, p: Point, e: { altKey: boolean; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }) {
+    const end = this.lineEnd(start, p, e);
+    const z = this.zoom;
+    const text = lineLabel(start, end);
+    const at = { x: p.x + 16 / z, y: p.y + 16 / z };
+    const box = { w: (text.length * 6.4 + 12) / z, h: 20 / z };
+    const label = `<rect x="${at.x}" y="${at.y}" width="${box.w}" height="${box.h}" rx="${4 / z}" fill="var(--paper)"/>`
+      + `<text x="${at.x + 6 / z}" y="${at.y + 14 / z}" fill="var(--graphite)" style="font:500 ${11 / z}px system-ui, sans-serif">${text}</text>`;
+    const dot = `<circle cx="${start.x}" cy="${start.y}" r="${3 / z}" fill="var(--wire)"/>`;
+    this.r.setOverlay({ preview: objectMarkup(this.lineObj(start, end), this.r.ctx) + dot + label });
+  }
+
+  /** Creates the line from `start` to `end` and returns to Select; false (nothing made) when it is too short on screen. */
+  private finishLine(start: Point, end: Point): boolean {
+    this.r.setOverlay({ preview: '' });
+    if (Math.hypot(end.x - start.x, end.y - start.y) * this.zoom < LINE_MIN_SCREEN_PX) return false;
+    this.createObject(this.lineObj(start, end));
+    this.setTool({ kind: 'select' });
+    return true;
+  }
+
   connectorFrom(from: End, to: End, relation?: UmlRelation): ConnectorObj {
     const rel = relation ? RELATIONS[relation] : null;
     return {
@@ -2287,6 +2382,8 @@ export class BoardApp {
   }
   penColor = CANVAS_INK;
   penWidth = 3;
+  /** The start of a line whose first click has been made (the Line tool, click then click); Escape or a tool change cancels it. */
+  private linePending: Point | null = null;
 
   private defaultSize(t: Tool): { w: number; h: number } {
     switch (t.kind) {
@@ -2698,7 +2795,9 @@ export class BoardApp {
       // board chat (docs/chat.md): set by the board UI only where chat is available, for every role
       if (k === 'm' && !e.altKey && this.toggleChat) { e.preventDefault(); this.toggleChat(); return; }
       // commenters have a read-only board but may still use the comment tool; setTool checks the comments document
-      if (TOOL_KEYS[k] && (!ro || k === 'v' || k === 'h' || k === 'c')) this.setTool(TOOL_KEYS[k]);
+      // Shift+L is the Line tool; the plain L key is the Connector
+      const toolKey = e.shiftKey && k === 'l' ? 'shift+l' : k;
+      if (TOOL_KEYS[toolKey] && (!ro || k === 'v' || k === 'h' || k === 'c')) this.setTool(TOOL_KEYS[toolKey]);
     }, { signal });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'Space') {

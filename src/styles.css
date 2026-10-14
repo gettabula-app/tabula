@@ -218,7 +218,7 @@ hr { border: 0; }
 .board-surface.panning .canvas { cursor: grabbing !important; }
 .board-surface[data-tool='sticky'] .canvas, .board-surface[data-tool='text'] .canvas,
 .board-surface[data-tool='shape'] .canvas, .board-surface[data-tool='frame'] .canvas,
-.board-surface[data-tool='pen'] .canvas, .board-surface[data-tool='connector'] .canvas,
+.board-surface[data-tool='pen'] .canvas, .board-surface[data-tool='connector'] .canvas, .board-surface[data-tool='line'] .canvas,
 .board-surface[data-tool='uml'] .canvas, .board-surface[data-tool='comment'] .canvas { cursor: crosshair; }
 
 .cursor-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
@@ -1261,6 +1261,8 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .chrome > .zoom-tray .icon-btn.on,
   .chrome > .quickbar .icon-btn.on,
   .chrome > .top-right .comment-toggle.on { border: 1px solid Highlight; }
+  /* the selected line's outline (render.ts lineHalo) */
+  .line-halo { stroke: Highlight; }
 }
 
 /* Long floating panels scroll with a thin themed scrollbar, never the platform default. */

@@ -16,6 +16,7 @@ Varje verktyg har ett kortkommando på en bokstav. Håll pekaren över en knapp 
 | `O` | Ellips |
 | `D` | Diamant |
 | `L` eller `X` | **Connector** (Kopplingslinje) (se [Kopplingslinjer](connectors.md)) |
+| `Shift+L` | **Line** (Linje) (se [Linjer](lines.md)) |
 | `P` | **Pen** (Penna) |
 | `F` | **Frame** (Ram) |
 | `C` | **Comment** (Kommentar) (se [Kommentarer](comments.md)) |
