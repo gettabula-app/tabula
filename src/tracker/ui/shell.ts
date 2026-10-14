@@ -1100,6 +1100,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const info = getMeta();
     if (!info || readOnly) return;
     openNewIssueDialog({ store: options.store, meta: info, viewerId: options.viewerId, trackerId: options.trackerId,
+      title: elementMode ? 'New ticket' : undefined,
       defaultState: defaultState ?? (state.group === 'state' ? state.cursorKey ? options.store.list(stableQuery(state)).tickets.find((item) => item.key === state.cursorKey)?.state.key : undefined : undefined),
       offline: typeof navigator !== 'undefined' && navigator.onLine === false,
       onCreated: (key) => { options.onCreated?.(key); startWatch(); announce(`${key} created`); },

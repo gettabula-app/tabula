@@ -115,6 +115,8 @@ export interface NewIssueDialogOptions {
   viewerId: string;
   trackerId: string;
   defaultState?: string;
+  /** The dialog title; the live element says "New ticket" like its header button. */
+  title?: string;
   offline?: boolean;
   onCreated?: (key: string) => void;
 }
@@ -298,7 +300,7 @@ export function openNewIssueDialog(options: NewIssueDialogOptions): { close: () 
       void create(event.shiftKey);
     }
   });
-  const modal = dialog('New issue', body, [], { className: 'trk trk-modal trk-new-issue-back', onClose: () => { if (discardDraftOnClose) drafts.delete(draftKey); else drafts.set(draftKey, draft); } });
+  const modal = dialog(options.title ?? 'New issue', body, [], { className: 'trk trk-modal trk-new-issue-back', onClose: () => { if (discardDraftOnClose) drafts.delete(draftKey); else drafts.set(draftKey, draft); } });
   closeDialog = modal.close;
   return modal;
 }
