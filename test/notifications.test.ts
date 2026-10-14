@@ -303,7 +303,9 @@ describe('per-user notifications', () => {
     const root = fs.mkdtempSync(fileURLToPath(new URL('./notifications-migration-', import.meta.url)));
     roots.push(root);
     const file = path.join(root, 'directory.sqlite');
-    expect(MIGRATIONS).toHaveLength(19);
+    // this test is about migrations 18 and 19 on a minimal file; later migrations (20 alters an OAuth table this file lacks) are not part of it
+    const upTo19 = MIGRATIONS.slice(0, 19);
+    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(19);
     expect(MIGRATIONS[17]).toMatchObject({ minReader: 11 });
     const raw = new DatabaseSync(file);
     raw.exec(`
@@ -314,13 +316,13 @@ describe('per-user notifications', () => {
       INSERT INTO schema_meta (key,value) VALUES ('min_reader','11');
       PRAGMA user_version = 17;
     `);
-    migrate(raw, MIGRATIONS, 'directory');
+    migrate(raw, upTo19, 'directory');
     expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(19);
     expect(raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'user_notifications_inbox'").get()!.sql)
       .toContain('(user_id, read_at, created_at DESC, id)');
     expect(raw.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'card_due_due'").get()!.sql).toContain('(due)');
     raw.exec('DROP TABLE card_due; DROP TABLE user_notifications; PRAGMA user_version = 17;');
-    migrate(raw, MIGRATIONS, 'directory');
+    migrate(raw, upTo19, 'directory');
     expect(raw.prepare('PRAGMA user_version').get()!.user_version).toBe(19);
     expect(raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_notifications'").get()).toBeDefined();
     expect(raw.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'card_due'").get()).toBeDefined();
