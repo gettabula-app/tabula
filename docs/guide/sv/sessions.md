@@ -60,7 +60,7 @@ Du kan ange antal minuter för varje steg. Timern är pausad när ett steg börj
 
 ## Privat skrivande
 
-I ett steg med **Private writing** är anteckningar som du skapar bara synliga för dig. Andra ser inte vad du har skrivit. Klicka på **Reveal notes** (Visa anteckningar) i fältet om du vill visa allas anteckningar på en gång. När du går vidare till ett annat steg döljs anteckningarna igen, men anteckningar som redan har visats fortsätter att vara synliga.
+I ett steg med **Private writing** är anteckningar som du skapar bara synliga för dig. Andra ser inte vad du har skrivit. Klicka på **Reveal notes** (Visa anteckningar) i fältet om du vill visa allas anteckningar på en gång. Om du går vidare utan att visa dem visar nästa **Discuss**-steg samma knapp **Reveal notes** så länge anteckningarna är dolda. När du går vidare till ett annat steg döljs anteckningarna igen, men anteckningar som redan har visats fortsätter att vara synliga.
 
 Andras dolda anteckningar går inte heller att använda med någon markering: Markera alla, markering genom att dra, kopiera, duplicera, justera, **Arrange** (Ordna), byta färg, spara som mall, AI-fältet eller exportera (tavelfil, JSON, Mermaid). De blir tillgängliga igen när du har visat dem.
 

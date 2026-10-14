@@ -34,6 +34,8 @@ Klicka på ett ärende för att öppna det. I en bred spårare (ungefär 720 tav
 
 Tangenter du trycker i spåraren hör till spåraren och påverkar inte tavlan: Backspace eller Delete på ett ärende tar inte bort spåraren, och en bokstav byter inte tavlans verktyg.
 
+Varje rad i listan visar ärendets prioritet, etiketter, projekt, milstolpe och uppskattning. Listans genvägar (till exempel `S`, `A`, `P`, `X`, `J` och `K`) gäller raden du står på, även när `Tab` har lagt fokus på en knapp i raden. Bara `Enter` och `Blanksteg` stannar hos knappen, och fokus ligger kvar på den när listan ritas om.
+
 ### Vyn Board
 
 **Board** visar statusarna som kolumner bredvid varandra, med antalet ärenden i varje. Dra ett ärende från en kolumn till en annan för att ändra dess status. Tryck på `Esc` innan du släpper för att avbryta draget. Varje kolumn har ett **+** för att skapa ett ärende i den statusen. Varje kort har en knapp **⋯** som öppnar en lista med statusar att flytta det till. Det är också sättet att ändra status med tangentbordet.
