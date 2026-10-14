@@ -974,6 +974,48 @@ const SHOTS = {
     await save(page, 'agent-activity', pad(await boxOf(dlg), 16, W, H));
     await context.close();
   },
+
+  async 'code-block'({ browser, open }) {
+    const W = 1000, H = 640;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-code-block');
+    await page.evaluate(() => window.__board.setTool({ kind: 'code' }));
+    await page.mouse.click(420, 200);
+    await page.waitForFunction(() => [...window.__board.store.cache.values()].some((o) => o.type === 'code'));
+    // the block opens for typing: put the code in as a paste would, then finish with Escape
+    const text = ['function total(items) {', '  // add up the price of every item', '  let sum = 0;', '  for (const item of items) {', '    sum += item.price * item.count;', '  }', '  return sum;', '}'].join('\n');
+    await page.keyboard.insertText(text);
+    await page.keyboard.press('Escape');
+    const id = await page.evaluate(() => {
+      const app = window.__board;
+      const [codeId] = [...app.store.cache.values()].filter((o) => o.type === 'code').map((o) => o.id);
+      app.store.update(codeId, { lang: 'js', title: 'total.js', lines: true });
+      app.setSelection([codeId]);
+      return codeId;
+    });
+    await sleep(1500); // the colours arrive from the highlighter a moment later
+    await park(page);
+    await settle(page);
+    await save(page, 'code-block', pad(await screenRect(page, id), 40, W, H));
+    await context.close();
+  },
+
+  async 'print-dialog'({ browser, open }) {
+    const W = 1000, H = 760;
+    const { context, page } = await newPage(browser, { base: open.base, width: W, height: H, user: OPEN_USER });
+    await openBoard(page, open.base, 'docs-print');
+    await page.evaluate(`(${seeds.layers.toString()})(window.__board)`);
+    await placeAt(page, ['docs-frame', 'docs-layer-box', 'docs-layer-title'], 0.6, 120, 140);
+    await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.getByText('Export', { exact: true }).first().click();
+    await page.getByText('Print or save as PDF', { exact: false }).first().click();
+    const dlg = page.getByRole('dialog', { name: 'Print or save as PDF' });
+    await dlg.waitFor();
+    await park(page);
+    await settle(page);
+    await save(page, 'print-dialog', pad(await boxOf(dlg), 8, W, H));
+    await context.close();
+  },
 };
 
 // ---------------------------------------------------------------- main

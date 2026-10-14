@@ -4,6 +4,9 @@ Ett kodblock lägger kod på tavlan som ett kort med färgad text med fast tecke
 
 > **En person i taget.** Koden i ett block är en enda text. Om två personer skriver i *samma* block samtidigt ersätter den senare ändringen den tidigare. Olika block är oberoende av varandra.
 
+![Ett kodblock med titeln total.js, språket JavaScript, radnummer och färgad kod samt knapparna Wrap lines och Copy code uppe till höger](images/code-block.png)
+
+
 ## Lägg till ett
 
 Öppna gruppen **Text** i det vänstra verktygsfältet (knappen med en liten pil, under lappen) och välj **Code block** (Kodblock). Klicka sedan på tavlan för ett block som är 520 brett, eller dra för att välja bredd. Det öppnas för skrivning direkt. Ett nytt block börjar på det språk du använde senast på den här tavlan, eller på **Plain text** (Ren text). På en telefon eller surfplatta bryts långa rader.
