@@ -103,7 +103,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
   'tracker.gate_cleared', 'tracker.restore_boards_failed', 'tracker.key_epoch', 'tracker.drill_record', 'tracker.cutover_record',
   'volume.adopt',
-  'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all',
+  'mcp.token.create', 'mcp.token.revoke', 'mcp.token.revoke_all', 'mcp.limit',
   'mcp.oauth.client_registered', 'mcp.oauth.authorize', 'mcp.oauth.revoke', 'mcp.oauth.revoke_all', 'mcp.oauth.reuse_detected',
   'tracker.ticket.create', 'tracker.ticket.update', 'tracker.ticket.transition', 'tracker.ticket.comment',
   'tracker.ticket.subscribe', 'tracker.ticket.unsubscribe',
@@ -466,6 +466,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const name = text(d.name);
       const label = name ? ` ${quote(clip(name, 60))}` : '';
       return d.by === 'admin' ? `${who} revoked the AI tool access token${label} of ${member}` : `${who} revoked their AI tool access token${label}`;
+    }
+    case 'mcp.limit': {
+      const tool = text(d.tool);
+      return `An AI tool token of ${who} reached its hourly limit${tool ? ` for ${clip(tool, 40)}` : ''}`;
     }
     case 'mcp.token.revoke_all': {
       const count = typeof d.count === 'number' ? d.count : null;
