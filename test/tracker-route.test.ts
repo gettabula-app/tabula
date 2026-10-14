@@ -7,6 +7,7 @@ import {
   type TrackerPathRoute,
 } from '../src/tracker-route';
 import {
+  createTicketRouteNavigator,
   dispatchTrackerRoute,
   navigateTrackerPath,
   needsSignIn,
@@ -124,5 +125,49 @@ describe('tracker route gating and return paths', () => {
     expect(navigateTrackerPath({ kind: 'view', view: 'inbox' }, 'replace')).toBe(true);
     expect(current).toBe('/t/inbox');
     expect(events).toEqual(['popstate', 'popstate']);
+  });
+
+  // TAB-360: the X on a ticket page used to be history.back(), which showed the ticket before it, or left the tracker
+  describe('createTicketRouteNavigator', () => {
+    function fakeHistory() {
+      const log: string[] = [];
+      vi.stubGlobal('window', {
+        history: {
+          pushState: (_s: unknown, _t: string, path: string) => { log.push(`push ${path}`); },
+          replaceState: (_s: unknown, _t: string, path: string) => { log.push(`replace ${path}`); },
+          back: () => { log.push('back'); },
+        },
+        dispatchEvent: () => true,
+      });
+      return log;
+    }
+
+    it('opens with one pushed entry and closes by popping it', () => {
+      const log = fakeHistory();
+      const go = createTicketRouteNavigator(null, () => ({ kind: 'view', view: 'all' }));
+      go('TAB-1');
+      go(null);
+      expect(log).toEqual(['push /t/TAB-1', 'back']);
+    });
+
+    it('moving to another ticket replaces the entry, so closing never lands on the ticket before', () => {
+      const log = fakeHistory();
+      const go = createTicketRouteNavigator(null, () => ({ kind: 'view', view: 'all' }));
+      go('TAB-1');
+      go('TAB-2');
+      go('TAB-3');
+      go(null);
+      expect(log).toEqual(['push /t/TAB-1', 'replace /t/TAB-2', 'replace /t/TAB-3', 'back']);
+    });
+
+    it('a ticket opened by its own address closes to its list instead of leaving the tracker', () => {
+      const log = fakeHistory();
+      const go = createTicketRouteNavigator('TAB-9', () => ({ kind: 'view', view: 'my' }));
+      go(null);
+      expect(log).toEqual(['replace /t/my']);
+      go('TAB-10');
+      go(null);
+      expect(log.slice(1)).toEqual(['push /t/TAB-10', 'back']);
+    });
   });
 });

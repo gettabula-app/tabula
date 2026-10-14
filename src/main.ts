@@ -46,6 +46,7 @@ import {
   dispatchTrackerRoute,
   navigateAppHash,
   navigateTrackerPath,
+  createTicketRouteNavigator,
   needsSignIn,
   onTrackerRoute,
   resolveRoute,
@@ -61,6 +62,7 @@ import type { User } from './types';
 import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from './tracker-data';
 import { mountTrackerShell, trackerViewerState } from './tracker/ui/shell';
 import type { TrackerView } from './tracker-types';
+import type { TrackerPathRoute } from './tracker-route';
 import './ui/touch.css';
 
 // `demo.ts` is evaluated before these imports so its storage/network shims protect module initializers too.
@@ -174,6 +176,13 @@ function registerTrackerRouteHost(): () => void {
     const host = document.createElement('div');
     host.className = 'trk-route-root';
     document.body.appendChild(host);
+    // what the route shows when a ticket closes: the list the person was on (TAB-360)
+    let routeTab = view as TrackerView;
+    let routeViewId: string | undefined = viewId;
+    const closedRoute = (): TrackerPathRoute => (routeViewId
+      ? { kind: 'view', view: routeTab === 'projects' ? 'projects' : 'views', id: routeViewId }
+      : { kind: 'view', view: routeTab });
+    const ticketNavigator = createTicketRouteNavigator(key, closedRoute);
     const shell = mountTrackerShell(host, {
       store, api: trackerRouteApi, viewerId, trackerId: 'workspace', windowId: 'workspace',
       initialTab: view as TrackerView, initialViewId: viewId, initialTicketKey: key ?? undefined,
@@ -181,14 +190,10 @@ function registerTrackerRouteHost(): () => void {
       onBoards: () => navigateAppHash('#/'),
       onFullscreenChange: (fullScreen) => { if (!fullScreen) history.back(); },
       onTabChange: (tab, nextViewId) => {
-        navigateTrackerPath(nextViewId
-          ? { kind: 'view', view: tab === 'projects' ? 'projects' : 'views', id: nextViewId }
-          : { kind: 'view', view: tab }, 'replace');
+        routeTab = tab; routeViewId = nextViewId;
+        navigateTrackerPath(closedRoute(), 'replace');
       },
-      onTicketChange: (nextKey) => {
-        if (nextKey) navigateTrackerPath({ kind: 'ticket', key: nextKey });
-        else history.back();
-      },
+      onTicketChange: ticketNavigator,
     });
     let resolvedKey: string | undefined;
     if (key) {
@@ -695,15 +700,14 @@ if (trackerMockVisual) {
   void Promise.all([import('./tracker-mock'), import('./tracker/ui/visual-seed')]).then(([mock, seed]) => {
     const api = mock.createMockTrackerApi(seed.createTrackerVisualSeed());
     const store: TrackerStore = createTrackerStore(api);
+    let mockTab: TrackerView = 'all';
+    const mockTicketNavigator = createTicketRouteNavigator(null, () => ({ kind: 'view', view: mockTab }));
     const shell = mountTrackerShell(root, {
       store, api, viewerId: 'visual-user', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true, routeMode: true,
       account: { user: { id: 'visual-user', name: 'Johan Saldes', email: 'johan@example.test', role: 'owner' }, teams: [], mcp: true, mcpOauth: false, tracker: true } as never,
       onBoards: () => undefined,
-      onTabChange: (tab) => { navigateTrackerPath({ kind: 'view', view: tab }, 'replace'); },
-      onTicketChange: (key) => {
-        if (key) navigateTrackerPath({ kind: 'ticket', key });
-        else history.back();
-      },
+      onTabChange: (tab) => { mockTab = tab; navigateTrackerPath({ kind: 'view', view: tab }, 'replace'); },
+      onTicketChange: mockTicketNavigator,
     });
     Object.assign(window, { __trackerStore: store, __trackerShell: shell });
   });

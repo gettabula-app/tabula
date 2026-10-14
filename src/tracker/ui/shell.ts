@@ -1325,7 +1325,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           ),
           labels.length ? h('div', { class: 'trk-board-labels' }, ...labels) : null,
         );
-        if (elementMode) {
+        // TAB-354: the full-screen board drags too (it only ever worked in the element); a phone shows one lane at a time, so it keeps the move menu
+        if (!phone) {
           card.classList.toggle('is-draggable', !readOnly);
           card.addEventListener('pointerdown', (event) => beginCardPointer(event, ticket, card));
           if (boardDrag?.active && boardDrag.ticket.key === ticket.key) card.classList.add('is-dragging');
