@@ -137,6 +137,18 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | Back to board | Tillbaka till tavlan | Knappnamnet står kvar på engelska; glosan är ny. |
 | Copy link / Retry | Kopiera länk / Försök igen | Namnen står kvar på engelska; glosorna är nya och bör jämföras med appens texter. |
 | No tickets yet / Could not load tickets / You do not have access to the tracker | Inga ärenden ännu / Det gick inte att läsa in ärendena / Du har inte åtkomst till spåraren | Meddelandena står kvar på engelska; glosorna är översättningar och bör jämföras med appens texter när de finns på svenska. |
+| Code block | Kodblock | Ny UI-glosa för verktygsgruppens knapp och för sidan; kontrollera att den matchar appens text. |
+| Wrap lines | Radbryt | Ny UI-glosa för knappen i kodblockets hörn och för egenskapen; kontrollera mot appens text. |
+| Copy code | Kopiera kod | Ny UI-glosa för knappen i kodblockets hörn; kontrollera mot appens text. |
+| Line numbers | Radnummer | Ny UI-glosa för egenskapen i egenskapspanelen; kontrollera mot appens text. |
+| Language (code block property) | Språk | Ny UI-glosa för språkfältet i egenskapspanelen; kontrollera om appen använder samma ord. |
+| Plain text | Ren text | Ny UI-glosa för standardspråket i kodblock; alternativ: "Oformaterad text". Kontrollera mot appens text. |
+| folding (code) | hopfällning | Ny term för att fälla ihop kodrader; kontrollera att den är begriplig för användare. |
+| line highlighting | radmarkering | Ny term; kontrollera om det är den etablerade benämningen för markering av kodrader. |
+| colour theme (code) | färgtema | Ny term för färgerna i kodblock; kontrollera mot appens formulering. |
+| system colours | systemfärger | Ny term för färgerna i Windows högkontrastläge; kontrollera om det är tydligt. |
+| screen reader region name ("Code, Deploy script, Shell") | kept in English | Exemplet är en sträng som appen läser upp på engelska; kontrollera om den ska översättas (då ändras exemplet). |
+| Code blocks (link text in getting-started.md) | Kodblock | Briefen gav `[Code blocks]` som länktext; jag valde Kodblock för att följa övriga sidor (Tabeller, Markdown-block). Johan avgör. |
 
 ## Övriga anmärkningar från översättarna
 

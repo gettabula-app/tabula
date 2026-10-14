@@ -6,7 +6,7 @@ Ett Markdown-block är en plats på tavlan för längre anteckningar, med rubrik
 
 ## Lägg till ett
 
-Öppna gruppen **Text**, **Markdown block** (Markdown-block) och **Link** (Länk) i det vänstra verktygsfältet, välj **Markdown block** och klicka sedan på tavlan. En ruta öppnas för texten: skriv i Markdown och tryck sedan på `Esc` (eller `Ctrl+Enter`, `Cmd+Enter` på Mac) för att se den formaterad. Dra i stället för att klicka om du vill välja bredd.
+Öppna gruppen **Text**, **Table** (Tabell), **Code block** (Kodblock), **Markdown block** (Markdown-block) och **Link** (Länk) i det vänstra verktygsfältet, välj **Markdown block** och klicka sedan på tavlan. En ruta öppnas för texten: skriv i Markdown och tryck sedan på `Esc` (eller `Ctrl+Enter`, `Cmd+Enter` på Mac) för att se den formaterad. Dra i stället för att klicka om du vill välja bredd.
 
 ## Redigera
 
