@@ -4436,6 +4436,52 @@ const STATES = {
     await settle(env.page);
     await bareCanvas(env.page);
   },
+  // Landing page, N° 01 (tabula-site public/img/product-board.webp): the retro board with the M chrome, framed so the flowchart sits where the pasted hand and red circle point
+  async 'marketing-retro'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.setSelection([]);
+      app.r.setCamera({ zoom: 0.68, x: -791, y: -409 });
+    });
+    await settle(env.page);
+    const marks = await env.page.evaluate(() => {
+      const app = window.__board;
+      const at = (id, fx, fy) => { const o = app.store.get(id); const s = app.r.toScreen({ x: o.x + o.w * fx, y: o.y + o.h * fy }); const z = app.r.size(); return [+(s.x / z.w * 100).toFixed(1), +(s.y / z.h * 100).toFixed(1)]; };
+      return { mara: at('seed-note-2', 0.55, 0.5), idris: at('seed-note-3', 0.45, 0.5), noor: at('seed-note-5', 0.55, 0.5), done: at('seed-ellipse', 0.5, 0.5) };
+    });
+    console.log('MARKETING_RETRO', JSON.stringify(marks));
+  },
+  // Landing page, Smart guides (public/img/board.webp): three frames of squares, canvas only; the red guides are drawn over it by the page
+  async 'marketing-guides'({ page, base }) {
+    await page.goto(`${base}/?debug#/b/visual-marketing-guides`);
+    await page.waitForFunction(() => window.__board, null, { timeout: 15_000 });
+    await page.waitForFunction(() => { const p = window.__board.conn.provider; return !p || p.synced; }, null, { timeout: 15_000 });
+    await page.evaluate((at) => {
+      const app = window.__board;
+      const store = app.store;
+      if (store.get('mk-f1')) return;
+      const body = store.getMeta().bodyFont;
+      const objs = [];
+      const add = (id, type, x, y, w, h, extra) => objs.push({ id, type, x, y, w, h, rotation: 0, z: '', createdBy: 'visual-seed', updatedAt: at, font: body, ...extra });
+      const RED = '#D42A18', BLUE = '#0A47FF', INK = '#121216', GREY = '#DCDAD3';
+      const box = (id, x, y, w, h) => add(id, 'frame', x, y, w, h, { name: '', fill: '#F7F6F3', font: body });
+      const sq = (id, x, y, fill, text) => add(id, 'shape', x, y, 98, 98, { kind: 'rect', fill, text: text || '', textColor: fill === INK || fill === RED || fill === BLUE ? '#FFFFFF' : '#3A3A3F' });
+      const grid = (key, x0, y0, cells) => cells.forEach((c, i) => sq(`${key}${i}`, x0 + (i % 3) * 122, y0 + Math.floor(i / 3) * 122, c[0], c[1]));
+      const G = (t) => [GREY, t];
+      box('mk-f1', 160, 114, 406, 405); grid('mk-a', 189, 145, [[RED], G('Draft'), [BLUE], G('Notes'), [INK], [RED], [BLUE], G('Next'), [INK]]);
+      box('mk-f2', 972, 114, 412, 405); grid('mk-b', 1006, 146, [G('Plan'), [BLUE], [RED], [INK], G('Ideas'), [BLUE], [RED], [INK], G('Done')]);
+      box('mk-f3', 423, 623, 694, 288);
+      sq('mk-c0', 486, 690, GREY, 'Review'); sq('mk-c1', 697, 690, RED); sq('mk-c2', 908, 690, BLUE);
+      for (const o of objs) if (o.id.startsWith('mk-c')) { o.w = 146; o.h = 146; }
+      const zs = store.topZs(objs.length);
+      objs.forEach((o, i) => (o.z = zs[i]));
+      store.transact(() => objs.forEach((o) => store.create(o)));
+    }, NOW - HOUR);
+    await page.evaluate(() => { const app = window.__board; app.setSelection([]); app.r.setCamera({ zoom: 1, x: 0, y: 0 }); });
+    await settle(page);
+    await bareCanvas(page);
+  },
   async 'kanban-card'(env) {
     await openKanbanBoard(env);
     await env.page.evaluate(() => window.__board.setSelection(['k-c2']));
@@ -5398,7 +5444,7 @@ async function newPage(browser, { width, theme, mode, base, session, touch = fal
   const emulateTouch = touch || width <= 500;
   const context = await browser.newContext({
     viewport: { width, height: heightFor(width) },
-    deviceScaleFactor: 1,
+    deviceScaleFactor: Number(process.env.VISUAL_DSF) || 1,
     isMobile: emulateTouch,
     hasTouch: emulateTouch,
     locale: 'en-US',
