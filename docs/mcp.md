@@ -1,6 +1,6 @@
 # MCP server
 
-Lets AI tools (Claude Code, Claude Desktop through a bridge, any MCP client) read and edit boards. It is part of the relay: one more HTTP endpoint, `POST /mcp`, that speaks the Model Context Protocol and edits the same live documents the browsers are editing, so a person watching a board sees the AI's changes appear.
+Lets AI tools (Claude Code, Claude Desktop and claude.ai connectors, any MCP client) read and edit boards. It is part of the relay: one more HTTP endpoint, `POST /mcp`, that speaks the Model Context Protocol and edits the same live documents the browsers are editing, so a person watching a board sees the AI's changes appear.
 
 Status: **implemented as specified here** (decisions in the last section). It is security-sensitive: it adds a credential type, a network-reachable write path into every board, and a way for untrusted board text to reach a language model. Every rule below that guards access or limits what a token can do has a test in "Tests".
 
@@ -65,7 +65,7 @@ claude mcp add --transport http board https://HOST/mcp --header "Authorization: 
 { "mcpServers": { "board": { "type": "http", "url": "https://HOST/mcp", "headers": { "Authorization": "Bearer <token>" } } } }
 ```
 
-Claude Desktop's built-in connector UI uses OAuth, which is not in this slice; Desktop works through a stdio bridge such as `mcp-remote`, which is not shipped here. A thin stdio bridge in this repo may come later; it would only forward to `/mcp`.
+Claude Desktop and claude.ai add Tabula from their **Connectors** settings (add a custom connector, URL `https://HOST/mcp`). They sign in through OAuth, described in [mcp-oauth.md](mcp-oauth.md): the person signs in to the workspace in the browser, picks what the AI may do, and allows. That needs `TABULA_MCP_OAUTH=on`, which is off by default. A workspace without it, and any client that can set an `Authorization` header (Claude Code above), uses a personal token. No stdio bridge such as `mcp-remote` is needed or shipped.
 
 ## Authentication
 
@@ -645,7 +645,7 @@ The official client SDK is a devDependency used only by the smoke test in `test/
 
 ## Not in this slice
 
-- OAuth 2.1 and dynamic client registration (what Claude Desktop's built-in connector UI and web connectors need), so access tokens only; a stdio bridge package; SSE, resumability and server-initiated messages; MCP resources and prompts.
+- A stdio bridge package (Claude Desktop and web connectors use OAuth instead, see [mcp-oauth.md](mcp-oauth.md)); SSE, resumability and server-initiated messages; MCP resources and prompts.
 - **Mermaid in and out** ("add from Mermaid", "read as Mermaid"). `parseMermaid` and `layout` in `src/mermaid.ts` work without a DOM (text measuring falls back to an estimate), but they are TypeScript under `src/`: the production image ships `server/` and `dist/` only, and `engines` is Node 22.13, which cannot import `.ts` unflagged. It needs the parser and layout extracted into a shared plain-JavaScript module first, a refactor that touches files the rename is editing. Until then a model draws flowcharts with `create_objects` and connectors.
 - The board UI remains the route for lane colors and other settings these tools do not expose.
 - Creating, renaming, moving, sharing or deleting boards; deleting kanbans (creation is `create_kanban`, but removal remains in the board UI); board settings (`meta`: title, grid, fonts); facilitation (steps, timer, votes, reveal); creating, changing, sharing or deleting templates (listing and using them is `list_templates` and `use_template`); icons, images, freehand paths and UML objects; automatic layout; auto-parenting into frames; moving a frame's children with it.
@@ -690,6 +690,6 @@ Settled when the spec was approved:
 3. **Workspace owners and admins must list boards for `comment` and `write` tokens.** Their role is `owner` of everything.
 4. **No visible marker on AI-created objects** (only audit rows and the `createdBy` account id). A `createdVia` field would be one optional field in `src/types.ts`.
 5. **Delete removes attached connectors** instead of freeing their ends.
-6. **Access tokens only** (no OAuth), so Claude Desktop needs a bridge until an OAuth slice.
+6. **Access tokens only in this slice** (no OAuth). OAuth for the connector screens followed in [mcp-oauth.md](mcp-oauth.md).
 7. **Open mode shared token ships in this slice**, off by default, `read` scope by default.
 8. **Token expiry** default 30 days, maximum 365, no non-expiring tokens; "Sign out everywhere" leaves tokens alone.

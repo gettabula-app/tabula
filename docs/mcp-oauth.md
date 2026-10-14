@@ -1,6 +1,6 @@
 # OAuth 2.1 for the MCP endpoint
 
-Status: **slice 1 in progress.** Extends [docs/mcp.md](mcp.md). Read that first: the permission model, fencing, rate limits and the `tbl_` personal tokens described there are reused, not redefined, here.
+Status: **slices 1 to 3 are implemented and in v5.4** (server core, consent screen with the board picker, grants in AI tool access); off unless `TABULA_MCP_OAUTH=on`. Slice 5 (end-to-end test) gates the default. Section 14.2 records the first real connector run (Claude Desktop, 14 Oct 2026) and what it did not show. Extends [docs/mcp.md](mcp.md). Read that first: the permission model, fencing, rate limits and the `tbl_` personal tokens described there are reused, not redefined, here.
 
 ## 1. Problem and decision
 
@@ -571,6 +571,22 @@ Time-sensitive and concurrent OAuth coverage also runs on Windows with `npm run 
 
 - The official MCP SDK client (`auth()` helper with an in-memory `OAuthClientProvider`) must complete discovery, registration, authorize, token, refresh and a `tools/list` call against the relay.
 - Check by hand with a real connector in claude.ai (web) and Claude Desktop on a staging workspace before announcing: A1 to A7 and A9. A8 is verified. Record which redirect URIs Claude registered, whether `resource` and `state` were sent, whether `scope` was sent, refresh retry behavior, and whether a `403 insufficient_scope` triggers one step-up or loops.
+- **Recorded 14 Oct 2026: Claude Desktop against the hosted tabulahq workspace** (v5.4, `TABULA_MCP_OAUTH=on` switched on that day). Evidence is the database rows and what the person saw; the relay logs no request lines (and Fly's proxy neither), so request counts, status codes and retries cannot be read from logs. Whoever repeats this should turn on temporary request logging for `/oauth/*` and `/mcp` first.
+
+  | # | Result | Evidence |
+  | --- | --- | --- |
+  | A1 | **Consistent, not proven.** Discovery, registration and the first token use all happened without the browser visiting those URLs (the person only saw the consent screen) | One client row at 21:40:07, a grant at 21:41:06, first `/mcp` use at 21:41:07 |
+  | A2 | **Confirmed.** Desktop registered exactly `https://claude.ai/api/mcp/auth_callback`, and nothing else (no loopback, no custom scheme) | `oauth_clients.redirect_uris`, audit `redirectHosts: ["claude.ai"]` |
+  | A3 | **Not provable from the data.** The grant stores `resource = https://tabulahq.thetabula.cloud/mcp`, which is also the default when none is sent (Q4) | `oauth_grants.resource` |
+  | A4 | **Consistent.** The client was registered with a maximum of `write`, so Claude sent no narrower `scope` at registration; the consent screen offered Read, Read and comment, Read and edit. The `scope` of the authorize and token requests was not observed | `oauth_clients.max_scope`, consent screen |
+  | A5 | **Not observed.** The grant was two minutes old; no refresh happened. Check again after the one-hour access token has expired: a refresh shows as the grant's `last_used_at` moving and no `reuse_detected` audit row | no `mcp.oauth.revoke` or reuse rows |
+  | A6 | Verified earlier (Claude Code and others use the localhost callbacks) | |
+  | A7 | **Consistent.** The connector found the metadata from the workspace address, so the `resource_metadata` pointer or the well-known fallback worked | registration followed the flag change by about a minute |
+  | A8 | Verified earlier | |
+  | A9 | **Confirmed for Claude.** Only the built-in `claude.ai` callback was needed | as A2 |
+  | Q10 | **Not tested.** No `403 insufficient_scope` step-up was seen; Johan reported no failures and no second try | |
+
+  What the consent screen showed: "An app that claims to be 'Claude' wants access to <host>"; the signed-in name and email with "Not you? Sign out"; "You will be sent back to claude.ai" with the badge **Verified: Claude** and "Show full redirect URI"; **Which boards** (All boards I can open, or Only boards I choose, with each board's role); **Access level** (Read, Read and comment, Read and edit); a footer saying the app only reaches the chosen boards, acts as the person and never more, and can be disconnected under AI tool access; Deny and Allow. There was no tickets choice (not built yet, TAB-365) and no "unverified" warning. The person chose two boards and Read and edit; the connection worked in Claude Desktop. The grant lasts about six months (`expires_at` 2027-04-12). Still unknown: how many tools Claude listed.
 - MCP Inspector (browser) needs the metadata CORS headers; confirm only the metadata endpoints are fetched cross-origin.
 - RFC conformance spot checks: RFC 6749 error codes, RFC 7009 `200` on unknown token, RFC 8414 field names, RFC 9207 `iss`.
 
