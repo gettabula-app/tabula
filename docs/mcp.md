@@ -407,7 +407,7 @@ Ticket tools are off by default. Set `TABULA_TRACKER=on` and `TABULA_MCP=on` to 
 
 `tracker` is an optional token capability, independent of the existing board `scope`: `null` grants no ticket tools, `read` grants the five read tools, and `write` grants all ten tools. The create-token API accepts `tracker: 'read'|'write'|null`; token list and admin views return the field, using `null` when unset. A token acts as its owner account, and each call checks the owner's current workspace role and token capability. A guest or board-only account gets `not_found` for ticket calls even if its token carries a capability; inaccessible tickets are concealed the same way. Disabled owners are rejected by token authentication. Open mode never exposes ticket tools, even when `TABULA_TRACKER=on`.
 
-**An AI cannot delete from the tracker.** No tool deletes a ticket, comment, project, milestone or label, and no server job purges archived rows (`test/mcp-tracker-registry.test.ts` pins both, and fails on any new tool until it is classified). The strongest thing a token can do is **archive**: `update_ticket` with `archived: true` hides a ticket and `archived: false` restores it, recorded with the token id on the ticket's events so a person can find and undo it. A project or milestone can be restored by an AI (`archived: false`) but only a person archives one, because that hides a whole group of tickets. `relate_tickets` can remove a link, which deletes one relation row with no content of its own; the `unrelated` event keeps both ticket keys and the kind, so a person can add it again.
+**An AI cannot delete from the tracker.** No tool deletes a ticket, comment, saved view, project, milestone or label, and no server job purges archived rows (`test/mcp-tracker-registry.test.ts` pins both, and fails on any new tool until it is classified). The strongest thing a token can do is **archive**: `update_ticket` with `archived: true` hides a ticket and `archived: false` restores it, recorded with the token id on the ticket's events so a person can find and undo it. A project or milestone can be restored by an AI (`archived: false`) but only a person archives one, because that hides a whole group of tickets. `relate_tickets` can remove a link, which deletes one relation row with no content of its own; the `unrelated` event keeps both ticket keys and the kind, so a person can add it again.
 
 OAuth connectors (Claude Desktop and claude.ai, see [mcp-oauth.md](mcp-oauth.md)) can carry the same `read` or `write` ticket access. The person chooses it when they consent, and the choice is capped by their role at that moment: owners, admins and members may give `write`, and a guest may give nothing. A connection made before this existed has none and gets no ticket tools until it connects again. Over OAuth the ticket tools follow that ceiling, not the connection's board scope (mcp-oauth.md 6.2.1).
 
@@ -420,21 +420,21 @@ OAuth connectors (Claude Desktop and claude.ai, see [mcp-oauth.md](mcp-oauth.md)
 | `update_ticket` | `{key, title?, description?, priority?, assignee?, labels?, due?, parent?, project?, milestone?, archived?, ifUpdatedSeq?}` | `{ticket}` |
 | `transition_ticket` | `{key, state}` | `{ticket}` |
 | `comment_ticket` | `{key, body, clientId?}` | `{comment}` |
-| `list_ticket_states` | `{}` | `{states}` |
-| `list_ticket_labels` | `{}` | `{labels}` |
+| `ticket_meta` | `{}` | `{states, labels, members}` |
 | `create_ticket_label` | `{name, color?}` | `{label}` |
 | `relate_tickets` | `{key, relation, otherKey, remove?}` | `{ticket}` |
 | `list_saved_views` | `{}` | `{views}` |
 | `get_saved_view` | `{viewId, limit?, cursor?}` | `{view, tickets, nextCursor}` |
 | `create_saved_view` | `{name, filter[], shared?}` | `{view}` |
 | `update_saved_view` | `{viewId, name?, filter?, shared?}` | `{view}` |
-| `delete_saved_view` | `{viewId}` | `{id, deleted}` |
 | `list_projects` | `{}` | `{projects}` |
 | `create_project` | `{name, description?, state?, owner?}` | `{project}` |
 | `update_project` | `{projectId, name?, description?, state?, owner?, archived?}` | `{project}` |
 | `list_milestones` | `{projectId}` | `{milestones}` |
 | `create_milestone` | `{projectId, name, description?, due, state?}` | `{milestone}` |
 | `update_milestone` | `{milestoneId, name?, description?, due?, state?, archived?}` | `{milestone}` |
+
+`ticket_meta` returns the workflow `states`, the `labels`, and `members`: the active people an assignee can be, as `{name}` only (no email or id), at most 200. `you: true` marks the caller; `ambiguous: true` marks a name that another active member shares: assigning by that name fails, and the list has no emails to fall back on. `truncated` is also set when the list was cut.
 
 Create-ticket `assignee` is `"me"` or an active member name/email; user ids are refused. `labels` contains names and replaces the label set on update. `due` is a calendar date (`YYYY-MM-DD`), not a timestamp. `parent` is a ticket key; update accepts `null` to clear assignee, due date or parent. `ifUpdatedSeq` rejects stale updates with `conflict`. `idempotencyKey` is 8 to 64 characters; a retry returns the same ticket. Comment `clientId` is 1 to 128 characters and a retry returns the original comment. Ticket deletion is not available.
 

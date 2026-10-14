@@ -13,7 +13,7 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
 type Kind = 'read' | 'create' | 'change' | 'reversible-hard-delete-of-link';
 const TRACKER_TOOLS: Record<string, Kind> = {
-  get_ticket: 'read', list_tickets: 'read', search_tickets: 'read', list_ticket_states: 'read', list_ticket_labels: 'read',
+  get_ticket: 'read', list_tickets: 'read', search_tickets: 'read', ticket_meta: 'read',
   list_saved_views: 'read', get_saved_view: 'read', list_projects: 'read', list_milestones: 'read',
   create_ticket: 'create', create_ticket_label: 'create', create_saved_view: 'create', create_project: 'create', create_milestone: 'create',
   // 'change' tools edit or add; none of them removes a row. `archived` is the only way to hide something and it is a reversible flag.
@@ -23,8 +23,6 @@ const TRACKER_TOOLS: Record<string, Kind> = {
   // that deletes a row with real content must not use this label. It is also in the hourly cap set and has no bulk form.
   relate_tickets: 'reversible-hard-delete-of-link',
 };
-// TAB-369 commit 3 removes delete_saved_view from the AI set (it deletes only the caller's own saved filter); delete this line then.
-const KNOWN_DELETE_EXCEPTIONS = ['delete_saved_view'];
 const DELETE_LIKE = /^(delete|remove|purge|destroy|erase|drop)(_|$)/;
 
 const h = createHarness({ accounts: true, settings: { MCP: 'on', TRACKER: 'on' } });
@@ -53,17 +51,16 @@ afterAll(async () => {
 
 describe('the tracker tools an AI token gets', () => {
   it('are exactly the classified set, so a new tool must be classified before it passes', () => {
-    expect(tracker.map((tool) => tool.name).sort()).toEqual([...Object.keys(TRACKER_TOOLS), ...KNOWN_DELETE_EXCEPTIONS].sort());
+    expect(tracker.map((tool) => tool.name).sort()).toEqual(Object.keys(TRACKER_TOOLS).sort());
   });
 
-  it('include no tool that deletes, removes, purges or destroys (the saved-view exception goes in TAB-369 commit 3)', () => {
-    const offenders = tracker.map((tool) => tool.name as string).filter((name) => DELETE_LIKE.test(name) && !KNOWN_DELETE_EXCEPTIONS.includes(name));
+  it('include no tool that deletes, removes, purges or destroys', () => {
+    const offenders = tracker.map((tool) => tool.name as string).filter((name) => DELETE_LIKE.test(name));
     expect(offenders).toEqual([]);
-    for (const name of KNOWN_DELETE_EXCEPTIONS) expect(DELETE_LIKE.test(name)).toBe(true); // the exception list only holds real exceptions
   });
 
-  it('are none of them marked destructive, apart from the known exception', () => {
-    const destructive = tracker.filter((tool) => !KNOWN_DELETE_EXCEPTIONS.includes(tool.name) && tool.annotations?.destructiveHint === true).map((tool) => tool.name);
+  it('are none of them marked destructive', () => {
+    const destructive = tracker.filter((tool) => tool.annotations?.destructiveHint === true).map((tool) => tool.name);
     expect(destructive).toEqual([]);
   });
 

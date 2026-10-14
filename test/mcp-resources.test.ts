@@ -46,7 +46,7 @@ describe('MCP board resources', () => {
 
     const listed = await h.call(budgetToken, 'tools/list');
     const tools = listed.body.result.tools;
-    expect(tools).toHaveLength(50);
+    expect(tools).toHaveLength(48);
     const definitions = tools.map(({ name, title, description, inputSchema, annotations }: Record<string, unknown>) => ({
       name, title, description, inputSchema, annotations,
     }));

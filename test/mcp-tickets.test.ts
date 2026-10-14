@@ -3,17 +3,18 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHarness, type Account, type Body } from './mcp-harness';
+import { ASSIGNABLE_MEMBER_LIMIT, assignableMembers } from '../server/mcp.mjs';
 
 vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
 const TICKET_TOOLS = [
   'create_ticket', 'get_ticket', 'list_tickets', 'search_tickets', 'update_ticket', 'transition_ticket',
-  'comment_ticket', 'list_ticket_states', 'list_ticket_labels', 'create_ticket_label',
-  'relate_tickets', 'list_saved_views', 'get_saved_view', 'create_saved_view', 'update_saved_view', 'delete_saved_view',
+  'comment_ticket', 'ticket_meta', 'create_ticket_label',
+  'relate_tickets', 'list_saved_views', 'get_saved_view', 'create_saved_view', 'update_saved_view',
   'list_projects', 'create_project', 'update_project', 'list_milestones', 'create_milestone', 'update_milestone',
 ].sort();
 const TICKET_READ_TOOLS = [
-  'get_ticket', 'list_tickets', 'search_tickets', 'list_ticket_states', 'list_ticket_labels',
+  'get_ticket', 'list_tickets', 'search_tickets', 'ticket_meta',
   'list_saved_views', 'get_saved_view', 'list_projects', 'list_milestones',
 ].sort();
 const CLOUD_TOKEN = 'c'.repeat(48);
@@ -118,7 +119,7 @@ describe('MCP tracker capability', () => {
     expect((await names(read.token)).filter((name: string) => TICKET_TOOLS.includes(name))).toEqual(TICKET_READ_TOOLS);
     expect((await names(write.token)).filter((name: string) => TICKET_TOOLS.includes(name))).toEqual(TICKET_TOOLS);
 
-    const hidden = await h.call(without.token, 'tools/call', { name: 'list_ticket_states', arguments: {} });
+    const hidden = await h.call(without.token, 'tools/call', { name: 'ticket_meta', arguments: {} });
     const missing = await h.call(without.token, 'tools/call', { name: 'tool_that_does_not_exist', arguments: {} });
     expect(hidden.body.error).toEqual(missing.body.error);
     expect(hidden.body.error).toMatchObject({ code: -32602, message: 'Unknown tool' });
@@ -126,14 +127,14 @@ describe('MCP tracker capability', () => {
 
   it('supports ticket CRUD, search, workflow, labels, idempotency, history and fenced text', async () => {
     const writer = await makeToken(owner, 'write');
-    const states = await h.tool(writer.token, 'list_ticket_states');
+    const states = await h.tool(writer.token, 'ticket_meta');
     expect(states.data.states.map((state: Body) => state.name)).toEqual(['To do', 'In progress', 'In review', 'Done', 'Cancelled']);
     expect(states.data).toMatchObject({ cleaned: false, truncated: false });
 
     const madeLabel = await h.tool(writer.token, 'create_ticket_label', { name: 'Bug', color: '#D02020' });
     expect(madeLabel.error).toBeUndefined();
     const labelId = madeLabel.data.label.id;
-    expect((await h.tool(writer.token, 'list_ticket_labels')).data.labels).toContainEqual(expect.objectContaining({ id: labelId, name: 'Bug' }));
+    expect((await h.tool(writer.token, 'ticket_meta')).data.labels).toContainEqual(expect.objectContaining({ id: labelId, name: 'Bug' }));
 
     const project = await h.tool(writer.token, 'create_project', { name: 'Platform', owner: 'me', state: 'started', description: 'Project description' });
     expect(project.error).toBeUndefined();
@@ -201,7 +202,6 @@ describe('MCP tracker capability', () => {
     expect(savedRun.data.tickets.map((ticket: Body) => ticket.id)).toContain(child.data.ticket.id);
     const savedUpdate = await h.tool(writer.token, 'update_saved_view', { viewId: saved.data.view.id, name: 'Renamed view', shared: false });
     expect(savedUpdate.data.view.name).toBe('Renamed view');
-    expect((await h.tool(writer.token, 'delete_saved_view', { viewId: saved.data.view.id })).data.deleted).toBe(true);
 
     const changedProject = await h.tool(writer.token, 'update_project', { projectId: project.data.project.id, state: 'paused' });
     expect(changedProject.data.project.state).toBe('paused');
@@ -272,8 +272,7 @@ describe('MCP tracker capability', () => {
       ['get_ticket', { key: baselineTicket.key }],
       ['list_tickets', {}],
       ['search_tickets', { query: 'baseline' }],
-      ['list_ticket_states', {}],
-      ['list_ticket_labels', {}],
+      ['ticket_meta', {}],
       ['create_ticket', { title: 'hidden', idempotencyKey: 'guest-create-key' }],
       ['update_ticket', { key: baselineTicket.key, title: 'hidden update' }],
       ['transition_ticket', { key: baselineTicket.key, state: 'Done' }],
@@ -284,7 +283,6 @@ describe('MCP tracker capability', () => {
       ['get_saved_view', { viewId: 'hidden-view' }],
       ['create_saved_view', { name: 'Hidden' }],
       ['update_saved_view', { viewId: 'hidden-view', name: 'Hidden' }],
-      ['delete_saved_view', { viewId: 'hidden-view' }],
       ['list_projects', {}],
       ['create_project', { name: 'Hidden' }],
       ['update_project', { projectId: 'hidden-project', name: 'Hidden' }],
@@ -334,7 +332,7 @@ describe('agent ticket text limits and tool surface (TAB-330)', () => {
     expect(longest.error).toBeUndefined();
   });
 
-  it('gives the tracker toolset no delete_ tool except delete_saved_view, and no bulk tool', async () => {
+  it('gives the tracker toolset no delete_ tool and no bulk tool', async () => {
     const plain = await makeToken(owner);
     const writer = await makeToken(owner, 'write');
     const names = async (token: string): Promise<string[]> => (await h.call(token, 'tools/list')).body.result.tools.map((tool: Body) => tool.name as string);
@@ -342,7 +340,7 @@ describe('agent ticket text limits and tool surface (TAB-330)', () => {
     // the tracker tools are the ones a write-capable token sees and a token without the capability does not
     const trackerTools = (await names(writer.token)).filter((name: string) => !withoutTracker.has(name)).sort();
     expect(trackerTools).toEqual(TICKET_TOOLS);
-    expect(trackerTools.filter((name) => name.startsWith('delete_'))).toEqual(['delete_saved_view']);
+    expect(trackerTools.filter((name) => name.startsWith('delete_'))).toEqual([]);
     expect(trackerTools.filter((name) => name.includes('bulk'))).toEqual([]);
   });
 });
@@ -597,13 +595,12 @@ describe('read-only hosted tracker', () => {
         ['update_milestone', { milestoneId: milestone.data.milestone.id, name: 'must not persist' }],
         ['create_saved_view', { name: 'must not persist', filter: [] }],
         ['update_saved_view', { viewId: view.data.view.id, name: 'must not persist' }],
-        ['delete_saved_view', { viewId: view.data.view.id }],
       ];
       for (const [name, args] of attempts) {
         const result = await cloud.tool(writer.token, name, args);
         expect(result.error).toBe('read_only');
       }
-      expect((await cloud.tool(writer.token, 'list_ticket_states')).error).toBeUndefined();
+      expect((await cloud.tool(writer.token, 'ticket_meta')).error).toBeUndefined();
       expect((await cloud.tool(writer.token, 'list_tickets')).error).toBeUndefined();
       expect(ticketCounts(cloud.dir)).toEqual(before);
     } finally {
@@ -654,7 +651,6 @@ describe('tracker restore gate over MCP', () => {
         ['update_milestone', { milestoneId: milestone.data.milestone.id, name: 'must not persist' }],
         ['create_saved_view', { name: 'must not persist', filter: [] }],
         ['update_saved_view', { viewId: view.data.view.id, name: 'must not persist' }],
-        ['delete_saved_view', { viewId: view.data.view.id }],
       ];
       for (const [name, args] of attempts) {
         const result = await gated.tool(writer.token, name, args);
@@ -671,5 +667,73 @@ describe('tracker restore gate over MCP', () => {
     } finally {
       await gated.cleanup();
     }
+  });
+});
+
+describe('ticket_meta: states, labels and who a ticket can be assigned to (TAB-369)', () => {
+  it('returns states, labels and members, with members as names only and the caller and shared names marked', async () => {
+    const reader = await makeToken(member, 'read');
+    const twins = [await h.joinTeam(owner.cookie, teamId), await h.joinTeam(owner.cookie, teamId)];
+    const db = new DatabaseSync(path.join(h.dir, 'directory.sqlite'));
+    try {
+      db.exec('PRAGMA busy_timeout = 5000');
+      db.prepare('UPDATE users SET name = ? WHERE id = ?').run('Sam Lee', twins[0].user.id);
+      db.prepare('UPDATE users SET name = ? WHERE id = ?').run('sam lee', twins[1].user.id);
+    } finally {
+      db.close();
+    }
+
+    const meta = await h.tool(reader.token, 'ticket_meta');
+    expect(meta.error).toBeUndefined();
+    expect(meta.data.states.map((state: Body) => state.name)).toEqual(['To do', 'In progress', 'In review', 'Done', 'Cancelled']);
+    expect(meta.data.labels).toEqual(expect.any(Array));
+    expect(meta.data).toMatchObject({ cleaned: false, truncated: false });
+
+    const members = meta.data.members as Body[];
+    expect(members.length).toBeGreaterThan(3);
+    for (const entry of members) {
+      expect(typeof entry.name).toBe('string');
+      expect(Object.keys(entry).every((key) => ['name', 'you', 'ambiguous'].includes(key))).toBe(true);
+    }
+    // no email and no account id can leave the tool, in any field
+    const wire = JSON.stringify(meta.data);
+    expect(wire).not.toMatch(/@example\.com/);
+    for (const account of [owner, member, guest, ...twins]) expect(wire).not.toContain(account.user.id);
+
+    expect(members.filter((entry) => entry.you)).toEqual([{ name: member.user.name, you: true }]);
+    const sams = members.filter((entry) => /^sam lee$/i.test(String(entry.name)));
+    expect(sams.map((entry) => entry.name).sort()).toEqual(['Sam Lee', 'sam lee']);
+    for (const entry of sams) expect(Object.keys(entry).sort()).toEqual(['ambiguous', 'name']);
+    expect(members.filter((entry) => entry.ambiguous)).toHaveLength(2);
+  });
+
+  it('is an unknown tool for a token without tracker access, and is not listed for it', async () => {
+    const plain = await makeToken(member);
+    const listed = (await h.call(plain.token, 'tools/list')).body.result.tools.map((tool: Body) => tool.name);
+    expect(listed).not.toContain('ticket_meta');
+    const hidden = await h.call(plain.token, 'tools/call', { name: 'ticket_meta', arguments: {} });
+    const missing = await h.call(plain.token, 'tools/call', { name: 'tool_that_does_not_exist', arguments: {} });
+    expect(hidden.body.error).toEqual(missing.body.error);
+    expect(hidden.body.error).toMatchObject({ code: -32602, message: 'Unknown tool' });
+  });
+});
+
+describe('ticket_meta member list shape (TAB-369)', () => {
+  const row = (i: number, extra: Record<string, unknown> = {}) => ({ id: `user-${i}`, name: `Member ${i}`, sharing: 1, ...extra });
+
+  it('caps the list at 200 and says it was cut when a 201st member exists', () => {
+    expect(ASSIGNABLE_MEMBER_LIMIT).toBe(200);
+    const rows = Array.from({ length: ASSIGNABLE_MEMBER_LIMIT + 1 }, (_, i) => row(i));
+    const cut = assignableMembers(rows, 'user-0');
+    expect(cut.members).toHaveLength(ASSIGNABLE_MEMBER_LIMIT);
+    expect(cut.truncated).toBe(true);
+    expect(cut.members[0]).toEqual({ name: 'Member 0', you: true });
+    const whole = rows.slice(0, ASSIGNABLE_MEMBER_LIMIT);
+    expect(assignableMembers(whole, 'nobody')).toEqual({ members: whole.map((item) => ({ name: item.name })), truncated: false });
+  });
+
+  it('marks only the names that another active member shares', () => {
+    const shaped = assignableMembers([row(1, { name: 'Ada', sharing: 2 }), row(2, { name: 'Bo' }), row(3, { id: 'me', name: 'Cy' })], 'me');
+    expect(shaped).toEqual({ members: [{ name: 'Ada', ambiguous: true }, { name: 'Bo' }, { name: 'Cy', you: true }], truncated: false });
   });
 });

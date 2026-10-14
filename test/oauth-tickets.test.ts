@@ -10,12 +10,12 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 const REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
 const TICKET_TOOLS = [
   'create_ticket', 'get_ticket', 'list_tickets', 'search_tickets', 'update_ticket', 'transition_ticket',
-  'comment_ticket', 'list_ticket_states', 'list_ticket_labels', 'create_ticket_label',
-  'relate_tickets', 'list_saved_views', 'get_saved_view', 'create_saved_view', 'update_saved_view', 'delete_saved_view',
+  'comment_ticket', 'ticket_meta', 'create_ticket_label',
+  'relate_tickets', 'list_saved_views', 'get_saved_view', 'create_saved_view', 'update_saved_view',
   'list_projects', 'create_project', 'update_project', 'list_milestones', 'create_milestone', 'update_milestone',
 ].sort();
 const TICKET_READ_TOOLS = [
-  'get_ticket', 'list_tickets', 'search_tickets', 'list_ticket_states', 'list_ticket_labels',
+  'get_ticket', 'list_tickets', 'search_tickets', 'ticket_meta',
   'list_saved_views', 'get_saved_view', 'list_projects', 'list_milestones',
 ].sort();
 const INVALID_CHOICE = 'The selected ticket access is not available.';
