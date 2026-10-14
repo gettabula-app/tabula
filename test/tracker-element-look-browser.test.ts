@@ -196,6 +196,18 @@ describe.skipIf(!available)('tracker element look in a real browser', { timeout:
     }
   });
 
+  it('titles the create dialog New ticket in the element, like its header button', async () => {
+    const { page, close } = await openElementPage();
+    try {
+      await mountAt(page, 720);
+      await page.locator('.trk-new-trigger').click();
+      const dialog = page.locator('[role="dialog"]');
+      await dialog.waitFor();
+      expect(await dialog.locator('h2').textContent()).toBe('New ticket');
+      expect(await dialog.getByRole('button', { name: 'Close New ticket' }).count()).toBe(1);
+    } finally { await close(); }
+  });
+
   it('opens full screen from the expand button and keeps the menu closed until asked', async () => {
     const { page, close } = await openElementPage();
     try {
