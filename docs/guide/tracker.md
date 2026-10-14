@@ -34,6 +34,8 @@ Click a ticket to open it. In a wide tracker (about 720 board units or more) the
 
 Keys you press inside the tracker belong to the tracker and do not act on the board: Backspace or Delete on a ticket does not delete the tracker, and a letter does not change the board's tool.
 
+Each row in the list shows the ticket's priority, labels, project, milestone and estimate. The list's shortcuts (for example `S`, `A`, `P`, `X`, `J` and `K`) work on the row you are on, also when `Tab` has put focus on a button inside the row. Only `Enter` and `Space` stay with the button, and focus stays on it after the list redraws.
+
 ### The Board view
 
 **Board** shows the states as lanes side by side, with the number of tickets in each. Drag a ticket from one lane to another to change its state. Press `Esc` before you let go to cancel the drag. Each lane has a **+** to create a ticket in that state. Each card has a **⋯** menu that opens a list of states to move it to, which is also the way to change a state with the keyboard.

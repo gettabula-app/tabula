@@ -6,7 +6,7 @@ A Markdown block is a place on the board for longer notes, with headings, lists,
 
 ## Add one
 
-Open the **Text**, **Markdown block** and **Link** group in the left toolbar, choose **Markdown block**, then click the board. A box opens for the text: write in Markdown, then press `Esc` (or `Ctrl+Enter`, `Cmd+Enter` on Mac) to see it formatted. Drag instead of clicking to choose the width. There is no single-key shortcut; `M` is for chat.
+Open the **Text**, **Table**, **Code block**, **Markdown block** and **Link** group in the left toolbar, choose **Markdown block**, then click the board. A box opens for the text: write in Markdown, then press `Esc` (or `Ctrl+Enter`, `Cmd+Enter` on Mac) to see it formatted. Drag instead of clicking to choose the width. There is no single-key shortcut; `M` is for chat.
 
 ## Edit
 

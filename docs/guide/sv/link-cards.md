@@ -9,7 +9,7 @@ Länkkort visas där din arbetsyta har länkförhandsvisningar påslagna. Utan f
 Det finns tre sätt.
 
 - **Klistra in.** Kopiera en webbadress och tryck på `Ctrl+V` (`Cmd+V` på Mac) med tavlan framme. Kortet hamnar där pekaren är, eller mitt i din vy. Ett kort meddelande säger ”Link added” (Länken har lagts till) och erbjuder **Turn into text** (Gör om till text).
-- **Link-knappen.** Öppna gruppen **Text**, **Markdown block** och **Link** (Länk) i det vänstra verktygsfältet och välj sedan **Link**. Skriv eller klistra in adressen och tryck på `Enter` eller **Add** (Lägg till).
+- **Link-knappen.** Öppna gruppen **Text**, **Table** (Tabell), **Code block** (Kodblock), **Markdown block** (Markdown-block) och **Link** (Länk) i det vänstra verktygsfältet och välj sedan **Link**. Skriv eller klistra in adressen och tryck på `Enter` eller **Add** (Lägg till).
 - **Släpp.** Dra en länk från en annan webbläsarflik till tavlan. Du får ett kort för varje adress, upp till 10 åt gången.
 
 Kortet visas direkt med adressen och webbplatsens namn. En tunn linje längs dess nederkant rör sig medan Tabula läser sidan, oftast i en sekund eller två. Sedan fylls titeln, beskrivningen och bilden i. `Ctrl+Z` tar bort hela kortet igen, inte bara ett tomt kort.
