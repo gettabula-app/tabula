@@ -589,6 +589,19 @@ function seedKanban({ at }) {
   return true;
 }
 
+/** Hides everything around the canvas (bars, rail, zoom control) for a picture of the board alone. */
+async function bareCanvas(page) {
+  await page.evaluate(() => {
+    const svg = document.querySelector('svg.canvas');
+    for (let el = svg; el && el !== document.body; el = el.parentElement) {
+      for (const sib of el.parentElement ? [...el.parentElement.children] : []) {
+        if (sib !== el && !sib.contains(svg) && !(sib instanceof SVGElement)) sib.style.display = 'none';
+      }
+    }
+  });
+  await settle(page);
+}
+
 async function openKanbanBoard({ page, base }, { fit = true, board = KANBAN_ID } = {}) {
   await page.goto(`${base}/?debug#/b/${board}`);
   await page.waitForFunction(() => window.__board && window.__kanban, null, { timeout: 15_000 });
@@ -4404,6 +4417,24 @@ const STATES = {
   },
   async kanban(env) {
     await openKanbanBoard(env);
+  },
+  // The two halves of docs/images/readme-hero.png (scripts/readme-hero.mjs puts them side by side): the board with nothing but the canvas around it
+  async 'readme-hero-retro'(env) {
+    await openSeedBoard(env);
+    await env.page.evaluate(() => { const app = window.__board; app.setSelection([]); app.r.fit(app.r.contentBounds(), 36, 1.2); });
+    await settle(env.page);
+    await bareCanvas(env.page);
+  },
+  async 'readme-hero-kanban'(env) {
+    await openKanbanBoard(env, { fit: false });
+    await env.page.evaluate(() => {
+      const app = window.__board;
+      app.store.remove(['k-frame', 'k-note-1', 'k-note-2']);
+      app.setSelection([]);
+      app.r.fit(app.r.contentBounds(['k-box']), 40, 1.6);
+    });
+    await settle(env.page);
+    await bareCanvas(env.page);
   },
   async 'kanban-card'(env) {
     await openKanbanBoard(env);

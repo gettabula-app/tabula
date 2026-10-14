@@ -333,6 +333,21 @@ const screenRect = (page, id) =>
     return { x: a.x + s.left, y: a.y + s.top, width: b.x - a.x, height: b.y - a.y };
   }, id);
 
+/** The rectangle that holds everything visible on the page (text, controls, pictures, drawn surfaces) plus `pad` px, within the viewport: a crop to the content. */
+const contentClip = (page, pad = 24) => page.evaluate((margin) => {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (r) => { if (r.width > 0 && r.height > 0) { x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top); x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom); } };
+  for (const el of document.body.querySelectorAll('*')) {
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+    const surface = el.matches('button, input, select, textarea, img, svg.canvas, [role="dialog"], .modal, .card, .notice, .board-row, .tray') && el.getBoundingClientRect().width < innerWidth * 0.98;
+    if (own || surface) add(el.getBoundingClientRect());
+  }
+  const x = Math.max(0, Math.floor(x0 - margin)), y = Math.max(0, Math.floor(y0 - margin));
+  return { x, y, width: Math.min(innerWidth, Math.ceil(x1 + margin)) - x, height: Math.min(innerHeight, Math.ceil(y1 + margin)) - y };
+}, pad);
+
 const save = (page, name, clip) => page.screenshot({ path: path.join(outDir, `${name}.png`), clip, animations: 'disabled', caret: 'hide' });
 
 // ---------------------------------------------------------------- the images
@@ -394,7 +409,10 @@ const SHOTS = {
     await drawer.waitFor();
     await park(page);
     await settle(page);
-    await drawer.screenshot({ path: path.join(outDir, 'shapes-panel.png'), animations: 'disabled' });
+    // the panel from its top to just above the closing hint (which the drawer's own scroll box cuts), so no sentence is cut off
+    const panel = await boxOf(drawer);
+    const hint = await boxOf(drawer.getByText('Hover a shape on the board').first());
+    await save(page, 'shapes-panel', { x: panel.x, y: panel.y, width: panel.width, height: Math.min(panel.height, hint.y - panel.y - 8) });
     await context.close();
   },
 
@@ -405,6 +423,7 @@ const SHOTS = {
     await page.evaluate(`(${seeds.theme.toString()})(window.__board)`);
     await placeAt(page, ['docs-note', 'docs-box', 'docs-text'], 1, 500, 220);
     await page.getByRole('button', { name: 'Menu', exact: true }).click();
+    await page.locator('.board-menu-appearance .board-menu-sub-trigger').click(); // the themes sit in the Theme submenu of the board menu
     await page.locator('.theme-item').first().waitFor();
     await park(page);
     await settle(page);
@@ -428,11 +447,14 @@ const SHOTS = {
     const { context, page } = await newPage(browser, { base: open.base, width: 1280, height: 800, user: OPEN_USER });
     await openBoard(page, open.base, 'docs-template');
     await page.getByRole('button', { name: 'Templates and team exercises' }).click();
-    await page.locator('.tpl-name', { hasText: 'Business Model Canvas' }).first().click();
+    await page.locator('.template-picker-card', { hasText: 'Business Model Canvas' }).first().click(); // the template picker (cards, then Use template)
+    await page.locator('.template-picker-use').click();
     await page.getByText('Session ready').waitFor();
     await page.evaluate(() => window.__board.store.setMeta({ name: 'Strategy workshop' }));
     await page.waitForFunction(() => !document.querySelector('.toast.show'), null, { timeout: 12_000 });
     await sleep(500);
+    // the board as large as the window allows, between the rail and the bottom bar, so its text reads at the width the guide shows it
+    await page.evaluate(() => { const app = window.__board; app.r.fit(app.r.contentBounds(), 20, 1); });
     await park(page);
     await settle(page);
     await save(page, 'template-business-model-canvas');
@@ -446,7 +468,7 @@ const SHOTS = {
     await page.evaluate(() => document.activeElement?.blur());
     await park(page);
     await settle(page);
-    await save(page, 'signin');
+    await save(page, 'signin', await contentClip(page, 28));
     await context.close();
   },
 
@@ -457,7 +479,7 @@ const SHOTS = {
     await page.waitForFunction(() => document.querySelectorAll('.board-row').length >= 5);
     await park(page);
     await settle(page);
-    await save(page, 'teams-home');
+    await save(page, 'teams-home', await contentClip(page, 28));
     await context.close();
   },
 
@@ -480,7 +502,7 @@ const SHOTS = {
     await page.getByText('Your access to this board was removed').waitFor({ timeout: 15_000 });
     await park(page);
     await settle(page);
-    await save(page, 'access-removed', { x: 0, y: 0, width: W, height: 310 });
+    await save(page, 'access-removed', await contentClip(page, 24));
     await context.close();
   },
 
@@ -503,7 +525,8 @@ const SHOTS = {
     }, stableOrigin);
     await park(page);
     await settle(page);
-    await dialog.screenshot({ path: path.join(outDir, 'share-roles.png'), animations: 'disabled' });
+    const box = await boxOf(dialog);
+    await save(page, 'share-roles', { x: Math.ceil(box.x), y: Math.ceil(box.y), width: Math.floor(box.width) - 2, height: Math.floor(box.height) - 2 }); // 2 px inside the box edge: no edge line in the shot
     await context.close();
   },
 
@@ -542,7 +565,8 @@ const SHOTS = {
 
   // the Chat page (docs/chat.md, Interface): the channel list and the open board conversation, at a width where both show
   async 'chat-page'({ browser, chat, chatPeople }) {
-    const W = 1200, H = 720;
+    // tall enough that the four messages show whole from the first one, with nothing to scroll
+    const W = 1200, H = 1000;
     const { context, page } = await newPage(browser, { base: chat.base, width: W, height: H, session: chatPeople.owner });
     // The list shows boards with recent chat by the relay's real clock, and the demo messages carry the fixed 15 Jan date: only the
     // list response gets the board's row added (as the backups shot stubs only its list).
@@ -554,7 +578,12 @@ const SHOTS = {
       }
       await route.fulfill({ response: res, json: body });
     });
-    await page.goto(`${chat.base}/#/chat/board/docs-chat`);
+    // the board's own objects, so the message chips read "Launch plan" and "Final checklist" as in the docked chat shot
+    await openBoard(page, chat.base, 'docs-chat');
+    await page.evaluate(`(${seeds.chat.toString()})(window.__board)`);
+    await page.waitForTimeout(600);
+    // client-side, so the page keeps the board's object names it just learned (a reload would show "An object on the board")
+    await page.evaluate(() => { location.hash = '#/chat/board/docs-chat'; });
     await page.locator('.chat-conv.open').waitFor({ timeout: 15_000 });
     await page.waitForFunction(() => document.querySelectorAll('.chat-conv.open .chat-msg').length === 4);
     await page.locator('.chat-conv.open .chat-reaction').waitFor();
@@ -600,8 +629,9 @@ const SHOTS = {
     // the clip ends on the bottom edge of the last listed row and is as wide as the other dialog crops (560 px), with the board beside the panel
     const head = await boxOf(drawer.locator('.drawer-head'));
     const last = await boxOf(drawer.locator('.layer-row', { hasText: 'Make onboarding simpler' }));
-    const x = Math.max(0, head.x - 12), y = Math.max(0, head.y - 12);
-    const clip = { x, y, width: Math.min(560, W - x), height: last.y + last.height - y };
+    const panel = await boxOf(drawer);
+    const x = Math.max(0, panel.x), y = Math.max(0, head.y - 12);
+    const clip = { x, y, width: Math.min(panel.width, W - x), height: last.y + last.height + 12 - y }; // the panel alone: no half-cut note of the board beside it
     await save(page, 'layers-panel', clip);
     await context.close();
   },
