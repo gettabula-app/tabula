@@ -117,10 +117,12 @@ export function addLabel(p: AiProposal, r: Review): string {
   return kept === total ? `${verb} all (${total})` : `${verb} selected (${kept})`;
 }
 
-const PROPOSED_FEATURE: Record<ProposedBy['feature'], string> = { generate: 'Generate ideas', summarise: 'Summarise', cluster: 'Cluster' };
+const PROPOSED_FEATURE: Record<Exclude<ProposedBy['feature'], 'agent'>, string> = { generate: 'Generate ideas', summarise: 'Summarise', cluster: 'Cluster' };
 
 /** The properties panel's line for an object an AI run proposed (already through cleanProposedBy): "Proposed by AI (Summarise) for Ana". */
 export function proposedLine(p: ProposedBy | undefined): string | null {
   if (!p) return null;
+  // an agent's draft names no token (a member names their own tokens): "Drafted by an agent for Ana"
+  if (p.feature === 'agent') return `Drafted by an agent${p.by.name ? ` for ${p.by.name}` : ''}`;
   return `Proposed by AI (${PROPOSED_FEATURE[p.feature]})${p.by.name ? ` for ${p.by.name}` : ''}`;
 }

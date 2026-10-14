@@ -74,7 +74,7 @@ function members(v: unknown) {
     }));
 }
 
-const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster']);
+const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster', 'agent']);
 const PERSON_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const TRACKER_FIELD_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const TRACKER_KEY_RE = /^[A-Za-z]{2,5}-[1-9][0-9]{0,18}$/i;

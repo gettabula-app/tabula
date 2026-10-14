@@ -338,6 +338,8 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     // where an object an AI run proposed came from (TAB-160): stored data, cleaned, and set as text
     const origin = sel.length === 1 ? proposedLine(cleanProposedBy((first as BaseObj).proposedBy)) : null;
     if (origin) appearance.push(h('p', { class: 'props-origin' }, origin));
+    // an agent's draft: a person accepts it as it is, or edits it (which also ends the draft)
+    if (sel.length >= 1 && app.hasDrafts() && !app.readOnly) appearance.push(h('button', { class: 'btn', onclick: () => app.acceptDrafts() }, sel.length === 1 ? 'Accept draft' : 'Accept drafts'));
     const section = (label: 'Appearance' | 'Text' | 'Arrange', controls: (HTMLElement | null)[]) => {
       const contents = controls.filter(Boolean) as HTMLElement[];
       if (!contents.length) return null;

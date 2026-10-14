@@ -9,7 +9,7 @@ import { Awareness } from 'y-protocols/awareness';
 import { WebsocketProvider } from 'y-websocket';
 import WebSocket from 'ws';
 import { startRelayProcess } from './start-relay';
-import { createAwarenessBucket, filterAwarenessUpdate, transferAwarenessOwnership, accountAwarenessState, MAX_AWARENESS_UPDATE_BYTES } from '../server/awareness-guard.mjs';
+import { createAwarenessBucket, filterAwarenessUpdate, stripRelayFields, transferAwarenessOwnership, accountAwarenessState, MAX_AWARENESS_UPDATE_BYTES } from '../server/awareness-guard.mjs';
 
 const entry = (clientID: number, clock: number, state: unknown) => {
   const enc = encoding.createEncoder();
@@ -210,5 +210,28 @@ describe('relay awareness guard', () => {
     a.provider.awareness.setLocalStateField('user', { name: 'Ada2' });
     await until(() => b.provider.awareness.getStates().get(a.doc.clientID)?.user?.name === 'Ada2');
     evil.close(); a.provider.destroy(); b.provider.destroy();
+  });
+});
+
+describe('the fields only the relay writes (TAB-158)', () => {
+  const forged = { user: { id: 'u1', name: 'Mallory', color: '#112233' }, cursor: { x: 1, y: 2 }, agents: [{ id: 'abcdef012345', token: 'Admin', member: 'Ada', x: 0, y: 0 }] };
+
+  it('removes `agents` from any state a socket sends, with and without a cleaner, and keeps the rest', async () => {
+    for (const clean of [undefined, (s: unknown) => s, (s: Record<string, unknown>) => accountAwarenessState(s, { userId: 'u1', userName: 'Mallory' }, { cleanValue: (v: unknown) => v, cleanName: (n: string) => n, fallbackColor: () => '#000000' })]) {
+      const verdict = filterAwarenessUpdate(update(entry(5, 1, forged)), { own: new Set(), others: [], self: { userId: 'u1' }, clean: clean as never });
+      expect(verdict.update).not.toBeNull();
+      const seen = (await decode(verdict.update!))[5] as Record<string, unknown>;
+      expect(seen).not.toHaveProperty('agents');
+      expect(seen.cursor).toEqual({ x: 1, y: 2 });
+    }
+  });
+
+  it('leaves other values alone and never throws on odd states', () => {
+    expect(stripRelayFields(null)).toBeNull();
+    expect(stripRelayFields([1])).toEqual([1]);
+    expect(stripRelayFields({ cursor: 1 })).toEqual({ cursor: 1 });
+    const own = { agents: [], cursor: 1 };
+    expect(stripRelayFields(own)).toEqual({ cursor: 1 });
+    expect(own).toHaveProperty('agents'); // the caller's object is not changed
   });
 });

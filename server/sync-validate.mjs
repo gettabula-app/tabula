@@ -143,7 +143,7 @@ export const UNFURL_STATES = Object.freeze(['pending', 'ok', 'failed', 'off']);
 export const UNFURL_ERRORS = Object.freeze(['blocked', 'timeout', 'too_large', 'not_html', 'http_status', 'unreachable', 'rate_limited']);
 const WIP_MODES = Object.freeze(['warn', 'block']);
 const VISIBILITY = Object.freeze(['+', '-', '#', '~', '']);
-const PROPOSED_FEATURES = Object.freeze(['generate', 'summarise', 'cluster']);
+const PROPOSED_FEATURES = Object.freeze(['generate', 'summarise', 'cluster', 'agent']);
 
 // ---------------------------------------------------------------- patterns
 

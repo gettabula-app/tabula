@@ -371,7 +371,7 @@ export function linkUrlOf(value) {
 const TRACKER_FIELD_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const TRACKER_VIEWS = ['inbox', 'my', 'all', 'board', 'projects'];
 
-const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster']);
+const PROPOSED_FEATURES = new Set(['generate', 'summarise', 'cluster', 'agent']);
 /** A stored proposedBy as MCP and the AI read show it: `{ feature, name }`, the name cleaned and cut like other names. */
 function proposedOf(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v) || !PROPOSED_FEATURES.has(v.feature)) return null;
@@ -1318,7 +1318,7 @@ export function assertLinkedCardEdit(card, field, path = field) {
  * Validates a whole create batch against the document and returns what to write. Throws OpsError; writes nothing.
  * @param {{ createdBy: string, now?: number }} who
  */
-export function planCreate(doc, items, { createdBy, now = Date.now() }) {
+export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy = null }) {
   const list = listOf(items, 'objects', 1, LIMITS.createItems);
   const { map, get } = snapshot(doc);
   if (map.size + list.length > LIMITS.boardObjects) {
@@ -1365,7 +1365,8 @@ export function planCreate(doc, items, { createdBy, now = Date.now() }) {
   const created = [];
 
   entries.forEach(({ item, type, kind, id, path }, i) => {
-    const base = { id, type, z: zs[i], createdBy, updatedAt: now };
+    // an object an agent made is marked as a draft until a person edits or accepts it (TAB-158); a connector is not a thing to review
+    const base = { id, type, z: zs[i], createdBy, updatedAt: now, ...(proposedBy && type !== 'connector' ? { proposedBy: { feature: 'agent', by: { id: proposedBy.id ?? null, name: proposedBy.name ?? null } } } : {}) };
     const lineHeight = item.lineHeight === undefined ? undefined : num(item.lineHeight, at(path, 'lineHeight'), 0.8, 3);
     let fields;
     if (type === 'connector') {

@@ -31,6 +31,7 @@ import { loadConfig } from './config.mjs';
 import { ogKind, withOgTags } from './og-tags.mjs';
 import { withLegacyEnv } from './env.mjs';
 import { createHistory } from './history.mjs';
+import { CAPTURE_MAX_OBJECTS, createActivity, diffObjects, snapshotObjects, watchTouched } from './activity.mjs';
 import { createBackup, loadBackupConfig } from './backup.mjs';
 import { createSnapshotBarrier } from './snapshot-barrier.mjs';
 import { RestoreError, createRestore, recoverOnStart } from './restore.mjs';
@@ -95,6 +96,9 @@ const ROLE_RECHECK_MS = 5_000;
 
 const MSG_SYNC = 0;
 const MSG_AWARENESS = 1;
+/** How long an agent shows as at work on a board after its last change (TAB-158), and how many are shown at once. */
+const AGENT_PRESENCE_MS = Math.min(10 * 60_000, Number(process.env.TABULA_TEST_AGENT_PRESENCE_MS) > 0 ? Number(process.env.TABULA_TEST_AGENT_PRESENCE_MS) : 30_000); // the env knob is for tests; never more than 10 minutes
+const MAX_AGENTS_SHOWN = 6;
 // Not a y-websocket type (it uses 0 sync, 1 awareness, 2 auth, 3 query awareness). Relay to client only: a hosted
 // workspace's read-only switch flipped (docs/cloud.md). Room.onMessage ignores it from a client like any unknown type.
 const MSG_WORKSPACE = 4;
@@ -294,6 +298,8 @@ function boardState(id) {
   }
 }
 const history = createHistory({ dataDir: DATA_DIR, boardState, log });
+// The board activity log (TAB-158): what each MCP tool call changed, and the means to revert it
+const activity = createActivity({ dataDir: DATA_DIR, log });
 
 // Live AI runs, shared by the run routes of both modes and the board rooms below.
 const aiLive = createLiveRuns();
@@ -381,6 +387,19 @@ if (config.authEnabled) {
   };
   sweepNotifications();
   setInterval(sweepNotifications, NOTIFICATION_SWEEP_MS).unref();
+  // an agent activity log, with its revert data, does not outlive its board (deleted, or gone after a restore)
+  const sweepActivity = () => {
+    try {
+      activity.sweep((id) => {
+        const board = directory.getBoard(id);
+        return !!board && !board.deletedAt;
+      });
+    } catch (err) {
+      log('activity: sweep failed', err?.message);
+    }
+  };
+  sweepActivity();
+  setInterval(sweepActivity, 24 * 60 * 60 * 1000).unref();
   cardDue = createCardDue({ directory, notifications: notificationStore, shouldNotify: (userId, kind) => notificationPrefs.allows(userId, kind) });
   const runCardDue = (fn) => (snapshotBarrier ? snapshotBarrier.runWriter(fn) : fn());
   const sweepCardDue = () => {
@@ -596,7 +615,7 @@ const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpe
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, notificationDigest, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, activity, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, notificationDigest, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
@@ -786,11 +805,37 @@ class Room {
         removed.forEach((id) => ids.delete(id));
         this.updatePresenceColour(conn);
       }
-      const enc = encoding.createEncoder();
-      encoding.writeVarUint(enc, MSG_AWARENESS);
-      encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
-      this.broadcast(encoding.toUint8Array(enc));
+      if (!changed.includes(this.awareness.clientID)) {
+        const enc = encoding.createEncoder();
+        encoding.writeVarUint(enc, MSG_AWARENESS);
+        encoding.writeVarUint8Array(enc, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
+        this.broadcast(encoding.toUint8Array(enc));
+        return;
+      }
+      // the agents the relay publishes: who they work for and their token names go to the people in the workspace, a join-code guest gets a generic entry
+      for (const guest of [false, true]) {
+        const msg = this.awarenessMessage(changed, guest);
+        for (const ws of this.conns.keys()) if ((ws.guest === true) === guest) send(ws, msg);
+      }
     });
+  }
+
+  /** An awareness update for `ids`, with the relay's own agents entry redacted for a guest (no names, no positions of what was drafted). */
+  awarenessMessage(ids, guest) {
+    const enc = encoding.createEncoder();
+    encoding.writeVarUint(enc, MSG_AWARENESS);
+    const inner = encoding.createEncoder();
+    encoding.writeVarUint(inner, ids.length);
+    for (const id of ids) {
+      const meta = this.awareness.meta.get(id);
+      let state = this.awareness.getStates().get(id) ?? null;
+      if (guest && id === this.awareness.clientID && state?.agents) state = { agents: state.agents.map((a) => ({ id: a.id, token: 'Agent', member: null, x: null, y: null })) };
+      encoding.writeVarUint(inner, id);
+      encoding.writeVarUint(inner, meta?.clock ?? 0);
+      encoding.writeVarString(inner, JSON.stringify(state));
+    }
+    encoding.writeVarUint8Array(enc, encoding.toUint8Array(inner));
+    return encoding.toUint8Array(enc);
   }
 
   broadcast(msg) {
@@ -960,12 +1005,7 @@ class Room {
     send(ws, encoding.toUint8Array(enc));
 
     const states = this.awareness.getStates();
-    if (states.size > 0) {
-      const a = encoding.createEncoder();
-      encoding.writeVarUint(a, MSG_AWARENESS);
-      encoding.writeVarUint8Array(a, awarenessProtocol.encodeAwarenessUpdate(this.awareness, [...states.keys()]));
-      send(ws, encoding.toUint8Array(a));
-    }
+    if (states.size > 0) send(ws, this.awarenessMessage([...states.keys()], ws.guest === true));
     // only when there are runs: a client starts with none, and an app older than the message logs each one it gets
     const snapshot = this.kind === 'board' ? aiLive.snapshotFor(this.name, aiViewer(ws)) : null;
     if (snapshot?.runs.length) sendAiRuns(ws, snapshot);
@@ -984,6 +1024,32 @@ class Room {
   }
 
   // Starts the unload timer when nobody is connected. A room opened for an MCP edit would otherwise stay in memory.
+  /**
+   * An agent at work on this board (TAB-158, docs/agent-presence.md), set by an MCP write only and published in the room's own awareness state, which no client
+   * can write (the `agents` field is stripped from every client state). It stays for AGENT_PRESENCE_MS after the agent's last change, then goes.
+   */
+  setAgent(agent) {
+    if (this.kind !== 'board') return;
+    this.agents ??= new Map();
+    const known = this.agents.get(agent.id);
+    this.agents.set(agent.id, { id: agent.id, token: agent.token, member: agent.member, x: agent.x ?? known?.x ?? null, y: agent.y ?? known?.y ?? null, until: Date.now() + AGENT_PRESENCE_MS });
+    this.publishAgents();
+  }
+
+  publishAgents() {
+    clearTimeout(this.agentTimer);
+    this.agentTimer = null;
+    const t = Date.now();
+    for (const [id, a] of this.agents ?? []) if (a.until <= t) this.agents.delete(id);
+    const list = [...(this.agents?.values() ?? [])].slice(-MAX_AGENTS_SHOWN);
+    this.awareness.setLocalState(list.length ? { agents: list } : null);
+    if (list.length) {
+      const next = Math.min(...list.map((a) => a.until));
+      this.agentTimer = setTimeout(() => this.publishAgents(), Math.max(50, next - Date.now()) + 25);
+      this.agentTimer.unref?.();
+    }
+  }
+
   releaseIfIdle() {
     if (this.conns.size !== 0) return;
     clearTimeout(this.unloadTimer);
@@ -995,6 +1061,8 @@ class Room {
         }
         clearTimeout(this.trackerGuardTimer);
         this.trackerGuardTimer = null;
+        clearTimeout(this.agentTimer);
+        this.agentTimer = null;
         if (this.kind === 'board') trackerGuard?.clearTitles(this.name);
         if (this.kind === 'board') cardDue?.forget(this.name);
         this.doc.destroy();
@@ -1137,6 +1205,8 @@ class Room {
         // Every socket may only write the clientIDs it controls; guests and read-only viewers also get sanitised state.
         const others = [];
         for (const [other, ids] of this.conns) if (other !== ws) others.push({ ids, userId: other.userId, guest: other.guest === true });
+        // the room's own awareness id (the agents it publishes) belongs to the relay: no socket can write it, whatever clock it sends
+        others.push({ ids: new Set([this.awareness.clientID]), userId: '__relay__', guest: false });
         const clean = ws.guest
           ? (state) => cleanGuestAwarenessState(state, ws)
           : typeof ws.userId === 'string' && ws.userId !== '' ? (state) => cleanAccountAwarenessState(state, ws) : undefined;
@@ -1218,6 +1288,7 @@ const roomAccess = {
   },
   write(name, origin, fn, trackerContext = null) {
     const room = getRoom(name);
+    let trace = null;
     try {
       const commentThreadId = room.kind === 'comments' && typeof trackerContext?.commentThreadId === 'string'
         ? trackerContext.commentThreadId
@@ -1229,6 +1300,15 @@ const roomAccess = {
         return thread instanceof Y.Map ? thread.toJSON() : null;
       };
       const commentBefore = commentThreadId && commentActorId ? commentSnapshot() : null;
+      // an MCP write is logged with what it changed (docs/agent-presence.md): the objects as they were and as they are
+      // a board with more objects than CAPTURE_MAX_OBJECTS is not snapshotted (too costly on the shared event loop): only the ids touched are noted
+      if (room.kind === 'board' && typeof trackerContext?.activity?.onDiff === 'function') {
+        if (room.doc.getMap('objects').size <= CAPTURE_MAX_OBJECTS) trace = { before: snapshotObjects(room.doc) };
+        else {
+          const touched = new Set();
+          trace = { touched, off: watchTouched(room.doc, touched) };
+        }
+      }
       const mentionIndex = room.kind === 'comments' && commentActorId && directory ? commentIndex(room.doc) : null;
       let result;
       const apply = () => room.doc.transact(() => {
@@ -1242,6 +1322,14 @@ const roomAccess = {
           throw new OpsError(code, `Linked card write was refused (${refused.reason}).`, refused.reason === 'title_invalid' ? 'title' : undefined);
         }
       } else apply();
+      if (trace) {
+        try {
+          trace.off?.();
+          trackerContext.activity.onDiff(trace.before ? diffObjects(trace.before, snapshotObjects(room.doc)) : { tooLarge: true, touched: [...trace.touched] });
+        } catch (err) {
+          log('activity: could not read the change of a write', err?.message);
+        }
+      }
       const commentAfter = commentThreadId && commentActorId ? commentSnapshot() : null;
       if (commentBefore && commentAfter && commentBefore.authorId !== commentActorId && typeof commentBefore.authorId === 'string') {
         const beforeReplies = commentBefore.replies ?? {};
@@ -1278,11 +1366,16 @@ const roomAccess = {
       }
       return result;
     } finally {
+      trace?.off?.();
       room.releaseIfIdle();
     }
   },
   invalidateTracker(boardId) {
     trackerGuard?.invalidate(boardId);
+  },
+  /** An MCP call changed a board: its agent is at work there now (only an open room has anyone to show it to). */
+  agentActive(name, agent) {
+    rooms.get(name)?.setAgent(agent);
   },
 };
 
@@ -1321,7 +1414,7 @@ setInterval(() => aiLive.sweep(), AI_SWEEP_MS).unref();
 let mcp = null;
 if (config.mcp) {
   const { createMcp } = await import('./mcp.mjs');
-  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, notifications: notificationStore, log, snapshotBarrier, history });
+  mcp = createMcp({ config, directory, cloud, canWriteRoom, roomAccess, notifications: notificationStore, log, snapshotBarrier, history, activity });
 }
 
 let oauthRoutes = null;
@@ -1826,6 +1919,7 @@ if (config.authEnabled) {
   });
   events.on('user-removed', ({ userId } = {}) => {
     for (const ws of socketsOf(userId)) refresh(ws, true);
+    activity.removeUser(userId); // the agent activity made with that person's tokens, revert data included (docs/agent-presence.md)
   });
   // A workspace that turns read-only (or back) applies to sockets that are already open, and only a flip of that switch
   // (not a banner, a seat limit or a repeated value) tells the clients, who then ask /api/me what is true. `send` skips
@@ -2070,6 +2164,7 @@ async function stopRelay() {
   clearInterval(pinger);
   await closeKeyFloorReporter();
   cloud?.close();
+  activity.flush(); // the activity logs that changed in the last moments
   api?.flushTelemetry?.(); // the running hour's report goes to its file: one small synchronous write, nothing to wait for
   // A snapshot hold must never turn a shutdown save into a deferred one: the process is about to exit.
   const saveNow = () => (snapshotBarrier ? snapshotBarrier.allowWrites(saveAllRooms) : saveAllRooms());

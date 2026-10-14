@@ -581,6 +581,8 @@ export class Store {
       }
       if (m.get('rotation') !== 0) { m.set('rotation', 0); wroteField = true; }
     }
+    // an object an agent drafted (TAB-158) stops being a draft when a person edits it: this is that edit
+    if (wroteField && !('proposedBy' in (patch as Record<string, unknown>)) && (m.get('proposedBy') as { feature?: unknown } | undefined)?.feature === 'agent') m.delete('proposedBy');
     // a line stops being one as soon as it is bound, or routed elbow or curved (line-geometry.ts): it is a plain connector again
     if (m.get('type') === 'connector' && m.has('line') && !lineFlag({ line: m.get('line'), route: m.get('route'), from: m.get('from'), to: m.get('to') })) {
       m.delete('line');

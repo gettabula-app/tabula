@@ -253,6 +253,9 @@ describe('guest scope and role enforcement', () => {
     const added = await upload(guest.cookie!, board, bytes);
     expect(added.status).toBe(201);
     expect((await h.api(guest.cookie, 'GET', `/api/boards/${board}/versions`)).status).toBe(200);
+    // the agent activity log (TAB-158) is not on a join-code guest's allow-list: neither reading it nor reverting
+    expect([401, 403, 404]).toContain((await h.api(guest.cookie, 'GET', `/api/boards/${board}/activity`)).status);
+    expect([401, 403, 404]).toContain((await h.api(guest.cookie, 'POST', `/api/boards/${board}/activity/anything/revert`)).status);
     const read = await fetch(`${h.base}/api/boards/${board}/assets/${added.body.hash}`, { headers: { cookie: guest.cookie! } });
     expect(read.status).toBe(200);
     expect((await read.arrayBuffer()).byteLength).toBeGreaterThan(0);

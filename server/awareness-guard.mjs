@@ -10,6 +10,20 @@ export const MAX_AWARENESS_ENTRIES = 16;
 export const MAX_AWARENESS_IDS_PER_SOCKET = 8;
 
 /**
+ * Fields only the relay writes into awareness (TAB-158: `agents`, the agents at work on the board). A client's own state never carries one: it is dropped from
+ * every state a socket sends, whatever else the state holds, so nobody can pose as an agent.
+ */
+export const RELAY_ONLY_FIELDS = Object.freeze(['agents']);
+
+export function stripRelayFields(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) return state;
+  if (!RELAY_ONLY_FIELDS.some((k) => Object.hasOwn(state, k))) return state;
+  const out = { ...state };
+  for (const k of RELAY_ONLY_FIELDS) delete out[k];
+  return out;
+}
+
+/**
  * @param {Uint8Array} update raw awareness update from one socket
  * @param {object} opts
  * @param {Set<number>} opts.own clientIDs this socket already controls (Room.conns.get(ws))
@@ -46,6 +60,7 @@ export function filterAwarenessUpdate(update, { own, others, self = {}, clean })
     }
     let state = JSON.parse(raw);
     if (state !== null && clean) state = clean(state);
+    if (state !== null) state = stripRelayFields(state);
     kept.push({ clientID, clock, state });
   }
   if (!kept.length) return { update: null, ids: [], dropped, oversized: false };

@@ -56,6 +56,7 @@ import { watchTableSizes } from './table-heal';
 import { cellAt, layoutTable } from './table-layout';
 import { TableController, newTableId } from './table-ui';
 import { MAX_TABLE_CHARS, MAX_TABLE_COLS, MAX_TABLE_ROWS, DEFAULT_COL_WIDTH, gridChars, newTableFields, parseGrid, tableFromGrid } from '../shared/tables';
+import { cleanProposedBy } from './safe-obj';
 import { toggleTask } from './markdown';
 import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
@@ -66,6 +67,11 @@ import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from './tracker/linke
 /** A finger, not a mouse: the pointer that targets are sized for (handles and line hit areas grow). */
 const coarsePointer = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 const STICKY_COLOR_KEY = 'driftboard:sticky-color';
+/** An agent at work on the board (TAB-158): who it works for and the name of its token. */
+export interface AgentView { id: string; token: string; member: string | null; x: number | null; y: number | null }
+/** What an agent's cursor and avatar are called: who it works for first, its own token name quoted after (see BoardApp.agents). */
+export const agentName = (a: AgentView) => (a.member ? `${a.member}'s agent` : 'An agent');
+const AGENT_COLOUR = 'var(--wire, #2F6FED)';
 /** A link or a task box of a Markdown block under the pointer (src/markdown-svg.ts): the block's id, or null. */
 const markdownTargetOf = (target: EventTarget | null): string | null => {
   const el = target as unknown as { closest?: (selector: string) => { getAttribute(name: string): string | null } | null } | null;
@@ -156,6 +162,8 @@ export class BoardApp {
   get tables(): TableController {
     return (this.tablesController ??= new TableController(this));
   }
+  /** Objects an agent drafted that nobody has edited or accepted yet (TAB-158), kept from the changes the store reports. */
+  private drafts = new Set<Id>();
   /** The inline "+ Add card" input (docs/kanban.md, Cards). */
   readonly cardInput: CardInput;
   /** The card a keyboard move is on: it shows the ring and the "Moving" tag until the selection changes. */
@@ -287,6 +295,7 @@ export class BoardApp {
         const o = this.store.get(id);
         if (o && 'font' in o && o.font) ensureFont(o.font, [o.fontWeight || 400, 700]);
       }
+      this.syncDrafts(changed);
       this.refreshPins();
       if (this.kbMoving) this.showMoving(this.kbMoving);
       this.emit('objects');
@@ -341,6 +350,33 @@ export class BoardApp {
     this.disposers.push(() => firstFit.dispose());
     requestAnimationFrame(() => firstFit.start());
     this.refreshPins();
+    this.syncDrafts([...this.store.cache.keys()]);
+  }
+
+  /** Keeps the set of agent drafts (TAB-158) to the objects that are one now: an object an agent made, until a person edits or accepts it. */
+  private syncDrafts(ids: Iterable<Id>) {
+    let changed = false;
+    for (const id of ids) {
+      const o = this.store.get(id) as BaseObj | undefined;
+      const draft = !!o && cleanProposedBy(o.proposedBy)?.feature === 'agent' && this.store.isShown(o);
+      if (draft && !this.drafts.has(id)) { this.drafts.add(id); changed = true; } else if (!draft && this.drafts.delete(id)) changed = true;
+    }
+    if (changed) this.r.setOverlay({ drafts: [...this.drafts] });
+  }
+
+  /** Whether any of these objects is an agent draft. */
+  hasDrafts(ids: readonly Id[] = this.selection): boolean {
+    return ids.some((id) => this.drafts.has(id));
+  }
+
+  /** A person accepts agent drafts as they are: they stop being drafts (one undo step). */
+  acceptDrafts(ids: readonly Id[] = this.selection) {
+    const mine = ids.filter((id) => this.drafts.has(id));
+    if (!mine.length || this.readOnly) return;
+    this.store.undo.stopCapturing();
+    this.store.transact(() => mine.forEach((id) => this.store.update(id, { proposedBy: undefined })));
+    this.store.undo.stopCapturing();
+    this.announce(mine.length === 1 ? 'Draft accepted' : `${mine.length} drafts accepted`);
   }
 
   private handleUndoStackPopped(type: 'undo' | 'redo') {
@@ -3386,7 +3422,10 @@ export class BoardApp {
     const aw = this.conn.awareness;
     const render = (fromCamera = false) => {
       const remote: { ids: Id[]; color: string }[] = [];
-      const cursors: { id: number; name: string; guest: boolean; color: string; p: Point }[] = [];
+      const cursors: { id: number | string; name: string; guest: boolean; color: string; p: Point; agent?: AgentView }[] = [];
+      for (const a of this.agents()) {
+        if (a.x !== null && a.y !== null) cursors.push({ id: `agent:${a.id}`, name: agentName(a), guest: false, color: AGENT_COLOUR, p: { x: a.x, y: a.y }, agent: a });
+      }
       aw.getStates().forEach((st, clientId) => {
         if (clientId === aw.clientID || !st.user) return;
         if (Array.isArray(st.sel) && st.sel.length) remote.push({ ids: st.sel, color: personColor(st.user.color) });
@@ -3401,14 +3440,14 @@ export class BoardApp {
     this.r.onCameraApplied(() => render(true));
   }
 
-  private cursorEls = new Map<number, HTMLDivElement>();
+  private cursorEls = new Map<number | string, HTMLDivElement>();
   /**
    * A remote cursor is kept in board coordinates and projected with the camera of this very frame: a pan or a zoom moves it with the board,
    * at once (no transition, or it trails the canvas by the length of the transition). Only a cursor that moved on the board glides, 90 ms.
    */
-  private cursorBoard = new Map<number, Point>();
-  private renderCursors(cs: { id: number; name: string; guest: boolean; color: string; p: Point }[], animate = true) {
-    const seen = new Set<number>();
+  private cursorBoard = new Map<number | string, Point>();
+  private renderCursors(cs: { id: number | string; name: string; guest: boolean; color: string; p: Point; agent?: AgentView }[], animate = true) {
+    const seen = new Set<number | string>();
     for (const c of cs) {
       seen.add(c.id);
       let el = this.cursorEls.get(c.id);
@@ -3426,9 +3465,18 @@ export class BoardApp {
         this.cursorEls.set(c.id, el);
       }
       el.style.color = c.color;
+      el.classList.toggle('remote-cursor-agent', !!c.agent);
       const label = el.querySelector('.remote-cursor-label')!;
       const name = label.querySelector('.remote-cursor-name') as HTMLSpanElement;
       name.textContent = c.name;
+      // an agent's own name for its token is the member's to choose, so it is shown quoted and apart, after who it works for
+      let token = label.querySelector('.remote-cursor-token') as HTMLSpanElement | null;
+      if (c.agent && !token) {
+        token = document.createElement('span');
+        token.className = 'remote-cursor-token';
+        label.appendChild(token);
+      } else if (!c.agent) token?.remove();
+      if (c.agent && token) token.textContent = `“${c.agent.token}”`;
       name.style.background = c.color;
       let guestBadge = label.querySelector('.remote-cursor-guest') as HTMLSpanElement | null;
       if (c.guest && !guestBadge) {
@@ -3455,6 +3503,31 @@ export class BoardApp {
       this.conn.awareness.setLocalStateField('cursor', { x: Math.round(this.lastPointer.x), y: Math.round(this.lastPointer.y) });
     }, 50);
     void p;
+  }
+
+  /**
+   * The agents at work on this board (TAB-158): MCP clients that changed it in the last half minute. They come from a field only the relay writes into the
+   * room's awareness (every client's own state has it stripped), and are read here as untrusted text anyway: names are cut and cleaned, positions must be numbers.
+   */
+  agents(): AgentView[] {
+    const out: AgentView[] = [];
+    this.conn.awareness.getStates().forEach((st, clientId) => {
+      if (clientId === this.conn.awareness.clientID || !Array.isArray(st.agents)) return;
+      for (const raw of st.agents.slice(0, 6)) {
+        const a = raw as Record<string, unknown>;
+        if (!a || typeof a.id !== 'string' || !/^[0-9a-f]{12}$/.test(a.id) || typeof a.token !== 'string') continue;
+        const clean = (v: unknown, max: number) => (typeof v === 'string' ? [...v.replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim()].slice(0, max).join('') : '');
+        const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+        out.push({ id: a.id, token: clean(a.token, 40) || 'Agent', member: clean(a.member, 40) || null, x: num(a.x), y: num(a.y) });
+      }
+    });
+    return out;
+  }
+
+  /** Takes the view to where an agent is working. */
+  followAgent(id: string) {
+    const a = this.agents().find((x) => x.id === id);
+    if (a && a.x !== null && a.y !== null) this.r.flyToCenter({ x: a.x, y: a.y }, this.zoom);
   }
 
   /** Remote participants currently in the room. */
