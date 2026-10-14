@@ -652,7 +652,7 @@ select.input {
 .menu-item.danger { color: var(--danger); }
 /* the User guide entry stands out quietly: the accent colour of the theme on its icon, a heavier label */
 .menu-item.guide-item .ico { color: var(--signal); }
-.menu-item.guide-item > span:not([class]) { font-weight: 600; }
+.menu-item.guide-item > .board-menu-label { font-weight: 600; }
 .ctx-menu { min-width: 220px; border-radius: var(--radius-md); max-height: calc(100dvh - 24px); overflow-y: auto; }
 /* the table entries of the right-click menu (docs/tables.md): cell fill swatches in a row */
 .table-swatches { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; }
@@ -700,7 +700,7 @@ select.input {
 .board-menu-footer { position: sticky; bottom: 0; padding-top: 4px; border-top: 1px solid var(--tray-line); background: var(--tray); }
 .board-menu-footer .menu-item { width: 100%; }
 .board-menu-footer .guide-item .ico { color: var(--tray-muted); }
-.board-menu-footer .guide-item > span:not([class]) { font-weight: 500; }
+.board-menu-footer .guide-item > .board-menu-label { font-weight: 500; }
 .board-menu-search .board-menu-slash { margin-left: auto; }
 @media (max-width: 500px) {
   .popover.board-menu-pop {
