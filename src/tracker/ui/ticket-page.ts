@@ -696,8 +696,11 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
     const id = active.getAttribute('data-focus-id');
     if (id) {
       // a field that is being typed in keeps its caret, selection and scroll across the redraw (TAB-355)
-      if (active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && active.type === 'text')) {
-        return { id, caret: { start: active.selectionStart ?? active.value.length, end: active.selectionEnd ?? active.value.length, dir: active.selectionDirection ?? 'none', top: active instanceof HTMLTextAreaElement ? active.scrollTop : 0 } };
+      const field = active as Partial<HTMLTextAreaElement>;
+      const tag = active.tagName.toLocaleLowerCase();
+      if (tag === 'textarea' || (tag === 'input' && field.type === 'text')) {
+        const length = field.value?.length ?? 0;
+        return { id, caret: { start: field.selectionStart ?? length, end: field.selectionEnd ?? length, dir: field.selectionDirection ?? 'none', top: tag === 'textarea' ? field.scrollTop ?? 0 : 0 } };
       }
       return { id };
     }
@@ -720,9 +723,11 @@ export function mountTicketPage(host: HTMLElement, opts: TicketPageOptions): { d
       next = matches.find((item) => item.getAttribute('href') === target.href && (item.getAttribute('aria-label') ?? item.textContent?.trim() ?? null) === target.label) ?? matches[target.index];
     }
     next?.focus();
-    if (next && 'caret' in target && target.caret && (next instanceof HTMLTextAreaElement || next instanceof HTMLInputElement)) {
-      try { next.setSelectionRange(target.caret.start, target.caret.end, target.caret.dir); } catch { /* an input type without a selection */ }
-      if (next instanceof HTMLTextAreaElement) next.scrollTop = target.caret.top;
+    const tag = next?.tagName.toLocaleLowerCase();
+    if (next && 'caret' in target && target.caret && (tag === 'textarea' || tag === 'input')) {
+      const field = next as HTMLTextAreaElement;
+      try { field.setSelectionRange(target.caret.start, target.caret.end, target.caret.dir); } catch { /* an input type without a selection */ }
+      if (tag === 'textarea') field.scrollTop = target.caret.top;
     }
   }
   function relationRow(relation: { kind: TrackerRelationKind; key: string }): HTMLElement {

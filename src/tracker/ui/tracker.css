@@ -741,7 +741,7 @@
 .trk:not(.trk-element) .trk-board-card.is-draggable { cursor: grab; user-select: none; }
 .trk:not(.trk-element) .trk-board-card.is-dragging { opacity: 0.35; }
 .trk:not(.trk-element) .trk-board-lane.is-drop-target {
-  outline: 2px solid color-mix(in srgb, var(--trk-text) 45%, transparent); outline-offset: -2px;
+  outline: 1px solid color-mix(in srgb, var(--trk-text) 45%, transparent); outline-offset: -1px;
   background: color-mix(in srgb, var(--trk-text) 8%, var(--trk-ground));
 }
 .trk:not(.trk-element) .trk-board-ghost {
