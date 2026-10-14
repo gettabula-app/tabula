@@ -3,7 +3,8 @@
 
 import { overBudget, testTimes } from '../test-timings.mjs';
 
-export const NIGHTLY_OS = ['ubuntu-latest', 'macos-latest', 'windows-latest'];
+// One entry per nightly leg (nightly.yml names a leg `<os>-node<version>`): Linux only since 2026-10-13, Node 22 (the engines floor) and Node 24.
+export const NIGHTLY_OS = ['ubuntu-latest-node22', 'ubuntu-latest-node24'];
 export const NIGHTLY_RUNS = 3;
 
 const SKIPPED_STATUSES = new Set(['pending', 'skipped', 'todo', 'disabled']);
