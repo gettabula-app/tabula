@@ -1,3 +1,4 @@
+import { keyInTracker } from '../../tracker-key-scope';
 import './tracker.css';
 import { registerTrackerRenderer } from '../../tracker-frame';
 import type { TrackerApi, TrackerStore } from '../../tracker-data';
@@ -388,7 +389,7 @@ export function mountTrackerFrames(options: TrackerFrameUiOptions): () => void {
   };
 
   const onCanvasKey = (event: KeyboardEvent) => {
-    if (event.defaultPrevented || event.target instanceof HTMLElement && event.target.closest('.trk')) return;
+    if (event.defaultPrevented || keyInTracker(event)) return;
     if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
     const id = app.selection.length === 1 ? app.selection[0] : '';
     const mount = frames.get(id);
