@@ -5,7 +5,7 @@ A poll asks everyone on the board one question with a fixed list of answers. You
 ## Start a quick poll
 
 1. Click **Start a quick poll** in the toolbar on the left.
-2. Type the question in **Ask a question**. It can be up to 200 characters.
+2. Type the question in **Question**. It can be up to 200 characters.
 3. Fill in the options. A poll has 2 to 10 options, each up to 120 characters. Click **Add option** for more, or the **x** beside an option to remove it. Options must have text and must differ from each other.
 4. Choose how people answer:
    - **More than one answer**: people can tick several options. Without it, each person picks one.

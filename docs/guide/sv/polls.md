@@ -5,7 +5,7 @@ I en omröstning ställer du en fråga till alla på tavlan och ger dem en fast 
 ## Starta en snabbomröstning
 
 1. Klicka på **Start a quick poll** (Starta snabbomröstning) i verktygsfältet till vänster.
-2. Skriv frågan i **Ask a question** (Ställ en fråga). Den får vara högst 200 tecken.
+2. Skriv frågan i **Question** (Fråga). Den får vara högst 200 tecken.
 3. Fyll i svarsalternativen. En omröstning har 2 till 10 alternativ, vart och ett på högst 120 tecken. Klicka på **Add option** (Lägg till alternativ) för att lägga till fler eller på **x** bredvid ett alternativ för att ta bort det. Alternativen måste innehålla text och vara olika.
 4. Välj hur personer ska svara:
    - **More than one answer** (Fler än ett svar): personer kan markera flera alternativ. Utan det kan varje person välja ett alternativ.
