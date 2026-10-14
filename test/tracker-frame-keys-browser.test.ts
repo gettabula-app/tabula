@@ -312,6 +312,25 @@ describe.skipIf(!available)('keys inside the live tracker on a board', { timeout
     await page.close();
   });
 
+  it('list shortcuts work while Tab has put focus on a button inside a row (only Enter and Space belong to the button)', async () => {
+    const page = await open();
+    const id = await enterWork(page);
+    const row = page.locator('.trk-frame-wrap.is-work .trk-list-row').nth(1);
+    const key = (await row.getAttribute('data-key'))!;
+    await row.locator('button').first().focus();
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('BUTTON');
+    await page.keyboard.press('x');
+    expect(await row.getAttribute('aria-selected')).toBe('true');
+    await page.keyboard.press('x');
+    expect(await row.getAttribute('aria-selected')).toBe('false');
+    await page.keyboard.press('s');
+    await page.locator('.trk-pop').waitFor();
+    expect(await page.evaluate((k) => document.querySelector('.trk-list-row[data-cursor="true"]')?.getAttribute('data-key') === k, key)).toBe(true);
+    await page.keyboard.press('Escape');
+    expect(await frameExists(page, id)).toBe(true);
+    await page.close();
+  });
+
   it('Backspace on a focused row archives that one ticket, says so with the right count, and keeps the frame', async () => {
     const page = await open();
     const id = await enterWork(page);

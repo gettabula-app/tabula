@@ -464,6 +464,12 @@ export class Flow {
     this.app.store.setFlow({ timer: null });
   }
 
+  /** True while some note is still held back by a private step, whoever wrote it. */
+  hasPrivateNotes(): boolean {
+    for (const o of this.app.store.cache.values()) if ((o as BaseObj).privateStep) return true;
+    return false;
+  }
+
   /** Reveal private notes and vote totals for everyone. */
   reveal() {
     const s = this.app.store;

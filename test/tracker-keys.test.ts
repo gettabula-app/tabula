@@ -125,7 +125,20 @@ describe('tracker key resolver', () => {
     gridRow.setAttribute('role', 'row');
     expect(resolveKey({ ...state, gridFocus: true }, key('Enter', { target: eventTarget(button) })).action).toBeNull();
     expect(resolveKey({ ...state, gridFocus: true }, key(' ', { target: eventTarget(button) })).action).toBeNull();
-    expect(resolveKey({ ...state, gridFocus: true }, key('x', { target: eventTarget(button) })).action).toBeNull();
+    // only Enter and Space belong to a button: the list shortcuts work while Tab has put focus on a button inside a row
+    for (const [letter, type] of [['x', 'toggle-selection'], ['s', 'open-picker'], ['a', 'open-picker'], ['p', 'open-picker'], ['j', 'move-cursor'], ['k', 'move-cursor']] as const) {
+      expect(resolveKey({ ...state, gridFocus: true }, key(letter, { target: eventTarget(button) })).action?.type, `key ${letter}`).toBe(type);
+    }
+    const link = new FakeElement('a');
+    link.setAttribute('href', '/tickets/TAB-101');
+    expect(resolveKey({ ...state, gridFocus: true }, key('x', { target: eventTarget(link) })).action?.type).toBe('toggle-selection');
+    expect(resolveKey({ ...state, gridFocus: true }, key('Enter', { target: eventTarget(link) })).action).toBeNull();
+    // widgets with their own letter or arrow keys still keep every key
+    for (const role of ['option', 'menuitem', 'radio', 'slider', 'spinbutton', 'tab']) {
+      const widget = new FakeElement('div');
+      widget.setAttribute('role', role);
+      expect(resolveKey({ ...state, gridFocus: true }, key('x', { target: eventTarget(widget) })).action, `role=${role}`).toBeNull();
+    }
     expect(resolveKey({ ...state, layers: ['work', 'ticket'] }, key('Escape', { target: eventTarget(button) })).action).toEqual({ type: 'escape', layer: 'ticket' });
     expect(resolveKey({ ...state, gridFocus: true }, key('Enter', { target: eventTarget(gridRow) })).action?.type).toBe('open-ticket');
     expect(resolveKey({ ...state, gridFocus: false }, key('Enter', { target: eventTarget(gridRow) })).action).toBeNull();

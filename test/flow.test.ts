@@ -315,3 +315,26 @@ describe('the ring on votable items (TAB-238)', () => {
     expect(votableOutline(box, (v) => v)).toContain('stroke-opacity="0.7"');
   });
 });
+
+describe('notes held back by a private step', () => {
+  it('stay held back after moving on, and the reveal at a later step keeps them visible afterwards', () => {
+    const doc = new Y.Doc();
+    const A = fakeApp(doc, 'ana');
+    const B = fakeApp(doc, 'ben');
+    A.flow.setSteps([
+      { id: 's1', title: 'Silent', instructions: '', mode: 'private-write' },
+      { id: 's2', title: 'Reveal', instructions: '', mode: 'discuss' },
+      { id: 's3', title: 'Cluster', instructions: '', mode: 'cluster' },
+    ]);
+    A.store.transact(() => A.store.create({ ...note('n'), text: 'secret', privateStep: 's1', createdBy: 'ana' } as BaseObj));
+    expect(A.flow.hasPrivateNotes()).toBe(true);
+    A.flow.goto(1);
+    expect(A.flow.state().reveal).toBe(false);
+    expect(B.flow.isHidden(B.store.get('n') as BaseObj)).toBe(true);
+    expect(A.flow.hasPrivateNotes()).toBe(true);
+    A.flow.reveal();
+    expect(A.flow.hasPrivateNotes()).toBe(false);
+    A.flow.goto(2);
+    expect(B.flow.isHidden(B.store.get('n') as BaseObj)).toBe(false);
+  });
+});
