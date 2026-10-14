@@ -16,7 +16,7 @@ import { authState, onAuth } from '../auth';
 import { boxBounds } from '../geometry';
 import { isBox } from '../types';
 import { openAiKeyDialog } from './ai';
-import { modelLabel } from './ai-logic';
+import { modelDisplay, providerLabel } from './ai-logic';
 import { avoidForRun, barMoved, dropRun, linkBar, openReview, proposedByFor, setOwnRun, setStarting, showRun, takeReview } from './ai-live';
 import { toast } from './common';
 import { ICONS, h, icon } from './dom';
@@ -422,7 +422,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
       errKey = null;
       err.replaceChildren();
     }
-    const chipText = modelChipText({ armed: snap.armed, model: config.model, ctx: snap.ctx, facts: snap.facts, prompt: snap.prompt });
+    const chipText = modelChipText({ armed: snap.armed, model: config.model, provider: config.provider, ctx: snap.ctx, facts: snap.facts, prompt: snap.prompt });
     modelBtn.hidden = !(idle || running);
     modelBtn.textContent = chipText;
     modelBtn.classList.toggle('armed', !!snap.armed);
@@ -453,7 +453,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     const feature = idle ? st.armed : st.req?.feature ?? null;
     const [first, second] = disclosure({
       ui: st.ui, ctx: snap.ctx, facts: snap.facts, prompt: snap.prompt, withPrompt: promptSent(feature), keySource: config.keySource,
-      credits: config.credits, privateRun: st.privateRun, proposalKind: st.preview?.proposal.kind ?? null,
+      credits: config.credits, provider: providerLabel(config), privateRun: st.privateRun, proposalKind: st.preview?.proposal.kind ?? null,
     });
     if (sends.textContent !== first) sends.textContent = first;
     if (pays.textContent !== second) pays.textContent = second;
@@ -654,7 +654,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
   function fail(code: string, failure?: AiFailure) {
     st.run = null;
     st.preview = null;
-    st.error = errorView(code, { admin: isAdmin(), keySource: config.keySource, retryAfter: failure?.retryAfter ?? null, message: failure?.message ?? null });
+    st.error = errorView(code, { admin: isAdmin(), keySource: config.keySource, provider: providerLabel(config), retryAfter: failure?.retryAfter ?? null, message: failure?.message ?? null });
     st.ui = 'error';
     stopCountdown();
     st.wait = st.error.wait ?? 0;
@@ -890,7 +890,7 @@ function createBar(app: BoardApp, chrome: HTMLElement, initial: AiConfig): Bar {
     }
     return h('div', { class: 'tray aibar-pop', role: 'dialog', 'aria-label': 'Model and cost', tabindex: -1 },
       h('div', { class: 'aibar-label' }, 'Model'),
-      h('div', { class: 'aibar-note' }, h('b', null, modelLabel(config.model)), h('br'), CHOSEN_BY_ADMIN, isAdmin() ? [' ', h('a', { class: 'link', href: '#/admin/ai' }, 'AI settings')] : null),
+      h('div', { class: 'aibar-note' }, h('b', null, modelDisplay(config)), h('br'), CHOSEN_BY_ADMIN, isAdmin() ? [' ', h('a', { class: 'link', href: '#/admin/ai' }, 'AI settings')] : null),
       config.provider === 'openai-compatible' ? h('div', { class: 'aibar-note' }, 'Tabula does not know the price of this model. Your provider bills your key.') : null,
       h('div', { class: 'aibar-label' }, 'Visibility'),
       visibility,

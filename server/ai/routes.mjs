@@ -12,10 +12,29 @@ import { createRunRoutes } from './run.mjs';
 
 const UNCONFIGURED = 'AI keys cannot be saved because the server has no TABULA_AI_SECRET. Set it (32 random bytes as base64) and restart.';
 
+/** The host an OpenAI-compatible request goes to, for the disclosure line: https addresses only, else null. Never the path. */
+function endpointOf(baseUrl) {
+  try {
+    return baseUrl && new URL(baseUrl).protocol === 'https:' ? hostOf(baseUrl) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The answer of GET /api/ai/config in open mode: on only with the operator's key and TABULA_AI_OPEN=1. */
 export function openAiConfig(config) {
   const on = config.ai.open !== null;
-  return { enabled: on, features: [...FEATURES], keySource: on ? 'workspace' : null, provider: on ? config.ai.provider : null, model: config.ai.model, personalKeys: false, hasSecret: false, credits: false };
+  return {
+    enabled: on,
+    features: [...FEATURES],
+    keySource: on ? 'workspace' : null,
+    provider: on ? config.ai.provider : null,
+    endpoint: on && config.ai.provider === 'openai-compatible' ? endpointOf(config.ai.baseUrl) : null,
+    model: config.ai.model,
+    personalKeys: false,
+    hasSecret: false,
+    credits: false,
+  };
 }
 
 /**
@@ -128,6 +147,8 @@ export function createAiRoutes({
           features: settings.features,
           keySource,
           provider: inUse?.provider ?? null,
+          // where an OpenAI-compatible key's requests go: the host only, so the disclosure line can name it (docs/ai.md)
+          endpoint: inUse?.provider === 'openai-compatible' ? endpointOf(inUse.baseUrl) : null,
           // a key of a provider with no fixed list of models names its own
           model: inUse?.model ?? settings.model,
           personalKeys: personal,

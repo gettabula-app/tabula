@@ -175,3 +175,32 @@ describe('Test key for both providers', () => {
     expect(JSON.stringify(failed)).not.toContain('integrate.api.nvidia.com');
   });
 });
+
+describe('GET /api/ai/config names the host an OpenAI-compatible key sends to', () => {
+  it('gives the workspace key\'s host, and never its path or key', async () => {
+    const { w, admin, member } = await world();
+    expect((await putAdmin(w, admin, { ...good, baseUrl: 'https://integrate.api.nvidia.com/v1/some/path' })).status).toBe(200);
+    const config = await w.call(member, 'GET', '/api/ai/config');
+    expect(config.body).toMatchObject({ keySource: 'workspace', provider: 'openai-compatible', endpoint: 'integrate.api.nvidia.com' });
+    expect(config.text).not.toContain('/some/path');
+    expect(config.text).not.toContain(KEY);
+  });
+
+  it('gives a personal key\'s host with its port, and the personal key wins over the workspace key', async () => {
+    const { w, admin, member } = await world(true);
+    await putAdmin(w, admin, good);
+    await putMine(w, member, { apiKey: `${KEY}-mine`, provider: 'openai-compatible', baseUrl: 'https://llm.example.test:8443/v1/x', model: 'meta/llama-4' });
+    const mine = await w.call(member, 'GET', '/api/ai/config');
+    expect(mine.body).toMatchObject({ keySource: 'user', provider: 'openai-compatible', endpoint: 'llm.example.test:8443' });
+    // the person's own key view (myKey) keeps its address as it always has; the endpoint is the host alone
+    expect(mine.body.endpoint).not.toContain('/');
+    expect(mine.text).not.toContain(KEY);
+  });
+
+  it('is null for an Anthropic key and with no key at all', async () => {
+    const { w, admin, member } = await world();
+    expect((await w.call(member, 'GET', '/api/ai/config')).body).toMatchObject({ keySource: null, provider: null, endpoint: null });
+    await putAdmin(w, admin, { apiKey: `${KEY}-2`, provider: 'anthropic' });
+    expect((await w.call(member, 'GET', '/api/ai/config')).body).toMatchObject({ keySource: 'workspace', provider: 'anthropic', endpoint: null });
+  });
+});

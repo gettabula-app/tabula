@@ -115,7 +115,7 @@ TAB-222. The kind `openai-compatible` speaks the Chat Completions API of OpenAI 
 - No redirect is ever followed (a 3xx is `ai_unavailable`), the response is capped at 4 MB, and every request has a timeout. The key is sent only to the configured origin, in the `Authorization` header, and a response body is never copied into an error, a log line, an audit row or the status of anything.
 - The same checks run when the key is saved, at Test key and at every run, so a stored address cannot be redirected to another host without entering the key again.
 
-The operator's environment is trusted: `TABULA_AI_PROVIDER=openai-compatible` with `TABULA_AI_BASE_URL` (an `http://` or local address is allowed there, for a model server on the same machine) and `TABULA_AI_MODEL` (any model id) in open mode. In accounts mode those variables are ignored with a warning: each key carries its own.
+The operator's environment is trusted: `TABULA_AI_PROVIDER=openai-compatible` with `TABULA_AI_BASE_URL` (an `http://` or local address is allowed there, for a model server on the same machine) and `TABULA_AI_MODEL` (any model id) in open mode. In accounts mode those variables are ignored with a warning: each key carries its own. The config response carries the host of the key's address as `endpoint` (see Endpoints), so the AI bar can name the server a request goes to.
 
 **Storage.** `ai_keys` has a nullable `model` column next to `base_url` (a migration of its own; an Anthropic key leaves both empty and uses the workspace's `ai.model`). A key replaces the address and the model with it. Audit rows (`ai.key.set`, `ai.key.test`) carry the provider, and for this kind the host and the model id, never the key or the whole address.
 
@@ -148,7 +148,7 @@ Resolution for a run in accounts mode: the person's own key if they set one and 
 ### Endpoints
 
 ```
-GET    /api/ai/config                -> { enabled, features: [...], keySource: 'user'|'workspace'|null, provider, model, personalKeys, credits: boolean }   (`model` is the key's own for an OpenAI-compatible key; `credits` reflects the hosted workspace's `aiCredits` limit and is false in open mode and self-hosted instances; when `keySource` is null and `credits` is true, the bar says "Uses AI credits")
+GET    /api/ai/config                -> { enabled, features: [...], keySource: 'user'|'workspace'|null, provider, endpoint, model, personalKeys, credits: boolean }   (`endpoint` is the host and port, never the path, of an OpenAI-compatible key's https address, so the disclosure line can name where a request goes; null for an Anthropic key, with no key, with credits and for an address that is not https; `model` is the key's own for an OpenAI-compatible key; `credits` reflects the hosted workspace's `aiCredits` limit and is false in open mode and self-hosted instances; when `keySource` is null and `credits` is true, the bar says "Uses AI credits")
 PUT    /api/ai/keys/me   { provider, apiKey, baseUrl?, model? }   -> { provider, hint, baseUrl, model }      (when personal keys are allowed; baseUrl and model only for openai-compatible, and then both)
 POST   /api/ai/keys/me/test                              -> { ok: true, provider, checkedAt } (when personal keys are allowed)
 DELETE /api/ai/keys/me                                    -> 204

@@ -1,6 +1,6 @@
 import type { AiConfig, AiFeature } from './api';
 import type { AiProposal } from './ai-apply';
-import { PROVIDER_LABEL } from './ui/ai-logic';
+import { PROVIDER, notResponding } from './ui/ai-logic';
 
 // The pure rules and text of the AI bar (docs/ai-toolbar.md, docs/ai.md): no DOM, so they can be unit tested. src/ui/ai-bar.ts
 // reads the board, draws the bar and calls the relay; everything it can decide without either lives here.
@@ -167,9 +167,12 @@ export function runningText(feature: AiFeature, ctx: AiContext, facts: Facts): s
 // ---------------------------------------------------------------- cost and model
 
 const SHORT_MODELS: Record<string, string> = { 'claude-opus-5-5': 'Opus 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5', 'claude-haiku-5-5': 'Haiku 5.5' };
-/** Known Anthropic ids get product names; namespaced provider ids use their final part. */
-export const modelShort = (id: string): string => {
-  const known = SHORT_MODELS[id];
+/**
+ * Known Anthropic ids get product names, for an Anthropic key or the hosted credits (no key in use); any other provider's id is
+ * shown as it is, a namespaced one by its final part.
+ */
+export const modelShort = (id: string, provider: string | null): string => {
+  const known = provider === PROVIDER || provider === null ? SHORT_MODELS[id] : undefined;
   if (known) return known;
   const slash = id.lastIndexOf('/');
   return slash >= 0 && slash < id.length - 1 ? id.slice(slash + 1) : id;
@@ -196,6 +199,8 @@ export const formatExact = (n: number): string => thousands(Math.round(n / 50) *
 export interface ChipFacts {
   armed: AiFeature | null;
   model: string;
+  /** The provider of the key in use (null with no key): decides whether a model id may get a Claude product name. */
+  provider: string | null;
   ctx: AiContext;
   facts: Facts;
   prompt: string;
@@ -209,7 +214,7 @@ export function estimateFor(o: Pick<ChipFacts, 'armed' | 'ctx' | 'facts' | 'prom
 /** "Opus 5.5 · ~1.3k tokens", or with an action armed "Summarise · ~1.3k tokens". */
 export function modelChipText(o: ChipFacts): string {
   const cost = `${formatTokens(estimateFor(o))} tokens`;
-  return `${o.armed ? FEATURE_LABEL[o.armed] : modelShort(o.model)} · ${cost}`;
+  return `${o.armed ? FEATURE_LABEL[o.armed] : modelShort(o.model, o.provider)} · ${cost}`;
 }
 
 export const modelChipLabel = (text: string): string => `${text}. Model and token estimate details`;
@@ -237,7 +242,7 @@ export function keyText(keySource: AiConfig['keySource'], privateRun: boolean, c
 }
 
 /** "Sends 3 selected stickies and your prompt to Anthropic". When the relay will cut the content, the count is the capped one. */
-export function sendsText(ctx: AiContext, facts: Facts, prompt: string, withPrompt = true): string {
+export function sendsText(ctx: AiContext, facts: Facts, prompt: string, withPrompt: boolean, receiver: string): string {
   const typed = withPrompt && prompt.trim().length > 0;
   const stickies = ctx === 'selection' ? facts.selected : ctx === 'view' ? facts.inView : ctx === 'board' ? facts.onBoard : 0;
   const bare = ctx === 'none' || stickies < 1;
@@ -254,7 +259,7 @@ export function sendsText(ctx: AiContext, facts: Facts, prompt: string, withProm
     }
     if (typed) what += ' and your prompt';
   }
-  return `Sends ${what} to ${PROVIDER_LABEL}`;
+  return `Sends ${what} to ${receiver}`;
 }
 
 export type BarUi = 'idle' | 'running' | 'preview' | 'error';
@@ -271,6 +276,8 @@ export interface DisclosureInput {
   withPrompt: boolean;
   keySource: AiConfig['keySource'];
   credits: boolean;
+  /** Who receives the request, as the disclosure names it (providerLabel in ui/ai-logic.ts). */
+  provider: string;
   privateRun: boolean;
   proposalKind: AiProposal['kind'] | null;
 }
@@ -279,7 +286,7 @@ export interface DisclosureInput {
 export function disclosure(o: DisclosureInput): [string, string] {
   const priv = effectivePrivate(o.privateRun, o.keySource);
   if (o.ui === 'preview') return [PREVIEW_NOTE, previewKeys(o.proposalKind ?? 'create')];
-  const sends = sendsText(o.ctx, o.facts, o.prompt, o.withPrompt);
+  const sends = sendsText(o.ctx, o.facts, o.prompt, o.withPrompt, o.provider);
   if (o.ui === 'running') return [sends, priv ? 'Private run · Esc stops' : 'Esc stops'];
   return [sends, keyText(o.keySource, priv, o.credits)];
 }
@@ -620,6 +627,8 @@ export const rateSpoken = (s: number): string => (s > 0 ? `Too many requests. Tr
 export interface ErrorContext {
   admin: boolean;
   keySource: AiConfig['keySource'];
+  /** Who receives the request (providerLabel in ui/ai-logic.ts), named in the text of a provider that does not answer. */
+  provider: string;
   retryAfter?: number | null;
   message?: string | null;
 }
@@ -676,7 +685,7 @@ export function errorView(code: string, ctx: ErrorContext): ErrorView {
       return row('down', serverText(ctx.message, 'AI is temporarily unavailable. Try again in a moment.'), { retry: true });
     case 'ai_timeout':
     case 'internal':
-      return row('down', "Anthropic isn't responding. Try again in a moment.", { retry: true });
+      return row('down', notResponding(ctx.provider), { retry: true });
     case 'ai_refused':
       return row('refused', 'The AI declined this request. Nothing was changed.', { edit: true });
     case 'read_only':

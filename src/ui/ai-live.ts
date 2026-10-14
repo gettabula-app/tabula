@@ -4,6 +4,7 @@ import { applyProposal, boardOf, type AiProposal, type Layout, type Rect } from 
 import { fingerprintOf, isStale, refreshStale, reviewCounts, reviewed, startReview, type Fingerprint, type Review } from '../ai-review';
 import type { ProposedBy } from '../types';
 import { errorView, resolveAiRun, type ResolveAction } from '../ai-bar-logic';
+import { UNKNOWN_PROVIDER } from './ai-logic';
 import {
   CHANGED_NOTE, ROW_H, acceptedMessage, clearGhostText, discardedMessage, firstMessage, ghostMarkup, ghostSource, hasTray, intersects, isMine, labelColors, leftOutNote, nothingToAdd, personColor, placeLabelRows,
   previewBox, previewLabelText, stacked, targetBounds, type LabelRowIn,
@@ -255,7 +256,8 @@ export function mountAiLive(app: BoardApp): void {
 
   // ------------------------------------------------------------ words and actions
 
-  const say = (code: string) => toast(errorView(code, { admin: false, keySource: 'workspace' }).text);
+  // these codes never name a provider, so the label is only the placeholder the error context needs
+  const say = (code: string) => toast(errorView(code, { admin: false, keySource: 'workspace', provider: UNKNOWN_PROVIDER }).text);
   const nameOf = (run: LiveRun): string | null => run.by.name?.trim() || null;
 
   const markBusy = () => {

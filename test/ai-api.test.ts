@@ -121,6 +121,7 @@ describe('GET /api/ai/config', () => {
       features: ['generate', 'summarise', 'cluster'],
       keySource: null,
       provider: null,
+      endpoint: null,
       model: 'claude-opus-5-5',
       personalKeys: false,
       hasSecret: true,

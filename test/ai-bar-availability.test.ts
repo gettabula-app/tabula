@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 const config = (enabled: boolean, keySource: AiConfig['keySource'], options: Partial<AiConfig> = {}): AiConfig => ({
-  enabled, features: ['summarise', 'cluster', 'generate'], keySource, provider: keySource ? 'anthropic' : null, model: 'claude-haiku-5-5',
+  enabled, features: ['summarise', 'cluster', 'generate'], keySource, provider: keySource ? 'anthropic' : null, endpoint: null, model: 'claude-haiku-5-5',
   personalKeys: false, hasSecret: false, myKey: null, credits: false, ...options,
 });
 const personalKey: NonNullable<AiConfig['myKey']> = { provider: 'anthropic', hint: '1234', baseUrl: null, model: null, createdAt: 1, lastUsedAt: null };
