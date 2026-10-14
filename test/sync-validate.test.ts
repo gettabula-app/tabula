@@ -36,8 +36,9 @@ const check = (value: unknown, c: Ctx = ctx, opts = {}) => validateBoardObject((
 
 describe('mode (TABULA_SYNC_VALIDATE)', () => {
   it('defaults to off and reads the three modes', () => {
-    expect(syncValidateMode({})).toBe('off');
-    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '' })).toBe('off');
+    expect(syncValidateMode({})).toBe('report');
+    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '' })).toBe('report');
+    expect(syncValidateMode({ TABULA_SYNC_VALIDATE: '  ' })).toBe('report');
     for (const mode of ['off', 'report', 'enforce']) expect(syncValidateMode({ TABULA_SYNC_VALIDATE: mode })).toBe(mode);
     expect(syncValidateMode({ TABULA_SYNC_VALIDATE: ' Enforce ' })).toBe('enforce');
   });
@@ -60,7 +61,7 @@ describe('the module is pure and its tables match the app', () => {
   it('imports no Yjs, no node: module and no clock or randomness', () => {
     const source = fs.readFileSync(new URL('../server/sync-validate.mjs', import.meta.url), 'utf8');
     const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]);
-    expect(imports.sort()).toEqual(['../shared/colors.mjs', '../shared/containers.mjs', '../shared/svg-safety.mjs', '../shared/tables.mjs', '../shared/text-limits.mjs']);
+    expect(imports.sort()).toEqual(['../shared/code-langs.mjs', '../shared/colors.mjs', '../shared/containers.mjs', '../shared/svg-safety.mjs', '../shared/tables.mjs', '../shared/text-limits.mjs']);
     expect(source).not.toMatch(/Date\.now|Math\.random|process\.(?!env)|require\(/);
   });
 
@@ -127,6 +128,23 @@ describe('what the client writes passes', () => {
     const converted = { ...objects.byLabel.get('card:converted')! };
     expect(converted.type).toBe('card');
     expect(check(converted, ctx, { fields: ['type', 'text', 'desc', 'fill', 'parent', 'rank'] })).toEqual({ ok: true });
+  });
+});
+
+describe('line height', () => {
+  it('accepts values from 0.8 through 3 on text, sticky, shape and Markdown objects', () => {
+    const base = { id: 'lh', x: 0, y: 0, w: 100, h: 80, rotation: 0, z: 'a0', createdBy: 'u1' };
+    for (const [type, value] of [
+      ['sticky', 0.8], ['text', 1.3], ['shape', 3], ['markdown', 1.15],
+    ] as const) {
+      expect(check({ ...base, type, lineHeight: value }, ctx, { isNew: true })).toEqual({ ok: true });
+    }
+  });
+
+  it('rejects values below or above the range and non-numbers', () => {
+    for (const value of [0.79, 3.01, 'x']) {
+      expect(check(sticky({ lineHeight: value }), ctx, { isNew: true }).ok).toBe(false);
+    }
   });
 });
 
@@ -616,5 +634,16 @@ describe('the other board maps', () => {
     expect(one({ kind: 'label', key: 'b1', value: { id: 'b1', name: 'Bug', color: 'pink', order: 0 } }).ok).toBe(true);
     expect(one({ kind: 'label', key: 'b1', value: { id: 'b1', name: 'x'.repeat(41), color: 'pink', order: 0 } }).ok).toBe(false);
     expect(one({ kind: 'label', key: 'b1', value: { id: 'b1', name: 'Bug', color: 'url(//evil)', order: 0 } }).ok).toBe(false);
+  });
+});
+
+describe('tracker frame size and view', () => {
+  const tracker = (extra: Record<string, unknown> = {}) => ({
+    id: 'trk1', type: 'tracker', x: 0, y: 0, w: 720, h: 480, rotation: 0, z: 'a0', trackerId: 'ws-1', view: 'all',
+    createdBy: 'u1', updatedAt: 1_700_000_000_000, ...extra,
+  });
+  it('accepts the 360 x 280 minimum and the 720 x 480 default, and the all view', () => {
+    expect(check(tracker({ w: 360, h: 280 }))).toEqual({ ok: true });
+    expect(check(tracker())).toEqual({ ok: true });
   });
 });

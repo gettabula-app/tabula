@@ -34,6 +34,11 @@
     min-height: var(--touch-target-size) !important;
   }
 
+  label.check:has(input[type='checkbox']),
+  label.check:has(input[type='radio']) {
+    display: flex;
+  }
+
   /* This textarea is transformed with the board camera; its discrete target is the board object. */
   .text-editor {
     min-width: 0 !important;

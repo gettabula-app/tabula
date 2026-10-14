@@ -32,7 +32,7 @@ Om du hellre vill börja med en färdig layout väljer du **Start from a templat
 Uppifrån och ned:
 
 - **Select** (Markera) (`V`) och **Hand** (Hand) (`H`).
-- **Sticky note** (Lapp) (`N`), **Text** (Text) (`T`), **Markdown block** (Markdown-block) (för längre anteckningar med rubriker, listor och uppgiftsrutor, se [Markdown-block](markdown-blocks.md)), **Shapes** (Former), **Connector** (Kopplingslinje) (`L`), **Pen** (Penna) (`P`), **Frame** (Ram) (`F`) och **Comment** (Kommentar) (`C`). **Shapes** öppnar en panel med ett sökfält. Klicka på en form för att rita den eller dra den till tavlan.
+- **Sticky note** (Lapp) (`N`), **Text** (Text) (`T`), **Markdown block** (Markdown-block) (för längre anteckningar med rubriker, listor och uppgiftsrutor, se [Markdown-block](markdown-blocks.md), och utan kortkommando med en enda tangent), **Link** (Länk) (öppnar ett adressfält), **Table** (Tabell) (`G`, se [Tabeller](tables.md)), **Code block** (Kodblock) (för kod med färger, se [Kodblock](code-block.md)), **Shapes** (Former), **Connector** (Kopplingslinje) (`L`), **Pen** (Penna) (`P`), **Frame** (Ram) (`F`) och **Comment** (Kommentar) (`C`). **Shapes** öppnar en panel med ett sökfält. Klicka på en form för att rita den eller dra den till tavlan.
 - Menyer för **UML** (UML), **Icons** (Ikoner), **Stickers** (Klistermärken) och **Templates and team exercises** (Mallar och teamövningar).
 - En knapp för punktröstning och en knapp för snabbomröstning.
 - **Undo** (Ångra) och **Redo** (Gör om).
@@ -45,7 +45,7 @@ Markera ett objekt så visas ett litet fält bredvid det. Beroende på vad du ma
 
 ### Tavlans meny
 
-Knappen **Menu** längst upp till höger innehåller åtgärder för hela tavlan: **User guide** (Användarguide) först i listan, **Board settings** (Tavleinställningar), **Version history** (Versionshistorik), **Your name and colour** (Ditt namn och din färg), **Show comments** (Visa kommentarer), import, teman under **Appearance** (Utseende), export och **Keyboard shortcuts** (Kortkommandon). Om din arbetsyta kräver inloggning visas avsnittet **Account** (Konto) först. Där finns **Your AI key** (Din AI-nyckel) när administratören tillåter personliga nycklar. Se [Tavlor och startsidan](boards.md).
+Knappen **Menu** längst upp till höger innehåller åtgärder för hela tavlan, med **Search actions** (Sök åtgärder) överst för att hitta en åtgärd med namn: **User guide** (Användarguide) först i listan, **Board settings** (Tavleinställningar), **Version history** (Versionshistorik), **Your name and colour** (Ditt namn och din färg), **Show comments** (Visa kommentarer), import, teman under **Appearance** (Utseende), export och **Keyboard shortcuts** (Kortkommandon). Om din arbetsyta kräver inloggning visas avsnittet **Account** (Konto) först. Där finns **Your AI key** (Din AI-nyckel) när administratören tillåter personliga nycklar. Se [Tavlor och startsidan](boards.md).
 
 ## Förflytta dig
 

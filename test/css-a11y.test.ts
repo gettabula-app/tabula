@@ -64,7 +64,7 @@ describe('stylesheets', () => {
   it('keep a visible focus indicator on the stickers search: the shared field focus (an edge in the text colour and a soft ring)', () => {
     const css = readFileSync(join(ROOT, 'src/styles.css'), 'utf8');
     // the shared field focus draws an inset 1px edge in the text colour plus a ring, which is the indicator in a popover or drawer
-    expect(css).toMatch(/\.input:focus,[^{]*\{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--tray-text\),\s*0 0 0 3px/);
+    expect(css).toMatch(/\.input:focus,[^{]*\{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--field-edge-strong\),\s*0 0 0 3px/);
     // the stickers search is a plain .input and nothing of the stickers rules takes that focus away
     expect(readFileSync(join(ROOT, 'src/ui/stickers.ts'), 'utf8')).toMatch(/h\('input', \{ type: 'search', class: 'input'/);
     const stickerRules = [...css.matchAll(/(\.stickers \.input[^{]*)\{([^}]*)\}/g)].map(([, selectors, body]) => ({ selectors, body }));

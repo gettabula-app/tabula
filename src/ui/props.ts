@@ -3,6 +3,7 @@ import { copyMarkdownSource, copyTable } from './markdown-actions';
 import { leaveOutWithheld } from '../private-select';
 import type { BaseObj, ConnectorObj, Head, Obj, Route, ShapeKind, UmlRelation, VAlign } from '../types';
 import { isBox, isConnector } from '../types';
+import { isLine } from '../line-geometry';
 import { isSticker } from '../stickers';
 import { h, icon } from './dom';
 import { field, segmented, swatches } from './common';
@@ -14,7 +15,13 @@ import { DEFAULTS, styleOf } from '../markup';
 import { fontName, getCatalogue, nearestWeight } from '../fonts';
 import { openFontPicker } from './fontpicker';
 import { CUSTOM_SIZE, FRAME_MAX, FRAME_MIN, FRAME_PRESETS, presetFor } from './frame-sizes';
-import { closeOpenCombo, combo, numberField } from './controls';
+import { closeOpenCombo, combo, numberField, switchRow } from './controls';
+import { CODE } from '../code-layout';
+import { CODE_STRINGS } from '../code-strings';
+import { rememberCodeLang } from '../code-ui-logic';
+import { openCodeLangPicker } from './code-lang-picker';
+import { copyCodeSource } from './markdown-actions';
+import { MAX_CODE_TITLE, codeLangLabel } from '../../shared/code-langs.mjs';
 import { toMermaid } from '../mermaid';
 import { toast } from './common';
 import { safeColor } from '../../shared/colors';
@@ -25,12 +32,13 @@ import { proposedLine } from '../ai-review';
 import { kanbanSwatch } from '../markup';
 
 const TYPE_LABEL: Record<string, string> = {
-  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', frame: 'Frame', group: 'Group', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
+  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', code: CODE_STRINGS.heading, frame: 'Frame', group: 'Group', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector', container: 'Container', lane: 'Lane', card: 'Card',
   'uml-class': 'Class', 'uml-actor': 'Actor', 'uml-usecase': 'Use case', 'uml-lifeline': 'Lifeline', 'uml-note': 'Note',
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',
 };
 
 export const HAS_TEXT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'markdown', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component'].includes(o.type);
+const HAS_LINE_HEIGHT = (o: Obj) => isBox(o) && ['shape', 'sticky', 'text', 'markdown'].includes(o.type);
 export const HAS_FILL = (o: Obj) => isBox(o) && ['shape', 'markdown', 'frame', 'uml-class', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-final'].includes(o.type);
 export const HAS_STROKE = (o: Obj) => isConnector(o) || (isBox(o) && !isSticker(o) && ['shape', 'path', 'icon', 'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-component', 'uml-initial', 'uml-final'].includes(o.type));
 
@@ -89,13 +97,15 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
     }
     const first = sel[0];
     const same = sel.every((o) => o.type === first.type);
-    const title = sel.length === 1 ? (isSticker(first) ? 'Sticker' : TYPE_LABEL[first.type] ?? 'Object') : `${sel.length} selected`;
+    // a selection of lines is titled Line, whatever its count (their own panel: no route, no label, no UML relationship)
+    const allLines = sel.length > 0 && sel.every(isLine);
+    const title = allLines ? 'Line' : sel.length === 1 ? (isSticker(first) ? 'Sticker' : TYPE_LABEL[first.type] ?? 'Object') : `${sel.length} selected`;
     const styleSel = app.selectedLeaves();
     const styleFirst = styleSel[0] ?? first;
     const styleSame = styleSel.length > 0 && styleSel.every((o) => o.type === styleFirst.type);
     const s = styleOf(styleFirst);
     const up = (patch: Record<string, unknown>, filter?: (o: Obj) => boolean) => app.updateSelected(patch, filter);
-    const upLeaves = (patch: Record<string, unknown>, filter?: (o: Obj) => boolean) => app.updateSelectedLeaves(patch, filter);
+    const upLeaves = (patch: Record<string, unknown> | ((o: Obj) => Record<string, unknown>), filter?: (o: Obj) => boolean) => app.updateSelectedLeaves(patch, filter);
     const edit = app.styleEdit;
     /** Live preview, revert and commit of one patch shape, for a control. */
     // a control from an earlier render (a stray timer) must not write to whatever is selected now
@@ -136,6 +146,27 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         ...live((v) => ({ kind: v }), (o) => o.type === 'shape'),
       })));
     }
+    if (same && first.type === 'code' && sel.length === 1) {
+      // Language (a searchable list), Title, then the two switches; the theme is not a setting (docs/code-blocks.md)
+      const code = first as BaseObj;
+      const lang = typeof code.lang === 'string' ? code.lang : 'plaintext';
+      const langBtn = h('button', { class: 'input combo code-lang-btn', type: 'button', 'aria-label': `${CODE_STRINGS.language}: ${codeLangLabel(lang)}`, 'aria-haspopup': 'dialog' },
+        h('span', { class: 'combo-value' }, codeLangLabel(lang)), icon('chevron', 16));
+      langBtn.addEventListener('click', () => openCodeLangPicker(langBtn, lang, (id) => {
+        rememberCodeLang(app.conn.id, id);
+        up({ lang: id });
+      }));
+      appearance.push(field(CODE_STRINGS.language, langBtn));
+      const title = h('input', { class: 'input', value: code.title ?? '', 'aria-label': CODE_STRINGS.title, placeholder: CODE_STRINGS.untitled, maxlength: String(MAX_CODE_TITLE), autocomplete: 'off', spellcheck: 'false' });
+      title.addEventListener('change', () => up({ title: title.value.trim() ? title.value.slice(0, MAX_CODE_TITLE) : undefined }));
+      appearance.push(field(CODE_STRINGS.title, title));
+      appearance.push(switchRow(CODE_STRINGS.lines, code.lines === true, (on) => up({ lines: on })));
+      appearance.push(switchRow(CODE_STRINGS.wrap, code.wrap === true, (on) => up({ wrap: on })));
+      arrange.push(field('Width', numberField({
+        label: 'Width', value: Math.round(code.w), min: CODE.MIN_W, max: 2400, step: 1, big: 10,
+        ...live((v: number) => ({ w: v }), (o) => o.type === 'code'),
+      })));
+    }
     if (same && first.type === 'frame' && sel.length === 1) {
       const name = h('input', { class: 'input', value: (first as BaseObj).name ?? '', 'aria-label': 'Frame name' });
       name.addEventListener('change', () => up({ name: name.value }));
@@ -152,7 +183,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       if (sel.length === 1) appearance.push(h('button', { class: 'btn wide', onclick: () => app.editor.start(first.id) }, 'Edit name and members'));
     }
 
-    if (sel.every(isConnector)) appearance.push(...connectorFields(app, sel as ConnectorObj[]));
+    if (sel.every(isConnector)) appearance.push(...connectorFields(app, sel as ConnectorObj[], allLines));
     appearance.push(...kanbanFields(app, sel));
 
     // ---- fill & stroke
@@ -168,7 +199,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         app.store.transact(() => styleSel.filter(HAS_STROKE).forEach((o) => app.store.update(o.id, o.type === 'icon' ? { textColor: v } : { stroke: v })));
         app.store.undo.stopCapturing();
       };
-      appearance.push(field(isIcon ? 'Colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), lineValue, (v) => {
+      appearance.push(field(isIcon ? 'Colour' : allLines ? 'Stroke colour' : 'Line', swatches(STROKES.filter((c) => !isIcon || c.value !== 'none'), lineValue, (v) => {
         setLine(v);
       }, { label: 'Line colour' })));
       if (!isIcon) {
@@ -210,6 +241,20 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
         ...live((v) => ({ fontWeight: v }), HAS_TEXT),
       });
       text.push(h('div', { class: 'row2' }, field('Size', size), field('Weight', weight)));
+      if (styleSel.some(HAS_LINE_HEIGHT)) {
+        const presets = [1, 1.15, 1.3, 1.5, 2];
+        const lineHeight = sharedLeaves((o) => styleOf(o).lineHeight, HAS_LINE_HEIGHT);
+        const control = segmented(presets.map((value) => ({
+          value, label: String(value), ariaLabel: `Line height ${value}`,
+        })), typeof lineHeight === 'number' && presets.includes(lineHeight) ? lineHeight : undefined,
+        (value) => upLeaves((o) => ({ lineHeight: value === 1.3 && o.type !== 'markdown' ? undefined : value }), HAS_LINE_HEIGHT), 'Line height');
+        // a Markdown block left at its own default (1.45) has no stored value: nothing is selected, and it is not "custom"
+        const stored = sharedLeaves((o) => (o as BaseObj).lineHeight, HAS_LINE_HEIGHT);
+        const custom = typeof lineHeight === 'number' && typeof stored === 'number' && !presets.includes(lineHeight)
+          ? h('div', { class: 'line-height-custom' }, `Custom ${lineHeight}`)
+          : null;
+        text.push(field('Line height', h('div', null, control, custom)));
+      }
       // a Markdown block always reads from the left: its alignment is not a choice
       if (styleSel.some((o) => o.type !== 'markdown')) {
         text.push(field('Align', segmented([
@@ -266,6 +311,7 @@ export function mountProps(app: BoardApp, parent: HTMLElement) {
       btn('backward', 'Send backward', () => void app.sendBackward(), '', 'mod+['),
       btn('back', 'Send to back', () => app.sendToBack(), '', '['),
       sel.length === 1 && sel[0].type === 'markdown' ? btn('copy', 'Copy as Markdown', () => copyMarkdownSource((sel[0] as BaseObj).text ?? '')) : null,
+      sel.length === 1 && sel[0].type === 'code' ? btn('copy', CODE_STRINGS.copy, () => copyCodeSource((sel[0] as BaseObj).text ?? '')) : null,
       sel.length === 1 && sel[0].type === 'table' ? btn('copy', 'Copy for a spreadsheet', () => copyTable(sel[0] as unknown as Record<string, unknown>, 'tsv')) : null,
       sel.length === 1 && sel[0].type === 'table' ? btn('copy', 'Copy as Markdown', () => copyTable(sel[0] as unknown as Record<string, unknown>, 'markdown')) : null,
       btn('dup', 'Duplicate', () => app.duplicate(), '', 'mod+d'),
@@ -376,11 +422,15 @@ function frameSizeFields(app: BoardApp, frame: BaseObj): HTMLElement {
   return wrap;
 }
 
-function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
+/**
+ * The rows of a connector's panel. For `lines` (every selected connector is a plain line, see line-geometry.ts) there is no
+ * route, relationship or label: a line has heads, a colour, a width and a style, which the shared stroke rows give.
+ */
+function connectorFields(app: BoardApp, sel: ConnectorObj[], lines = false): HTMLElement[] {
   const c = sel[0];
   const up = (p: Partial<ConnectorObj>) => app.updateSelected(p, isConnector);
   const out: HTMLElement[] = [];
-  out.push(field('Route', segmented<Route>([
+  if (!lines) out.push(field('Route', segmented<Route>([
     { value: 'straight', label: 'Straight' }, { value: 'elbow', label: 'Elbow' }, { value: 'curved', label: 'Curved' },
   ], c.route, (v) => {
     up({ route: v });
@@ -406,14 +456,14 @@ function connectorFields(app: BoardApp, sel: ConnectorObj[]): HTMLElement[] {
     const r = RELATIONS[v];
     return { relation: v, startHead: r.startHead, endHead: r.endHead, dash: r.dash };
   };
-  out.push(field('UML relationship', combo<UmlRelation | ''>({
+  if (!lines) out.push(field('UML relationship', combo<UmlRelation | ''>({
     label: 'UML relationship', value: same((x) => x.relation ?? ''),
     options: [{ value: '', label: 'None' }, ...Object.entries(RELATIONS).map(([k, r]) => ({ value: k as UmlRelation, label: r.label }))],
     onPreview: (v) => edit.preview(relPatch(v), isConnector),
     onRevert: () => edit.revert(),
     onCommit: (v) => edit.commit(relPatch(v), isConnector),
   })));
-  if (sel.length === 1) {
+  if (sel.length === 1 && !lines) {
     const lab = h('input', { class: 'input', value: c.label ?? '', placeholder: 'Add a label', 'aria-label': 'Connector label' });
     lab.addEventListener('change', () => up({ label: lab.value || undefined }));
     out.push(field('Label', lab));

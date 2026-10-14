@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { NIGHTLY_OS } from '../scripts/lib/nightly-report.mjs';
 
 const workflow = fs.readFileSync('.github/workflows/nightly.yml', 'utf8');
 
@@ -20,12 +21,23 @@ describe('the nightly workflow', () => {
     expect(workflow).not.toMatch(/cron:\s*['"]?0\s/);
   });
 
-  it('serializes nightly runs and tests main on all three OSes with Node 24', () => {
+  it('reports every leg of the suite matrix, each under its own artifact name, and expects nothing else', () => {
+    const suite = job('suite');
+    const oses = suite.match(/os: \[([^\]]+)\]/)![1].split(',').map((v) => v.trim());
+    const nodes = suite.match(/node: \[([^\]]+)\]/)![1].split(',').map((v) => v.trim());
+    const legs = oses.flatMap((os) => nodes.map((node) => `${os}-node${node}`));
+    expect([...NIGHTLY_OS].sort()).toEqual(legs.sort());
+    expect(suite).toContain('NIGHTLY_OS: ${{ matrix.os }}-node${{ matrix.node }}');
+    expect(suite).toContain('name: nightly-${{ matrix.os }}-node${{ matrix.node }}');
+  });
+
+  it('serializes nightly runs and tests main on Linux only, with Node 22 and 24 (macOS, Windows and desktop are frozen)', () => {
     const suite = job('suite');
     expect(workflow).toMatch(/concurrency:\n\s+group: nightly-full-suite\n\s+cancel-in-progress: false/);
     expect(suite).toContain('fail-fast: false');
-    expect(suite).toContain('os: [ubuntu-latest, macos-latest, windows-latest]');
-    expect(suite).toContain('node: [24]');
+    expect(suite).toContain('os: [ubuntu-latest]');
+    expect(suite).not.toMatch(/macos|windows/);
+    expect(suite).toContain('node: [22, 24]');
     expect(suite).toMatch(/uses: actions\/checkout@[^\n]+\n\s+with:\n\s+ref: main/);
     for (const run of [1, 2, 3]) {
       expect(suite).toContain(`npm test -- --reporter=default --reporter=json --outputFile.json=nightly-${run}.json`);

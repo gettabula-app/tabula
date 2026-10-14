@@ -239,7 +239,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, notificationDigest = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -884,7 +884,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       })
     : null;
   const notificationRoutes = notificationStore
-    ? createNotificationRoutes({ notifications: notificationStore, compile, errors: { badRequest } })
+    ? createNotificationRoutes({ notifications: notificationStore, digest: notificationDigest, compile, errors: { badRequest, forbidden, invalidInput: (message) => new HttpError(400, 'invalid_input', message) } })
     : [];
   const chatRoutes = chatOn
     ? createChatRoutes({
@@ -1313,12 +1313,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       directory.transaction(() => {
         directory.shareBoard(board.id, { principalType, principalId, role });
         if (principalType === 'user' && principalId !== user.id && !wasShared) {
+          // null when the recipient has switched shares off (docs/notifications.md, Settings): no row, no ping.
           notificationCreated = notificationStore?.record({
             userId: principalId,
             kind: 'board_shared',
             actorId: user.id,
             boardId: board.id,
-          }, { notify: false }).created === true;
+          }, { notify: false })?.created === true;
         }
         audit(user, 'board.share', { boardId: board.id, principalType, principalId, role });
       });

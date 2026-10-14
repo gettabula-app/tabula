@@ -2,7 +2,7 @@
 
 Tabula is free software under AGPL-3.0-only. It is a self-hostable alternative to hosted whiteboards for workshops and teams. Boards work offline first and sync through a relay when it is available.
 
-![Two Tabula boards side by side: a sprint retro with sticky notes, frames and connectors on the left, and a four-lane kanban board with labelled cards on the right](docs/images/readme-hero.png)
+![A Tabula kanban board with four lanes (To do, Doing, Review, Shipped) and labelled cards with owners and due dates](docs/images/readme-hero.png)
 
 ## Features at a glance
 
@@ -253,6 +253,7 @@ Screenshots show demo data.
 | Groups | Group and ungroup selected items, including nested groups; enter a group to edit its members. See [the guide](docs/guide/shapes-text-notes.md#groups) |
 | Images | Add PNG, JPEG, GIF, WebP or SVG pictures; move, resize, rotate, comment, and include them in PNG/SVG and `.drift` exports. See [docs/images.md](docs/images.md) and [the guide](docs/guide/images.md) |
 | Tables | Press **G** and click the board (or drag out a box) for a grid of cells you type in: Tab and Shift+Tab move between cells, cells show bold, italic, code and links, and you can select cells to clear, copy and paste them. Right-click for rows and columns (insert, move, delete), header row and column, alignment and cell fill; drag a column border to resize it. Two people can edit different cells at the same time. Tables appear in PNG, SVG and print. See [docs/tables.md](docs/tables.md) and [the guide](docs/guide/tables.md) |
+| Code blocks | Choose **Code block** in the Text and content tool and click the board: code on a card with a language (25 and Plain text), an optional title, line numbers and wrapping. Double-click to type in place (Tab indents, Esc finishes), Copy puts the plain code on the clipboard, long lines scroll sideways. Highlighting follows the board's theme and runs in your browser. Code blocks appear in PNG, SVG and print, and agents can create and edit them. See [docs/code-blocks.md](docs/code-blocks.md) and [the guide](docs/guide/code-block.md) |
 | Themes | Default, Ayu, Kanagawa, Matrix and Evergreen, chosen under Appearance in the board menu; the whole app (canvas, grid, toolbars, and the default colour of text, drawings, icons and connectors) follows the theme; the choice is remembered on this device; exports always use the light colours on white |
 | Sticky colours | Pick a colour before placing (tray beside the toolbar while the sticky tool is on), recolour selected notes, or choose any colour with “+”; custom colours are saved to the board (up to 12) and shared with everyone; your last colour is remembered on your device |
 | Connectors | Bound or free ends, straight/elbow/curved routing, 10 arrowheads incl. UML and crow's foot, labels, reverse; drag from a shape's blue dots, or click a dot to add a connected copy; deleting a shape keeps its lines; connectors meet a shape's visible outline, including triangles, stars, arrows and callouts |
@@ -269,20 +270,20 @@ Screenshots show demo data.
 | Accounts, teams and roles | Email sign-in, workspace and team roles, board sharing, and owner, editor, commenter and viewer access (see [docs/accounts.md](docs/accounts.md)) |
 | Kanban boards | Lanes and cards with labels, owners, due dates, filters, CSV export and warn/block WIP limits (limits are checked in the browser; see [docs/kanban.md](docs/kanban.md) and [the guide](docs/guide/kanban.md)) |
 | Version history | Browse earlier versions of a board, preview one read-only and restore it (board menu, owners and editors). The relay saves snapshots while people edit, before large deletions and when everyone leaves, and anyone can save a named version; a restore is an ordinary edit that syncs to everyone, shows up as a new version and undoes with Ctrl+Z. See [docs/history.md](docs/history.md) |
-| Import/export | `.drift` board files, JSON snapshots, SVG, PNG (2×, real fonts), Markdown summary, Mermaid and kanban cards as CSV; drop files on the board or open them from the home screen |
+| Import/export | `.drift` board files, JSON snapshots, SVG, PNG (2×, real fonts), print or save as PDF (the whole board, the selection, or one page per frame, vector, through the browser's print dialog; see [docs/print.md](docs/print.md)), Markdown summary, Mermaid and kanban cards as CSV; drop files on the board or open them from the home screen |
 | MCP tools | AI agents can read and edit boards, add comments, manage groups and use kanban card tools (see [docs/mcp.md](docs/mcp.md) and [the tool guide](docs/guide/ai-tools.md)) |
 | AI bar | Generate stickies, summarise a board or selection, and cluster stickies into themes. Shown to editors only when enabled with a usable key (see [docs/ai.md](docs/ai.md); hosted AI credits are a later phase, [docs/ai-credits.md](docs/ai-credits.md)) |
 | User guide | Built-in, searchable guide served at `/docs/`; source pages are in [docs/guide](docs/guide/index.md) |
 
 ### Not built yet (from the spec)
 
-End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; comment mentions and per-thread notifications; data tables with typed columns and formulas (TAB-186); PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; and peer-to-peer WebRTC sync.
+End-to-end encryption; single sign-on, passkeys and two-factor sign-in; email-bound invites; per-thread comment notifications; data tables with typed columns and formulas (TAB-186); PDF export; boolean shape operations; obstacle-avoiding connector routing and line jumps; character-level text merging with `Y.Text`; imports from other whiteboard formats; and peer-to-peer WebRTC sync.
 
 Native and desktop development (Mac, Windows, Linux, iPhone, Android) is frozen since 2026-10-11 while we focus on the web app; the shell on main still builds and stays for reference, but is not maintained and gets no new features until we revisit this.
 
 ## Fonts and icons
 
-Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Tabula therefore loads fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves fonts. PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
+Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Tabula therefore loads those fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves Fontshare fonts. The one font Tabula bundles is Newsreader, the serif used for titles (SIL Open Font License 1.1, a variable Latin subset served from the app itself, see [the third-party notices](docs/third-party-notices.md)). PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
 
 Icon sets come from [Iconify's open data](https://github.com/iconify/icon-sets) (`@iconify/json`, a build-time dependency) and carry their own licences. The build hosts only sets under CC0, Unlicense, 0BSD, MIT, ISC, Apache-2.0, BSD, OFL-1.1 and CC BY 3.0/4.0; sets Iconify marks hidden, the unmaintained Font Awesome 6 sets and every other licence (NonCommercial, ShareAlike, GPL and the like) are left out. The picker shows each set's licence, flags sets that require attribution and notes that logos are trademarks of their owners. The credits dialog lists every set, and `dist/icons/LICENSES.txt` is the same list as text.
 

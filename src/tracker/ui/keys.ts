@@ -58,6 +58,8 @@ const NATIVE_ACTIVATION_TARGET = [
   '[role="checkbox"]', '[role="combobox"]', '[role="switch"]', '[role="spinbutton"]', '[role="slider"]',
   '[role="link"]', '[role="listbox"]',
 ].join(', ');
+/** Controls that only react to Enter and Space: every other key is free for the list shortcuts. */
+const ACTIVATION_ONLY_TARGET = ['button', 'a[href]', 'summary', '[role="button"]', '[role="link"]', '[role="checkbox"]', '[role="switch"]'].join(', ');
 const SEQUENCE_BINDINGS: Array<{ key: string; display: string; tab: TrackerTab; label: string }> = [
   { key: 'i', display: 'I', tab: 'inbox', label: 'Inbox' },
   { key: 'm', display: 'M', tab: 'my', label: 'My issues' },
@@ -155,6 +157,18 @@ export function isNativeActivationTarget(target: EventTarget | null | undefined)
   return element.parentElement ? isNativeActivationTarget(element.parentElement) : false;
 }
 
+function isActivationKey(key: string): boolean {
+  return key === 'Enter' || key === ' ' || key === 'Spacebar';
+}
+
+/** True when the nearest native control is one that uses only Enter and Space (a button or link), not letters or arrows. */
+function isActivationOnlyTarget(target: EventTarget | null | undefined): boolean {
+  const element = target as { closest?: (selector: string) => unknown } | null | undefined;
+  if (!element || typeof element.closest !== 'function') return false;
+  const control = element.closest(NATIVE_ACTIVATION_TARGET);
+  return control !== null && control === element.closest(ACTIVATION_ONLY_TARGET);
+}
+
 function isTextOwner(state: KeyState, event: KeyEventLike): boolean {
   if (state.focusOwner === 'text' || state.focusOwner === 'picker' || state.focusOwner === 'dialog' || state.pickerOpen) return true;
   const target = event.target as (HTMLElement & { isContentEditable?: boolean }) | null;
@@ -181,7 +195,7 @@ export function resolveKey(state: KeyState, event: KeyEventLike): KeyResolution 
   if (!state.active) return { action: null, pendingSequence };
   if (key === ESCAPE_BINDING.key) return { action: ESCAPE_BINDING.action(state), pendingSequence: null };
   if (isTextOwner(state, event)) return { action: null, pendingSequence };
-  if (isNativeActivationTarget(event.target)) return { action: null, pendingSequence };
+  if (isNativeActivationTarget(event.target) && !(!isActivationKey(key) && isActivationOnlyTarget(event.target))) return { action: null, pendingSequence };
   if (pendingSequence && time > pendingSequence.expiresAt) pendingSequence = null;
 
   const modifier = state.modifier ?? PLATFORM_MODIFIER;

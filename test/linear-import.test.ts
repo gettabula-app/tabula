@@ -357,6 +357,15 @@ describe('Linear import planning and writes', () => {
     expect(JSON.stringify(failed)).not.toContain('tampered title');
   });
 
+  it('verifies cleanly with projects and milestones present when the export has dated cycles', () => {
+    const { directory, actor } = setup({ full: true });
+    const snapshot = buildSnapshot(250);
+    applyImport({ db: directory.db, snapshot, actor });
+    const verified = verifySnapshot({ db: directory.db, snapshot });
+    expect(verified.checks.filter((check: any) => !check.passed)).toEqual([]);
+    expect(verified.ok).toBe(true);
+  });
+
   it('rejects unknown snapshot versions and keeps validation bounded', () => {
     expect(() => normalizeSnapshot({ version: 2, issues: [] })).toThrow('Unknown Linear snapshot version.');
     const snapshot = buildSnapshot(1);

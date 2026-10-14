@@ -4,12 +4,12 @@ import type { Tool } from './app';
 export const TOOL_KEYS: Record<string, Tool> = {
   v: { kind: 'select' }, h: { kind: 'hand' }, n: { kind: 'sticky' }, s: { kind: 'sticky' }, t: { kind: 'text' },
   r: { kind: 'shape', shape: 'rect' }, o: { kind: 'shape', shape: 'ellipse' }, d: { kind: 'shape', shape: 'diamond' },
-  l: { kind: 'connector' }, x: { kind: 'connector' }, p: { kind: 'pen' }, f: { kind: 'frame' }, c: { kind: 'comment' }, g: { kind: 'table' },
+  l: { kind: 'connector' }, x: { kind: 'connector' }, 'shift+l': { kind: 'line' }, p: { kind: 'pen' }, f: { kind: 'frame' }, c: { kind: 'comment' }, g: { kind: 'table' },
 };
 
 export const TOOL_LABELS: Record<string, string> = {
   v: 'Select', h: 'Hand', n: 'Sticky note', s: 'Sticky note', t: 'Text', r: 'Rectangle', o: 'Ellipse', d: 'Diamond',
-  l: 'Connector', x: 'Connector', p: 'Pen', f: 'Frame', c: 'Comment', g: 'Table',
+  l: 'Connector', x: 'Connector', 'shift+l': 'Line', p: 'Pen', f: 'Frame', c: 'Comment', g: 'Table',
 };
 
 export interface Shortcut {
@@ -26,7 +26,9 @@ const toolRows = (): Shortcut[] => {
     const label = TOOL_LABELS[key];
     byLabel.set(label, [...(byLabel.get(label) ?? []), key]);
   }
-  return [...byLabel].map(([action, ids]): Shortcut => ({ group: 'Tools', keys: ids.map((k) => k.toUpperCase()).join(' or '), action, ids }));
+  // a modified key is written as its modifier and letter (Shift+L), a plain one as its letter (L)
+  const label = (id: string) => (id.startsWith('shift+') ? `Shift+${id.slice(6).toUpperCase()}` : id.toUpperCase());
+  return [...byLabel].map(([action, ids]): Shortcut => ({ group: 'Tools', keys: ids.map(label).join(' or '), action, ids }));
 };
 
 export const SHORTCUTS: Shortcut[] = [
@@ -64,6 +66,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'View', keys: 'Alt+L', action: 'Layers panel', ids: ['alt+l'] },
   { group: 'While dragging', keys: 'Alt while dragging', action: 'Ignore grid and guides', ids: [] },
   { group: 'While dragging', keys: 'Shift while resizing', action: 'Keep proportions', ids: [] },
+  { group: 'While dragging', keys: 'Ctrl/Cmd while dragging', action: 'Lock to one axis', ids: [] },
 ];
 
 /** Formats a canonical shortcut label for the platform that will display it. */
@@ -71,6 +74,7 @@ export function formatShortcutLabel(keys: string, platform: string): string {
   const mac = /Mac|iPhone|iPad/i.test(platform);
   return keys
     .replace(/Shift\+Ctrl\/Cmd\+/g, mac ? '⇧⌘' : 'Shift+Ctrl+')
+    .replace(/Ctrl\/Cmd(?= while)/g, mac ? '⌘' : 'Ctrl')
     .replace(/Ctrl\/Cmd\+/g, mac ? '⌘' : 'Ctrl+')
     .replace(/Ctrl\/Cmd \+/g, mac ? '⌘ +' : 'Ctrl +')
     .replace(/Alt\+/g, mac ? '⌥' : 'Alt+')

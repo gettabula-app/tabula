@@ -116,6 +116,39 @@ En rad per term: den engelska termen, valt svenskt ord och varför det är osäk
 | task box (tick box in a block) | uppgiftsruta | Ny UI-term för kryssrutan i ett Markdown-block; kontrollera om ”kryssruta” eller ”checkruta” är bättre. |
 | board outline (screen reader) | tavlans översikt | Ny term för skärmläsarens lista över objekt på tavlan; kontrollera mot appens formulering. |
 | source (of a block) | källtext | Ny term för texten i redigeringsrutan innan den formateras; kontrollera om ”Markdown-källa” är tydligare. |
+| table (the object, toolbar item) | tabell | Termen finns inte i ordlistan; används för både verktygsknappen och sidan. Kontrollera att den inte blir förvirrande bredvid "tabell" i kalkylbladsmening. |
+| Insert / Move / Delete (table menu) | Infoga / Flytta / Ta bort | Menyalternativen i tabellmenyn; glosorna är nya och bör stämmas av mot appens formuleringar. |
+| Header row / header column | Rubrikrad / Rubrikkolumn | Nya UI-glosor för tabellens stilalternativ; kontrollera att de matchar appens text. |
+| Align / Fill / Clear cells | Justera / Fyll / Töm celler | Nya UI-glosor i tabellmenyn; kontrollera att de matchar appens text. |
+| Copy for a spreadsheet | Kopiera för ett kalkylblad | Ny UI-glosa för kopieringsalternativet; kontrollera om appen använder ett annat svenskt namn. |
+| Summarise / Cluster / Generate ideas | Sammanfatta / Gruppera / Generera idéer | Namnen på de inbyggda AI-åtgärderna; glosorna är nya och bör jämföras med appens texter. |
+| merged cells | sammanslagna celler | Ny term för en funktion som ännu inte finns; kontrollera att formuleringen stämmer med produktens planer. |
+| tracker | spårare | Termen finns inte i ordlistan. Sidtiteln ”Tracker på en tavla” följer ditt angivna namn på engelska, medan löpande text och glosor använder ”spårare” som redan används på kanban- och tavlesidorna. Kontrollera om titeln ska bli ”Spårare på en tavla”. |
+| ticket | ärende | Termen finns inte i ordlistan; ”ärende” används för ärenden i länkade system. Alternativ: ”uppgift”. Kontrollera att ordet passar spårarens objekt. |
+| ticket state | status | Termen finns inte i ordlistan. ”Fas” används för kanbanens kolumner (to do, doing, done), så ”status” används här för att skilja spårarens tillstånd från kanbanens fas. Kontrollera om ”fas” ändå bör användas. |
+| live / snapshot | levande / ögonblicksbild | Två lägen för en spårare på tavlan; står i tabellen och i löpande text. Kontrollera att appen inte visar orden som etiketter, annars ska de stå kvar på engelska. ”Ögonblicksbild” används även för JSON-ögonblicksbild. |
+| Board (view) | Tavla | Samma ord som själva tavlan, så vyn kan förväxlas med tavlan. Kontrollera om menyn ska heta något annat på svenska. |
+| board units | tavelenheter | Termen finns inte i ordlistan; används för spårarens bredd. Kontrollera att användare förstår måttet. |
+| Views / saved views | Vyer / sparade vyer | Namnet **Views** står kvar på engelska; ”sparade vyer” är ny term. Kontrollera att den matchar appens formulering. |
+| tab (in a tracker) | flik | Termen finns inte i ordlistan; samma ord som kolumnflikar på kanbansidan. |
+| chip | bricka | Samma ord som på kanbansidan; här brickan **Open** på en ögonblicksbild. |
+| expand (icon) | expandera | Ikonens namn på engelska; glosan är ny och bör stämmas av mot appens formulering. |
+| Open full screen | Öppna i helskärm | Knappnamnet står kvar på engelska; glosan är ny. |
+| Back to board | Tillbaka till tavlan | Knappnamnet står kvar på engelska; glosan är ny. |
+| Copy link / Retry | Kopiera länk / Försök igen | Namnen står kvar på engelska; glosorna är nya och bör jämföras med appens texter. |
+| No tickets yet / Could not load tickets / You do not have access to the tracker | Inga ärenden ännu / Det gick inte att läsa in ärendena / Du har inte åtkomst till spåraren | Meddelandena står kvar på engelska; glosorna är översättningar och bör jämföras med appens texter när de finns på svenska. |
+| Code block | Kodblock | Ny UI-glosa för verktygsgruppens knapp och för sidan; kontrollera att den matchar appens text. |
+| Wrap lines | Radbryt | Ny UI-glosa för knappen i kodblockets hörn och för egenskapen; kontrollera mot appens text. |
+| Copy code | Kopiera kod | Ny UI-glosa för knappen i kodblockets hörn; kontrollera mot appens text. |
+| Line numbers | Radnummer | Ny UI-glosa för egenskapen i egenskapspanelen; kontrollera mot appens text. |
+| Language (code block property) | Språk | Ny UI-glosa för språkfältet i egenskapspanelen; kontrollera om appen använder samma ord. |
+| Plain text | Ren text | Ny UI-glosa för standardspråket i kodblock; alternativ: "Oformaterad text". Kontrollera mot appens text. |
+| folding (code) | hopfällning | Ny term för att fälla ihop kodrader; kontrollera att den är begriplig för användare. |
+| line highlighting | radmarkering | Ny term; kontrollera om det är den etablerade benämningen för markering av kodrader. |
+| colour theme (code) | färgtema | Ny term för färgerna i kodblock; kontrollera mot appens formulering. |
+| system colours | systemfärger | Ny term för färgerna i Windows högkontrastläge; kontrollera om det är tydligt. |
+| screen reader region name ("Code, Deploy script, Shell") | kept in English | Exemplet är en sträng som appen läser upp på engelska; kontrollera om den ska översättas (då ändras exemplet). |
+| Code blocks (link text in getting-started.md) | Kodblock | Briefen gav `[Code blocks]` som länktext; jag valde Kodblock för att följa övriga sidor (Tabeller, Markdown-block). Johan avgör. |
 
 ## Övriga anmärkningar från översättarna
 

@@ -2,6 +2,7 @@
 
 .signin { min-height: 100vh; background: var(--canvas); color: var(--ink); }
 .signin :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.signin .input:focus-visible, .signin .input:focus { outline: 0; box-shadow: inset 0 0 0 1px var(--ink), 0 0 0 3px color-mix(in srgb, var(--ink) 10%, transparent); }
 
 /* Top bar: wordmark flush left on the 1120px column, a 2px ink rule beneath, as in the admin. */
 .signin-top {
@@ -15,38 +16,40 @@
 .signin-body { max-width: 1120px; margin: 0 auto; padding: 48px 24px; }
 .signin-col { max-width: 440px; display: flex; flex-direction: column; gap: 24px; }
 
-.signin h1 { margin: 0; font: 800 40px/1 var(--display); letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.signin h1 { margin: 0; font: 400 36px/1.1 var(--font-serif); letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .signin-lede { margin: 0; font-size: 14px; color: var(--graphite); overflow-wrap: anywhere; }
 
-/* Label style as in the admin: 11px uppercase meta in graphite. */
+/* Labels are sentence case, 12px 600 in graphite, as in every M field. */
 .signin-field {
-  display: flex; flex-direction: column; gap: 8px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--graphite);
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; color: var(--graphite);
 }
 
 .signin-form { display: flex; flex-direction: column; gap: 24px; margin: 0; }
 
 .signin-notice {
-  margin: 0; padding: 16px 16px 16px 20px; border-left: 4px solid var(--signal); background: var(--paper); color: var(--ink);
+  margin: 0; padding: 12px 14px; border: 1px solid var(--page-hairline); border-radius: var(--radius-md); background: var(--paper); color: var(--ink);
 }
 .signin-error {
-  margin: 0; padding: 16px 16px 16px 20px; border-left: 4px solid var(--danger); background: var(--paper); color: var(--danger);
+  margin: 0; padding: 12px 14px; border: 1px solid var(--danger); border-radius: var(--radius-md); background: var(--paper); color: var(--danger);
   font-size: 13px;
 }
 
 /* Inputs sit inside the 11px label, so the field resets the label's type. */
 .signin .input {
-  height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--ink) 6%, var(--paper)); --placeholder: var(--ink); color: var(--ink);
+  width: 100%; box-sizing: border-box; height: 40px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); color: var(--ink); --placeholder: var(--ink);
+  background: color-mix(in srgb, var(--ink) 4%, var(--paper)); box-shadow: inset 0 0 0 1px var(--page-hairline), inset 0 -1px 0 var(--field-rule);
   font-size: 14px; font-weight: 400; letter-spacing: normal; text-transform: none;
 }
 .signin .signin-recovery-email { display: inline-block; width: min(100%, 320px); margin: 8px 0; }
 
-/* Buttons: 44px square hit targets with shared-radius corners. Default is an ink outline that inverts on hover; primary is the one signal fill. */
+/* Buttons: 40px (44px on touch), 6px radius; the default is a quiet outline, primary is the one signal fill. */
 .signin .btn {
-  width: 100%; height: 44px; padding: 0 12px; border: 1px solid var(--ink); border-radius: var(--radius-sm); background: none; color: var(--ink);
-  font-size: 13px; font-weight: 600; text-decoration: none;
+  width: 100%; height: 40px; padding: 0 12px; border: 1px solid color-mix(in srgb, var(--ink) 22%, var(--paper)); border-radius: var(--radius-sm); background: none; color: var(--ink);
+  font-size: 13px; font-weight: 500; text-decoration: none;
 }
-.signin .btn:not(:disabled):hover { background: var(--ink); color: var(--paper); }
+.signin .btn:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 5%, var(--paper)); color: var(--ink); }
+@media (pointer: coarse) { .signin .btn, .signin .input { height: 44px; } }
 .signin .btn:disabled { opacity: 0.5; }
 .signin .btn.primary { border: 0; background: var(--signal); color: var(--on-signal); }
 .signin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--signal) 85%, var(--ink)); color: var(--on-signal); }

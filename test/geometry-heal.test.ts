@@ -10,6 +10,7 @@ const TYPES: Record<string, Record<string, unknown>> = {
   'uml-class': { text: 'Order', attributes: [{ visibility: '-', name: 'id', type: 'UUID' }], operations: [] },
   link: { url: 'https://example.com/a', unfurl: 'ok', title: 'A page' },
   markdown: { text: '# Title\n\nSome text' },
+  code: { text: 'const a = 1;', lang: 'ts', title: 'Example', lines: true, wrap: false },
   table: { 'r:r1': 'a0', 'k:c1': 'a0', 'c:r1:c1': 'cell' },
   image: { asset: 'a'.repeat(64), mime: 'image/png' },
   sticky: { text: 'note', fill: '#FFE16B' },

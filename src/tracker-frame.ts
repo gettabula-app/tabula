@@ -2,8 +2,25 @@ import type { BaseObj, Point } from './types';
 import { newId } from './store';
 import type { Store } from './store';
 
-export const TRACKER_FRAME_DEFAULT_SIZE = { w: 1440, h: 900 } as const;
-export const TRACKER_FRAME_MIN_SIZE = { w: 480, h: 360 } as const;
+// What a frame with no tickets to show says: a signed-in guest sees the element but gets no tracker; everyone else is told how to get tickets.
+let guestAudience = false;
+/** Set by the board when the auth state changes (the person is a guest: a guest-link session or a guest account). */
+export function setTrackerGuest(guest: boolean): void {
+  guestAudience = guest;
+}
+// the phone's frame is always a snapshot (frame.ts, isPhone): there the Open chip is the way in
+const phoneNow = (): boolean => typeof matchMedia === 'function' && matchMedia('(max-width: 600px)').matches;
+let memberAudience = false;
+/** Set by the board: the person is signed in to a workspace with a tracker. A frame with no snapshot yet (past the live cap) is then not asking for a sign-in. */
+export function setTrackerMember(member: boolean): void {
+  memberAudience = member;
+}
+export const trackerNoTicketsLine = (): string => (guestAudience ? 'Tickets are for workspace members.' : memberAudience ? (phoneNow() ? 'Open this tracker to see its tickets.' : 'Zoom in or select this tracker to see its tickets.') : 'Sign in to a workspace to see tickets.');
+const escapeLine = (text: string) => text.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
+
+
+export const TRACKER_FRAME_DEFAULT_SIZE = { w: 720, h: 480 } as const;
+export const TRACKER_FRAME_MIN_SIZE = { w: 360, h: 280 } as const;
 
 /** The SVG snapshot hook; the tracker UI can register its own static frame renderer later. */
 export type TrackerRenderer = (frame: BaseObj) => string;
@@ -17,7 +34,7 @@ export function trackerPlaceholder(frame: BaseObj): string {
     `<text x="24" y="40" font-family="sans-serif" font-size="20" font-weight="700" fill="var(--ink, #121216)">Tracker</text>` +
     `<text x="${Math.max(24, w - 24)}" y="40" text-anchor="end" font-family="sans-serif" font-size="12" fill="var(--graphite, #55555C)">TAB</text>` +
     `<line x1="0" y1="${ruleY}" x2="${w}" y2="${ruleY}" stroke="var(--rule, #55555C)" stroke-width="1"/>` +
-    `<text x="24" y="${Math.min(h - 20, 92)}" font-family="sans-serif" font-size="12" fill="var(--graphite, #55555C)">Open this frame to work with workspace tickets.</text>`;
+    `<text x="24" y="${Math.min(h - 20, 92)}" font-family="sans-serif" font-size="12" fill="var(--graphite, #55555C)">${escapeLine(trackerNoTicketsLine())}</text>`;
 }
 
 let trackerRenderer: TrackerRenderer = trackerPlaceholder;
@@ -51,7 +68,7 @@ export function createTrackerFrame(store: Store, position: Point): BaseObj | nul
     rotation: 0,
     z: store.topZ(),
     trackerId: existing?.trackerId ?? newId(),
-    view: 'inbox',
+    view: 'all',
   };
   store.transact(() => store.create(frame));
   return frame;

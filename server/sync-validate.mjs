@@ -39,6 +39,7 @@
 //   createdByPolicy   'writer' (default) | 'member': 'member' also accepts any current member as createdBy, for undo
 //                     restoring somebody else's deleted object with its original createdBy
 
+import { CODE_LANG_IDS, MAX_CODE_CHARS, MAX_CODE_TITLE } from '../shared/code-langs.mjs';
 import { cleanColor } from '../shared/colors.mjs';
 import { isDueDate, isSafeHttpUrl, kanbanColor, LIMITS as KANBAN_LIMITS, OWNER_KINDS, OWNER_NAME_MAX, STAGES } from '../shared/containers.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
@@ -112,7 +113,7 @@ export const FORBIDDEN_KEYS = Object.freeze(['__proto__', 'constructor', 'protot
 // ---------------------------------------------------------------- enumerations (kept equal to board-ops.mjs by a test)
 
 export const OBJ_TYPES = Object.freeze([
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table', 'code',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ]);
 /** Object types the validator knows beyond board-ops.mjs's list: none now that link cards (docs/link-cards.md) are in both. */
@@ -368,11 +369,13 @@ function tableCountCodes(value, only) {
 
 /** Per type: its own fields added to BOX (or, for connector and group, a list of their own). */
 export const FIELDS = Object.freeze({
-  shape: { ...BOX, kind: oneOf(SHAPE_KINDS) },
-  sticky: { ...BOX },
-  text: { ...BOX },
+  shape: { ...BOX, kind: oneOf(SHAPE_KINDS), lineHeight: num(0.8, 3) },
+  sticky: { ...BOX, lineHeight: num(0.8, 3) },
+  text: { ...BOX, lineHeight: num(0.8, 3) },
   // a Markdown block's text is capped lower than a note: every viewer lays it out
-  markdown: { ...BOX, text: str(LIMITS.markdown) },
+  markdown: { ...BOX, text: str(LIMITS.markdown), lineHeight: num(0.8, 3) },
+  // a code block (docs/code-blocks.md): the code is `text` (the cap is report-only like every text cap), the language one of the shared list
+  code: { ...BOX, text: str(MAX_CODE_CHARS), lang: oneOf(CODE_LANG_IDS), title: str(MAX_CODE_TITLE), lines: bool, wrap: bool },
   // a table (docs/tables.md): the header flags, and rows, columns, widths and cells as keys of their own, checked by tablePartCheck
   table: { ...BOX, headerRow: bool, headerCol: bool },
   frame: { ...BOX, name: str(LIMITS.name) },
@@ -401,6 +404,8 @@ export const FIELDS = Object.freeze({
   connector: {
     id, type: str(40), z: str(64), from: END, to: END, route: oneOf(ROUTES), startHead: oneOf(HEADS), endHead: oneOf(HEADS),
     relation: oneOf(RELATIONS), label: str(LIMITS.label), stroke: color, strokeWidth: num(0, 1000), dash: oneOf(DASHES), opacity: num(0, 1),
+    // a line (docs/lines.md): both ends free and a straight route, checked across fields by lineViolation
+    line: bool,
     createdBy: str(128), updatedAt: timestamp, proposedBy: PROPOSED_BY,
     // unused geometry kept for uniform handling (src/types.ts ConnectorObj)
     x: COORD, y: COORD, w: num(0, LIMITS.size), h: num(0, LIMITS.size), rotation: num(-LIMITS.rotation, LIMITS.rotation),
@@ -664,8 +669,24 @@ export function validateBoardObject(id_, value, ctx = {}, opts = {}) {
   }
 
   if (type === 'table') v.push(...tableCountCodes(value, only));
+  if (type === 'connector' && (!only || ['line', 'from', 'to', 'route'].some((k) => only.has(k)))) {
+    // with the previous state, a change to one end still sees the line flag and the other end as they are stored
+    const bad = lineViolation(isRecord(opts.prev) ? { ...opts.prev, ...value } : value);
+    if (bad) v.push({ code: bad, path: 'line' });
+  }
   v.push(...checkObjectAuthorship(id_, value, ctx, opts, only));
   return result(v);
+}
+
+/**
+ * A line (docs/lines.md) has both ends free and a straight route if it has a route. Returns the violation code, or null.
+ * A connector without `line` is never checked here, so the rule costs nothing for ordinary connectors.
+ */
+function lineViolation(value) {
+  if (value.line !== true) return null;
+  if (value.from?.kind !== 'free' || value.to?.kind !== 'free') return 'bad_value';
+  if (value.route !== undefined && value.route !== 'straight') return 'bad_value';
+  return null;
 }
 
 /** createdBy is stamped by the writer; the owner fields name a board member and change only with canEditObject. */
@@ -987,14 +1008,15 @@ const unwrap = (r) => (r.ok ? [] : r.violations);
 export const SYNC_VALIDATE_MODES = Object.freeze(['off', 'report', 'enforce']);
 
 /**
- * TABULA_SYNC_VALIDATE=off|report|enforce. Unset or empty is `off`. Anything else throws, so a typo cannot silently
- * turn the check off: call this once at startup and let the error stop the server.
+ * TABULA_SYNC_VALIDATE=off|report|enforce. Unset or empty is `report`: the check counts what it would flag and
+ * blocks nothing. `off` is the explicit switch. Anything else throws, so a typo cannot silently
+ * change the mode: call this once at startup and let the error stop the server.
  * @param {Record<string, string | undefined>} [env]
  * @returns {'off' | 'report' | 'enforce'}
  */
 export function syncValidateMode(env = process.env) {
   const raw = env?.TABULA_SYNC_VALIDATE;
-  if (raw === undefined || raw === null || String(raw).trim() === '') return 'off';
+  if (raw === undefined || raw === null || String(raw).trim() === '') return 'report';
   const value = String(raw).trim().toLowerCase();
   if (SYNC_VALIDATE_MODES.includes(value)) return value;
   throw new Error(`TABULA_SYNC_VALIDATE must be one of ${SYNC_VALIDATE_MODES.join(', ')}; got "${String(raw).slice(0, 20)}"`);

@@ -105,7 +105,9 @@ describe.skipIf(!available)('print and save as PDF', () => {
     await page.close();
   });
 
-  it('keeps the text as text in the PDF, not a picture of it', async () => {
+  // The PDF check reads Chromium's font embedding, which differs per platform (macOS Chromium writes no /FontFile object), so it runs on Linux only,
+  // where CI runs it (the Linux Node 24 leg; scripts/check-browser-tests.mjs fails that leg if this file skips anything it should not).
+  it.skipIf(process.platform !== 'linux')('keeps the text as text in the PDF, not a picture of it', async () => {
     const page = await open();
     await print(page, options('frames'));
     await page.emulateMedia({ media: 'print' });

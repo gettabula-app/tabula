@@ -56,9 +56,10 @@ In workspaces with sign-in, a bell sits in the top bar of the Boards page, next 
 - **Replies**: someone replied to a comment of yours.
 - **Shares**: someone shared a board directly with you.
 - **Team joins**: someone you invited joined the team, including when they signed in through your invite link.
+- **Cards**: a card you own is due tomorrow, due today or overdue, or someone assigned you a card. Selecting the row opens the board.
 - **Tracker**: tickets assigned to you, commented on and moved, if your workspace has the tracker.
 
-Each row says who, what and where, with the first words of a message or comment, and when. Select a row to go there. Select the check on a row, or **Mark all as read**, to mark items read. Reading a chat clears its mention notices. **All** and **Mentions** filter the list, **Show older** loads more, and the list goes back 90 days. **Notification settings** opens your chat notification settings.
+Each row says who, what and where, with the first words of a message or comment, and when. Select a row to go there. Select the check on a row, or **Mark all as read**, to mark items read. Reading a chat clears its mention notices. **All** and **Mentions** filter the list, **Show older** loads more, and the list goes back 90 days. **Notification settings** has switches for what appears here (mentions, replies, cards and shares) and for the chat email, and it can send you one email a day listing what is new in your notifications (off until you turn it on).
 
 An item disappears from the list, and from the count, when you can no longer open what it points to, for example after a board is unshared from you. The count updates live while chat is on, and every minute when chat is off. In open mode, without sign-in, there is no bell.
 
@@ -93,7 +94,7 @@ These settings belong to the board and are shared with everyone on it.
 
 ## Board menu
 
-The **Menu** button at the top right has these sections:
+The **Menu** button at the top right has these sections. Type in **Search actions** at the top of the menu (or press `/` while the menu is open) to find an action by name. **Appearance** and **Export** open as submenus beside the menu.
 
 - **Account** (workspaces with sign-in): your name and email, **Sign out**, **Sign out everywhere**, and **Admin** for owners and admins. If your administrator turned on AI tools, **AI tool access** appears too. If they let you use your own AI key, **Your AI key** appears as well. See [Access tokens and AI tools](ai-tools.md) and [Your AI key](ai-keys.md).
 - **Board**: **Board settings**, **Save board as template** ([Templates](templates.md)), **Version history** ([Version history](version-history.md)), **Your name and colour**, **Show comments** ([Comments](comments.md)), **Import a board file into this board**, and **Import Mermaid**.

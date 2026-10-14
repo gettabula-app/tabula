@@ -188,8 +188,13 @@ export function verifySnapshot({ db, snapshot: rawSnapshot } = {}) {
     for (const { issue, relation } of relationSample) {
       const ticketId = ticketIds.get(issue.id);
       const relatedTicketId = ticketIds.get(relation.relatedIssueId);
-      const exists = ticketId && relatedTicketId && db.prepare(`SELECT 1 FROM ticket_relations
-        WHERE ticket_id = ? AND related_ticket_id = ? AND kind = ?`).get(ticketId, relatedTicketId, relationKind(relation.type));
+      // The importer stores one row per pair: blocked_by and duplicated_by are swapped, relates_to is stored once in either direction.
+      const kind = relationKind(relation.type);
+      const swap = kind === 'blocked_by' || kind === 'duplicated_by';
+      const stored = kind === 'blocked_by' ? 'blocks' : kind === 'duplicated_by' ? 'duplicates' : kind;
+      const [from, to] = swap ? [relatedTicketId, ticketId] : [ticketId, relatedTicketId];
+      const row = db.prepare('SELECT 1 FROM ticket_relations WHERE ticket_id = ? AND related_ticket_id = ? AND kind = ?');
+      const exists = ticketId && relatedTicketId && (row.get(from, to, stored) || (stored === 'relates_to' && row.get(to, from, stored)));
       if (!exists) relationMismatches.push(issueKey(issue));
     }
     checks.push({ name: 'relation_spot_checks', passed: relationMismatches.length === 0, expected: relationSample.length, actual: relationSample.length - relationMismatches.length, keys: unique(relationMismatches) });
@@ -207,9 +212,6 @@ export function verifySnapshot({ db, snapshot: rawSnapshot } = {}) {
   const milestoneMismatches = [];
   if (milestoneTable) {
     for (const milestone of snapshot.milestones) if (!db.prepare('SELECT 1 FROM milestones WHERE id = ?').get(milestone.id)) milestoneMismatches.push(milestone.id);
-    for (const cycle of snapshot.cycles) {
-      if (cycle.startsAt && cycle.endsAt && !db.prepare('SELECT 1 FROM milestones WHERE id = ?').get(`linear-cycle:${cycle.id}`)) milestoneMismatches.push(`cycle:${cycle.id}`);
-    }
   }
   checks.push(countCheck('milestones', 0, milestoneMismatches.length, unique(milestoneMismatches)));
   const assignmentMismatches = [];
@@ -218,7 +220,8 @@ export function verifySnapshot({ db, snapshot: rawSnapshot } = {}) {
     if (!ticketId) continue;
     const row = db.prepare('SELECT project_id, milestone_id FROM tickets WHERE id = ?').get(ticketId);
     const expectedProject = projectTable ? issue.projectId : null;
-    const expectedMilestone = milestoneTable ? issue.milestoneId ?? (issue.cycleId && snapshot.cycles.find((cycle) => cycle.id === issue.cycleId)?.startsAt && snapshot.cycles.find((cycle) => cycle.id === issue.cycleId)?.endsAt ? `linear-cycle:${issue.cycleId}` : null) : null;
+    // Linear cycles are not imported (they stay in the loss report), so a cycle never stands in for a milestone.
+    const expectedMilestone = milestoneTable ? issue.milestoneId ?? null : null;
     if (row.project_id !== expectedProject || row.milestone_id !== expectedMilestone) assignmentMismatches.push(issueKey(issue));
   }
   checks.push(countCheck('project_milestone_assignments', 0, assignmentMismatches.length, unique(assignmentMismatches)));

@@ -6,10 +6,10 @@ import { allocateTicket } from './ids.mjs';
 import { listTickets, refreshTicketSearch, searchTickets } from './search.mjs';
 import {
   actorInfo, cleanText, cleanTicketTitle, codePointLength, conflict, forbidden, getDb, inTransaction, invalid, limitExceeded,
-  newId, notFound, requireWritable, validCalendarDate,
+  newId, notFound, PRIORITIES, requireWritable, validCalendarDate,
 } from './shared.mjs';
 
-export const PRIORITIES = Object.freeze(['none', 'urgent', 'high', 'medium', 'low']);
+export { PRIORITIES };
 const PRIORITY_VALUE = new Map(PRIORITIES.map((name, value) => [name, value]));
 const TRACKER_TICKET = Object.freeze({ id: 'tracker-access-check' });
 

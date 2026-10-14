@@ -1,5 +1,6 @@
-import type { BaseObj, GridType, Id, Obj, Point, Rect } from './types';
+import type { BaseObj, ConnectorObj, GridType, Id, Obj, Point, Rect } from './types';
 import { isBox, isConnector } from './types';
+import { isLine } from './line-geometry';
 import { isConnectable } from './connectable';
 import { isContainerType, validLabel } from '../shared/containers';
 import { lowDetail, type FilterChip } from './ui/kanban-logic';
@@ -60,6 +61,8 @@ export interface Overlay {
   anchorHot: string | null;     // `${id}:${side}` under the pointer
   marquee: Rect | null;
   guides: Guide[];
+  /** The axis line of a drag locked to one axis (src/axis-lock.ts): through `at`, along `axis`, across the view. */
+  axisLock: { axis: 'x' | 'y'; at: Point } | null;
   preview: string;              // world-space markup of an object being drawn
   remote: RemoteSel[];
   votes: Map<Id, { mine: number; total: number | null }>;
@@ -93,7 +96,7 @@ export interface KanbanDrawState {
 }
 
 export const emptyOverlay = (): Overlay => ({
-  selection: [], enteredGroup: null, hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
+  axisLock: null, selection: [], enteredGroup: null, hover: null, lockedHover: null, anchorsFor: null, anchorHot: null, marquee: null,
   guides: [], preview: '', remote: [], votes: new Map(), votable: new Set(), dropTarget: null, ai: '', kanban: null, drafts: [],
 });
 
@@ -175,11 +178,11 @@ export function handlesFor(o: Obj, get: (id: string) => Obj | undefined, zoom: n
   // a text: the sides change the wrap width, the corners scale the type (src/text-resize.ts); its height follows its lines
   if (o.type === 'text') hs = all.filter((h) => h.id === 'e' || h.id === 'w' || h.id.length === 2);
   // a Markdown block: the sides change the width the text wraps at; its height follows its content (src/markdown-heal.ts)
-  if (o.type === 'markdown') hs = all.filter((h) => h.id === 'e' || h.id === 'w');
+  if (o.type === 'markdown' || o.type === 'code') hs = all.filter((h) => h.id === 'e' || h.id === 'w');
   // a table: its size is its columns and rows, changed with their own controls (docs/tables.md), so the box has no handles
   if (o.type === 'table') hs = [];
   if (o.type === 'uml-initial' || o.type === 'uml-final') hs = all.filter((h) => h.id.length === 2);
-  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package' && o.type !== 'markdown' && o.type !== 'table') {
+  if (o.type !== 'frame' && o.type !== 'tracker' && o.type !== 'uml-lifeline' && o.type !== 'uml-package' && o.type !== 'markdown' && o.type !== 'code' && o.type !== 'table') {
     hs = [...hs, { id: 'rot', p: L(o.w / 2, -24 / zoom) }];
   }
   return hs;
@@ -239,6 +242,7 @@ export class Renderer {
   private resizeObserver: ResizeObserver;
   private overlayDirty = true;
   private camDirty = true;
+  private readonly appliedListeners = new Set<() => void>();
   private cameraListeners = new Set<() => void>();
   readonly ctx: MarkupCtx;
   /** An object as drawn, read through safeObj (src/safe-obj.ts). */
@@ -420,6 +424,12 @@ export class Renderer {
   onCamera(fn: () => void) {
     this.cameraListeners.add(fn);
     return () => this.cameraListeners.delete(fn);
+  }
+
+  /** Called in the frame that draws a new camera, right after the canvas takes it: what is placed by hand (remote cursors) moves in the same frame as the board. */
+  onCameraApplied(fn: () => void) {
+    this.appliedListeners.add(fn);
+    return () => this.appliedListeners.delete(fn);
   }
 
   setCamera(c: Partial<Camera>) {
@@ -644,6 +654,7 @@ export class Renderer {
     this.renderGrid();
     this.camDirty = false;
     this.root.style.setProperty('--zoom', String(zoom));
+    this.appliedListeners.forEach((l) => l());
   }
 
   private renderGrid() {
@@ -835,6 +846,7 @@ export class Renderer {
     } else {
       // a dragged card's slot is its dashed placeholder, with no selection outline over it
       for (const o of sel) if (!this.kanbanState.dragging.has(o.id)) {
+        if (isLine(o)) { out += this.lineHalo(o, px); continue; }
         const kanbanCard = o.type === 'card';
         out += this.outline(o, px(kanbanCard ? 1 : 1.5), 1, kanbanCard ? 'var(--ink)' : undefined);
       }
@@ -856,7 +868,7 @@ export class Renderer {
       const half = px(coarse ? 8 : 4.5);
       for (const h of hs) {
         if (h.id === 'rot') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(1.5)}"/>`;
-        else if (h.id === 'from' || h.id === 'to') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(coarse ? 8 : 5.5)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(2)}"/>`;
+        else if (h.id === 'from' || h.id === 'to') out += `<circle cx="${h.p.x}" cy="${h.p.y}" r="${px(isLine(o) ? 5 : coarse ? 8 : 5.5)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(2)}"/>`;
         else out += `<rect x="${h.p.x - half}" y="${h.p.y - half}" width="${half * 2}" height="${half * 2}" rx="${px(2)}" fill="${SELECTION_HANDLE_FILL}" stroke="${SELECTION_HANDLE_STROKE}" stroke-width="${px(1.5)}"/>`;
       }
     }
@@ -878,6 +890,14 @@ export class Renderer {
     for (const g of ov.guides) out += g.kind === 'line'
       ? `<path d="M${fin(g.x1)} ${fin(g.y1)}L${fin(g.x2)} ${fin(g.y2)}" stroke="${GUIDE}" stroke-width="${px(1)}"/>`
       : g.kind === 'gap' ? gapMarkup(g, px) : sizeMarkup(g, px);
+
+    // the axis line of a locked drag: dashed 4/4, 1px, faint, across the whole view
+    if (ov.axisLock) {
+      const { axis, at } = ov.axisLock;
+      const v = this.viewport();
+      const d = axis === 'x' ? `M${fin(v.x)} ${fin(at.y)}L${fin(v.x + v.w)} ${fin(at.y)}` : `M${fin(at.x)} ${fin(v.y)}L${fin(at.x)} ${fin(v.y + v.h)}`;
+      out += `<path class="axis-lock-line" d="${d}" stroke="${GUIDE}" stroke-opacity="0.4" stroke-width="${px(1)}" stroke-dasharray="${px(4)} ${px(4)}" fill="none"/>`;
+    }
 
     // drawing preview
     if (ov.preview) out += `<g opacity="0.85">${ov.preview}</g>`;
@@ -1028,6 +1048,25 @@ export class Renderer {
     return `<g class="link-hover" transform="rotate(${deg} ${c.x} ${c.y})" pointer-events="none">` +
       `<rect x="${o.x + 0.5}" y="${o.y + 0.5}" width="${o.w - 1}" height="${o.h - 1}" rx="4" fill="none" stroke="var(--ink, #18212B)" stroke-width="1"/>` +
       `<rect x="${gx}" y="${gy}" width="${size}" height="${size}" rx="4" fill="var(--paper, #FFFFFF)" stroke="var(--canvas-rule, #C9D1DA)"/>${arrow}</g>`;
+  }
+
+  /**
+   * The selection of a line: a 1px wire outline 3px wider than the line on each side, round at the ends (a capsule), so the
+   * line itself shows through. Forced colours take Highlight (styles.css, .line-halo).
+   */
+  private lineHalo(raw: Obj, px: (v: number) => number): string {
+    const o = safeObj(raw) as ConnectorObj;
+    const g = connectorGeom(this.safeGet, o, this.connectorLayout());
+    if (!g) return '';
+    const dx = g.end.x - g.start.x, dy = g.end.y - g.start.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return '';
+    const R = px((o.strokeWidth ?? 2) / 2 + 3);
+    const nx = (-dy / len) * R, ny = (dx / len) * R;
+    const a = g.start, b = g.end;
+    const d = `M${fin(a.x + nx)} ${fin(a.y + ny)}L${fin(b.x + nx)} ${fin(b.y + ny)}A${fin(R)} ${fin(R)} 0 0 0 ${fin(b.x - nx)} ${fin(b.y - ny)}`
+      + `L${fin(a.x - nx)} ${fin(a.y - ny)}A${fin(R)} ${fin(R)} 0 0 0 ${fin(a.x + nx)} ${fin(a.y + ny)}Z`;
+    return `<path class="line-halo" d="${d}" fill="none" stroke="${SELECTION_WIRE}" stroke-width="${px(1)}"/>`;
   }
 
   private outline(raw: Obj, sw: number, opacity: number, stroke = SELECTION_WIRE) {

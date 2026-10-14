@@ -517,6 +517,21 @@ export const MIGRATIONS = [
   );
   CREATE INDEX user_notifications_inbox ON user_notifications(user_id, read_at, created_at DESC, id);
   `, minReader: 11 },
+  // Card reminders (TAB-164 slice 2): one row per card with a person owner and a due date outside done lanes. Ids and the due
+  // date only, never card text. The board room's update hook and the card sweep keep it current (server/card-due.mjs).
+  { sql: `
+  CREATE TABLE card_due (
+    board_id TEXT NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+    card_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    due TEXT NOT NULL,
+    soon_for TEXT,
+    overdue_for TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (board_id, card_id)
+  );
+  CREATE INDEX card_due_due ON card_due(due);
+  `, minReader: 11 },
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');

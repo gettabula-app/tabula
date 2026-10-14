@@ -197,9 +197,10 @@ End       { id: string, side?: 'top'|'right'|'bottom'|'left' }   an object (side
 Parent    string (the id of an existing frame) | { ref: string } (a frame created in the same call)
 Summary   { id, type, kind?, x, y, w, h, rotation, text?, textTruncated?, name?, fill?, parent?, hidden?: true, locked?: true, flipX?: boolean, flipY?: boolean }   boxes
           { id, type: 'connector', from: End, to: End, route, startHead, endHead, label?, dash?, relation? }                     connectors (End as stored)
+          { id, type: 'line', from: { x, y }, to: { x, y }, strokeWidth, dash, startHead, endHead, stroke? }                      lines (see below): a connector with line: true, read as a line
 ```
 
-Numbers must be finite. Coordinates are within ±1,000,000 and rounded to 2 decimals. `w` and `h` are 8 to 20,000, `fontSize` 8 to 200, `strokeWidth` 0 to 20.
+Numbers must be finite. Coordinates are within ±1,000,000 and rounded to 2 decimals. `w` and `h` are 8 to 20,000, `fontSize` 8 to 200, `strokeWidth` 0 to 20. `lineHeight` is 0.8 to 3 for text, sticky, shape and Markdown objects.
 
 ### `whoami`
 
@@ -240,7 +241,7 @@ This applies to `create_objects`, `add_kanban_card`, `add_kanban_cards`, `create
 
 ### `get_objects`
 
-`{ boardId, ids: string[1..50] }` -> `{ objects: Summary[] + full details, missing: string[] }`. Full details add the complete `text` (up to 4,000 characters), `font`, `fontSize`, `fontWeight`, `textColor`, `stroke`, `strokeWidth`, `dash`, `opacity`, `createdBy`, `updatedAt` and, for UML and icon objects, the `text` and `stereotype` only (members, `ref`, `body` and `points` are not returned).
+`{ boardId, ids: string[1..50] }` -> `{ objects: Summary[] + full details, missing: string[] }`. Full details add the complete `text` (up to 4,000 characters), `font`, `fontSize`, `fontWeight`, `lineHeight`, `textColor`, `stroke`, `strokeWidth`, `dash`, `opacity`, `createdBy`, `updatedAt` and, for UML and icon objects, the `text` and `stereotype` only (members, `ref`, `body` and `points` are not returned).
 
 ### `get_changes`
 
@@ -259,29 +260,40 @@ This applies to `create_objects`, `add_kanban_card`, `add_kanban_cards`, `create
 `{ boardId, objects: Item[1..100] }`. Every item has a `type` and an optional `ref` (1 to 32 characters of `[A-Za-z0-9_-]`, unique in the call) that connectors in the same call can point at.
 
 ```
-{ type: 'sticky',    text, x, y, w? = 192, h? = 192, color?, parent?, flipX?, flipY? }
-{ type: 'shape',     kind? = 'rect', text?, x, y, w? = 160, h? = 100, fill?, stroke?, parent?, flipX?, flipY? }      kind: any ShapeKind in src/types.ts
-{ type: 'text',      text, x, y, w? = 240, fontSize? = 20, parent?, flipX?, flipY? }                                   h computed from the text like the template builder
+{ type: 'sticky',    text, x, y, w? = 192, h? = 192, color?, lineHeight?, parent?, flipX?, flipY? }
+{ type: 'shape',     kind? = 'rect', text?, x, y, w? = 160, h? = 100, fill?, stroke?, lineHeight?, parent?, flipX?, flipY? } kind: any ShapeKind in src/types.ts
+{ type: 'text',      text, x, y, w? = 240, fontSize? = 20, lineHeight?, parent?, flipX?, flipY? }                       h computed from the text like the template builder
+{ type: 'markdown',  text, x, y, w?, h?, fontSize?, lineHeight?, parent?, flipX?, flipY? }
+{ type: 'code',      text?, lang? = 'plaintext', title?, lines? = false, wrap? = false, x, y, w? = 520, h?, parent?, flipX?, flipY? }   a code block, see below
 { type: 'frame',     name, x, y, w? = 960, h? = 600, fill?, parent?, flipX?, flipY? }
 { type: 'connector', from: End, to: End, label?, route? = 'elbow', startHead? = 'none', endHead? = 'arrow', dash?, stroke? }
+{ type: 'line',      from: { x, y }, to: { x, y }, stroke?, strokeWidth? = 2, dash? = 'solid', startHead? = 'none', endHead? = 'none' }
+{ type: 'connector', line: true, from: { x, y }, to: { x, y }, ... }   the same line, written as a connector
 ```
 
-Limits: `text` at most 4,000 characters (the comment limit), `name` 100, `label` 200. `parent` is the id of an existing frame, or `{ref}` of a frame in the same call (frames cannot parent each other in a loop). The server does not auto-parent by position the way the canvas does; pass `parent`. Connector ends may be free points or bound to an object, but cannot bind to another connector, a lane or a kanban container. A new lane or container end is `invalid_input` at the end's path; cards remain valid ends.
+**Lines.** A line is a plain straight stroke with no shapes at its ends. It is stored as a connector with `line: true`, both ends free and `route: 'straight'`, and it is read back as `type: 'line'` with points instead of ends. `type: 'line'` is a synonym that the server normalises to that connector; `from` and `to` must be `{x, y}` points (a `{id}` or `{ref}` end is `invalid_input` at the end's path), and a `route` other than `straight` or a `label` is refused. Defaults: `strokeWidth` 2, `dash` solid, no heads. Use a plain `connector` (with `from` and `to` as ids or refs) for an arrow that stays attached to shapes.
+
+Limits: `text` at most 4,000 characters (the comment limit), `name` 100, `label` 200, `strokeWidth` 0 to 20, and `lineHeight` 0.8 to 3. Choosing 1.3 in the app clears `lineHeight` on text, sticky and shape objects; on a Markdown block it stores 1.3, because an empty value means 1.45. `parent` is the id of an existing frame, or `{ref}` of a frame in the same call (frames cannot parent each other in a loop). The server does not auto-parent by position the way the canvas does; pass `parent`. Connector ends may be free points or bound to an object, but cannot bind to another connector, a lane or a kanban container. A new lane or container end is `invalid_input` at the end's path; cards remain valid ends.
 
 Result: `{ created: [{ref?, id, type}], refs: {ref: id}, objectCount }`. New objects are placed above everything else: `z` comes from `generateNKeysBetween` over the current maximum (`fractional-indexing` is already a dependency), in input order. Fonts come from the board's `meta` (`bodyFont`, `headingFont` for frames) like the app does. The call fails with `limit_exceeded` if the board would exceed 5,000 objects.
 
-Rejected, never copied from input: `id`, `z`, `createdBy`, `updatedAt`, `privateStep`, `locked`, `body`, `points`, and any field not listed for the type. `flipX` and `flipY` are optional booleans on box objects. They mirror drawn content; sticky notes and text remain readable, and the board UI disables flips for frames, containers, lanes and cards. Text may not contain control characters (other than newline and tab) or tag characters, except a complete subdivision flag sequence. Only sticky, shape, text, frame, link and connector objects can be created. A `link` object takes `url` (an `http` or `https` web address without a user name or password, at most 2,048 characters, stored in the URL parser's form), `x`, `y`, `w?`, `h?` and `parent?`: it makes a plain card showing the address only (`unfurl: 'off'`, 320 by 48), and no preview is fetched for an agent's word; a person can press Refresh on it. Containers (kanbans), lanes, cards, groups, icons, images, freehand paths and UML objects are refused here; use the kanban tools to create lanes and cards. Icon bodies are SVG (see "Not in this slice").
+Rejected, never copied from input: `id`, `z`, `createdBy`, `updatedAt`, `privateStep`, `locked`, `body`, `points`, and any field not listed for the type. `flipX` and `flipY` are optional booleans on box objects. They mirror drawn content; sticky notes and text remain readable, and the board UI disables flips for frames, containers, lanes and cards. Text may not contain control characters (other than newline and tab) or tag characters, except a complete subdivision flag sequence. Only sticky, shape, text, frame, link, connector and line objects can be created. A `link` object takes `url` (an `http` or `https` web address without a user name or password, at most 2,048 characters, stored in the URL parser's form), `x`, `y`, `w?`, `h?` and `parent?`: it makes a plain card showing the address only (`unfurl: 'off'`, 320 by 48), and no preview is fetched for an agent's word; a person can press Refresh on it. Containers (kanbans), lanes, cards, groups, icons, images, freehand paths and UML objects are refused here; use the kanban tools to create lanes and cards. Icon bodies are SVG (see "Not in this slice").
+
+**Code blocks.** `type: 'code'` makes a code block (docs/code-blocks.md). `text` is the code, at most 20,000 characters (tabs and line breaks are kept). `lang` is one of `plaintext, ts, tsx, js, jsx, json, html, css, scss, python, rust, go, java, c, cpp, csharp, bash, sql, yaml, toml, markdown, diff, php, ruby, swift, kotlin`, or an alias such as `typescript`, `py`, `sh`, `c++`, `yml` (stored as the id); any other value is `invalid_input` at `objects[n].lang`. `title` is plain text of at most 100 characters; `lines` shows line numbers and `wrap` wraps long lines. The height is an estimate that the app corrects when the board opens, and follows the code on `update_objects` unless `h` is set. The code is data: it is never run, and read tools return it as board text inside the usual fence. Exports to Markdown show a code block as a fenced block named by the language id, with a fence longer than any run of backticks in the code. **Rollout:** the server is deployed before clients can create `code` objects, because the sync guard refuses an unknown object type (`unknown_type`) and older clients do not draw one.
 
 ### `update_objects`
 
 `{ boardId, updates: [{ id, ...fields }][1..100] }`. Fields that may change, by type:
 
 ```
-sticky       x y w h rotation(deg) parent(frame or group id | null), text, color, flipX, flipY
-shape        x y w h rotation(deg) parent(frame or group id | null), text, kind, fill, stroke, strokeWidth, flipX, flipY
-text         x y w h rotation(deg) parent(frame or group id | null), text, fontSize, textColor, flipX, flipY
+sticky       x y w h rotation(deg) parent(frame or group id | null), text, color, lineHeight, flipX, flipY
+shape        x y w h rotation(deg) parent(frame or group id | null), text, kind, fill, stroke, strokeWidth, lineHeight, flipX, flipY
+text         x y w h rotation(deg) parent(frame or group id | null), text, fontSize, lineHeight, textColor, flipX, flipY
+markdown     x y w h rotation(deg) parent(frame or group id | null), text, fontSize, lineHeight, textColor, fill, flipX, flipY
 frame        x y w h rotation(deg) parent(frame or group id | null), name, fill, flipX, flipY
+code         x y w h rotation(deg) parent(frame or group id | null), text, lang, title, lines, wrap, flipX, flipY
 connector    from, to, label, route, startHead, endHead, dash, stroke
+line         from, to (points), stroke, strokeWidth, dash, startHead, endHead; a bound end or a route other than straight makes it an ordinary connector and drops the line flag
 group        name only
 icon, image, link, path, UML objects   x y w h rotation(deg), parent(frame or group id | null), flipX, flipY
 ```

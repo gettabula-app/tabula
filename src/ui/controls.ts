@@ -266,6 +266,9 @@ export function combo<T>(o: ComboOptions<T>): HTMLButtonElement {
     button.setAttribute('aria-expanded', 'true');
     place();
     setActive(indexOfValue(), false);
+    // the current option sits in the middle of the list, not at its edge: with 'nearest' the next option could be clipped by the list's bottom, and a click on its visible sliver (or where it is drawn) landed outside the list
+    const current = rows[active];
+    if (current) list.scrollTop = Math.max(0, current.offsetTop - (list.clientHeight - current.offsetHeight) / 2);
     setTimeout(() => window.addEventListener('pointerdown', onOutside, true));
     window.addEventListener('resize', onOutside, true);
   };
@@ -307,4 +310,11 @@ export function combo<T>(o: ComboOptions<T>): HTMLButtonElement {
   });
   button.addEventListener('blur', () => close(null));
   return button;
+}
+
+/** A labelled on/off switch (a checkbox with role switch): the label on the left, the switch on the right. */
+export function switchRow(label: string, checked: boolean, onChange: (on: boolean) => void): HTMLLabelElement {
+  const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch-input', 'aria-label': label, checked });
+  input.addEventListener('change', () => onChange(input.checked));
+  return h('label', { class: 'check switch-row' }, h('span', null, label), input);
 }

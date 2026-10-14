@@ -4,7 +4,7 @@
   display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--tray-line); border-radius: var(--radius-md);
   box-shadow: 0 4px 24px color-mix(in srgb, var(--shade) 5%, transparent);
 }
-.comment-card :focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+.comment-card :focus-visible:not(input):not(textarea):not(select):not(.combo) { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .comment-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .comment-head > .icon-btn { margin-left: auto; }
 .comment-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -31,6 +31,17 @@
 .comment-msg .btn.small { height: 28px; padding: 0 8px; font-size: 12.5px; }
 .comment-msg .btn.armed { color: color-mix(in srgb, var(--danger) 54%, var(--tray-text)); }
 .comment-muted { margin: 0; color: var(--tray-muted); font-size: 12.5px; }
+
+/* a mention in a comment: the chat's chip (src/ui/chat.css), yours a stronger one */
+.comment-mention { padding: 0 3px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--signal) 24%, transparent); border-bottom: 1.5px solid var(--signal); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
+.comment-mention.me { background: color-mix(in srgb, var(--signal) 40%, transparent); }
+
+/* the people list under the `@` in a comment field: a hairline box above the field, as chat's list */
+.comment-suggest { margin: 0; padding: 0; list-style: none; max-height: 160px; overflow-y: auto; background: var(--tray); border: 1px solid var(--tray-line); border-bottom: 2px solid var(--tray-text); border-radius: var(--radius-sm); }
+.comment-suggest[hidden] { display: none; }
+.comment-option { min-height: 32px; padding: 6px 8px; border-top: 1px solid var(--tray-line); border-left: 4px solid transparent; color: var(--tray-text); font-size: 13px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comment-option:first-child { border-top: 0; }
+.comment-option.on { background: var(--tray-2); border-left-color: var(--tray-text); }
 
 /* comment tool button and its count */
 .comment-toggle { position: relative; }
@@ -87,7 +98,7 @@
 
 @media (max-width: 860px) {
   .chrome > .side-tray {
-    left: 0; right: 0; top: auto; bottom: 0; width: 100%; max-height: 76dvh; height: min(76dvh, 720px);
+    left: var(--rail-clear); right: 0; top: auto; bottom: 0; width: auto; max-height: 76dvh; height: min(76dvh, 720px);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
   .side-tray-head { min-height: 64px; padding: 24px 8px 4px 16px; }

@@ -18,7 +18,7 @@
 .admin .backups-back {
   display: inline-flex; align-items: center; gap: 8px; height: 32px; margin: 0 0 24px; padding: 0;
   border: 0; border-radius: var(--radius-sm); background: none; color: var(--graphite); cursor: pointer;
-  font: inherit; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  font: inherit; font-size: 13px; font-weight: 500; letter-spacing: normal; text-transform: none;
 }
 .admin .backups-back:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
 
@@ -44,8 +44,7 @@
 .backups-readiness-heading .admin-sub { margin: 0; }
 .backups-readiness button { min-height: 44px; }
 .backups-readiness button:focus-visible,
-.backups-readiness input:focus-visible,
-.backups-readiness textarea:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.backups-readiness-owner > summary:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 .backups-readiness-overall { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0; }
 .backups-readiness-overall .admin-badge { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .backups-readiness-overall p { margin: 0; }
@@ -64,11 +63,10 @@
 .backups-readiness-form { max-width: 640px; min-width: 0; margin-top: 28px; }
 .backups-readiness-form .admin-kicker { margin: 0 0 8px; }
 .backups-readiness-form .muted { max-width: 640px; }
-.backups-readiness-form .input { box-sizing: border-box; width: 100%; min-height: 44px; }
+.backups-readiness-form .input { box-sizing: border-box; width: 100%; }
 .admin .backups-readiness-form .backups-readiness-json { min-height: 160px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.admin .backups-readiness-form .backups-label { display: block; margin: 12px 0 8px; }
-.backups-readiness-checkbox { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; line-height: 1.5; }
-.backups-readiness-checkbox input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--signal); }
+.admin .backups-readiness-form .backups-label { display: block; margin: 12px 0 6px; }
+.backups-readiness-checkbox { margin-top: 16px; line-height: 1.5; }
 .backups-readiness-form-error:empty { display: none; }
 .backups-readiness-form-error .admin-error { margin-top: 12px; }
 
@@ -104,12 +102,7 @@
 }
 .admin .backups-pick-row:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .admin .backups-pick-row.on { border-left-color: var(--signal); }
-.backups-pick-row input {
-  appearance: none; -webkit-appearance: none; display: grid; place-content: center; flex: none;
-  width: 16px; height: 16px; margin: 3px 0 0; border: 1px solid var(--field-edge-strong); border-radius: var(--radius-xs); background: var(--paper);
-}
-.backups-pick-row input::before { content: ''; width: 8px; height: 8px; background: var(--ink); transform: scale(0); }
-.backups-pick-row input:checked::before { transform: scale(1); }
+.backups-pick-row input { margin-top: 3px; }
 .backups-pick-text { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .backups-pick-text > .muted { font-size: 13px; }
 .admin .backups-pick-text .admin-badge { margin: 0 0 0 8px; }
@@ -157,8 +150,6 @@
 .backups-readiness-checks { border-top-color: var(--page-hairline); }
 .backups-readiness-row { border-bottom-color: var(--page-hairline); }
 .backups-readiness button:focus-visible,
-.backups-readiness input:focus-visible,
-.backups-readiness textarea:focus-visible,
 .backups-readiness-owner > summary:focus-visible { outline-color: var(--ink); }
 .backups-steps { border-top: 1px solid var(--page-hairline); border-bottom: 1px solid var(--page-hairline); counter-reset: none; }
 .backups-steps li { display: block; padding: 12px 0 12px 24px; border-top-color: var(--page-hairline); counter-increment: none; }
@@ -172,3 +163,5 @@
 .admin .backups-pick-row:hover,
 .admin .backups-pick-row.on { background: var(--page-hover); border-left: 0; }
 .restoring-body { border-top: 1px solid var(--page-hairline); }
+
+/* "Unreadable  the key is not available": the pill is the label, so the colon is dropped and the pill keeps its usual gap */

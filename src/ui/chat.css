@@ -1,17 +1,8 @@
 /* Board chat (docs/chat.md, Interface): the conversation in the chat dock and on the Chat page. Theme variables only, radius
-   tokens by role (8px controls, 12px bubbles and pills), hairlines, 11px uppercase labels, an 8px grid. --signal marks Send, the
+   tokens by role (8px controls, 12px bubbles and pills), hairlines, sentence-case labels, an 8px grid. --signal marks Send, the
    New messages line, a message that mentions you, your own bubbles and the reactions you gave. */
 
-.chat-prefs-switch { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; color: var(--tray-text); font-weight: 600; line-height: 1.4; cursor: pointer; }
-.chat-switch-control { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none; width: 48px; height: 44px; }
-.chat-switch-control input { position: absolute; inset: 0; z-index: 1; width: 48px; height: 44px; margin: 0; opacity: 0; cursor: pointer; }
-.chat-switch-track { position: relative; display: block; width: 40px; height: 24px; border: 1px solid var(--field-edge-strong); border-radius: 999px; background: var(--tray-2); }
-.chat-switch-thumb { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--tray-muted); }
-.chat-switch-control input:checked ~ .chat-switch-track { border-color: var(--ink); background: var(--ink); }
-.chat-switch-control input:checked ~ .chat-switch-track .chat-switch-thumb { background: var(--paper); transform: translateX(16px); }
-.chat-switch-control input:focus-visible ~ .chat-switch-track { outline: 2px solid var(--tray-text); outline-offset: 2px; }
-@media (prefers-reduced-motion: no-preference) { .chat-switch-thumb { transition: transform 120ms ease-out; } }
-@media (prefers-reduced-motion: reduce) { .chat-switch-thumb { transition: none; } }
+.chat-prefs-switch { justify-content: space-between; min-height: 44px; color: var(--tray-text); font-weight: 600; line-height: 1.4; cursor: pointer; }
 
 /* the Chat button and its unread badge (a red outline when someone mentions you) */
 .chat-toggle { position: relative; }
@@ -81,9 +72,10 @@
 .chat-link { color: var(--tray-text); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; word-break: break-all; }
 .chat-link:hover { text-decoration-thickness: 2px; }
 /* a mention: a chip with a signal underline; yours is stronger, and a message that names you gets an inset signal bar */
-.chat-mention { padding: 0 3px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--signal) 24%, transparent); border-bottom: 1.5px solid var(--signal); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
-.chat-mention.me { background: color-mix(in srgb, var(--signal) 40%, transparent); }
-.chat-msg.mention { background: color-mix(in srgb, var(--signal) 14%, transparent); box-shadow: inset 3px 0 0 var(--signal); }
+/* a mention is a soft chip, not an underlined highlight */
+.chat-mention { padding: 0 3px; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--tray-text) 9%, transparent); color: var(--tray-text); font-weight: 600; white-space: nowrap; }
+.chat-mention.me { background: color-mix(in srgb, var(--tray-text) 16%, transparent); }
+.chat-msg.mention { background: color-mix(in srgb, var(--tray-text) 5%, transparent); box-shadow: inset 2px 0 0 var(--wire); }
 .chat-quote {
   display: flex; gap: 8px; min-width: 0; margin: 2px 0 4px; padding-left: 8px; border-left: 2px solid var(--tray-line);
   color: var(--tray-muted); font-size: 12px; line-height: 16px;
@@ -113,7 +105,7 @@
 .chat-msg.own .chat-main { display: flex; flex-direction: column; align-items: flex-end; max-width: 82%; }
 .chat-msg.own .chat-text {
   padding: 7px 11px; border-radius: 12px 12px 4px 12px; text-align: left;
-  background: color-mix(in srgb, var(--signal) 14%, var(--tray)); border: 1px solid color-mix(in srgb, var(--signal) 35%, transparent);
+  background: color-mix(in srgb, var(--tray-text) 7%, var(--tray)); border: 0;
 }
 .chat-msg.own .chat-name { display: none; }
 .chat-msg.own .chat-meta { order: 9; margin: 2px 4px 0 0; }
@@ -164,7 +156,7 @@
 }
 .chat-replying[hidden] { display: none; }
 .chat-replying-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.chat-replying-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--tray-text); }
+.chat-replying-label { font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; color: var(--tray-text); }
 .chat-replying-quote { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tray-muted); }
 
 /* the people list under `@`: above the field, a hairline box on the tray */
@@ -225,9 +217,9 @@
 /* object chips and Reference selection (docs/chat.md, Object link): a chip under a message that goes to the object, and the button
    and the chip that attach the selected object to the next message */
 .chat-object {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 24px; margin: 4px 0 0; padding: 0 8px; box-sizing: border-box;
-  border: 1px solid var(--tray-text); border-radius: var(--radius-xs); background: transparent; color: var(--tray-text);
-  font: 600 12px/1 var(--ui); text-decoration: none; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 26px; margin: 4px 0 0; padding: 0 9px; box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--tray-text) 22%, var(--tray)); border-radius: var(--radius-sm); background: transparent; color: var(--tray-text);
+  font: 500 12px/1 var(--ui); text-decoration: none; cursor: pointer;
 }
 .chat-object > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-object:hover { background: var(--tray-hover); }
@@ -235,7 +227,7 @@
 .chat-object.missing, .chat-object.private, .chat-object.hidden { border-style: dashed; border-color: var(--tray-line); color: var(--tray-muted); cursor: default; }
 .chat-object.missing:hover, .chat-object.private:hover, .chat-object.hidden:hover { background: transparent; }
 .chat-attached {
-  display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border-left: 4px solid var(--tray-text); background: var(--tray-2);
+  display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border-left: 2px solid var(--tray-line); background: var(--tray-2);
   font-size: 12px; line-height: 16px;
 }
 .chat-attached[hidden] { display: none; }

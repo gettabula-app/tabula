@@ -1,7 +1,7 @@
 import type { Me } from '../../api';
 import { openTrackerMenu } from './account-menu';
 import './tracker.css';
-import { closePopover, dialog, popover, toast } from '../../ui/common';
+import { closePopover, dialog, popover, segmented, toast } from '../../ui/common';
 import { h, icon } from '../../ui/dom';
 import { kbdHint } from '../../ui/kbd';
 import { TrackerError, type TrackerFacets, type TrackerListQuery, type TrackerMeta, type TrackerPriority, type TrackerSortField, type TrackerState, type TrackerTicket, type TrackerView } from '../../tracker-types';
@@ -14,6 +14,7 @@ import { buildListModel, moveCursor, moveCursorTo, selectAll, toggleSelection, e
 import { buildCommandItems, openCommandBox, type CommandItem } from './command-box';
 import { isNativeActivationTarget, resolveKey, SHORTCUTS, type KeyboardLayer, type TrackerAction } from './keys';
 import { openPicker, type PickerResult } from './picker';
+import { autoScrollDelta, AUTO_SCROLL_EDGE_PX, clipRect, DRAG_THRESHOLD_PX, laneAtPoint, laneWidthFor, LONG_PRESS_MS, scaleOf, type BoardLane, type BoardPoint } from './board-drag';
 import { openNewIssueDialog } from './new-issue';
 import { publishTrackerSnapshot } from './frame-snapshot';
 import { mountTicketPage } from './ticket-page';
@@ -21,6 +22,7 @@ import { mountInbox } from './inbox';
 import { renderSnippet } from './snippet';
 import { trackerErrorField } from './error-path';
 import { buildTrackerPath } from '../../tracker-route';
+import { trackerPeekAllowed } from './peek-rule';
 
 const TABS: ReadonlyArray<{ id: TrackerView; label: string; shortLabel: string; glyph: string }> = [
   { id: 'inbox', label: 'Inbox', shortLabel: 'Inbox', glyph: '◉' },
@@ -46,6 +48,8 @@ type TrackerSort = { field: TrackerSortField; direction: 'asc' | 'desc' };
 export interface TrackerViewerState {
   tab: TrackerView;
   viewId: string | null;
+  /** The chosen saved view's own filter (from runView), in memory only: the element lists it in place of the tab's query. */
+  viewFilter: string[] | null;
   filter: string[];
   queryText: string;
   group: ListGroupBy;
@@ -63,6 +67,25 @@ export interface TrackerViewerState {
   mySubtab: 'active' | 'created';
 }
 
+/** A card press on the element's board: pending until the pointer moves (or a touch rests), then a drag until it is dropped or cancelled. */
+interface BoardDrag {
+  pointerId: number;
+  pointerType: string;
+  ticket: TrackerTicket;
+  card: HTMLElement;
+  start: BoardPoint;
+  last: BoardPoint;
+  /** The press point in the card's own layout units, so the ghost keeps the grip. */
+  grab: BoardPoint;
+  scale: number;
+  ghost: HTMLElement | null;
+  active: boolean;
+  /** The lane under the pointer (null outside every lane). */
+  over: string | null;
+  timer: number | undefined;
+  frame: number | undefined;
+}
+
 const viewerStates = new WeakMap<TrackerStore, Map<string, TrackerViewerState>>();
 
 /** Tabs, filters, cursor, and layout belong to this viewer's tracker window. */
@@ -73,7 +96,7 @@ export function trackerViewerState(store: TrackerStore, viewerId: string, tracke
   const existing = byViewer.get(stateKey);
   if (existing) return existing;
   const state: TrackerViewerState = {
-    tab: defaultTab, viewId: null, filter: [], queryText: '', group: 'state',
+    tab: defaultTab, viewId: null, viewFilter: null, filter: [], queryText: '', group: 'state',
     sort: defaultTab === 'my' ? { field: 'priority', direction: 'asc' } : { field: 'updatedAt', direction: 'desc' },
     allSort: { field: 'updatedAt', direction: 'desc' }, mySort: { field: 'priority', direction: 'asc' },
     density: 'comfortable', columns: new Set<Column>([...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]), collapsedGroups: new Set(),
@@ -89,6 +112,15 @@ export function visibleColumns(width: number, chosen: ReadonlySet<Column>): Colu
   if ((width < 600 || width >= 920) && chosen.has('due')) columns.push('due'); // on a phone the due date sits under the key
   if (width >= 1080 && chosen.has('updated')) columns.push('updated');
   return columns;
+}
+
+export type ElementColumn = 'state' | 'key' | 'title' | 'assignee' | 'priority';
+
+/** The columns of an element's list at its width: the key and priority drop under 560px, the avatar under 420px. */
+export function elementColumns(width: number): ElementColumn[] {
+  if (width >= 560) return ['state', 'key', 'title', 'assignee', 'priority'];
+  if (width >= 420) return ['state', 'title', 'assignee'];
+  return ['state', 'title'];
 }
 
 export function facetsForGroup(group: ListGroupBy, facets?: TrackerFacets): ListFacets | undefined {
@@ -122,6 +154,14 @@ export interface TrackerShellOptions {
   onTicketChange?: (key: string | null) => void;
   onTabChange?: (tab: TrackerView, viewId?: string) => void;
   onWorkExit?: () => void;
+  /** A mouse press on a board card in the element (the frame selects itself and focuses, as it does for a press on a row). */
+  onPointerPress?: () => void;
+  /** The element (a frame on a board), not the full-screen route: a compact header with All and My, and no tabs or filters. */
+  element?: boolean;
+  /** Element only: the expand button opens the full-screen route. */
+  onOpenFullScreen?: () => void;
+  /** Element only: the link that the menu's Copy link copies (the full-screen route of this element), or null. */
+  elementLink?: () => string | null;
   onCreated?: (key: string) => void;
   onSnapshot?: () => void;
   active?: () => boolean;
@@ -133,6 +173,8 @@ export interface TrackerShellController {
   setFullscreen(value: boolean): void;
   setTicket(key: string | null): void;
   updateLayout(width: number): void;
+  /** The person's access changed (the board went read-only or back): the header and the board's buttons follow it. */
+  refreshAccess(): void;
   destroy(): void;
   state: TrackerViewerState;
 }
@@ -144,6 +186,8 @@ function isTextTarget(target: EventTarget | null): boolean {
 
 function stableQuery(state: TrackerViewerState): TrackerListQuery {
   // The REST list route currently accepts filters, q and limit. Grouping, facets and sorting are applied locally.
+  // A chosen saved view runs its own filter (the element's tab is All while one is open).
+  if (state.viewId && state.viewFilter) return { filter: [...state.viewFilter], q: state.queryText.trim() || undefined, limit: 50 };
   const filters = state.tab === 'my' && state.mySubtab === 'active' ? ['assignee:me', ...state.filter] : [...state.filter];
   return {
     filter: filters, q: state.queryText.trim() || undefined, limit: 50,
@@ -213,7 +257,13 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const state = trackerViewerState(options.store, options.viewerId, options.windowId ?? options.trackerId, options.initialTab);
   state.viewId = options.initialViewId ?? state.viewId;
   state.ticketKey = options.initialTicketKey ?? state.ticketKey;
+  const elementMode = options.element === true;
+  // an element shows All, My or Board; a view stored from before (inbox, projects) reads as All
+  if (elementMode && state.tab !== 'all' && state.tab !== 'my' && state.tab !== 'board') state.tab = 'all';
+  if (elementMode && state.viewId) state.tab = 'all';
   let fullScreen = options.fullScreen === true;
+  let elementEmpty = false;
+  let elementDenied = false;
   let meta = options.store.snapshot().meta;
   let readOnly = options.readOnly === true || options.store.snapshot().readOnly || meta?.me.canWrite === false;
   let currentCache = options.store.list(stableQuery(state));
@@ -244,6 +294,21 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   let ticketError = '';
 
   const root = h('section', { class: 'trk trk-shell', tabindex: '0', 'aria-label': 'Tracker', 'data-fullscreen': String(fullScreen) });
+  if (elementMode) root.classList.add('trk-element');
+  // When the focused control is removed or hidden by a re-render (a row, once its ticket opens), the browser drops focus on the
+  // body, and the next key would reach the board. The tracker takes the focus back. The listener is on the document because a
+  // removed node's focusout no longer bubbles to the shell.
+  let lastFocused: EventTarget | null = null;
+  root.addEventListener('focusin', (event) => { lastFocused = event.target; });
+  const rescueFocus = (event: FocusEvent) => {
+    if (event.target !== lastFocused || event.relatedTarget) return;
+    const lost = event.target as Node;
+    requestAnimationFrame(() => {
+      const gone = !lost.isConnected || (lost instanceof HTMLElement && !lost.checkVisibility());
+      if (gone && root.isConnected && !root.hidden && document.activeElement === document.body) root.focus({ preventScroll: true });
+    });
+  };
+  document.addEventListener('focusout', rescueFocus, true);
   const routeMode = options.routeMode === true;
   const menuButton = h('button', {
     class: 'trk-menu-button', type: 'button', 'aria-label': 'Menu', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
@@ -262,8 +327,21 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   );
   const tabs = h('nav', { class: 'trk-tabs', role: 'tablist', 'aria-label': 'Tracker sections' });
   const commandButton = h('button', { class: 'trk-command-trigger', type: 'button', 'aria-label': 'Open command box, Command or Control K' }, kbdHint('Ctrl/Cmd+K'));
-  const newButton = h('button', { class: 'trk-primary-button trk-new-trigger', type: 'button', 'aria-label': 'New issue' }, '+ New issue');
-  const fullscreenButton = h('button', { class: 'trk-icon-button', type: 'button', 'aria-label': fullScreen ? 'Back to board' : 'Open full screen' }, fullScreen ? '↙' : '↗');
+  const newButton = h('button', { class: 'trk-primary-button trk-new-trigger', type: 'button', 'aria-label': elementMode ? 'New ticket' : 'New issue' }, elementMode ? '+ New ticket' : '+ New issue');
+  const fullscreenButton = elementMode
+    ? h('button', { class: 'trk-icon-button trk-element-expand', type: 'button', 'aria-label': 'Open full screen', 'data-tip': 'Open full screen' }, icon('expand', 16))
+    : h('button', { class: 'trk-icon-button', type: 'button', 'aria-label': fullScreen ? 'Back to board' : 'Open full screen' }, fullScreen ? '↙' : '↗');
+  // the element's own header parts (only mounted in element mode)
+  const elementName = h('h2', { class: 'trk-element-name' }, 'Tracker');
+  const elementSub = h('span', { class: 'trk-element-sub' }, 'Workspace tickets');
+  const elementSwitchHost = h('div', { class: 'trk-element-switch' });
+  let elementSwitcher: HTMLElement | null = null;
+  const elementBack = h('button', { class: 'trk-small-button trk-element-back', type: 'button', onclick: () => setTicket(null) }, 'Back');
+  const elementViewsButton = h('button', { class: 'trk-element-views', type: 'button', 'aria-haspopup': 'menu' }, 'Views');
+  elementViewsButton.hidden = true;
+  const elementMenuButton = h('button', {
+    class: 'trk-icon-button trk-element-menu-button', type: 'button', 'aria-label': 'Tracker menu', 'aria-haspopup': 'menu', 'data-tip': 'Tracker menu',
+  }, icon('dots', 16));
   const offlineLine = h('div', { class: 'trk-offline-line', role: 'status', hidden: typeof navigator === 'undefined' || navigator.onLine !== false },
     h('span', null, 'Offline. Changes are saved here and will sync.'),
     h('span', { class: 'trk-offline-create-reason' }, 'Needs a connection to get a ticket number.'),
@@ -271,8 +349,12 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const errorBanner = h('div', { class: 'trk-error-banner', role: 'alert', hidden: true });
   const content = h('div', { class: 'trk-content' });
   const live = h('div', { class: 'trk-live-region', 'aria-live': 'polite', 'aria-atomic': 'true' });
-  root.append(fullscreenStrip, h('header', { class: 'trk-header' }, tabs,
-    h('div', { class: 'trk-header-actions' }, commandButton, newButton, fullscreenButton)),
+  root.append(fullscreenStrip, elementMode
+    ? h('header', { class: 'trk-header trk-element-header' },
+      h('div', { class: 'trk-element-title' }, elementName, elementSub),
+      h('div', { class: 'trk-element-actions' }, elementSwitchHost, elementViewsButton, elementBack, newButton, fullscreenButton, elementMenuButton))
+    : h('header', { class: 'trk-header' }, tabs,
+      h('div', { class: 'trk-header-actions' }, commandButton, newButton, fullscreenButton)),
   offlineLine, errorBanner, content, live);
   parent.appendChild(root);
   root.dataset.width = String(layoutWidth);
@@ -303,8 +385,10 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
   const active = () => !destroyed && (options.active?.() ?? (root === document.activeElement || root.contains(document.activeElement) || fullScreen));
   const updateActions = () => {
+    const wasReadOnly = readOnly;
     readOnly = options.readOnly === true || options.store.snapshot().readOnly || meta?.me.canWrite === false;
-    newButton.hidden = readOnly;
+    if (wasReadOnly !== readOnly && state.tab === 'board' && !state.ticketKey && meta && boardLanesHost) renderBoardContents();
+    newButton.hidden = readOnly || (elementMode && (elementDenied || elementEmpty));
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
     offlineLine.hidden = !offline;
     newButton.disabled = offline;
@@ -333,7 +417,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
 
   const showError = (message: string) => {
-    errorBanner.replaceChildren(h('span', null, message), h('button', { class: 'trk-small-button', type: 'button', onclick: () => {
+    const shown = elementMode ? 'Could not load tickets' : message;
+    errorBanner.replaceChildren(h('span', null, shown), h('button', { class: 'trk-small-button', type: 'button', onclick: () => {
       errorBanner.hidden = true;
       void options.store.loadMeta(true).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load tracker data.'));
       if (state.tab === 'all' || state.tab === 'my') watchQuery();
@@ -345,7 +430,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   const showListError = (message: string) => {
     if (!errorHost || !root.contains(errorHost)) { showError(message); return; }
     const target = errorHost;
-    const displayMessage = message.startsWith('Could not load') ? message : `Could not load issues. ${message}`;
+    const displayMessage = elementMode ? 'Could not load tickets' : message.startsWith('Could not load') ? message : `Could not load issues. ${message}`;
     target.replaceChildren(h('span', null, displayMessage), h('button', {
       class: 'trk-small-button', type: 'button', onclick: () => {
         target.hidden = true;
@@ -366,7 +451,107 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     listLoadMore.textContent = cache.loadingMore ? 'Loading…' : 'Load more';
   };
 
+  const elementTab = (): TrackerView => (state.tab === 'my' || state.tab === 'board' ? state.tab : 'all');
+  /** The saved view the element is showing, or null (the element only: the full-screen route keeps its own list). */
+  const elementView = (): string | null => (elementMode && state.viewId && state.viewFilter ? state.viewId : null);
+  const peekAllowed = () => trackerPeekAllowed({ element: elementMode, fullScreen, tab: state.tab, width: layoutWidth });
+  const elementTabLabel = () => ({ all: 'All', my: 'My', board: 'Board' } as const)[elementTab() as 'all' | 'my' | 'board'];
+  /** The element header: All, My and Board (the shared segmented control), Back while a ticket is open, New ticket, expand, and the menu. */
+  const renderElementHeader = () => {
+    const width = layoutWidth;
+    // a ticket open beside the list (the side panel) keeps the list's header; only a ticket in place takes over the header
+    const inPlace = Boolean(state.ticketKey) && !peekAllowed();
+    const view = elementView();
+    elementName.textContent = inPlace ? state.ticketKey ?? 'Tracker' : 'Tracker';
+    elementSub.textContent = view ? (getMeta()?.views ?? []).find((item) => item.id === view)?.name ?? 'Workspace tickets' : 'Workspace tickets';
+    elementSub.hidden = inPlace || width < 560;
+    // the switch hides while the unfiltered All view is empty, while a saved view is open (the menu's All returns), and when the person has no access; at under 360px it moves into the menu
+    const showSwitch = !inPlace && !elementDenied && !elementEmpty && !view && width >= 360;
+    if (showSwitch && !elementSwitcher) {
+      elementSwitcher = segmented<TrackerView>([{ value: 'all', label: 'All' }, { value: 'my', label: 'My' }, { value: 'board', label: 'Board' }], elementTab(),
+        (value) => switchTab(value), 'Tickets');
+      elementSwitchHost.replaceChildren(elementSwitcher);
+    }
+    if (elementSwitcher) for (const button of elementSwitcher.querySelectorAll<HTMLButtonElement>('button')) {
+      const on = button.getAttribute('aria-label') === elementTabLabel();
+      button.classList.toggle('on', on);
+      button.setAttribute('aria-checked', String(on));
+    }
+    elementSwitchHost.hidden = !showSwitch;
+    elementBack.hidden = !inPlace;
+    // the Views button comes and goes with the saved views the person can see; it is not in the way of a ticket in place
+    elementViewsButton.hidden = elementDenied || inPlace || (getMeta()?.views ?? []).length === 0;
+    newButton.textContent = width >= 420 ? '+ New ticket' : '+';
+    newButton.setAttribute('aria-label', 'New ticket');
+    // one primary per view: while the element is empty the body's '+ New ticket' is the only one
+    newButton.hidden = readOnly || elementDenied || elementEmpty;
+  };
+
+  const copyElementLink = () => {
+    const path = options.elementLink?.();
+    const clipboard = typeof navigator === 'undefined' ? undefined : navigator.clipboard;
+    if (!path) return;
+    if (!clipboard) toast('Clipboard access is not available.');
+    else void clipboard.writeText(path).then(() => toast('Link copied')).catch(() => toast('Could not copy the link.'));
+  };
+
+  const openElementMenu = (anchor: HTMLElement) => {
+    const item = (label: string, action: () => void) => h('button', {
+      class: 'trk-display-option', type: 'button', role: 'menuitem', onclick: () => { closePopover(); action(); },
+    }, label);
+    const items: HTMLElement[] = [item('Copy link', copyElementLink)];
+    if (layoutWidth < 360) {
+      items.push(item('View: All', () => switchTab('all')), item('View: My', () => switchTab('my')), item('View: Board', () => switchTab('board')));
+    }
+    popover(anchor, h('div', { class: 'trk-element-menu-panel', role: 'menu' }, ...items), { className: 'trk trk-pop trk-element-menu', label: 'Tracker menu' });
+  };
+
+  /** The Views menu: All first (the element's tab), then the saved views the person can see. Choosing one runs it in place. */
+  const openElementViews = (anchor: HTMLElement) => {
+    const item = (label: string, current: boolean, action: () => void) => h('button', {
+      class: 'trk-display-option', type: 'button', role: 'menuitemradio', 'aria-checked': String(current),
+      onclick: () => { closePopover(); action(); },
+    }, label);
+    const items: HTMLElement[] = [item('All', !elementView() && state.tab === 'all', () => switchTab('all'))];
+    for (const view of getMeta()?.views ?? []) items.push(item(view.name, elementView() === view.id, () => { void chooseView(view.id); }));
+    popover(anchor, h('div', { class: 'trk-element-menu-panel', role: 'menu', 'aria-label': 'Views' }, ...items), { className: 'trk trk-pop trk-element-menu', label: 'Views' });
+  };
+
+  /** Runs a saved view (its filter is the list's query). A view that cannot be run is refreshed out of the menu and nothing changes. */
+  const chooseView = async (id: string) => {
+    try {
+      const page = await options.store.runView(id, { limit: 1 });
+      if (destroyed) return;
+      state.viewId = id; state.viewFilter = [...page.view.filter]; state.tab = 'all'; state.sort = { ...state.allSort };
+      state.ticketKey = null; state.cursorKey = null; state.selectedKeys = []; state.anchorKey = null;
+      options.onTabChange?.('all', id);
+      renderPage();
+    } catch {
+      if (!destroyed) void options.store.listViews().catch(() => undefined);
+    }
+  };
+
+  /** A saved view on the element at mount: it runs again; if it was deleted or is not visible, the element shows All, quietly (the board keeps the id). */
+  const restoreView = async (id: string) => {
+    try {
+      const page = await options.store.runView(id, { limit: 1 });
+      if (destroyed || state.viewId !== id) return;
+      state.viewFilter = [...page.view.filter];
+      renderPage();
+    } catch {
+      if (destroyed || state.viewId !== id) return;
+      state.viewId = null; state.viewFilter = null;
+      void options.store.listViews().catch(() => undefined);
+      renderPage();
+    }
+  };
+
   const renderTabs = () => {
+    if (elementMode) {
+      renderElementHeader();
+      root.dataset.width = String(layoutWidth);
+      return;
+    }
     const restoreTabFocus = tabs.contains(document.activeElement);
     tabs.replaceChildren(...TABS.map((tab) => h('button', {
       class: `trk-tab${state.tab === tab.id ? ' active' : ''}`, type: 'button', role: 'tab',
@@ -416,7 +601,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const startWatch = () => {
     stopList?.();
-    if (!meta || (state.tab !== 'all' && state.tab !== 'my') || (state.ticketKey && !(fullScreen && layoutWidth > 1100))) return;
+    if (!meta || (state.tab !== 'all' && state.tab !== 'my') || (state.ticketKey && !peekAllowed())) return;
     const query = stableQuery(state);
     currentCache = options.store.list(query);
     stopList = options.store.watchList(query, (cache) => {
@@ -449,8 +634,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       if (field === 'state') {
         const picked = await openPicker<string>(anchor, { label: 'State', options: info.states.map((item) => ({ value: item.key, label: item.name })), value: ticket.state.key });
         if (typeof picked === 'string' && picked !== ticket.state.key) {
+          const previous = ticket.state.key; // read before the store updates the cached ticket this row holds
           const next = await options.store.transitionTicket(ticket.key, picked);
-          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, ticket.state.key));
+          recordUndo('State changed', () => options.store.transitionTicket(ticket.key, previous));
           announce(`${next.key} moved to ${next.state.name}`);
         }
       } else if (field === 'assignee') {
@@ -503,6 +689,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const doBulk = async (patch: { state?: string; assignee?: string | null; priority?: TrackerPriority; labels?: string[]; due?: string | null; archived?: boolean }, anchor?: HTMLElement) => {
     if (readOnly || !state.selectedKeys.length) return;
+    const count = state.selectedKeys.length; // read before the awaits: the store's update redraws the list, which may drop the selection
     try {
       let undoBatch: Awaited<ReturnType<TrackerStore['bulk']>> | undefined;
       if (patch.state) {
@@ -525,10 +712,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         undoBatch = await options.store.bulk(state.selectedKeys, patch);
         const batch = undoBatch;
         lastUndoAction = () => options.store.undo(batch);
-        const count = state.selectedKeys.length;
         toast(patch.archived ? `${count} issues archived` : `${count} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
       }
-      if (patch.state) toast(`${state.selectedKeys.length} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
+      if (patch.state) toast(`${count} issues updated`, 8000, { label: 'Undo', keyId: 'mod+z', onClick: () => void runUndo() });
       state.selectedKeys = [];
       announce('Selection cleared');
       drawRows(currentCache);
@@ -571,7 +757,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const issuesForView = (cache: typeof currentCache): TrackerTicket[] => {
     const tickets = cache.tickets.map((row) => ticketFromListRow(row as unknown as TrackerRow, meta!, options.trackerId));
-    if (state.tab !== 'my') return tickets;
+    if (state.tab !== 'my' || elementView()) return tickets;
     const me = getMeta()?.me.userId;
     if (!me) return [];
     if (state.mySubtab === 'created') return tickets.filter((ticket) => ticket.creator.type === 'user' && ticket.creator.id === me);
@@ -591,6 +777,20 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const renderRows = (cache: typeof currentCache) => {
     if (!listRenderHost || !resultsHost || !skeletonHost || !errorHost) return;
+    elementEmpty = false;
+    elementDenied = elementMode && (cache.error?.code === 'forbidden' || options.store.snapshot().metaError?.code === 'forbidden');
+    if (elementDenied) {
+      // no access: no list, no switch and no New ticket; the copy says who can give access
+      if (listLoadMore) listLoadMore.hidden = true;
+      errorHost.hidden = true;
+      skeletonHost.hidden = true;
+      listRenderHost.replaceChildren(h('div', { class: 'trk-element-empty trk-element-denied' },
+        h('h2', null, 'You do not have access to the tracker'),
+        h('p', { class: 'trk-element-quiet' }, 'Ask a workspace admin'),
+      ));
+      resultsHost.textContent = '';
+      return;
+    }
     if (!meta) {
       updateListLoadMore(cache, false);
       skeletonHost.hidden = false;
@@ -633,7 +833,21 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     state.anchorKey = listModel.anchorKey;
     skeletonHost.hidden = !(cache.loading && cache.tickets.length === 0);
     const filterActive = state.filter.length > 0 || Boolean(state.queryText.trim());
-    const columns = visibleColumns(layoutWidth, state.columns);
+    const wasEmpty = elementEmpty;
+    elementEmpty = elementMode && !cache.loading && tickets.length === 0 && state.tab === 'all' && !filterActive && !elementView();
+    if (elementMode && wasEmpty !== elementEmpty) updateActions(); // the header's New ticket comes and goes with the empty state
+    const columns: Column[] = elementMode ? elementColumns(peekAllowed() && state.ticketKey ? Math.round(layoutWidth * 0.48) : layoutWidth) : visibleColumns(layoutWidth, state.columns);
+    if (elementMode && !cache.loading && tickets.length === 0) {
+      listRenderHost.replaceChildren(h('div', { class: 'trk-element-empty' },
+        h('h2', null, state.tab === 'my' ? (state.mySubtab === 'active' ? 'Nothing assigned to you.' : 'Nothing created by you yet.') : 'No tickets yet'),
+        // only a person who can create tickets is invited to create the first one
+        state.tab === 'my' ? h('p', null, 'Tickets assigned to you or created by you appear here.') : readOnly ? null : h('p', null, 'Create the first ticket to track work here.'),
+        readOnly ? null : h('button', { class: 'trk-primary-button trk-element-create', type: 'button', onclick: () => openCreate() }, '+ New ticket'),
+      ));
+      updateListLoadMore(cache);
+      resultsHost.textContent = '0 issues';
+      return;
+    }
     if (!cache.loading && tickets.length === 0) {
       const myEmpty = state.tab === 'my' && !filterActive && !cache.nextCursor;
       const emptyMessage = state.tab === 'my' && !filterActive && cache.nextCursor
@@ -664,7 +878,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     const header = h('div', { class: 'trk-grid-header', role: 'row', style: { gridTemplateColumns: columns.map((column) => `var(--trk-${column}-width)`).join(' ') } },
       ...columns.map((column) => h('div', { role: 'columnheader', class: `trk-col-${column}` }, column === 'updated' ? 'Updated' : column[0].toUpperCase() + column.slice(1))),
     );
-    const rows: Node[] = [header];
+    const rows: Node[] = elementMode ? [] : [header];
     const now = Date.now();
     for (const group of model.groups) {
       if (state.group !== 'none') {
@@ -678,9 +892,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
             state.cursorKey = model.cursorKey;
             drawRows(cache);
           },
-        }, h('span', { class: 'trk-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 12)),
+        }, ...(elementMode ? [h('span', null, `${group.label} · ${group.count}`)] : [h('span', { class: 'trk-group-chevron', 'aria-hidden': 'true' }, icon('chevron', 12)),
         groupTicket && state.group === 'state' ? stateGlyph(groupTicket.state.category, groupTicket.state.key) : null,
-        h('span', null, group.label), h('span', { class: 'trk-muted' }, String(group.count)));
+        h('span', null, group.label), h('span', { class: 'trk-muted' }, String(group.count))]));
         rows.push(h('div', { class: 'trk-group-row', role: 'row' },
           h('div', { class: 'trk-cell trk-group-cell', role: 'gridcell', 'aria-colspan': String(columns.length) }, headerButton),
         ));
@@ -690,7 +904,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         const ticket = ticketFromListRow(raw, meta, options.trackerId);
         const selectedHere = state.selectedKeys.includes(ticket.key);
         const cursor = state.cursorKey === ticket.key;
-        const selectionButton = !readOnly ? h('button', {
+        const selectionButton = !readOnly && !elementMode ? h('button', {
           class: 'trk-row-select', type: 'button', 'aria-label': `${selectedHere ? 'Deselect' : 'Select'} ${ticket.key}`,
           'aria-pressed': String(selectedHere),
           onclick: (event: Event) => {
@@ -715,8 +929,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           else if (column === 'title') cells.push(h('div', { class: 'trk-cell trk-col-title', role: 'gridcell' },
             h('button', { class: 'trk-title-link', type: 'button', onclick: (event: Event) => { event.stopPropagation(); openTicket(ticket.key); } }, ticket.title),
             state.queryText.trim() && ticket.snippet ? h('span', { class: 'trk-search-snippet' }, renderSnippet(ticket.snippet)) : null,
-            ...ticket.labels.slice(0, 2).map((label) => labelChip(label.name, label.color)),
-            ticket.subIssueCount ? h('span', { class: 'trk-sub-count', 'aria-label': `${ticket.subIssueDone ?? 0} of ${ticket.subIssueCount} sub-issues complete` }, `${ticket.subIssueDone ?? 0}/${ticket.subIssueCount}`) : null,
+            ...(elementMode ? [] : ticket.labels.slice(0, 2).map((label) => labelChip(label.name, label.color))),
+            !elementMode && ticket.subIssueCount ? h('span', { class: 'trk-sub-count', 'aria-label': `${ticket.subIssueDone ?? 0} of ${ticket.subIssueCount} sub-issues complete` }, `${ticket.subIssueDone ?? 0}/${ticket.subIssueCount}`) : null,
           ));
           else if (column === 'project') cells.push(h('div', { class: 'trk-cell trk-col-project', role: 'gridcell' }, ticket.project?.name ?? '—'));
           else if (column === 'assignee') cells.push(h('div', { class: 'trk-cell trk-col-assignee', role: 'gridcell' }, ticket.assignee
@@ -733,7 +947,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           role: 'row', tabindex: '-1', 'aria-selected': String(selectedHere), 'data-cursor': String(cursor), 'data-key': ticket.key,
           style: { gridTemplateColumns: columns.map((column) => `var(--trk-${column}-width)`).join(' ') },
           onclick: () => { state.cursorKey = ticket.key; openTicket(ticket.key); },
-          onfocus: () => { state.cursorKey = ticket.key; },
+          // focusin, not focus: Tab may land on a button inside the row, and the shortcuts act on the row that holds focus
+          onfocusin: () => { state.cursorKey = ticket.key; if (listModel) listModel = moveCursorTo(listModel, ticket.key); },
         }, ...cells);
         rows.push(row);
       }
@@ -748,15 +963,23 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   };
 
   const drawRows = (cache: typeof currentCache) => {
+    // the rows are rebuilt on every draw: a row, or a button inside one, that had the focus gets it back (the element's side panel and its close depend on it)
+    const focused = listRenderHost?.contains(document.activeElement) ? document.activeElement as HTMLElement : null;
+    const focusedRow = focused?.closest<HTMLElement>('[data-key]') ?? null;
+    const focusedKey = focusedRow?.dataset.key ?? null;
+    const buttonIndex = focused && focusedRow && focused !== focusedRow ? [...focusedRow.querySelectorAll('button')].indexOf(focused as HTMLButtonElement) : -1;
     try { renderRows(cache); }
     catch (error) { showListError(error instanceof Error ? error.message : 'Could not render issues.'); }
+    if (elementMode) renderElementHeader();
+    if (focusedKey) {
+      const row = [...listRenderHost?.querySelectorAll<HTMLElement>('[data-key]') ?? []].find((candidate) => candidate.getAttribute('data-key') === focusedKey);
+      (buttonIndex >= 0 ? row?.querySelectorAll<HTMLElement>('button')[buttonIndex] ?? row : row)?.focus({ preventScroll: true });
+    }
   };
 
   const publishCurrentSnapshot = () => {
-    const tickets = currentCache.tickets.slice(0, 12);
-    const facets = facetsForGroup(state.group, currentCache.facets)?.[state.group];
-    const count = facets?.reduce((sum, facet) => sum + facet.count, 0) ?? currentCache.tickets.length;
-    publishTrackerSnapshot(options.trackerId, state.tab, tickets, count);
+    // keyed by the element's object id (windowId), so two elements on one tracker do not share a snapshot
+    publishTrackerSnapshot(options.windowId ?? options.trackerId, issuesForView(currentCache));
     options.onSnapshot?.();
   };
 
@@ -832,7 +1055,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       panel.appendChild(h('strong', null, 'Columns'));
       for (const column of OPTIONAL_COLUMNS) {
         const checkbox = h('input', { type: 'checkbox', checked: state.columns.has(column), 'aria-label': `${column} column`, onchange: () => { if (checkbox.checked) state.columns.add(column); else state.columns.delete(column); drawRows(currentCache); } });
-        panel.appendChild(h('label', { class: 'trk-display-check' }, checkbox, column[0].toUpperCase() + column.slice(1)));
+        panel.appendChild(h('label', { class: 'trk-display-check check' }, checkbox, column[0].toUpperCase() + column.slice(1)));
       }
       popover(displayButton, panel, { className: 'trk trk-pop trk-display-pop', label: 'Display issues' });
     });
@@ -866,7 +1089,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         'aria-selected': String(state.mySubtab === key), onclick: () => setMySubtab(key),
       }, label)),
     ) : null;
-    const tab = h('section', { class: `trk-all-issues${state.tab === 'my' ? ' trk-my-issues' : ''}` }, subtabBar, viewBarHost, filterController.el, host);
+    // an element lists only: its filters, view bar and My subtabs live in full screen
+    const tab = h('section', { class: `trk-all-issues${state.tab === 'my' ? ' trk-my-issues' : ''}` },
+      elementMode ? null : subtabBar, elementMode ? null : viewBarHost, elementMode ? null : filterController.el, host);
     return { tab, updateSelectionBar };
   };
 
@@ -946,7 +1171,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   const renderTicket = () => {
     const key = state.ticketKey!;
-    const canPeek = (state.tab === 'all' || state.tab === 'my') && fullScreen && layoutWidth > 1100;
+    const canPeek = peekAllowed();
     if (!canPeek) stopList?.();
     const cached = options.store.list(stableQuery(state)).tickets.find((ticket) => ticket.key === state.ticketKey);
     const ticketState = options.store.ticket(key);
@@ -963,6 +1188,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       return;
     }
     if (canPeek) {
+      // the row the ticket was opened from keeps the focus it had (the list is redrawn beside the panel)
+      const hadFocus = root.contains(document.activeElement);
       const all = makeAllIssues();
       const page = ticketPageHost('peek', ticket.key);
       content.replaceChildren(h('div', { class: 'trk-peek-layout' },
@@ -972,6 +1199,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       startWatch();
       all.updateSelectionBar();
       drawRows(currentCache);
+      if (hadFocus && elementMode) (root.querySelector<HTMLElement>(`[data-key="${CSS.escape(ticket.key)}"]`) ?? root).focus({ preventScroll: true });
       return;
     }
     content.replaceChildren(ticketPageHost('page', ticket.key));
@@ -1010,12 +1238,33 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       label: `Move ${ticket.key} to`, options: meta?.states.map((item) => ({ value: item.key, label: item.name })) ?? [], value: ticket.state.key,
     }).then((picked) => { if (typeof picked === 'string') void moveBoardTicket(ticket, picked, anchor); });
   };
+  // The element's board drag. A card dropped on another lane is moved there at once (pendingMoves) and the store's answer confirms or
+  // reverts it. The element is transform-scaled, so the ghost is placed in layout units (client pixels divided by the scale).
+  const pendingMoves = new Map<string, { ticket: TrackerTicket; stateKey: string; settled: boolean }>();
+  let boardDrag: BoardDrag | null = null;
   const renderBoardContents = () => {
     if (!boardLaneStrip || !boardLanesHost || !meta) return;
     const lanes = boardStates();
-    const phone = layoutWidth <= 600 || (typeof window !== 'undefined' && window.innerWidth <= 600);
+    const phone = !elementMode && (layoutWidth <= 600 || (typeof window !== 'undefined' && window.innerWidth <= 600));
     if (!lanes.some((item) => item.key === boardLaneKey)) boardLaneKey = lanes[0]?.key ?? null;
-    const countFor = (item: TrackerState) => boardCaches.get(item.key)?.cache.tickets.length ?? 0;
+    // each lane's tickets as the store has them, with a drop in flight moved to its target lane
+    const laneRows = new Map<string, TrackerTicket[]>();
+    for (const item of lanes) {
+      const cache = boardCaches.get(item.key)?.cache ?? options.store.list(boardQuery(item));
+      laneRows.set(item.key, cache.tickets.map((row) => ticketFromListRow(row as unknown as TrackerRow, meta!, options.trackerId)));
+    }
+    for (const [key, move] of pendingMoves) {
+      // a settled move ends when the lanes show it, or when the store holds another state (offline, the lanes may not refresh)
+      const landed = (laneRows.get(move.stateKey) ?? []).some((ticket) => ticket.key === key);
+      if (move.settled && (landed || options.store.ticket(key).ticket?.state.key !== move.stateKey)) { pendingMoves.delete(key); continue; }
+      for (const rows of laneRows.values()) {
+        const at = rows.findIndex((ticket) => ticket.key === key);
+        if (at >= 0) rows.splice(at, 1);
+      }
+      const target = lanes.find((item) => item.key === move.stateKey);
+      if (target) laneRows.get(target.key)?.push({ ...move.ticket, state: { ...move.ticket.state, id: target.id, key: target.key, name: target.name, category: target.category } });
+    }
+    const countFor = (item: TrackerState) => laneRows.get(item.key)?.length ?? 0;
     boardLaneStrip.hidden = !phone;
     boardLaneStrip.replaceChildren(...(phone ? lanes.map((item) => h('button', {
       class: `trk-board-state-tab${item.key === boardLaneKey ? ' active' : ''}`, type: 'button', role: 'tab',
@@ -1024,19 +1273,21 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     }, stateGlyph(item.category, item.key), h('span', null, item.name), h('span', { class: 'trk-board-lane-count' }, String(countFor(item))))) : []));
     const visibleLanes = phone ? lanes.filter((item) => item.key === boardLaneKey) : lanes;
     boardLanesHost.classList.toggle('is-phone-lane', phone);
+    if (elementMode) boardLanesHost.style.setProperty('--trk-lane-width', `${laneWidthFor(layoutWidth)}px`);
     boardLanesHost.replaceChildren(...visibleLanes.map((item) => {
       const entry = boardCaches.get(item.key);
       const cache = entry?.cache ?? options.store.list(boardQuery(item));
-      const count = `${cache.tickets.length}${cache.nextCursor ? '+' : ''}`;
-      const normalized = cache.tickets.map((row) => ticketFromListRow(row as unknown as TrackerRow, meta!, options.trackerId));
+      const normalized = laneRows.get(item.key) ?? [];
       const sortedRows = buildListModel({
         pages: [normalized as unknown as TrackerRow[]], group: 'none', sort: { field: 'priority', direction: 'asc' },
       }).visibleRows;
       const tickets = sortedRows.map((row) => ticketFromListRow(row, meta!, options.trackerId));
+      const count = `${tickets.length}${cache.nextCursor ? '+' : ''}`;
+      const noun = elementMode ? 'tickets' : 'issues';
       const header = h('header', { class: 'trk-board-lane-header' },
         stateGlyph(item.category, item.key), h('h2', null, item.name), h('span', { class: 'trk-board-lane-count' }, count),
         readOnly ? null : h('button', {
-          class: 'trk-board-add', type: 'button', 'aria-label': `New issue in ${item.name}`,
+          class: 'trk-board-add', type: 'button', 'aria-label': elementMode ? `New ticket in ${item.name}` : `New issue in ${item.name}`,
           onclick: () => openCreate(item.key),
         }, '+'),
       );
@@ -1047,6 +1298,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
         }, '⋯');
         const labels = ticket.labels.slice(0, 2).map((label) => labelChip(label.name, label.color));
         if (ticket.labels.length > 2) labels.push(h('span', { class: 'trk-board-label-count' }, `+${ticket.labels.length - 2}`));
+        const title = h('button', { class: 'trk-board-card-title', type: 'button', onclick: (event: Event) => { event.stopPropagation(); openTicket(ticket.key); } }, ticket.title);
         const card = h('article', {
           class: 'trk-board-card', tabindex: '0', 'data-key': ticket.key,
           'aria-label': `${ticket.key}: ${ticket.title}`,
@@ -1060,8 +1312,11 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
             else if ((event.key === 'Enter' || event.key === ' ') && event.target === event.currentTarget) { event.preventDefault(); openTicket(ticket.key); }
           },
         },
-          h('div', { class: 'trk-board-card-top' }, keyChip(ticket.key), menuButton),
-          h('button', { class: 'trk-board-card-title', type: 'button', onclick: (event: Event) => { event.stopPropagation(); openTicket(ticket.key); } }, ticket.title),
+          elementMode
+            ? (menuButton ? h('div', { class: 'trk-board-card-menu' }, menuButton) : null)
+            : h('div', { class: 'trk-board-card-top' }, keyChip(ticket.key), menuButton),
+          title,
+          elementMode ? h('div', { class: 'trk-board-card-key' }, keyChip(ticket.key)) : null,
           h('div', { class: 'trk-board-card-meta' },
             h('span', { class: 'trk-board-priority', 'aria-label': priorityLabel(ticket.priority) }, priorityGlyph(ticket.priority)),
             ticket.assignee ? avatar({ kind: 'person', name: ticket.assignee.name }) : null,
@@ -1069,27 +1324,208 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           ),
           labels.length ? h('div', { class: 'trk-board-labels' }, ...labels) : null,
         );
+        if (elementMode) {
+          card.classList.toggle('is-draggable', !readOnly);
+          card.addEventListener('pointerdown', (event) => beginCardPointer(event, ticket, card));
+          if (boardDrag?.active && boardDrag.ticket.key === ticket.key) card.classList.add('is-dragging');
+        }
         return card;
       });
       const laneBody = h('div', { class: 'trk-board-lane-cards' }, ...cards,
-        cards.length === 0 && !cache.nextCursor ? h('p', { class: 'trk-board-lane-empty' }, 'No issues') : null,
+        cards.length === 0 && !cache.nextCursor ? h('p', { class: 'trk-board-lane-empty' }, elementMode ? 'No tickets' : 'No issues') : null,
         cache.nextCursor ? h('button', {
           class: 'trk-load-more', type: 'button', disabled: cache.loadingMore,
-          onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showBoardError(error instanceof Error ? error.message : 'Could not load more issues.', entry?.query ?? boardQuery(item))),
+          onclick: () => void options.store.loadMore(entry?.query ?? boardQuery(item)).catch((error: unknown) => showBoardError(error instanceof Error ? error.message : `Could not load more ${noun}.`, entry?.query ?? boardQuery(item))),
         }, cache.loadingMore ? 'Loading…' : 'Load more') : null,
       );
-      return h('section', { class: 'trk-board-lane', 'data-state': item.key, 'aria-label': `${item.name}, ${cache.tickets.length} issues` }, header, laneBody);
+      const lane = h('section', { class: 'trk-board-lane', 'data-state': item.key, 'aria-label': `${item.name}, ${tickets.length} ${noun}` }, header, laneBody);
+      lane.classList.toggle('is-drop-target', boardDrag?.active === true && boardDrag.over === item.key);
+      return lane;
     }));
     if (boardErrorHost) {
       const entry = [...boardCaches.values()].find((value) => value.cache.error);
       boardErrorHost.hidden = !entry?.cache.error;
       if (entry?.cache.error) {
-        boardErrorHost.replaceChildren(h('span', null, entry.cache.error.message), h('button', {
+        boardErrorHost.replaceChildren(h('span', null, elementMode ? 'Could not load tickets' : entry.cache.error.message), h('button', {
           class: 'trk-small-button', type: 'button', onclick: () => void options.store.loadList(entry.query, { force: true }).catch((error: unknown) =>
             showBoardError(error instanceof Error ? error.message : 'Could not load board issues.', entry.query)),
         }, 'Retry'));
       } else boardErrorHost.replaceChildren();
     }
+  };
+
+  /** The lanes as the pointer sees them: each lane's box clipped to the strip that scrolls it. */
+  const boardLaneRects = (): BoardLane[] => {
+    if (!boardLanesHost) return [];
+    const strip = boardLanesHost.getBoundingClientRect();
+    return [...boardLanesHost.querySelectorAll<HTMLElement>('.trk-board-lane')].map((lane) => ({
+      key: lane.dataset.state ?? '', rect: clipRect(lane.getBoundingClientRect(), strip),
+    }));
+  };
+  const placeGhost = (drag: BoardDrag) => {
+    if (!drag.ghost) return;
+    const bounds = root.getBoundingClientRect();
+    const originX = bounds.left + root.clientLeft * drag.scale;
+    const originY = bounds.top + root.clientTop * drag.scale;
+    drag.ghost.style.left = `${(drag.last.x - originX) / drag.scale - drag.grab.x}px`;
+    drag.ghost.style.top = `${(drag.last.y - originY) / drag.scale - drag.grab.y}px`;
+  };
+  const updateDropLane = (drag: BoardDrag) => {
+    const over = laneAtPoint(drag.last, boardLaneRects());
+    if (over === drag.over) return;
+    drag.over = over;
+    for (const lane of boardLanesHost?.querySelectorAll<HTMLElement>('.trk-board-lane') ?? []) {
+      lane.classList.toggle('is-drop-target', drag.active && over !== null && over !== drag.ticket.state.key && lane.dataset.state === over);
+    }
+  };
+  /** Each frame while dragging: the strip scrolls when the pointer is at its edge, and the lane under the pointer follows the scroll. */
+  const dragFrame = () => {
+    const drag = boardDrag;
+    if (!drag?.active) return;
+    if (boardLanesHost) {
+      const strip = boardLanesHost.getBoundingClientRect();
+      if (drag.last.y >= strip.top && drag.last.y <= strip.bottom) {
+        const delta = autoScrollDelta(drag.last.x, strip, AUTO_SCROLL_EDGE_PX);
+        if (delta !== 0) boardLanesHost.scrollLeft += delta / drag.scale;
+      }
+    }
+    updateDropLane(drag);
+    drag.frame = requestAnimationFrame(dragFrame);
+  };
+  const startDrag = (drag: BoardDrag) => {
+    if (drag.active || boardDrag !== drag || readOnly) return;
+    drag.active = true;
+    if (drag.timer !== undefined) clearTimeout(drag.timer);
+    drag.timer = undefined;
+    const ghost = drag.card.cloneNode(true) as HTMLElement;
+    ghost.classList.add('trk-board-ghost');
+    ghost.classList.remove('is-dragging');
+    ghost.removeAttribute('tabindex');
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.style.width = `${drag.card.getBoundingClientRect().width / drag.scale}px`;
+    root.appendChild(ghost);
+    drag.ghost = ghost;
+    drag.card.classList.add('is-dragging');
+    root.classList.add('is-dragging');
+    window.addEventListener('keydown', onDragKey, true);
+    window.addEventListener('touchmove', onDragTouchMove, { passive: false });
+    placeGhost(drag);
+    updateDropLane(drag);
+    drag.frame = requestAnimationFrame(dragFrame);
+  };
+  /** The click that the release of a drag makes (on the lane or the card) must not also open the card; it is the only click in the lanes that is blocked. */
+  const suppressDragClick = () => {
+    const done = () => {
+      window.removeEventListener('click', block, true);
+      window.removeEventListener('pointerdown', done, true);
+    };
+    const block = (event: Event) => {
+      done();
+      if (!boardLanesHost?.contains(event.target as Node)) return;
+      event.stopPropagation();
+      event.preventDefault();
+    };
+    window.addEventListener('click', block, true);
+    window.addEventListener('pointerdown', done, true);
+    window.setTimeout(done, 400);
+  };
+  const endDrag = (suppressClick = false) => {
+    const drag = boardDrag;
+    boardDrag = null;
+    window.removeEventListener('pointermove', onDragPointerMove);
+    window.removeEventListener('pointerup', onDragPointerUp);
+    window.removeEventListener('pointercancel', onDragCancel);
+    window.removeEventListener('keydown', onDragKey, true);
+    window.removeEventListener('touchmove', onDragTouchMove);
+    if (!drag) return;
+    if (drag.timer !== undefined) clearTimeout(drag.timer);
+    if (drag.frame !== undefined) cancelAnimationFrame(drag.frame);
+    drag.ghost?.remove();
+    drag.card.classList.remove('is-dragging');
+    root.classList.remove('is-dragging');
+    for (const lane of boardLanesHost?.querySelectorAll('.trk-board-lane.is-drop-target') ?? []) lane.classList.remove('is-drop-target');
+    if (suppressClick && drag.active) suppressDragClick();
+  };
+  function onDragPointerMove(event: PointerEvent) {
+    const drag = boardDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    drag.last = { x: event.clientX, y: event.clientY };
+    if (!drag.active) {
+      if (Math.hypot(event.clientX - drag.start.x, event.clientY - drag.start.y) <= DRAG_THRESHOLD_PX) return;
+      // a touch that moves before its long press is a scroll of the lanes, not a drag
+      if (drag.pointerType === 'touch') { endDrag(); return; }
+      startDrag(drag);
+    }
+    placeGhost(drag);
+    updateDropLane(drag);
+  }
+  function onDragPointerUp(event: PointerEvent) {
+    const drag = boardDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    if (!drag.active) { endDrag(); return; } // a press without a drag is a click on the card
+    const target = laneAtPoint({ x: event.clientX, y: event.clientY }, boardLaneRects());
+    const ticket = drag.ticket;
+    endDrag(true);
+    // releasing over the lane it came from, or outside every lane, cancels
+    if (target && target !== ticket.state.key) void dropTicket(ticket, target);
+  }
+  function onDragCancel(event: PointerEvent) {
+    if (boardDrag && event.pointerId === boardDrag.pointerId) endDrag();
+  }
+  function onDragKey(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !boardDrag?.active) return;
+    event.preventDefault();
+    event.stopPropagation();
+    endDrag(true);
+  }
+  function onDragTouchMove(event: TouchEvent) {
+    if (boardDrag?.active) event.preventDefault();
+  }
+  const beginCardPointer = (event: PointerEvent, ticket: TrackerTicket, card: HTMLElement) => {
+    // a press on the card is the card's: it never reaches the wrapper (which would pan the board) and never starts a canvas gesture
+    if ((event.target as HTMLElement | null)?.closest('.trk-board-menu-button')) return;
+    if (event.pointerType !== 'touch') options.onPointerPress?.();
+    event.stopPropagation();
+    if (event.button !== 0 || boardDrag || readOnly || destroyed) return;
+    const rect = card.getBoundingClientRect();
+    const scale = scaleOf(root.getBoundingClientRect(), root.offsetWidth);
+    const drag: BoardDrag = {
+      pointerId: event.pointerId, pointerType: event.pointerType, ticket, card,
+      start: { x: event.clientX, y: event.clientY }, last: { x: event.clientX, y: event.clientY },
+      grab: { x: (event.clientX - rect.left) / scale, y: (event.clientY - rect.top) / scale }, scale,
+      ghost: null, active: false, over: null, timer: undefined, frame: undefined,
+    };
+    boardDrag = drag;
+    if (event.pointerType === 'touch') drag.timer = window.setTimeout(() => { if (boardDrag === drag) startDrag(drag); }, LONG_PRESS_MS);
+    window.addEventListener('pointermove', onDragPointerMove);
+    window.addEventListener('pointerup', onDragPointerUp);
+    window.addEventListener('pointercancel', onDragCancel);
+  };
+  /** A drop: the card moves to the lane at once, then the store confirms it (one undo) or the move is reverted with a message. */
+  const dropTicket = async (ticket: TrackerTicket, stateKey: string) => {
+    const from = ticket.state.key;
+    if (readOnly || !meta?.states.some((item) => item.key === stateKey)) return;
+    const move = { ticket, stateKey, settled: false };
+    pendingMoves.set(ticket.key, move);
+    renderBoardContents();
+    let moved: TrackerTicket;
+    try {
+      moved = await options.store.transitionTicket(ticket.key, stateKey);
+    } catch {
+      pendingMoves.delete(ticket.key);
+      renderBoardContents();
+      toast('Could not move the ticket.');
+      return;
+    }
+    move.settled = true;
+    recordUndo('State changed', async () => {
+      await options.store.transitionTicket(ticket.key, from);
+      await refreshBoard();
+    });
+    announce(`${moved.key} moved to ${moved.state.name}`);
+    // the lanes reload first, so the card does not flash back to its old lane; the copy in the lanes ends once they show the move
+    await refreshBoard().catch(() => undefined);
+    renderBoardContents();
   };
   const startBoardWatch = () => {
     stopList?.();
@@ -1110,17 +1546,23 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     boardErrorHost = h('div', { class: 'trk-board-error', role: 'alert', hidden: true });
     boardLaneStrip = h('nav', { class: 'trk-board-state-strip', role: 'tablist', 'aria-label': 'Board states' });
     boardLanesHost = h('div', { class: 'trk-board-lanes' });
-    const board = h('section', { class: 'trk-board-view', 'aria-label': 'Tracker board' },
-      h('header', { class: 'trk-board-viewbar' }, h('strong', null, 'Board')),
-      boardErrorHost, boardLaneStrip, boardLanesHost,
-    );
+    // an element has no view bar or state strip: its lanes scroll sideways in the element's own header-less body
+    const board = elementMode
+      ? h('section', { class: 'trk-board-view trk-board-element', 'aria-label': 'Tracker board' }, boardErrorHost, boardLanesHost)
+      : h('section', { class: 'trk-board-view', 'aria-label': 'Tracker board' },
+        h('header', { class: 'trk-board-viewbar' }, h('strong', null, 'Board')),
+        boardErrorHost, boardLaneStrip, boardLanesHost,
+      );
     content.replaceChildren(board);
     startBoardWatch();
   };
 
   function renderPage() {
     if (destroyed) return;
+    endDrag();
     stopBoardWatch();
+    // the element's empty flag reads the All view only; the board has its own lanes
+    if (elementMode && state.tab === 'board') elementEmpty = false;
     destroyInbox();
     destroyTicketPage();
     renderTabs();
@@ -1162,7 +1604,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   }
 
   function watchQuery() {
-    if ((state.tab !== 'all' && state.tab !== 'my') || (state.ticketKey && !(fullScreen && layoutWidth > 1100)) || destroyed) return;
+    if ((state.tab !== 'all' && state.tab !== 'my') || (state.ticketKey && !peekAllowed()) || destroyed) return;
     startWatch();
   }
 
@@ -1172,17 +1614,22 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     else if (options.layoutWidth !== undefined) layoutWidth = options.layoutWidth;
     root.dataset.fullscreen = String(value);
     fullscreenStrip.hidden = !value;
-    fullscreenButton.textContent = value ? '↙' : '↗';
-    fullscreenButton.setAttribute('aria-label', value ? 'Back to board' : 'Open full screen');
+    if (!elementMode) {
+      fullscreenButton.textContent = value ? '↙' : '↗';
+      fullscreenButton.setAttribute('aria-label', value ? 'Back to board' : 'Open full screen');
+    }
     renderPage();
     options.onFullscreenChange?.(value);
   }
 
   function setTicket(key: string | null) {
+    // a side panel closes back to its row, so the focus that was in the panel goes to the row it came from
+    const closingPeek = key === null && state.ticketKey && peekAllowed() ? state.ticketKey : null;
     state.ticketKey = key;
     ticketError = '';
     options.onTicketChange?.(key);
     renderPage();
+    if (closingPeek) (root.querySelector<HTMLElement>(`[data-key="${CSS.escape(closingPeek)}"]`) ?? root).focus({ preventScroll: true });
   }
 
   const openCommand = () => {
@@ -1283,6 +1730,8 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
       setMySubtab(event.key === '[' ? 'active' : 'created');
       return;
     }
+    // Escape in the filter field with text in it clears the text first (the field's own handler); the next one leaves
+    if (event.key === 'Escape' && target instanceof HTMLInputElement && target.classList.contains('trk-filter-input') && target.value && !filterController?.suggestionsOpen()) return;
     const layers: KeyboardLayer[] = [];
     if (!fullScreen) layers.push('work');
     if (fullScreen) layers.push('fullscreen');
@@ -1300,11 +1749,17 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
 
   commandButton.addEventListener('click', openCommand);
   newButton.addEventListener('click', () => openCreate());
-  fullscreenButton.addEventListener('click', () => setFullscreen(!fullScreen));
+  fullscreenButton.addEventListener('click', () => {
+    if (elementMode && options.onOpenFullScreen) options.onOpenFullScreen();
+    else setFullscreen(!fullScreen);
+  });
+  elementMenuButton.addEventListener('click', () => openElementMenu(elementMenuButton));
+  elementViewsButton.addEventListener('click', () => openElementViews(elementViewsButton));
   stopStore = options.store.subscribe((snapshot) => {
     meta = snapshot.meta ?? meta;
     if (snapshot.metaError) showError(snapshot.metaError.message);
     updateActions();
+    if (elementMode) renderElementHeader();
     if (snapshot.meta && (state.tab === 'all' || state.tab === 'my') && !state.ticketKey && !stopList) startWatch();
     if (snapshot.meta && state.tab === 'board' && !state.ticketKey && stopBoard.length === 0) startBoardWatch();
     if (!snapshot.metaLoading && !meta && !snapshot.metaError) showError('Tracker information could not be loaded.');
@@ -1323,7 +1778,9 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
   void options.store.loadMeta().then((loaded) => {
     meta = loaded;
     updateActions();
-    if (state.tab === 'all' || state.tab === 'my') startWatch();
+    if (elementMode) void options.store.listViews().catch(() => undefined);
+    if (elementMode && state.viewId) void restoreView(state.viewId);
+    else if (state.tab === 'all' || state.tab === 'my') startWatch();
     else if (state.tab === 'board') startBoardWatch();
   }).catch((error: unknown) => showError(error instanceof Error ? error.message : 'Could not load tracker information.'));
   renderPage();
@@ -1332,13 +1789,15 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
     el: root,
     focus() { root.focus({ preventScroll: true }); },
     setFullscreen,
+    refreshAccess() { if (!destroyed) updateActions(); },
     setTicket,
     updateLayout(width) { layoutWidth = width; if (state.ticketKey) renderPage(); else if (state.tab === 'board') renderBoardContents(); else { renderTabs(); drawRows(currentCache); } },
     state,
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      stopList?.(); stopBoardWatch(); stopStore?.(); stopKeyListener?.();
+      document.removeEventListener('focusout', rescueFocus, true);
+      endDrag(); stopList?.(); stopBoardWatch(); stopStore?.(); stopKeyListener?.();
       destroyInbox(); destroyTicketPage();
       if (debounce !== undefined) clearTimeout(debounce);
       window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOnline);

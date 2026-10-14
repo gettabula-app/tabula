@@ -9,7 +9,9 @@
 import type { Obj, ProposedBy } from './types';
 import { HEADS, SHAPE_KINDS } from './shapes';
 import { RELATIONS } from './uml';
+import { DEFAULT_CODE_LANG, MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs.mjs';
 import { LIMITS as CONTAINER_LIMITS, OWNER_KINDS, STAGES, isSafeHttpUrl, kanbanColor } from '../shared/containers';
+import { lineFlag } from './line-geometry';
 
 export { CARD_LINK_MAX, isSafeHttpUrl } from '../shared/containers';
 
@@ -42,7 +44,7 @@ const FONT_RE = /^[a-z0-9-]{1,64}$/;
 /** Fields that every box has: a non-finite value becomes 0. */
 const REQUIRED_NUMBERS = ['x', 'y', 'w', 'h', 'rotation'];
 /** Optional numbers: a non-finite value is dropped, so the default applies. */
-const OPTIONAL_NUMBERS = ['strokeWidth', 'opacity', 'fontSize', 'fontWeight', 'nw', 'nh', 'laneW', 'wip', 'updatedAt', 'imageW', 'imageH', 'fetchedAt'];
+const OPTIONAL_NUMBERS = ['strokeWidth', 'opacity', 'fontSize', 'fontWeight', 'lineHeight', 'nw', 'nh', 'laneW', 'wip', 'updatedAt', 'imageW', 'imageH', 'fetchedAt'];
 /** Free text, drawn only as escaped text content or an escaped attribute: anything but a string is dropped. */
 const TEXTS = ['text', 'name', 'label', 'stereotype', 'alt', 'desc', 'ownerName', 'ownerId', 'due', 'link', 'body', 'ref', 'asset', 'mime', 'parent', 'layout', 'rank', 'createdBy', 'privateStep', 'z', 'trackerId', 'viewId', 'focusKey', 'url', 'title', 'description', 'siteName', 'image', 'icon', 'finalUrl', 'unfurlError'];
 /** Enumerations and their sets: a value outside the set is dropped. */
@@ -175,6 +177,8 @@ export function safeObj<T extends Obj>(o: T): T {
     out.to = end(out.to);
     out.route = typeof out.route === 'string' && ROUTES.has(out.route) ? out.route : 'straight';
     for (const k of ['startHead', 'endHead']) out[k] = typeof out[k] === 'string' && HEAD_SET.has(out[k] as string) ? out[k] : 'none';
+    // a line keeps its flag only while it is one (line-geometry.ts): otherwise it draws and behaves as a plain connector
+    if ('line' in out && !lineFlag(out)) delete out.line;
   } else {
     for (const k of REQUIRED_NUMBERS) out[k] = finite(out[k]) ? out[k] : 0;
   }
@@ -226,13 +230,27 @@ export function safeObj<T extends Obj>(o: T): T {
   }
   if (o.type === 'tracker') out.rotation = 0;
   if (o.type === 'tracker') {
-    out.w = Math.max(480, out.w as number);
-    out.h = Math.max(360, out.h as number);
+    out.w = Math.max(360, out.w as number);
+    out.h = Math.max(280, out.h as number);
   }
   if (o.type === 'card') {
     if (!out.ownerId && !out.ownerName) delete out.ownerKind;
     // Free-text owners are people. A racing kind-only write must not make one look like a token-owned agent.
     else if (out.ownerKind === 'agent' && !out.ownerId) delete out.ownerKind;
+  }
+  if (o.type === 'code') {
+    // a code block (docs/code-blocks.md): the code is drawn as text only; control, zero-width and bidirectional characters are not drawn (they can make code read differently than it runs)
+    if (typeof out.text === 'string') {
+      const t = out.text.length > MAX_CODE_CHARS * 5 ? out.text.slice(0, MAX_CODE_CHARS * 5) : out.text;
+      out.text = visibleText(t);
+    }
+    out.lang = normaliseCodeLang(out.lang) ?? DEFAULT_CODE_LANG;
+    if (typeof out.title === 'string') Object.assign(out, { title: [...visibleText(out.title).replace(/\s+/g, ' ').trim()].slice(0, MAX_CODE_TITLE).join('') });
+    for (const k of ['lines', 'wrap']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
+  } else {
+    delete out.lang;
+    delete out.lines;
+    delete out.wrap;
   }
   if ('proposedBy' in out) {
     const clean = cleanProposedBy(out.proposedBy);

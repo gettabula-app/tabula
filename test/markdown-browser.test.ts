@@ -59,6 +59,25 @@ async function seed(page: Page, text = SOURCE): Promise<string> {
   });
 }
 
+/**
+ * Double-clicks the block's text until the source editor opens. A double click that lands while the machine is busy can be taken
+ * for two single clicks (the first click selects and redraws the block between them), and nothing else would ever open the editor, so
+ * one attempt that gets no editor is retried from a fresh measurement instead of waiting out the whole timeout.
+ */
+async function openSourceByDoubleClick(page: Page, ta: ReturnType<Page['locator']>): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    const at = await box(page, 'svg.canvas text');
+    await page.mouse.dblclick(at!.x, at!.y);
+    try {
+      await ta.waitFor({ state: 'visible', timeout: budget(attempt === 0 ? 6_000 : 10_000) });
+      return;
+    } catch (error) {
+      if (attempt >= 4) throw error;
+      await page.keyboard.press('Escape'); // leaves a selection or a half-open state; the next attempt starts again
+    }
+  }
+}
+
 const height = (page: Page) => page.evaluate(() => (window as any).__board.store.get('md1').h as number);
 /** Waits until the heal has corrected the seeded estimate (100) and the height has stood still for a moment, however slow the machine. */
 const healed = (page: Page) => page.waitForFunction(() => {
@@ -180,10 +199,8 @@ describe.skipIf(!available)('the Markdown block', () => {
   it('is edited as its source: double-click opens a monospace textarea with the caret at the end, typing changes the block, Escape leaves, an emptied block is removed', async () => {
     const page = await open();
     await seed(page, '# One');
-    const at = await box(page, 'svg.canvas text');
-    await page.mouse.dblclick(at!.x, at!.y);
     const ta = page.locator('textarea.text-editor');
-    await ta.waitFor({ state: 'visible' });
+    await openSourceByDoubleClick(page, ta);
     expect(await ta.evaluate((el) => [getComputedStyle(el).fontFamily, (el as HTMLTextAreaElement).selectionStart, (el as HTMLTextAreaElement).value])).toEqual([expect.stringMatching(/mono|Menlo|Consolas/i), 5, '# One']);
     await page.keyboard.type('\n\n- [ ] new task');
     await page.keyboard.press('Tab');
@@ -202,6 +219,23 @@ describe.skipIf(!available)('the Markdown block', () => {
     await ta.fill('');
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !(window as any).__board.store.get('md1'));
+    await page.close();
+  }, budget(150_000)); // several slow waits in one test: the file's default test timeout is for one quiet-machine pass
+
+  it('keeps a selection made in the first frame after the source opens (select all is not undone by the deferred focus)', async () => {
+    const page = await open();
+    await seed(page, '# One\n\nsome text');
+    const state = await page.evaluate(async () => {
+      const app = (window as any).__board;
+      app.editor.start('md1');
+      const ta = app.editor.textarea as HTMLTextAreaElement;
+      ta.focus();
+      ta.select(); // what select-all, or a test's fill(''), does before the next frame
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      return { start: ta.selectionStart, end: ta.selectionEnd, length: ta.value.length, focused: document.activeElement === ta };
+    });
+    expect(state).toEqual({ start: 0, end: state.length, length: state.length, focused: true });
+    expect(state.length).toBeGreaterThan(0);
     await page.close();
   });
 

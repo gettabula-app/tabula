@@ -119,7 +119,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
   let ownerActionsOpen = false;
 
   function readinessCheckRow(check: TrackerReadinessReport['checks'][number]): HTMLElement {
-    const stateIcon = check.state === 'pass' ? icon('check', 14) : check.state === 'fail' ? icon('close', 14) : check.state === 'unknown' ? icon('timer', 14) : null;
+    const stateIcon = check.state === 'pass' ? icon('check', 12) : check.state === 'fail' ? icon('close', 12) : check.state === 'unknown' ? icon('timer', 12) : null;
     return h('div', { class: 'backups-readiness-row', 'data-check-id': check.id },
       h('div', { class: 'backups-readiness-name' },
         h('strong', null, trackerCheckLabel(check.id, check.label)),
@@ -351,7 +351,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
           updateSubmit();
         },
       }),
-      h('label', { class: 'backups-readiness-checkbox' },
+      h('label', { class: 'check backups-readiness-checkbox' },
         h('input', {
           type: 'checkbox', checked: cutoverAccepted,
           onchange: (event: Event) => {
@@ -399,7 +399,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       : null;
     const note = noteOf(b);
     const noteParts = !b.readable
-      ? [badge('Unreadable', 'red'), note.slice('Unreadable'.length)]
+      ? [badge('Unreadable', 'red'), note.slice('Unreadable'.length).replace(/^:\s*/, ' ')]
       : b.protected
         ? [badge('Protected', 'blue'), note.slice('Protected'.length)]
         : [note];
@@ -558,7 +558,7 @@ export function backupsAdminPanel(me: Me, kit: AdminKit): HTMLElement {
       } else if (!list.length) {
         rows.replaceChildren(kit.emptyLine(`Nothing matches “${query.trim()}”.`));
       } else {
-        rows.replaceChildren(...list.map((b) => h('label', { class: 'admin-row backups-pick-row', 'data-id': b.id },
+        rows.replaceChildren(...list.map((b) => h('label', { class: 'check admin-row backups-pick-row', 'data-id': b.id },
           h('input', {
             type: 'radio', name: 'backup-board', value: b.id, checked: picked === b.id, 'aria-label': `${b.title}, ${b.teamName ?? 'Personal'}${b.deleted ? ', deleted' : ''}`,
             onchange: () => {

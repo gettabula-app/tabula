@@ -7,7 +7,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const MARKER = 'chromium.executablePath()';
+export const MARKER = 'chromium.executablePath()';
+// Tests that may be skipped on the Linux CI leg: the WebKit test of the asset store (WebKit is not installed there). Any other skipped browser test
+// means Chromium or a feature went missing and a test stopped running: the check fails the leg. (Opt out in a run with CHECK_BROWSER_ALLOW_SKIPS=1.)
+export const ALLOWED_SKIPS = { 'test/asset-store-browser.test.ts': 1 };
 
 /** The test files (relative to the repository, with forward slashes) that need Chromium. */
 export function browserTestFiles(testDir) {
@@ -23,7 +26,7 @@ export function browserTestFiles(testDir) {
  * @param {string[]} files browserTestFiles()
  * @returns {{ ok: boolean, rows: { file: string, passed: number, skipped: number, failed: number, ran: boolean }[], problems: string[] }}
  */
-export function checkBrowserTests(report, files) {
+export function checkBrowserTests(report, files, { allowSkips = false } = {}) {
   const results = (report?.testResults ?? []).map((r) => ({ name: String(r.name).replaceAll('\\', '/'), tests: r.assertionResults ?? [] }));
   const rows = [];
   const problems = [];
@@ -34,6 +37,7 @@ export function checkBrowserTests(report, files) {
     rows.push(row);
     if (!row.ran) problems.push(`${file}: not in the report (the file did not run)`);
     else if (row.passed === 0) problems.push(`${file}: no test passed (${row.skipped} skipped): is Chromium installed on this leg?`);
+    else if (row.skipped > (ALLOWED_SKIPS[file] ?? 0) && !allowSkips) problems.push(`${file}: ${row.skipped} skipped (allowed: ${ALLOWED_SKIPS[file] ?? 0})`);
   }
   return { ok: problems.length === 0, rows, problems };
 }
@@ -49,7 +53,7 @@ function main(argv) {
     process.stderr.write('no test file asks for Chromium: the marker in this script is out of date\n');
     return 2;
   }
-  const { ok, rows, problems } = checkBrowserTests(JSON.parse(fs.readFileSync(reportPath, 'utf8')), files);
+  const { ok, rows, problems } = checkBrowserTests(JSON.parse(fs.readFileSync(reportPath, 'utf8')), files, { allowSkips: process.env.CHECK_BROWSER_ALLOW_SKIPS === '1' });
   for (const row of rows) process.stdout.write(`${row.passed > 0 ? 'ok     ' : 'MISSING'} ${row.file}: ${row.passed} passed, ${row.skipped} skipped, ${row.failed} failed\n`);
   if (!ok) process.stderr.write(`${problems.join('\n')}\n`);
   return ok ? 0 : 1;

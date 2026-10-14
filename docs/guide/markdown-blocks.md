@@ -6,7 +6,7 @@ A Markdown block is a place on the board for longer notes, with headings, lists,
 
 ## Add one
 
-Open the **Text**, **Markdown block** and **Link** group in the left toolbar, choose **Markdown block**, then click the board. A box opens for the text: write in Markdown, then press `Esc` (or `Ctrl+Enter`, `Cmd+Enter` on Mac) to see it formatted. Drag instead of clicking to choose the width. There is no single-key shortcut; `M` is for chat.
+Open the **Text**, **Table**, **Code block**, **Markdown block** and **Link** group in the left toolbar, choose **Markdown block**, then click the board. A box opens for the text: write in Markdown, then press `Esc` (or `Ctrl+Enter`, `Cmd+Enter` on Mac) to see it formatted. Drag instead of clicking to choose the width. There is no single-key shortcut; `M` is for chat.
 
 ## Edit
 
@@ -53,4 +53,4 @@ The board outline lists a Markdown block as "Markdown block" with its first head
 
 ## Limits
 
-A block holds up to 20,000 characters. An agent writing through an access token can write up to 4,000 characters at a time. Pictures from the board's own library can be named in a block, but a block shows them as a labelled box for now.
+A block holds up to 8,000 characters, and a single word or code line is cut at 2,000 characters. An agent writing through an access token can write up to 4,000 characters at a time. Pictures from the board's own library can be named in a block, but a block shows them as a labelled box for now.

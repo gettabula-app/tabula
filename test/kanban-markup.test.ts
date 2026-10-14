@@ -86,6 +86,17 @@ describe('a lane', () => {
     expect(draw(store, lanes[1])).not.toContain('>DONE</text>');
   });
 
+  it('says Done once: a lane called Done shows the name and the check, a lane with another name adds the word', () => {
+    const { store, lanes } = board();
+    const called = draw(store, lanes[2]);
+    expect(called.match(/>Done<\/text>/g)).toHaveLength(1);
+    expect(called).toContain('Stage: done');
+    store.transact(() => store.update(lanes[2], { name: 'Shipped' }));
+    const other = draw(store, lanes[2]);
+    expect(other).toContain('>Shipped</text>');
+    expect(other.match(/>Done<\/text>/g)).toHaveLength(1);
+  });
+
   it('shows count over limit, and the danger chip and rule when over it', () => {
     const { store, lanes } = board();
     store.transact(() => store.update(lanes[0], { wip: 3 }));
@@ -96,9 +107,10 @@ describe('a lane', () => {
     svg = draw(store, lanes[0]);
     expect(svg).toContain('>2 / 1</text>');
     expect(svg).toContain('Over the limit');
-    // over the limit is the yellow "WIP full" pill, not a danger rule
-    expect(svg).toContain('>WIP full</text>');
-    expect(svg).toMatch(/<rect x="[\d.]+" y="16" width="[\d.]+" height="20" rx="4" style="fill:var\(--tag-yellow/);
+    // over the limit is the red "Over limit" pill (words and colour), not the yellow at-limit pill and not a danger rule
+    expect(svg).toContain('>Over limit</text>');
+    expect(svg).not.toContain('>At limit</text>');
+    expect(svg).toMatch(/<rect x="[\d.]+" y="16" width="[\d.]+" height="20" rx="4" style="fill:var\(--tag-red/);
     // a block-mode lane that is over its limit still shows its lock
     store.transact(() => store.update(lanes[0], { wipMode: 'block' }));
     expect(draw(store, lanes[0])).toMatch(/<rect x="5" y="10.5" width="14" height="10"/);

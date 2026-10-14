@@ -9,6 +9,7 @@ import { DASHES, HEADS, OBJ_TYPES, ROUTES, SHAPE_KINDS, SIDES, STICKY_COLORS } f
 import { cleanColor } from '../shared/colors.mjs';
 import { checkTemplateKanbanLimits, isSafeHttpUrl, templateKanbanFields, templateLabels } from '../shared/containers.mjs';
 import { parseTableKey, tablePartsProblem } from '../shared/tables.mjs';
+import { CODE_LANG_IDS, MAX_CODE_TITLE } from '../shared/code-langs.mjs';
 import { MAX_SVG_BODY, svgProblem } from '../shared/svg-safety.mjs';
 
 // the built-in categories (CATEGORIES in src/templates.ts) and CUSTOM_CATEGORY; a test keeps them equal
@@ -104,6 +105,7 @@ const VALIGNS = ['top', 'middle', 'bottom'];
 const VISIBILITIES = ['+', '-', '#', '~', ''];
 const COORD = 1_000_000;
 const MAX_TEXT = 20_000;
+export const MAX_TEMPLATE_CODE_CHARS = 8_000;
 const MAX_POINTS = 100_000;
 const MAX_MEMBERS = 200;
 
@@ -222,6 +224,9 @@ function box(o, what, ids, labels) {
   }
   if (o.fontWeight !== undefined) out.fontWeight = number(o.fontWeight, `${what} fontWeight`, 1, 1000);
   if (o.fontSize !== undefined) out.fontSize = number(o.fontSize, `${what} fontSize`, 1, 1000);
+  if (o.lineHeight !== undefined && ['text', 'sticky', 'shape', 'markdown'].includes(o.type)) {
+    out.lineHeight = number(o.lineHeight, `${what} lineHeight`, 0.8, 3);
+  }
   if (o.textColor !== undefined) out.textColor = paint(o.textColor, `${what} textColor`);
   if (o.align !== undefined) out.align = oneOf(o.align, ALIGNS, `${what} align`);
   if (o.valign !== undefined) out.valign = oneOf(o.valign, VALIGNS, `${what} valign`);
@@ -230,6 +235,18 @@ function box(o, what, ids, labels) {
     case 'shape':
       if (o.kind !== undefined) out.kind = oneOf(o.kind, SHAPE_KINDS, `${what} kind`);
       break;
+    case 'code': {
+      // a code block (docs/code-blocks.md): the code is `text`, at most 8,000 characters in a template (it counts toward the template's size like any text)
+      if (o.text !== undefined) out.text = text(o.text, `${what} text`, MAX_TEMPLATE_CODE_CHARS, { lines: true });
+      if (o.lang !== undefined) out.lang = oneOf(o.lang, CODE_LANG_IDS, `${what} lang`);
+      if (o.title !== undefined) out.title = text(o.title, `${what} title`, MAX_CODE_TITLE);
+      for (const key of ['lines', 'wrap']) {
+        if (o[key] === undefined) continue;
+        if (typeof o[key] !== 'boolean') fail(`${what} ${key} must be a boolean.`);
+        out[key] = o[key];
+      }
+      break;
+    }
     case 'frame':
       if (o.name !== undefined) out.name = text(o.name, `${what} name`, 500, { lines: true });
       break;
@@ -310,16 +327,20 @@ function box(o, what, ids, labels) {
 
 function connector(o, what, ids) {
   if (o.flipX !== undefined || o.flipY !== undefined) fail(`${what} cannot have flip flags.`);
+  if (o.line !== undefined && typeof o.line !== 'boolean') fail(`${what} line must be true or false.`);
+  // a line (docs/lines.md) is straight by default and has no arrowhead at its end; it keeps line only while both ends are free and it is straight
+  const asLine = o.line === true;
   const out = {
     id: o.id,
     type: 'connector',
     z: text(o.z, `${what} z order`, 64, { min: 1 }),
     from: end(o.from, 'from', what, ids),
     to: end(o.to, 'to', what, ids),
-    route: o.route === undefined ? 'elbow' : oneOf(o.route, ROUTES, `${what} route`),
+    route: o.route === undefined ? (asLine ? 'straight' : 'elbow') : oneOf(o.route, ROUTES, `${what} route`),
     startHead: o.startHead === undefined ? 'none' : oneOf(o.startHead, HEADS, `${what} startHead`),
-    endHead: o.endHead === undefined ? 'arrow' : oneOf(o.endHead, HEADS, `${what} endHead`),
+    endHead: o.endHead === undefined ? (asLine ? 'none' : 'arrow') : oneOf(o.endHead, HEADS, `${what} endHead`),
   };
+  if (asLine && out.from.kind === 'free' && out.to.kind === 'free' && out.route === 'straight') out.line = true;
   if (o.parent !== undefined) {
     const parentType = typeof o.parent === 'string' ? ids.get(o.parent) : undefined;
     if (parentType !== 'frame' && parentType !== 'group') fail(`${what} has a parent that is not a frame or group in the template.`);

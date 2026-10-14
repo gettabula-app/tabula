@@ -30,7 +30,7 @@ async function openBoard(height = 900): Promise<Page> {
     try {
       await page.goto(base);
       await page.getByRole('button', { name: 'New board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
-      await page.locator('.rail-tool-group').waitFor({ timeout: 25_000 });
+      await page.locator('.rail-text-group').waitFor({ timeout: 25_000 });
       return page;
     } catch (error) {
       await context.close();
@@ -42,10 +42,10 @@ async function openBoard(height = 900): Promise<Page> {
 describe.skipIf(!available)('the grouped Text, Table, Markdown block and Link rail choices', { timeout: 200_000 }, () => {
   it('opens from the chevron and ArrowRight, then remembers the chosen tool', async () => {
     const page = await openBoard();
-    const group = page.locator('.rail-tool-group');
+    const group = page.locator('.rail-text-group');
     const flyout = page.locator('.rail-tool-pop');
 
-    await page.locator('.rail-group-chevron').click();
+    await page.locator('.rail-text-group .rail-group-chevron').click();
     expect(await flyout.isVisible()).toBe(true);
     expect(await page.getByRole('menuitem', { name: 'Text' }).getAttribute('aria-keyshortcuts')).toBe('T');
     expect(await page.getByRole('menuitem', { name: 'Markdown block' }).getAttribute('aria-keyshortcuts')).toBeNull();
@@ -79,18 +79,18 @@ describe.skipIf(!available)('the grouped Text, Table, Markdown block and Link ra
 
   it('puts the Table tool (key G) in the group: choosing it arms the table tool and the keycap shows', async () => {
     const page = await openBoard();
-    await page.locator('.rail-group-chevron').click();
+    await page.locator('.rail-text-group .rail-group-chevron').click();
     expect(await page.getByRole('menuitem', { name: 'Table' }).getAttribute('aria-keyshortcuts')).toBe('G');
     await page.getByRole('menuitem', { name: 'Table' }).click();
     await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('table');
-    expect(await page.locator('.rail-tool-group').getAttribute('aria-label')).toBe('Table');
+    expect(await page.locator('.rail-text-group').getAttribute('aria-label')).toBe('Table');
     await page.close();
   });
 
   it('opens a menu with matching popup ARIA state and right-click', async () => {
     const page = await openBoard();
-    const group = page.locator('.rail-tool-group');
-    const chevron = page.locator('.rail-group-chevron');
+    const group = page.locator('.rail-text-group');
+    const chevron = page.locator('.rail-text-group .rail-group-chevron');
     const flyout = page.locator('.rail-tool-pop');
 
     expect(await group.getAttribute('aria-haspopup')).toBe('menu');
@@ -114,10 +114,10 @@ describe.skipIf(!available)('the grouped Text, Table, Markdown block and Link ra
 
   it('activates the remembered tool after a long press and pointer leave', async () => {
     const page = await openBoard();
-    const group = page.locator('.rail-tool-group');
+    const group = page.locator('.rail-text-group');
     const flyout = page.locator('.rail-tool-pop');
 
-    await page.locator('.rail-group-chevron').click();
+    await page.locator('.rail-text-group .rail-group-chevron').click();
     await page.getByRole('menuitem', { name: 'Markdown block' }).click();
     await page.locator('.rail [data-tool="pen"]').click();
     await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('pen');
@@ -141,15 +141,16 @@ describe.skipIf(!available)('the grouped Text, Table, Markdown block and Link ra
 
   it('opens Link from the flyout and keeps Connector as its own rail tool', async () => {
     const page = await openBoard();
-    const group = page.locator('.rail-tool-group');
-    const connector = page.locator('.rail [data-tool="connector"]');
+    const group = page.locator('.rail-text-group');
+    // Connector is the first choice of the Connectors and lines group (its own flyout and key: see the line tool test)
+    const connector = page.locator('.rail-connector-group');
 
     expect(await connector.getAttribute('aria-label')).toBe('Connector');
     expect(await connector.getAttribute('aria-keyshortcuts')).toBe('L');
     await connector.click();
     await expect.poll(() => page.locator('.board-surface').getAttribute('data-tool')).toBe('connector');
 
-    await page.locator('.rail-group-chevron').click();
+    await page.locator('.rail-text-group .rail-group-chevron').click();
     expect(await page.getByRole('menuitem', { name: 'Link' }).getAttribute('aria-keyshortcuts')).toBeNull();
     await page.getByRole('menuitem', { name: 'Link' }).click();
     const popover = page.locator('.link-popover');
@@ -173,7 +174,7 @@ describe.skipIf(!available)('the grouped Text, Table, Markdown block and Link ra
     const page = await context.newPage();
     await page.goto(`${base}?debug#/b/rail-ro-${Math.random().toString(36).slice(2, 8)}`);
     await page.waitForFunction(() => (window as any).__board, null, { timeout: 25_000 });
-    const group = page.locator('.rail-tool-group');
+    const group = page.locator('.rail-text-group');
     await group.waitFor({ timeout: 25_000 });
     await page.evaluate(() => { (window as any).__board.store.setReadOnly(true); });
     await expect.poll(() => group.isDisabled()).toBe(true);

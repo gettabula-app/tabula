@@ -77,6 +77,26 @@ describe('constants that mirror the client', () => {
 });
 
 describe('content that is accepted', () => {
+  it('keeps lineHeight on supported objects through server and client template validation', () => {
+    const input = content([
+      sticky('sticky', { lineHeight: 0.8 }),
+      { ...sticky('shape'), type: 'shape', kind: 'rect', lineHeight: 1.15 },
+      { ...sticky('text'), type: 'text', lineHeight: 2 },
+      { ...sticky('markdown'), type: 'markdown', lineHeight: 3 },
+    ]);
+    const server = validateTemplateContent(input).content;
+    expect(server.objects.map((o: { lineHeight?: number }) => o.lineHeight)).toEqual([0.8, 1.15, 2, 3]);
+    expect(validateContent(server).objects.map((o) => (o as { lineHeight?: number }).lineHeight)).toEqual([0.8, 1.15, 2, 3]);
+  });
+
+  it('rejects lineHeight outside 0.8 to 3 or on an unsupported template object', () => {
+    for (const value of [0.79, 3.01, 'x']) {
+      expect(() => validateTemplateContent(content([sticky('bad', { lineHeight: value })]))).toThrow(/lineHeight/);
+      expect(() => validateContent(content([sticky('bad', { lineHeight: value })]))).toThrow(/lineHeight/);
+    }
+    expect(() => validateContent(content([frame('frame', { lineHeight: 1.5 })]))).toThrow(/cannot have lineHeight/);
+  });
+
   it('preserves boolean flip flags through both template validators and rejects other values', () => {
     const input = content([sticky('flipped', { flipX: true, flipY: false })]);
     expect(validateTemplateContent(input).content.objects[0]).toMatchObject({ flipX: true, flipY: false });
@@ -593,6 +613,39 @@ describe('placing a template on a board', () => {
     for (let i = 0; i < LIMITS.boardObjects - 1; i++) objects.set(`o${i}`, new Y.Map(Object.entries({ id: `o${i}`, type: 'sticky', x: 0, y: 0, w: 1, h: 1, z: 'a' })));
     expect(() => planUseTemplate(doc, tpl, { createdBy: 'u1' })).toThrow(OpsError);
     expect(objects.size).toBe(LIMITS.boardObjects - 1);
+  });
+});
+
+describe('line connectors in server templates (docs/lines.md)', () => {
+  const lineContent = (connector: Record<string, unknown>) => content([sticky('s1'), { id: 'c1', type: 'connector', z: '2', ...connector }]);
+
+  it('keeps line: true on a free, straight connector and gives it line defaults', () => {
+    const { content: stored } = validateTemplateContent(lineContent({ line: true, from: { kind: 'free', x: 1, y: 2 }, to: { kind: 'free', x: 9, y: 9 } }));
+    const c1 = (stored.objects as Record<string, unknown>[])[1];
+    expect(c1).toEqual({
+      id: 'c1', type: 'connector', z: '2', line: true, from: { kind: 'free', x: 1, y: 2 }, to: { kind: 'free', x: 9, y: 9 },
+      route: 'straight', startHead: 'none', endHead: 'none',
+    });
+  });
+
+  it('drops line when an end is bound or the route is not straight, and keeps the connector', () => {
+    const bound = validateTemplateContent(lineContent({ line: true, from: { kind: 'bound', id: 's1', anchor: 'auto' }, to: { kind: 'free', x: 9, y: 9 } }));
+    expect((bound.content.objects as Record<string, unknown>[])[1]).not.toHaveProperty('line');
+    const curved = validateTemplateContent(lineContent({ line: true, route: 'curved', from: { kind: 'free', x: 0, y: 0 }, to: { kind: 'free', x: 9, y: 9 } }));
+    const c = (curved.content.objects as Record<string, unknown>[])[1];
+    expect(c).not.toHaveProperty('line');
+    expect(c.route).toBe('curved');
+  });
+
+  it('refuses a line flag that is not a boolean', () => {
+    expect(problem(lineContent({ line: 'yes', from: { kind: 'free', x: 0, y: 0 }, to: { kind: 'free', x: 1, y: 1 } }))).toMatch(/line must be true or false/);
+  });
+
+  it('a template line round-trips: the stored content validates again unchanged', () => {
+    const first = validateTemplateContent(lineContent({ line: true, from: { kind: 'free', x: 1, y: 2 }, to: { kind: 'free', x: 9, y: 9 }, stroke: '#112233', strokeWidth: 3 }));
+    const second = validateTemplateContent(first.content);
+    expect(second.content).toEqual(first.content);
+    expect((second.content.objects as Record<string, unknown>[])[1]).toMatchObject({ line: true, strokeWidth: 3, stroke: '#112233' });
   });
 });
 

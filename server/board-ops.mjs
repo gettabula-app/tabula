@@ -11,6 +11,7 @@ import {
   layoutContainer, planInsert, ranksBetween, sortedChildren, validLabel, validLabelColor, wipCheck, isSafeHttpUrl,
 } from '../shared/containers.mjs';
 import { cleanColor } from '../shared/colors.mjs';
+import { MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 import { DEFAULT_COL_WIDTH, MAX_CELL_CHARS, MAX_TABLE_CHARS, gridChars, isTableKey, MAX_TABLE_COLS, MAX_TABLE_ROWS, tableFromGrid, tableModel } from '../shared/tables.mjs';
 
@@ -51,7 +52,7 @@ export const ROUTES = ['straight', 'elbow', 'curved'];
 export const DASHES = ['solid', 'dashed', 'dotted'];
 export const SIDES = ['top', 'right', 'bottom', 'left'];
 export const OBJ_TYPES = [
-  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table',
+  'shape', 'sticky', 'text', 'frame', 'tracker', 'group', 'icon', 'image', 'link', 'path', 'connector', 'container', 'lane', 'card', 'markdown', 'table', 'code',
   'uml-class', 'uml-actor', 'uml-usecase', 'uml-lifeline', 'uml-note', 'uml-package', 'uml-state', 'uml-initial', 'uml-final', 'uml-component',
 ];
 // names and values of STICKY_COLORS in src/palette.ts (a test keeps them equal)
@@ -378,8 +379,36 @@ function proposedOf(v) {
   return name ? { feature: v.feature, name } : { feature: v.feature };
 }
 
+/**
+ * A line (docs/lines.md) is a connector with `line: true`, both ends free and a straight route. A connector that breaks any of
+ * those is an ordinary connector: the flag is dropped when an end is bound or the route changes, so it is never read as a line.
+ */
+export function isLine(o) {
+  return o?.type === 'connector' && o.line === true && o.from?.kind === 'free' && o.to?.kind === 'free' && (o.route === undefined || o.route === 'straight');
+}
+
+/** The type the MCP tools and the summary show: a line reads as `line`, every other object as its stored type. */
+export function objectTypeOf(o) {
+  return isLine(o) ? 'line' : o.type;
+}
+
+/** A line as the model sees it: its two points, stroke, width, dash and heads (no route, no ends). */
+function summariseLine(o) {
+  const point = (end) => ({ x: r2(end.x), y: r2(end.y) });
+  const out = {
+    id: id64(o.id), type: 'line', from: point(o.from), to: point(o.to),
+    strokeWidth: Number.isFinite(o.strokeWidth) ? r2(o.strokeWidth) : 2,
+    dash: DASHES.includes(o.dash) ? o.dash : 'solid',
+    startHead: HEADS.includes(o.startHead) ? o.startHead : 'none',
+    endHead: HEADS.includes(o.endHead) ? o.endHead : 'none',
+  };
+  if (typeof o.stroke === 'string' && o.stroke) out.stroke = cleanForModel(o.stroke, 64).text;
+  return out;
+}
+
 /** @param {boolean} [detail] the extra fields get_objects adds */
 export function summarise(o, textMax, detail = false) {
+  if (isLine(o)) return summariseLine(o);
   if (o.type === 'connector') {
     const out = {
       id: id64(o.id), type: 'connector', from: endOut(o.from), to: endOut(o.to),
@@ -405,6 +434,13 @@ export function summarise(o, textMax, detail = false) {
     if (text.truncated) out.textTruncated = true;
   }
   if (typeof o.name === 'string' && o.name) out.name = cleanForModel(o.name, 200).text;
+  if (o.type === 'code') {
+    // a code block: its language id, optional title and the two display switches (the code is `text`)
+    out.lang = typeof o.lang === 'string' && normaliseCodeLang(o.lang) ? normaliseCodeLang(o.lang) : 'plaintext';
+    if (typeof o.title === 'string' && o.title) out.title = cleanForModel(o.title, MAX_CODE_TITLE).text;
+    if (typeof o.lines === 'boolean') out.lines = o.lines;
+    if (typeof o.wrap === 'boolean') out.wrap = o.wrap;
+  }
   if (o.type === 'group' && Number.isInteger(o.members) && o.members >= 0) out.members = o.members;
   if (o.type === 'tracker') {
     if (typeof o.trackerId === 'string' && TRACKER_FIELD_RE.test(o.trackerId)) out.trackerId = o.trackerId;
@@ -475,7 +511,7 @@ function addDetail(out, o) {
   for (const key of ['font', 'textColor', 'stroke']) {
     if (typeof o[key] === 'string') out[key] = cleanForModel(o[key], 64).text;
   }
-  for (const key of ['fontSize', 'fontWeight', 'strokeWidth', 'opacity', 'updatedAt']) {
+  for (const key of ['fontSize', 'fontWeight', 'lineHeight', 'strokeWidth', 'opacity', 'updatedAt']) {
     if (typeof o[key] === 'number' && Number.isFinite(o[key])) out[key] = r2(o[key]);
   }
   if (DASHES.includes(o.dash)) out.dash = o.dash;
@@ -524,7 +560,7 @@ export function summariseBoard(doc, options = {}) {
 
   const typeCounts = new Map();
   for (const o of [...boxes, ...connectors]) {
-    const type = str40(o.type);
+    const type = str40(objectTypeOf(o));
     typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
   }
   const overall = overallBounds(boxes);
@@ -536,13 +572,12 @@ export function summariseBoard(doc, options = {}) {
   );
   const chosenIds = new Set(chosen.map((o) => o.id));
   const narrowed = Boolean(frameId || bounds);
-  const wantConnectors = !wanted || wanted.has('connector');
   const insideBounds = (end) => end?.kind === 'free' && bounds && end.x >= bounds.x && end.x <= bounds.x + bounds.w && end.y >= bounds.y && end.y <= bounds.y + bounds.h;
-  const chosenConnectors = !wantConnectors
-    ? []
-    : connectors.filter(
-        (c) => !narrowed || frameDescendants?.has(c.id) || [c.from, c.to].some((e) => (e?.kind === 'bound' && chosenIds.has(e.id)) || insideBounds(e)),
-      );
+  // a connector is wanted as 'connector' and a line as 'line': asking for connectors does not return lines
+  const chosenConnectors = connectors.filter(
+    (c) => (!wanted || wanted.has(objectTypeOf(c)))
+      && (!narrowed || frameDescendants?.has(c.id) || [c.from, c.to].some((e) => (e?.kind === 'bound' && chosenIds.has(e.id)) || insideBounds(e))),
+  );
 
   const ordered = [...chosen, ...chosenConnectors].map((o) => ({ o, key: keyOf(o) })).sort((a, b) => cmpKey(a.key, b.key));
   const after = cursor ? decodeCursor(cursor) : null;
@@ -1208,16 +1243,36 @@ function parseEnd(v, path, { allowRef, get, refs, allowKanbanTarget = false }) {
 }
 
 /** A rough height for a Markdown block's source: wrapped lines plus the room headings, code and blank lines take. The app measures properly and corrects it. */
-function markdownHeightEstimate(content, w, fontSize) {
+function markdownHeightEstimate(content, w, fontSize, lineHeight = 1.45) {
   let lines = 0;
   for (const line of content.split('\n')) lines += line.trim() === '' ? 0.5 : Math.max(1, Math.ceil((line.length * fontSize * 0.52) / Math.max(40, w - 20))) + (/^\s*#{1,2}\s/u.test(line) ? 0.6 : 0);
-  return r2(Math.max(LIMITS.sizeMin, 20 + lines * fontSize * 1.45));
+  return r2(Math.max(LIMITS.sizeMin, 20 + lines * fontSize * lineHeight));
 }
 
-function textHeight(content, w, fontSize) {
+/** A first height for a code block: its rows at 19.5px plus the padding (and the 36px header when titled). The app measures the real glyph width and corrects it. */
+function codeHeightEstimate(content, w, { title = false, wrap = false, lines = false } = {}) {
+  const rows = content.split('\n');
+  const cols = Math.max(1, Math.floor((w - 32 - (lines ? 40 : 0)) / 7.8));
+  const count = wrap ? rows.reduce((sum, row) => sum + Math.max(1, Math.ceil(row.length / cols)), 0) : rows.length;
+  return r2(Math.max(LIMITS.sizeMin, (title ? 36 : 0) + 28 + count * 19.5));
+}
+
+/** The stored language id for a value an agent sent: ids and the usual aliases (ts, py, typescript...); anything else is refused with the list. */
+function codeLang(v, path) {
+  const id = normaliseCodeLang(v);
+  if (id === null) throw invalid(path, 'Not a language Tabula highlights. Use one of: plaintext, ts, tsx, js, jsx, json, html, css, scss, python, rust, go, java, c, cpp, csharp, bash, sql, yaml, toml, markdown, diff, php, ruby, swift, kotlin (aliases such as typescript, py, sh work)');
+  return id;
+}
+
+/** The title, lines and wrap fields of a code block, as parsed from a create item or an update patch. */
+function codeTitle(v, path) {
+  return text(v, path, 0, MAX_CODE_TITLE).replace(/\s+/g, ' ').trim();
+}
+
+function textHeight(content, w, fontSize, lineHeight = 1.3) {
   const newlines = content.match(/\n/g)?.length ?? 0;
   const lines = Math.max(1, Math.ceil((content.length * fontSize * 0.52) / w) + newlines);
-  return r2(Math.max(LIMITS.sizeMin, lines * fontSize * 1.3));
+  return r2(Math.max(LIMITS.sizeMin, lines * fontSize * lineHeight));
 }
 
 /** The rows of a new table: 1 to MAX_TABLE_ROWS rows of 1 to MAX_TABLE_COLS cell texts of at most MAX_CELL_CHARS characters each. */
@@ -1232,15 +1287,19 @@ function tableGrid(v, path) {
 }
 
 const CREATE_KEYS = {
-  sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'parent', 'flipX', 'flipY'],
-  shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'parent', 'flipX', 'flipY'],
-  text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'parent', 'flipX', 'flipY'],
-  markdown: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'fontSize', 'parent', 'flipX', 'flipY'],
+  sticky: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'color', 'lineHeight', 'parent', 'flipX', 'flipY'],
+  shape: ['type', 'ref', 'kind', 'text', 'x', 'y', 'w', 'h', 'fill', 'stroke', 'lineHeight', 'parent', 'flipX', 'flipY'],
+  text: ['type', 'ref', 'text', 'x', 'y', 'w', 'fontSize', 'lineHeight', 'parent', 'flipX', 'flipY'],
+  markdown: ['type', 'ref', 'text', 'x', 'y', 'w', 'h', 'fontSize', 'lineHeight', 'parent', 'flipX', 'flipY'],
+  code: ['type', 'ref', 'text', 'lang', 'title', 'lines', 'wrap', 'x', 'y', 'w', 'h', 'parent', 'flipX', 'flipY'],
   table: ['type', 'ref', 'rows', 'headerRow', 'headerCol', 'x', 'y', 'fontSize', 'parent', 'flipX', 'flipY'],
   frame: ['type', 'ref', 'name', 'x', 'y', 'w', 'h', 'fill', 'parent', 'flipX', 'flipY'],
-  connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke'],
+  connector: ['type', 'ref', 'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'stroke', 'line', 'strokeWidth'],
+  // a line is stored as a connector with `line: true`; this is the synonym's own key list (docs/lines.md)
+  line: ['type', 'ref', 'from', 'to', 'stroke', 'strokeWidth', 'dash', 'startHead', 'endHead'],
   link: ['type', 'ref', 'url', 'x', 'y', 'w', 'h', 'parent', 'flipX', 'flipY'],
 };
+const LINE_DEFAULT_STROKE_WIDTH = 2;
 
 export const SERVER_TRACKER_FIELDS = new Set(['extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState']);
 
@@ -1285,15 +1344,17 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
       if (SERVER_TRACKER_FIELDS.has(key)) throw invalid(at(path, key), 'Tracker link fields are server-written');
     }
     if (item.type === 'tracker') throw invalid(at(path, 'type'), 'Tracker frames can only be created by the app');
-    const type = choice(item.type, Object.keys(CREATE_KEYS), at(path, 'type'));
-    record(item, path, CREATE_KEYS[type]);
+    // `line` is a synonym: it is stored as a connector with line: true, and read back as a line
+    const kind = choice(item.type, Object.keys(CREATE_KEYS), at(path, 'type'));
+    record(item, path, CREATE_KEYS[kind]);
+    const type = kind === 'line' ? 'connector' : kind;
     const id = freshId();
     if (item.ref !== undefined) {
       if (typeof item.ref !== 'string' || !REF_RE.test(item.ref)) throw invalid(at(path, 'ref'), 'Must be 1 to 32 letters, digits, - or _');
       if (refs.has(item.ref)) throw invalid(at(path, 'ref'), 'Each ref may be used once');
       refs.set(item.ref, { id, type });
     }
-    return { item, type, id, path };
+    return { item, type, kind, id, path };
   });
 
   const zs = topKeys(map, entries.length);
@@ -1303,23 +1364,45 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
   const ops = [];
   const created = [];
 
-  entries.forEach(({ item, type, id, path }, i) => {
+  entries.forEach(({ item, type, kind, id, path }, i) => {
     // an object an agent made is marked as a draft until a person edits or accepts it (TAB-158); a connector is not a thing to review
     const base = { id, type, z: zs[i], createdBy, updatedAt: now, ...(proposedBy && type !== 'connector' ? { proposedBy: { feature: 'agent', by: { id: proposedBy.id ?? null, name: proposedBy.name ?? null } } } : {}) };
+    const lineHeight = item.lineHeight === undefined ? undefined : num(item.lineHeight, at(path, 'lineHeight'), 0.8, 3);
     let fields;
     if (type === 'connector') {
       const ends = { allowRef: true, get, refs };
-      fields = {
-        ...base,
-        from: parseEnd(required(item, 'from', path), at(path, 'from'), ends),
-        to: parseEnd(required(item, 'to', path), at(path, 'to'), ends),
-        route: item.route === undefined ? 'elbow' : choice(item.route, ROUTES, at(path, 'route')),
-        startHead: item.startHead === undefined ? 'none' : choice(item.startHead, HEADS, at(path, 'startHead')),
-        endHead: item.endHead === undefined ? 'arrow' : choice(item.endHead, HEADS, at(path, 'endHead')),
-        dash: item.dash === undefined ? undefined : choice(item.dash, DASHES, at(path, 'dash')),
-        stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke')),
-        label: item.label === undefined ? undefined : text(item.label, at(path, 'label'), 0, LIMITS.label) || undefined,
-      };
+      if (item.line !== undefined && typeof item.line !== 'boolean') throw invalid(at(path, 'line'), 'Must be a boolean');
+      if (kind === 'line' && item.line === false) throw invalid(at(path, 'line'), 'A line is always a line: omit line or set it to true');
+      const isLineNow = kind === 'line' || item.line === true;
+      if (isLineNow) {
+        // a line has two free points and is straight: no bound end, no other route, no label; the defaults are a plain solid 2-pixel line
+        const from = parseEnd(required(item, 'from', path), at(path, 'from'), ends);
+        const to = parseEnd(required(item, 'to', path), at(path, 'to'), ends);
+        if (from.kind !== 'free' || to.kind !== 'free') throw invalid(path, 'A line needs free ends: give each end as {x, y}');
+        if (item.route !== undefined && item.route !== 'straight') throw invalid(at(path, 'route'), 'A line is straight');
+        fields = {
+          ...base,
+          from, to, route: 'straight', line: true,
+          startHead: item.startHead === undefined ? 'none' : choice(item.startHead, HEADS, at(path, 'startHead')),
+          endHead: item.endHead === undefined ? 'none' : choice(item.endHead, HEADS, at(path, 'endHead')),
+          dash: item.dash === undefined ? 'solid' : choice(item.dash, DASHES, at(path, 'dash')),
+          strokeWidth: item.strokeWidth === undefined ? LINE_DEFAULT_STROKE_WIDTH : num(item.strokeWidth, at(path, 'strokeWidth'), 0, LIMITS.strokeMax),
+          stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke')),
+        };
+      } else {
+        if (item.strokeWidth !== undefined) throw invalid(at(path, 'strokeWidth'), 'Only a line has a stroke width');
+        fields = {
+          ...base,
+          from: parseEnd(required(item, 'from', path), at(path, 'from'), ends),
+          to: parseEnd(required(item, 'to', path), at(path, 'to'), ends),
+          route: item.route === undefined ? 'elbow' : choice(item.route, ROUTES, at(path, 'route')),
+          startHead: item.startHead === undefined ? 'none' : choice(item.startHead, HEADS, at(path, 'startHead')),
+          endHead: item.endHead === undefined ? 'arrow' : choice(item.endHead, HEADS, at(path, 'endHead')),
+          dash: item.dash === undefined ? undefined : choice(item.dash, DASHES, at(path, 'dash')),
+          stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke')),
+          label: item.label === undefined ? undefined : text(item.label, at(path, 'label'), 0, LIMITS.label) || undefined,
+        };
+      }
     } else {
       const x = coordinate(required(item, 'x', path), at(path, 'x'));
       const y = coordinate(required(item, 'y', path), at(path, 'y'));
@@ -1332,6 +1415,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
         Object.assign(fields, dims(192, 192), {
           text: text(required(item, 'text', path), at(path, 'text'), 0, LIMITS.text),
           fill: item.color === undefined ? STICKY_COLORS[0].fill : colour(item.color, at(path, 'color'), { names: true }),
+          lineHeight,
         });
       } else if (type === 'link') {
         // a plain card with the address only: no fetch is made for an agent's word (docs/link-cards.md); a person can press Refresh
@@ -1344,13 +1428,31 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
           text: item.text === undefined ? undefined : text(item.text, at(path, 'text'), 0, LIMITS.text),
           fill: item.fill === undefined ? undefined : colour(item.fill, at(path, 'fill'), { none: true }),
           stroke: item.stroke === undefined ? undefined : colour(item.stroke, at(path, 'stroke'), { none: true }),
+          lineHeight,
         });
       } else if (type === 'markdown') {
         // a Markdown block (docs/markdown-blocks.md): the source is the text; the height is a first estimate that the app corrects when the board opens
         const content = text(required(item, 'text', path), at(path, 'text'), 1, LIMITS.text);
         const w = item.w === undefined ? 360 : size(item.w, at(path, 'w'));
         const fontSize = item.fontSize === undefined ? undefined : num(item.fontSize, at(path, 'fontSize'), LIMITS.fontMin, LIMITS.fontMax);
-        Object.assign(fields, { w, h: item.h === undefined ? markdownHeightEstimate(content, w, fontSize ?? 16) : size(item.h, at(path, 'h')), text: content, fontSize });
+        Object.assign(fields, {
+          w, h: item.h === undefined ? markdownHeightEstimate(content, w, fontSize ?? 16, lineHeight ?? 1.45) : size(item.h, at(path, 'h')),
+          text: content, fontSize, lineHeight,
+        });
+      } else if (type === 'code') {
+        // a code block (docs/code-blocks.md): the code is `text` (at most 20,000 characters), the language an id or alias; the height is a first estimate the app corrects
+        const content = text(item.text ?? '', at(path, 'text'), 0, MAX_CODE_CHARS);
+        const w = item.w === undefined ? 520 : size(item.w, at(path, 'w'));
+        const title = item.title === undefined ? '' : codeTitle(item.title, at(path, 'title'));
+        for (const key of ['lines', 'wrap']) {
+          if (item[key] !== undefined && typeof item[key] !== 'boolean') throw invalid(at(path, key), 'Must be a boolean');
+        }
+        Object.assign(fields, {
+          w, text: content, lang: item.lang === undefined ? 'plaintext' : codeLang(item.lang, at(path, 'lang')),
+          lines: item.lines === true, wrap: item.wrap === true,
+          ...(title ? { title } : {}),
+        });
+        fields.h = item.h === undefined ? codeHeightEstimate(content, w, { title: Boolean(title), wrap: fields.wrap, lines: fields.lines }) : size(item.h, at(path, 'h'));
       } else if (type === 'table') {
         // a table (docs/tables.md): `rows` is a grid of cell texts (inline Markdown); the size is an estimate that the app corrects when the board opens
         const grid = tableGrid(required(item, 'rows', path), at(path, 'rows'));
@@ -1366,7 +1468,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
         const content = text(required(item, 'text', path), at(path, 'text'), 1, LIMITS.text);
         const w = item.w === undefined ? 240 : size(item.w, at(path, 'w'));
         const fontSize = item.fontSize === undefined ? undefined : num(item.fontSize, at(path, 'fontSize'), LIMITS.fontMin, LIMITS.fontMax);
-        Object.assign(fields, { w, h: textHeight(content, w, fontSize ?? 20), text: content, fontSize });
+        Object.assign(fields, { w, h: textHeight(content, w, fontSize ?? 20, lineHeight ?? 1.3), text: content, fontSize, lineHeight });
       } else {
         Object.assign(fields, dims(960, 600), {
           name: text(required(item, 'name', path), at(path, 'name'), 1, LIMITS.name),
@@ -1394,7 +1496,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
       }
     }
     ops.push({ op: 'create', id, fields });
-    created.push({ ...(item.ref === undefined ? {} : { ref: item.ref }), id, type });
+    created.push({ ...(item.ref === undefined ? {} : { ref: item.ref }), id, type: kind === 'line' || fields.line === true ? 'line' : type });
   });
 
   for (const start of parents.keys()) {
@@ -1418,10 +1520,11 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
 
 const BOX_FIELDS = ['x', 'y', 'w', 'h', 'rotation', 'parent', 'flipX', 'flipY'];
 const UPDATABLE = {
-  sticky: [...BOX_FIELDS, 'text', 'color'],
-  shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth'],
-  text: [...BOX_FIELDS, 'text', 'fontSize', 'textColor'],
-  markdown: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'fill'],
+  sticky: [...BOX_FIELDS, 'text', 'color', 'lineHeight'],
+  shape: [...BOX_FIELDS, 'text', 'kind', 'fill', 'stroke', 'strokeWidth', 'lineHeight'],
+  text: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'lineHeight'],
+  markdown: [...BOX_FIELDS, 'text', 'fontSize', 'textColor', 'fill', 'lineHeight'],
+  code: [...BOX_FIELDS, 'text', 'lang', 'title', 'lines', 'wrap'],
   // a table's size follows its columns and rows, so w and h are not set here; `rows` replaces every cell (docs/tables.md)
   table: ['x', 'y', 'rotation', 'parent', 'flipX', 'flipY', 'headerRow', 'headerCol', 'fontSize', 'rows'],
   frame: [...BOX_FIELDS, 'name', 'fill'],
@@ -1446,11 +1549,12 @@ const UPDATABLE = {
   card: [],
 };
 const KNOWN_UPDATE_FIELDS = new Set([
-  ...BOX_FIELDS, 'id', 'type', 'text', 'color', 'kind', 'fill', 'stroke', 'strokeWidth', 'name', 'fontSize', 'textColor',
+  ...BOX_FIELDS, 'id', 'type', 'text', 'color', 'kind', 'fill', 'stroke', 'strokeWidth', 'name', 'fontSize', 'textColor', 'lineHeight',
   'from', 'to', 'label', 'route', 'startHead', 'endHead', 'dash', 'rank', 'title', 'description', 'due', 'labels', 'link',
   'ownerId', 'ownerName', 'ownerKind', 'stage', 'wip', 'wipMode', 'laneW', 'layout', 'rows', 'headerRow', 'headerCol',
+  'lang', 'lines', 'wrap',
 ]);
-const CLEARABLE = new Set(['parent', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'textColor', 'dash', 'label']);
+const CLEARABLE = new Set(['parent', 'fill', 'stroke', 'strokeWidth', 'fontSize', 'textColor', 'lineHeight', 'dash', 'label']);
 const GROUP_NAME_MAX = 80;
 
 const sameValue = (a, b) => (typeof a === 'object' || typeof b === 'object' ? JSON.stringify(a) === JSON.stringify(b) : a === b);
@@ -1497,7 +1601,9 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
     for (const key of fields) {
       const fieldPath = at(path, key.slice(0, 40));
       if (key === 'type') throw invalid(fieldPath, 'The type cannot change');
-      if (!allowed.includes(key)) throw invalid(fieldPath, `field_not_allowed_for_type: ${key.slice(0, 40)} cannot be changed on this object`);
+      // a line also takes a stroke width; a plain connector does not
+      const lineWidth = key === 'strokeWidth' && current.type === 'connector' && current.line === true;
+      if (!allowed.includes(key) && !lineWidth) throw invalid(fieldPath, `field_not_allowed_for_type: ${key.slice(0, 40)} cannot be changed on this object`);
       const v = patch[key];
       if (v === null) {
         if (!CLEARABLE.has(key)) throw invalid(fieldPath, 'Cannot be cleared');
@@ -1521,7 +1627,13 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
           sets.set('h', grid.length * 40);
           break;
         }
-        case 'text': sets.set(key, text(v, fieldPath, current.type === 'text' || current.type === 'markdown' ? 1 : 0, LIMITS.text)); break;
+        case 'text': sets.set(key, current.type === 'code' ? text(v, fieldPath, 0, MAX_CODE_CHARS) : text(v, fieldPath, current.type === 'text' || current.type === 'markdown' ? 1 : 0, LIMITS.text)); break;
+        case 'lang': sets.set(key, codeLang(v, fieldPath)); break;
+        case 'title': sets.set(key, codeTitle(v, fieldPath)); break;
+        case 'lines': case 'wrap':
+          if (typeof v !== 'boolean') throw invalid(fieldPath, 'Must be a boolean');
+          sets.set(key, v);
+          break;
         case 'name': sets.set(key, text(v, fieldPath, 1, current.type === 'group' ? GROUP_NAME_MAX : LIMITS.name)); break;
         case 'label': sets.set(key, text(v, fieldPath, 0, LIMITS.label)); break;
         case 'color': sets.set('fill', colour(v, fieldPath, { names: true })); break;
@@ -1529,6 +1641,7 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         case 'textColor': sets.set(key, colour(v, fieldPath)); break;
         case 'strokeWidth': sets.set(key, num(v, fieldPath, 0, LIMITS.strokeMax)); break;
         case 'fontSize': sets.set(key, num(v, fieldPath, LIMITS.fontMin, LIMITS.fontMax)); break;
+        case 'lineHeight': sets.set(key, num(v, fieldPath, 0.8, 3)); break;
         case 'kind': sets.set(key, choice(v, SHAPE_KINDS, fieldPath)); break;
         case 'route': sets.set(key, choice(v, ROUTES, fieldPath)); break;
         case 'startHead': case 'endHead': sets.set(key, choice(v, HEADS, fieldPath)); break;
@@ -1552,6 +1665,13 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
         default: throw invalid(fieldPath, 'Unknown field');
       }
     }
+    // a line stays a line only while both ends are free and its route is straight; otherwise it is an ordinary connector
+    if (current.type === 'connector' && current.line === true) {
+      const from = sets.get('from') ?? current.from;
+      const to = sets.get('to') ?? current.to;
+      const route = sets.has('route') ? sets.get('route') : current.route;
+      if (from?.kind !== 'free' || to?.kind !== 'free' || (route !== undefined && route !== 'straight')) unsets.add('line');
+    }
     if (sets.has('parent')) {
       pendingParent.set(id, sets.get('parent'));
       let cursor = sets.get('parent');
@@ -1563,17 +1683,25 @@ export function planUpdate(doc, updates, { now = Date.now() } = {}) {
       pendingParent.set(id, undefined);
     }
     // a text object's height follows its text, as in the app
-    if (current.type === 'text' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize'))) {
+    if (current.type === 'text' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize') || sets.has('lineHeight') || unsets.has('lineHeight'))) {
       const content = sets.get('text') ?? current.text ?? '';
       const w = sets.get('w') ?? current.w;
       const fontSize = unsets.has('fontSize') ? 20 : (sets.get('fontSize') ?? current.fontSize ?? 20);
-      sets.set('h', textHeight(content, w, fontSize));
+      const lineHeight = unsets.has('lineHeight') ? 1.3 : (sets.get('lineHeight') ?? current.lineHeight ?? 1.3);
+      sets.set('h', textHeight(content, w, fontSize, lineHeight));
     }
 
     // a Markdown block's height follows its source until a person sets one, like a text object's
-    if (current.type === 'markdown' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize'))) {
+    if (current.type === 'markdown' && !sets.has('h') && (sets.has('text') || sets.has('w') || sets.has('fontSize') || sets.has('lineHeight') || unsets.has('lineHeight'))) {
       const fontSize = unsets.has('fontSize') ? 16 : (sets.get('fontSize') ?? current.fontSize ?? 16);
-      sets.set('h', markdownHeightEstimate(sets.get('text') ?? current.text ?? '', sets.get('w') ?? current.w, fontSize));
+      const lineHeight = unsets.has('lineHeight') ? 1.45 : (sets.get('lineHeight') ?? current.lineHeight ?? 1.45);
+      sets.set('h', markdownHeightEstimate(sets.get('text') ?? current.text ?? '', sets.get('w') ?? current.w, fontSize, lineHeight));
+    }
+
+    // a code block's height follows its code until a person sets one
+    if (current.type === 'code' && !sets.has('h') && ['text', 'w', 'title', 'lines', 'wrap'].some((k) => sets.has(k) || unsets.has(k))) {
+      const pick = (k, d) => (sets.has(k) ? sets.get(k) : current[k] ?? d);
+      sets.set('h', codeHeightEstimate(pick('text', ''), pick('w', current.w), { title: Boolean(pick('title', '')), wrap: pick('wrap', false) === true, lines: pick('lines', false) === true }));
     }
 
     let changed = false;

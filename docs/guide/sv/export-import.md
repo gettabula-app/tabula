@@ -4,7 +4,7 @@ Du kan spara en tavla som en bild, en fil som du kan öppna igen eller text. Du 
 
 ## Exportera
 
-Öppna tavlans meny (knappen **Menu** (Meny) med tre punkter längst upp till höger). Avsnittet **Export** (Exportera) visar alla format. Om du har markerat objekt heter rubriken **Export selection** (Exportera markering), och PNG, SVG och JSON innehåller de objekten, innehållet i markerade ramar eller grupper och kopplingslinjer mellan exporterade objekt.
+Öppna tavlans meny (knappen **Menu** (Meny) med tre punkter längst upp till höger). **Export** (Exportera) öppnar en undermeny som visar alla format. Du kan också hitta en export med **Search actions** (Sök åtgärder) överst i menyn. Om du har markerat objekt heter rubriken **Export selection** (Exportera markering), och PNG, SVG och JSON innehåller de objekten, innehållet i markerade ramar eller grupper och kopplingslinjer mellan exporterade objekt.
 
 | Objekt | Resultat |
 |---|---|
@@ -81,6 +81,14 @@ Diagrammet blir redigerbara former och kopplingslinjer till höger om befintligt
 ### Klistra in text och objekt
 
 Om du klistrar in vanlig text på tavlan skapas ett textobjekt där radbrytningarna bevaras. Lång text radbryts vid en bestämd bredd. Om du klistrar in objekt som kopierats från en annan Tabula-tavla (`Ctrl+C`, `Ctrl+V`) placeras de vid pekaren.
+
+### Vad en import ändrar och vägrar
+
+Det som kommer in från en fil eller en inklistring från en annan tavla blir ditt: du blir upphovsperson, kortägare som inte finns på tavlan tas bort (namnet finns kvar som text) och spårarlänkar lämnas kvar. Andras röster och omröstningssvar importeras inte. Länkar i länkkort och Markdown-block behåller bara adresser som börjar med `http`, `https`, `mailto` och länkar inom tavlan.
+
+Stora importer skrivs i flera steg medan sidan visar ”Importing… n of m” (Importerar… n av m). Om servern inte kan nås sparas importen på din enhet och skickas när du är online igen. **Remove imported content** (Ta bort importerat innehåll) tar tillbaka en import och behåller det du har ändrat sedan dess. Hela importen är ett enda steg för Ångra.
+
+Vissa filer vägras med ett meddelande: en fil över 100 MiB, en som packas upp till mer än 512 MiB, en tavla med fler än 50 000 objekt, en fil i ett nyare format och en skadad fil. En tabell med över 100 rader, 30 kolumner eller 150 000 tecken utelämnas, och meddelandet säger det.
 
 ## Relaterat
 

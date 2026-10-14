@@ -205,4 +205,29 @@ describe('tracker REST route handlers', () => {
       views: [], me: { canWrite: true, canCreate: true },
     });
   });
+
+  it('a saved view returns only the tickets the viewer can read, and another person\'s private view is not found', () => {
+    const { directory, owner, member, call } = fixture();
+    const guest = directory.createUser({ email: 'guest@example.com', name: 'Guest Person', role: 'guest' })!;
+    call('POST', 'tracker/tickets', owner, { title: 'Saved view ticket one', idempotencyKey: 'saved-view-scope-1' });
+    call('POST', 'tracker/tickets', owner, { title: 'Saved view ticket two', idempotencyKey: 'saved-view-scope-2' });
+    const [sharedStatus, shared] = call('POST', 'tracker/views', owner, { name: 'Shared scope view', filter: [], shared: true }) as [number, any];
+    const [, priv] = call('POST', 'tracker/views', owner, { name: 'Owner only scope view', filter: [], shared: false }) as [number, any];
+    expect(sharedStatus).toBe(201);
+
+    const [runStatus, run] = call('GET', `tracker/views/${shared.view.id}/tickets`, member) as [number, any];
+    expect(runStatus).toBe(200);
+    const [, listed] = call('GET', 'tracker/tickets', member) as [number, any];
+    const keys = (rows: Array<{ key: string }>) => rows.map((row) => row.key).sort();
+    expect(keys(run.tickets)).toEqual(keys(listed.tickets));
+    expect(keys(run.tickets)).toHaveLength(2);
+
+    let guestError: any;
+    try { call('GET', `tracker/views/${shared.view.id}/tickets`, guest); } catch (error) { guestError = error; }
+    expect(guestError).toMatchObject({ code: 'not_found' });
+
+    let privateError: any;
+    try { call('GET', `tracker/views/${priv.view.id}/tickets`, member); } catch (error) { privateError = error; }
+    expect(privateError).toMatchObject({ code: 'not_found' });
+  });
 });

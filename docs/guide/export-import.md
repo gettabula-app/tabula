@@ -4,7 +4,7 @@ You can save a board as an image, a file you can reopen, or text. You can also b
 
 ## Export
 
-Open the board menu (the three-dot **Menu** button at the top right). The **Export** section lists every format. If you have items selected, the heading reads **Export selection** and PNG, SVG and JSON contain those items, contents of selected frames or groups, and connectors between exported items.
+Open the board menu (the three-dot **Menu** button at the top right). **Export** opens a submenu that lists every format; you can also find an export with **Search actions** at the top of the menu. If you have items selected, the heading reads **Export selection** and PNG, SVG and JSON contain those items, contents of selected frames or groups, and connectors between exported items.
 
 | Item | What you get |
 |---|---|
@@ -81,6 +81,14 @@ The diagram becomes editable shapes and connectors, placed to the right of exist
 ### Paste text and objects
 
 Pasting plain text on the board creates one text object with your line breaks kept; long text wraps at a set width. Pasting objects copied from another Tabula board (`Ctrl+C`, `Ctrl+V`) places them at your pointer.
+
+### What an import changes and refuses
+
+What comes in from a file or a paste from another board is yours: you become the author, card owners who are not on the board are cleared (their name stays as text), and tracker links are left behind. Other people's votes and poll answers are not imported. Links in link cards and Markdown blocks keep only `http`, `https`, `mailto` and in-board addresses.
+
+Big imports are written in several steps while the page shows "Importing… n of m". If the server cannot be reached, the import is kept on your device and sent when you are back online. **Remove imported content** takes an import back and keeps what you changed since. The whole import is one Undo step.
+
+Some files are refused with a message: a file over 100 MiB, one that unpacks to more than 512 MiB, a board with more than 50,000 objects, a file in a newer format, and a damaged file. A table over 100 rows, 30 columns or 150,000 characters is left out, and the message says so.
 
 ## Related
 

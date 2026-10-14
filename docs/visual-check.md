@@ -122,7 +122,7 @@ States share one relay and one seeded board, so the seeded board is put back to 
 | `chat-object` | The board's Chat tab with two object chips (one that goes to a sticky, one whose object is gone) and an object attached to the message being written |
 | `chat-session` | (TAB-243) A running dot vote with the Chat tray open: the session bar waits so the message box stays on screen |
 | `chat-poll` | (TAB-243) A running poll with the Chat tray open: the poll card and facilitator bar wait in place until the tray closes |
-| `chat-notifications` | The **Chat notifications** dialog opened from the Chat page |
+| `chat-notifications` | The **Notification settings** dialog opened from the Chat page |
 
 A state is one small function in `scripts/visual-check.mjs`; add one there and it becomes a `--states` value. It should wait for something it can name (a role, an `aria-label`, a class), not for a pause. A state whose page is longer than the window and whose point is the whole page goes in `FULL_PAGE`, which makes its shots full-page; a state that needs answers the throwaway relay cannot give routes them with Playwright (`mockBackups`). After a state the script parks the mouse in a corner and blurs the focused control; a state that must keep the mouse down or an input focused returns `{ noPark: true }`. `resize-guides-size` holds the mouse down so the overlay can be checked before pointer up. The kanban seed stores card heights with the board's fonts loaded (`window.__kanban.cardContentHeight`), as the app does.
 
@@ -150,9 +150,10 @@ Each shot also checks that the page is not wider than the window and that no scr
 `npm run docs:images` re-creates the screenshots of the README and the user guide in `docs/images` (the user guide serves its screenshots from the same folder, so there is one copy) from the built app. It starts throwaway open-mode and accounts-mode relays on OS-assigned loopback ports, seeds fixed demo data (the board objects, a Design team with Maya and Ana, Sam in a second team, the boards and shares the shots need) and takes each image in a fresh headless context at 2x with the clock, locale, zone and theme fixed. The Chat tray uses a separate accounts-mode relay so enabling chat cannot change the other images. Its synthetic user IDs, messages, replies, mention, reaction and object links are fixed in real chat storage; retention is disabled in that throwaway workspace so the fixed dates never expire. The Backups tab uses a fixed list response with one protected backup and two unreadable backups; it needs no storage bucket or encryption key.
 
 ```bash
-npm run docs:images                                  # all sixteen, into docs/images
+npm run docs:images                                  # the sixteen guide images, into docs/images (the README hero is `npm run docs:hero`)
 npm run docs:images -- --only share-roles,signin     # some of them
 npm run docs:images -- --out /tmp/shots --no-build   # elsewhere, reusing dist/
+npm run docs:hero                                   # docs/images/readme-hero.png (the Q4 delivery kanban, 1600 x 760)
 ```
 
 The images are: `shapes-panel`, `quick-actions`, `text-options`, `locked-badge`, `themes-menu-matrix`, `theme-ayu`, `business-model-canvas` (written as `template-business-model-canvas.png`), `signin`, `teams-home`, `access-removed`, `share-roles`, `admin-backups`, `chat-tray`, `chat-page`, `kanban-card-dialog` and `layers-panel`. Change the code in `scripts/docs-images.mjs` when the UI moves; look at every image after a run, because a crop that was right can pick up a new bar or badge. Fontshare fonts are fetched once per run; offline, the shots use the system fonts.

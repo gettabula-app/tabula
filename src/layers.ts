@@ -9,15 +9,17 @@
 // Node contract (docs/groups.md, "The layers panel"): a container node has `expandable`, `expanded` and `childCount`; its
 // children follow it with `depth + 1`. Groups will be one more container type: `CONTAINERS` is the hook.
 import { markdownTitle } from './markdown';
+import { codeLayerLabel } from './code-strings';
 import { generateNKeysBetween } from 'fractional-indexing';
 import type { Id, Obj } from './types';
 import type { ZPatch } from './z-order';
+import { lineFlag } from './line-geometry';
 
 /** Types whose `parent` children nest under them in the panel. Groups join here (docs/groups.md). */
 export const CONTAINERS = new Set<string>(['frame', 'container', 'lane']);
 
 export const TYPE_LABEL: Record<string, string> = {
-  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', table: 'Table', frame: 'Frame', tracker: 'Tracker', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
+  shape: 'Shape', sticky: 'Sticky note', text: 'Text', markdown: 'Markdown block', code: 'Code block', table: 'Table', frame: 'Frame', tracker: 'Tracker', icon: 'Icon', image: 'Image', path: 'Drawing', connector: 'Connector',
   container: 'Board', lane: 'Lane', card: 'Card', group: 'Group',
   'uml-class': 'Class', 'uml-actor': 'Actor', 'uml-usecase': 'Use case', 'uml-lifeline': 'Lifeline', 'uml-note': 'Note',
   'uml-package': 'Package', 'uml-state': 'State', 'uml-initial': 'Initial node', 'uml-final': 'Final node', 'uml-component': 'Component',
@@ -61,12 +63,16 @@ export function layerLabel(o: Obj): string {
   if (named) return named.slice(0, NAME_MAX);
   const raw = (o as { text?: unknown }).text;
   // a Markdown block is named by its first heading or line, not by its marks
+  if (o.type === 'code') return codeLayerLabel(o as { title?: unknown; text?: unknown });
   const text = typeof raw === 'string' ? (o.type === 'markdown' ? markdownTitle(raw, LABEL_MAX) : oneLine(raw)) : '';
   if (text) return text.length > LABEL_MAX ? `${text.slice(0, LABEL_MAX - 1)}…` : text;
   // a frame whose name was emptied draws no title on the board; this is only what the list and a screen reader say
   if (o.type === 'frame' && typeof (o as { name?: unknown }).name === 'string') return UNTITLED_FRAME;
-  return TYPE_LABEL[o.type] ?? 'Object';
+  return lineLike(o) ? 'Line' : TYPE_LABEL[o.type] ?? 'Object';
 }
+
+/** A line is a connector with both ends free: it is listed and described as a Line. */
+const lineLike = (o: Obj) => o.type === 'connector' && lineFlag(o);
 
 /** A name as the field stores it: one line, at most 80 characters; empty clears it (the label falls back). */
 export function cleanName(raw: string): string | undefined {

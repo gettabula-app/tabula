@@ -428,8 +428,13 @@ export function mountHistory(app: BoardApp, chrome: HTMLElement): { open: () => 
         { label: 'Cancel', onClick: () => finish(null) },
         { label: 'Save', primary: true, onClick: () => (submit() ? undefined : false) },
       ]);
+      // the dialog's own focus move waits a frame; a key typed in that frame (a quick typist, a scripted take) must already reach the name field
+      input.focus();
       input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.isComposing && submit()) dlg.close();
+        if (e.key !== 'Enter' || e.isComposing) return;
+        // the dialog closes and focus goes back to the Save version button: without this the same Enter then presses that button and opens the dialog again
+        e.preventDefault();
+        if (submit()) dlg.close();
       });
     });
   }

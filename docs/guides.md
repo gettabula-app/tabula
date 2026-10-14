@@ -130,10 +130,17 @@ The query is skipped while the proposed width or height is below the 8 px minimu
 - **Aspect-locked corners** show guides while the dragged edge snaps; the opposite corner stays fixed and the other edge follows the ratio. Rotated objects use axis-aligned bounds as references but have no resize guides, as they have no resize grid snap today.
 - **Multi-select** moves as one rectangle, the union of the selection's bounds. Locked objects are not in the selection, but stay as references. Carried frame children are part of the moving set and are never references during that drag.
 - **Hidden notes.** Objects that private writing hides (`flow.isHidden`) are never references, so their positions cannot leak through a guide.
-- **Pointer drags only.** Arrow-key nudging, the create drag, the pen and connector endpoints are unchanged.
+- **Pointer drags only.** Arrow-key nudging, the pen and the connector tool are unchanged. The corner dragged out by a drawing tool (`createCorner`) snaps like a resize from that corner: guides first on each axis, the grid where no guide matches, no guides with Alt, Shift (a square) or the kanban tool; the preview and the drop use the same function, so the object lands where the preview showed. A text's corner handles scale its type in whole points (`doTextScale`), so they show the size readout but do not snap to guides; its side handles (the wrap width) do.
+- **Size readout.** While a resize or a drawing drag runs, a small pill ("320 × 180", whole numbers, the `.drag-pill` of the axis lock) follows the pointer 16 px below and right of it; it is removed on release.
 - **Alt** disables guides, markers and the grid together. The shortcut list in the board menu already reads "Alt while dragging: Ignore grid and guides" and stays accurate.
 - **Touch** has no Alt, so guides are always on there, as they are today.
 - **Performance.** Alignment and size lookup use binary searches, `O(log n + k)` including the matching references they report. The spacing pass filters the row and column from the viewport-filtered set with one linear sweep, sorts the `m` row members, and sweeps again, so it is `O(n_view + m log m)`. With `n_view` around 1000 that is a few thousand comparisons per pointer move.
+
+## Axis lock
+
+Holding the lock key (Cmd on a Mac, Ctrl elsewhere; `lockKeyHeld`, `src/axis-lock.ts`) in a move drag or an endpoint drag keeps the movement on one axis. Cmd and Ctrl already mean other things only at the press (Cmd/Ctrl+click on a link card opens it, a Markdown link opens), so a drag started on one of those never begins; a drag that begins without the key can take it later. On a Mac Ctrl is not the lock key because Ctrl-click is the context menu.
+
+`stepAxisLock` waits for 6 screen px of pointer movement after the key went down, then picks the axis the pointer moved more on (a tie is horizontal) and keeps it until the key is released; releasing forgets it and the next press engages afresh. `lockedOffset` keeps the other coordinate where it was when the lock engaged (the object itself while the axis is undecided), so engaging and releasing never move the object, and a lock held from the press starts at the object's start point. Guides and grid snap apply along the locked axis only, and marks for the other axis are not drawn. The overlay field `axisLock` draws the 1px dashed line across the view at 40% opacity; the pill (`.drag-pill`) follows the pointer and the change is announced once. Cmd/Ctrl going down or up without the pointer moving re-runs the last move (`onLockKey`). Touch and keyboard have no equivalent.
 
 ## Rendering
 
