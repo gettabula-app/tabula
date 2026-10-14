@@ -1,5 +1,5 @@
 import { ticketAccess } from './access.mjs';
-import { actorInfo, getDb, invalid, limitExceeded, OpsError, utcStartOfDay, validCalendarDate } from './shared.mjs';
+import { actorInfo, getDb, PRIORITIES, invalid, limitExceeded, OpsError, utcStartOfDay, validCalendarDate } from './shared.mjs';
 
 const COMMENT_COUNT_LIMIT = 10_000;
 const INDEX_BYTES_LIMIT = 64 * 1024;
@@ -403,16 +403,34 @@ function makeRankedCte({ query, filters, actor, db, now, useFts }) {
   const joins = useFts ? 'JOIN matched ON matched.ticket_id = t.id JOIN ticket_search ON ticket_search.rowid = matched.rowid LEFT JOIN title_matches ON title_matches.rowid = matched.rowid' : '';
   const sql = `WITH ${ftsCtes} ranked AS (
     SELECT t.id, t.key, t.title, t.description, t.state_id, t.assignee_user_id, t.project_id, t.milestone_id,
-      t.due_date, t.created_at, t.updated_at, t.updated_seq, t.archived_at,
+      t.due_date, t.created_at, t.updated_at, t.updated_seq, t.archived_at, t.priority, t.estimate,
       fs.state_key, fs.name AS state_name, fs.category, au.name AS assignee_name,
+      pr.name AS project_name, ms.name AS milestone_name, ms.due_at AS milestone_due_at,
       ${rank} AS rank_bucket${useFts ? ', ticket_search.rowid AS search_rowid' : ', NULL AS search_rowid'}
     FROM tickets t
     JOIN ticket_states fs ON fs.id = t.state_id
     LEFT JOIN users au ON au.id = t.assignee_user_id
+    LEFT JOIN projects pr ON pr.id = t.project_id
+    LEFT JOIN milestones ms ON ms.id = t.milestone_id
     ${joins}
     WHERE ${clauses.join(' AND ')}
   )`;
   return { sql, params: [...ftsParams, ...rankParams, ...filterParams], rawQuery, termsQuery, useFts };
+}
+
+/** The same label rows a full ticket carries, for one page of tickets in a single query. */
+function labelsByTicket(db, ids) {
+  const byTicket = new Map();
+  if (!ids.length) return byTicket;
+  const rows = db.prepare(
+    `SELECT tl.ticket_id, l.id, l.name, l.color FROM ticket_labels tl JOIN labels l ON l.id = tl.label_id
+      WHERE tl.ticket_id IN (${ids.map(() => '?').join(', ')}) AND l.archived_at IS NULL ORDER BY l.name COLLATE NOCASE, l.id`,
+  ).all(...ids);
+  for (const row of rows) {
+    if (!byTicket.has(row.ticket_id)) byTicket.set(row.ticket_id, []);
+    byTicket.get(row.ticket_id).push({ id: row.id, name: row.name, color: row.color ?? null });
+  }
+  return byTicket;
 }
 
 /** @param {any} options */
@@ -451,6 +469,7 @@ function runTicketSearch({ directory, db: dbArg, actor, query = '', filters = []
   ).all(...cte.params, ...pageParams, limit + 1);
   const hasMore = rows.length > limit;
   const page = rows.slice(0, limit);
+  const labels = labelsByTicket(db, page.map((row) => row.id));
   return {
     entries: page.map((row) => ({
       id: row.id,
@@ -458,7 +477,13 @@ function runTicketSearch({ directory, db: dbArg, actor, query = '', filters = []
       title: row.title,
       state: { key: row.state_key, name: row.state_name, category: row.category },
       assignee: row.assignee_user_id ? { userId: row.assignee_user_id, name: row.assignee_name } : null,
-      project: null,
+      priority: PRIORITIES[row.priority] ?? 'none',
+      labels: labels.get(row.id) ?? [],
+      project: row.project_id ? { id: row.project_id, name: row.project_name } : null,
+      milestone: row.milestone_id
+        ? { id: row.milestone_id, name: row.milestone_name, due: row.milestone_due_at == null ? null : new Date(row.milestone_due_at).toISOString().slice(0, 10) }
+        : null,
+      estimate: row.estimate ?? null,
       due: row.due_date,
       archivedAt: row.archived_at,
       updatedAt: row.updated_at,

@@ -4,7 +4,7 @@ import { OpsError } from '../server/board-ops.mjs';
 import { refreshTicketSearch, buildFtsQuery, SEARCH_LIMITS } from '../server/tracker/search.mjs';
 import { createMilestone, createProject } from '../server/tracker/projects.mjs';
 import { relateTickets } from '../server/tracker/relations.mjs';
-import { commentTicket, createLabel, createTicket, listTickets, searchTickets, transitionTicket, updateTicket } from '../server/tracker/tickets.mjs';
+import { commentTicket, createLabel, createTicket, getTicket, listTickets, searchTickets, transitionTicket, updateTicket } from '../server/tracker/tickets.mjs';
 
 const opened: any[] = [];
 const NOW = Date.UTC(2026, 9, 10, 12);
@@ -24,6 +24,32 @@ function fixture() {
 
 afterEach(() => {
   for (const directory of opened.splice(0)) directory.close();
+});
+
+describe('tracker list rows carry the same fields as the full ticket', () => {
+  it('shows priority, labels, project, milestone and estimate in list and search rows', () => {
+    const { directory, actor } = fixture();
+    createLabel({ directory, actor, name: 'Bug' });
+    createLabel({ directory, actor, name: 'Backend' });
+    const project = createProject({ directory, actor, name: 'Migration' });
+    createMilestone({ directory, actor, projectId: project.id, name: 'Cut-over', due: '2026-10-20' });
+    const full = createTicket({
+      directory, actor, title: 'Retry from the last commit', priority: 'high', labels: ['bug', 'backend'], project: 'Migration', now: NOW,
+    });
+    updateTicket({ directory, actor, key: full.key, patch: { milestone: 'Cut-over' }, now: NOW });
+    createTicket({ directory, actor, title: 'Plain row', now: NOW });
+    directory.db.prepare('UPDATE tickets SET estimate = 3 WHERE id = ?').run(full.id);
+    const detail = getTicket({ directory, actor, key: full.key });
+    const pick = (t: any) => ({ priority: t.priority, labels: t.labels, project: t.project, milestone: t.milestone, estimate: t.estimate });
+
+    const listed = listTickets({ directory, actor, now: NOW }).entries.find((t: any) => t.key === full.key);
+    const searched = searchTickets({ directory, actor, query: 'Retry', now: NOW }).entries.find((t: any) => t.key === full.key);
+    expect(detail.priority).toBe('high');
+    expect(pick(listed)).toEqual(pick(detail));
+    expect(pick(searched)).toEqual(pick(detail));
+    const plain: any = listTickets({ directory, actor, now: NOW }).entries.find((t: any) => t.title === 'Plain row');
+    expect(pick(plain)).toEqual({ priority: 'none', labels: [], project: null, milestone: null, estimate: null });
+  });
 });
 
 describe('tracker search filters and ranking', () => {
