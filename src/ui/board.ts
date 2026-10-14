@@ -211,6 +211,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     for (const [id, who] of agentNow) if (!knownAgents.has(id)) announce(`${who} is working on the board`, { key: 'presence', delay: 700, merge: true });
     for (const id of knownAgents.keys()) if (!agentNow.has(id)) announce(`${knownAgents.get(id)} finished`, { key: 'presence', delay: 700, merge: true });
     knownAgents = agentNow;
+    // on a phone the row is as wide as for people alone: agents take what the people leave, the rest count in the +N
+    const narrow = window.innerWidth < 480;
+    const agentSlots = narrow ? Math.max(0, limit - Math.min(ps.length, limit)) : 3;
+    const agentsShown = agents.slice(0, agentSlots);
+    const hiddenAgents = narrow ? agents.length - agentsShown.length : 0;
+    const more = remaining + hiddenAgents;
+    const moreLabel = hiddenAgents > 0 ? `${more} more here` : `${remaining} more people here`;
     people.replaceChildren(...ps.slice(0, limit).map((p) => {
       // someone with an AI run or preview on the board: the spark, and what they are doing as their name
       const busy = p.isMe ? null : badgeRun(p.user, runs);
@@ -222,21 +229,21 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       const props = { class: busy ? 'avatar ai-busy' : 'avatar', style: `--c:${p.user.color}`, 'data-tip': tip, 'aria-label': `${tip}, initials ${avatarText}` };
       if (p.isMe && !canEditProfile) return h('span', { ...props, role: 'img' }, ...children);
       return h('button', { ...props, onclick: () => (p.isMe ? openProfile(app) : app.followUser(p.clientId)) }, ...children);
-    }), ...(remaining > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': `${remaining} more people here`, 'data-tip': `${remaining} more people here` }, `+${remaining}`)] : []),
+    }), ...(more > 0 ? [h('span', { class: 'avatar more', role: 'img', 'aria-label': moreLabel, 'data-tip': moreLabel }, `+${more}`)] : []),
     // agents at work (TAB-158): after the people, with the spark; the token's own name quoted, never taking the place of who it works for
-    ...agents.slice(0, 3).map((a) => {
+    ...agentsShown.map((a) => {
       const tip = `${agentName(a)} “${a.token}” is working on this board${a.x !== null ? '. Go there' : ''}`;
       return h('button', { class: 'avatar ai-busy agent-avatar', style: '--c:var(--wire)', 'data-tip': tip, 'aria-label': tip, onclick: () => app.followAgent(a.id) }, glyph('spark', 14));
     }));
     const peopleLabel = ps.length === 1 ? 'People on this board: 1 person' : `People on this board: ${ps.length} people`;
-    phonePeople.hidden = ps.length < 2; // alone, the chip only repeats your own avatar; the menu still has your name and colour
+    phonePeople.hidden = ps.length + agents.length < 2; // alone, the chip only repeats your own avatar; the menu still has your name and colour. An agent at work makes it a list
     phonePeople.setAttribute('aria-label', peopleLabel);
     phonePeople.dataset.tip = peopleLabel;
     phonePeople.replaceChildren(
       h('span', { class: 'phone-people-avatars', 'aria-hidden': 'true' }, ...ps.slice(0, 2).map((p, index) => h('span', {
         class: `avatar phone-avatar${index === 0 ? ' first' : ''}`, style: `--c:${p.user.color}`,
       }, initials(p.user.name)))),
-      ...(ps.length > 2 ? [h('span', { class: 'phone-people-count', 'aria-hidden': 'true' }, `+${ps.length - 2}`)] : []),
+      ...(ps.length + agents.length > 2 ? [h('span', { class: 'phone-people-count', 'aria-hidden': 'true' }, `+${ps.length + agents.length - 2}`)] : []),
     );
   };
   phonePeople.addEventListener('click', () => {
@@ -261,6 +268,13 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
           else app.followUser(p.clientId);
         },
       }, ...children);
+    }), ...(typeof app.agents === 'function' ? app.agents() : []).map((a) => {
+      // an agent at work is in the full list too, even when the row had no room for its avatar
+      const tip = `${agentName(a)} “${a.token}” is working on this board`;
+      return h('button', {
+        class: 'menu-item phone-person-option agent-option', type: 'button', role: 'menuitem', 'aria-label': `${tip}${a.x !== null ? '. Go there' : ''}`,
+        onclick: () => { pop.close(); app.followAgent(a.id); },
+      }, h('span', { class: 'avatar phone-person-avatar ai-busy', style: '--c:var(--wire)', 'aria-hidden': 'true' }, glyph('spark', 14)), h('span', { class: 'phone-person-name' }, `${agentName(a)} “${a.token}”`));
     }));
     pop = popover(phonePeople, list, { side: 'bottom', className: 'phone-people-pop', label: 'People on this board' });
   });

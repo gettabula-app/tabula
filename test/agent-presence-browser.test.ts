@@ -176,5 +176,55 @@ describe.skipIf(!available)('the Agent activity panel', () => {
     expect(await page.locator('.agent-activity-row').count()).toBe(0);
     await page.close();
   });
+
+  it('keeps the people row within the phone limit: agents take what the people leave, the rest count in +N, and the chip lists them all', async () => {
+    const page = await browser!.newPage({ viewport: { width: 390, height: 800 } });
+    page.setDefaultTimeout(budget(45_000));
+    await page.goto(`${base}?debug#/b/ag-${Math.random().toString(36).slice(2, 8)}`);
+    await page.waitForFunction(() => (window as any).__board, null, { timeout: budget(20_000) });
+    const agents = ['abcdef012345', 'abcdef012346', 'abcdef012347', 'abcdef012348'].map((id, i) => ({ id, token: `Tok${i}`, member: 'Ada', x: 10 + i, y: 10 }));
+    await setAgents(page, agents);
+    await page.waitForFunction(() => document.querySelectorAll('.top-right .people .avatar').length > 0);
+    const row = await page.evaluate(() => ({
+      shown: document.querySelectorAll('.top-right .people .avatar:not(.more)').length,
+      agents: document.querySelectorAll('.top-right .people .agent-avatar').length,
+      more: document.querySelector('.top-right .people .avatar.more')?.textContent ?? null,
+      right: Math.max(...[...document.querySelectorAll('.top-right > *')].map((e) => e.getBoundingClientRect().right)),
+      width: window.innerWidth,
+    }));
+    expect(row.shown).toBeLessThanOrEqual(2); // people plus agents stay within the limit of 390 px
+    expect(row.agents).toBe(row.shown - 1);
+    expect(row.more).toBe(`+${agents.length - row.agents}`);
+    expect(row.right).toBeLessThanOrEqual(row.width);
+    // the chip is there and opens a list with every agent, shown or not
+    await page.locator('.phone-people').click();
+    await page.waitForFunction((n) => document.querySelectorAll('.phone-people-list .agent-option').length === n, agents.length);
+    await page.close();
+  });
 });
 
+describe.skipIf(!available)('agent draft label', () => {
+  it('is drawn with the canvas fill, a wire stroke and ink text, never white on the wire colour, and one label for drafts that touch', async () => {
+    const page = await open();
+    await page.evaluate(() => {
+      const app = (window as any).__board;
+      const by = { feature: 'agent', by: { id: 'u1', name: 'Ada' } };
+      app.store.transactAs(() => {
+        app.store.create({ id: 'd1', type: 'sticky', x: 100, y: 100, w: 192, h: 192, rotation: 0, z: app.store.topZ(), text: 'a', fill: '#FFE16B', proposedBy: by });
+        app.store.create({ id: 'd2', type: 'sticky', x: 110, y: 100, w: 192, h: 192, rotation: 0, z: app.store.topZ(), text: 'b', fill: '#FFE16B', proposedBy: by });
+      }, 'seed');
+      app.zoomToFit();
+    });
+    await page.waitForFunction(() => document.querySelectorAll('[data-agent-draft]').length === 2);
+    const marks = await page.evaluate(() => [...document.querySelectorAll('[data-agent-draft]')].map((g) => ({
+      outline: g.querySelectorAll('rect[stroke-dasharray]').length,
+      label: [...g.querySelectorAll('rect:not([stroke-dasharray])')].map((r) => [r.getAttribute('fill'), r.getAttribute('stroke')]),
+      text: [...g.querySelectorAll('text')].map((t) => [t.textContent, t.getAttribute('fill')]),
+    })));
+    expect(marks.map((m) => m.outline)).toEqual([1, 1]); // both keep the dashed outline
+    expect(marks[0]!.label).toEqual([['var(--canvas, #FFFFFF)', 'var(--wire, #2F6FED)']]);
+    expect(marks[0]!.text).toEqual([['Agent draft', 'var(--ink, #111111)']]);
+    expect(marks[1]!.label).toEqual([]); // it touches the first: no second label on top of it
+    await page.close();
+  });
+});

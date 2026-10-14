@@ -789,13 +789,20 @@ export class Renderer {
 
     // objects an agent drafted: a dashed outline and a small mark above the top left, in screen size, while they are big enough on screen to carry it
     if (ov.drafts.length && this.cam.zoom >= 0.35) {
+      // the label is canvas-filled with a wire stroke and ink text, so it reads on every theme (white on the wire colour does not); drafts that touch show one label, on the first
+      const labels: { x: number; y: number }[] = [];
       for (const id of ov.drafts) {
         const o = get(id);
         const b = o && this.bounds(o);
         if (!b) continue;
+        const lx = b.x - px(2);
+        const ly = b.y - px(20);
+        const crowded = labels.some((l) => Math.abs(l.x - lx) < px(78) && Math.abs(l.y - ly) < px(17));
+        if (!crowded) labels.push({ x: lx, y: ly });
         const mark = `<g pointer-events="none" data-agent-draft="${escapeXml(id)}"><rect x="${b.x - px(2)}" y="${b.y - px(2)}" width="${b.w + px(4)}" height="${b.h + px(4)}" fill="none" stroke="var(--wire, #2F6FED)" stroke-width="${px(1)}" stroke-dasharray="${px(4)} ${px(3)}"/>`
-          + `<rect x="${b.x - px(2)}" y="${b.y - px(20)}" width="${px(78)}" height="${px(17)}" fill="var(--wire, #2F6FED)"/>`
-          + `<text x="${b.x + px(4)}" y="${b.y - px(7.5)}" fill="#FFFFFF" font-family="var(--ui, system-ui, sans-serif)" font-size="${px(11)}" font-weight="600">Agent draft</text></g>`;
+          + (crowded ? '' : `<rect x="${lx}" y="${ly}" width="${px(78)}" height="${px(17)}" fill="var(--canvas, #FFFFFF)" stroke="var(--wire, #2F6FED)" stroke-width="${px(1)}"/>`
+            + `<text x="${b.x + px(4)}" y="${b.y - px(7.5)}" fill="var(--ink, #111111)" font-family="var(--ui, system-ui, sans-serif)" font-size="${px(11)}" font-weight="600">Agent draft</text>`)
+          + '</g>';
         out += mark;
       }
     }
