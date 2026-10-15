@@ -260,6 +260,14 @@ async function openBoard(page, base, id) {
   }, null, { timeout: 15_000 });
 }
 
+/** The Tracker is inserted from the Templates picker, next to Kanban (TAB-390); the rail has no Tracker button any more. */
+async function insertTracker(page) {
+  await page.getByRole('button', { name: 'Templates and team exercises' }).click();
+  await page.locator('.template-picker-card[data-command="tracker:create-frame"]').click();
+  await page.getByRole('button', { name: 'Use template' }).click();
+  await page.locator('.template-picker-dialog').waitFor({ state: 'detached', timeout: 10_000 });
+}
+
 const park = (page) => page.mouse.move(2, 2);
 const settle = async (page) => {
   await page.evaluate(() => document.fonts.ready);
@@ -1037,7 +1045,7 @@ const SHOTS = {
     const W = 1200, H = 720;
     const { context, page } = await newPage(browser, { base: trk.base, width: W, height: H, session: trkPeople.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
     await openBoard(page, trk.base, 'retro');
-    await page.getByRole('button', { name: 'Tracker', exact: true }).click();
+    await insertTracker(page);
     await page.getByText('Workspace tickets', { exact: true }).waitFor({ timeout: 20_000 });
     await page.getByText('Fix the login loop on Safari').waitFor({ timeout: 20_000 });
     await page.evaluate(() => {
@@ -1058,7 +1066,7 @@ const SHOTS = {
     const W = 1400, H = 760;
     const { context, page } = await newPage(browser, { base: trk.base, width: W, height: H, session: trkPeople.owner, user: { id: 'docs-maya', name: 'Maya', color: '#CE2C7D' } });
     await openBoard(page, trk.base, 'planning');
-    await page.getByRole('button', { name: 'Tracker', exact: true }).click();
+    await insertTracker(page);
     await page.getByText('Workspace tickets', { exact: true }).waitFor({ timeout: 20_000 });
     await page.evaluate(() => {
       const app = window.__board;
@@ -1127,7 +1135,8 @@ async function main() {
       acc = await startRelay('accounts', distDir);
       people = await seedAccounts(acc);
     }
-    let trk = null, trkPeople = null;
+    // trk is the outer variable (cleanup stops it); a second declaration here would shadow it and leave the relay running
+    let trkPeople = null;
     if (names.includes('tracker-board') || names.includes('tracker-board-lanes')) {
       trk = await startRelay('tracker', distDir);
       trkPeople = await seedTracker(trk);
