@@ -14,7 +14,7 @@ Fältet finns längst ned mitt på tavlan. Från vänster till höger innehålle
 - Modellen och en uppskattning av kostnaden, till exempel ”Sammanfatta · ~1,3k token”. Välj det för att se vilken modell administratören valde, vem som kan se att du skickar en begäran och ”Ungefär 1 300 token skickas in. Svaret begränsas till 8 000. Det är en uppskattning, inte en faktura.”
 - **Run** (Kör) och en knapp för att fälla ihop fältet.
 
-Ovanför dem finns de tre åtgärderna som knappar: **Summarise**, **Cluster** och **Generate ideas** (Skapa idéer). När du väljer en aktiveras den, och fältet visar kostnaden. En rad längst ned beskriver vad som skickas och vem som betalar, till exempel ”Tre markerade lappar skickas till Anthropic. Arbetsytans nyckel används.” Raden namnger vem som tar emot begäran: med en egen nyckel är det serverns adress i stället för Anthropic. På en telefon tar fältet upp hela bredden, instruktionen får en egen rad, och modellen och kostnaden flyttas ned till raden längst ned.
+Ovanför dem finns de tre åtgärderna som knappar: **Summarise**, **Cluster** och **Generate ideas** (Skapa idéer). När du väljer en aktiveras den, och fältet visar kostnaden. En rad längst ned beskriver vad som skickas och vem som betalar, till exempel ”Tre markerade lappar skickas till Anthropic. Arbetsytans nyckel används.” Raden namnger vem som tar emot begäran: med en OpenAI-kompatibel nyckel är det nyckelleverantörens adress i stället för Anthropic. På en telefon tar fältet upp hela bredden, instruktionen får en egen rad, och modellen och kostnaden flyttas ned till raden längst ned.
 
 Om du fäller ihop fältet visas en liten gnistknapp, **Ask AI** (Fråga AI). Välj den eller tryck på `Ctrl+K` (`Cmd+K` på Mac) för att öppna fältet igen.
 
@@ -35,7 +35,7 @@ Ett meddelande visas i fältet i stället för instruktionen, och inget på tavl
 - **AI is unavailable** (AI är inte tillgängligt): fältet och dess ingångar från tavlan visas inte. Arbetsytans ägare och administratörer kan konfigurera AI under **Admin → AI**.
 - **The key was rejected** (Nyckeln avvisades): ”AI-nyckeln avvisades. Be en administratör för arbetsytan att kontrollera den.”
 - **Too many requests** (För många begäranden): ”För många begäranden. Försök igen om 30 sekunder.” **Retry** (Försök igen) är nedtonad tills nedräkningen är klar.
-- **The provider is down or busy** (Leverantören är nere eller upptagen): ”Anthropic svarar inte. Försök igen om en liten stund.” Med en egen nyckel namnger meddelandet den servern i stället för Anthropic.
+- **The provider is down or busy** (Leverantören är nere eller upptagen): ”Anthropic svarar inte. Försök igen om en liten stund.” Med en OpenAI-kompatibel nyckel namnger meddelandet nyckelns leverantör i stället för Anthropic.
 - **The answer could not be used** (Svaret kunde inte användas): ”AI:s svar gick inte att använda. Inget ändrades.”
 
 Varje meddelande har knappen **Retry** där det är lämpligt och en knapp för att stänga det.
