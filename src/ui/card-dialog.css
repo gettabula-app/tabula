@@ -131,6 +131,7 @@
 
 /* TAB-372: the checklist under the description. A row is a grip (desktop, on hover), a 28px checkbox, the text and the tools
    (desktop, on hover or focus). At phone width the grip and the tools go, and one More button opens a small menu. */
+.k-checklist { padding-bottom: 12px; }
 .k-checklist [hidden] { display: none !important; }
 .k-cl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
 .k-cl-tail { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
