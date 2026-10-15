@@ -90,7 +90,7 @@ Clearing your browser data removes boards that were never synced. Export importa
 
 ## Your name and colour
 
-Your name and colour appear next to your cursor and on the notes you write. Click your own avatar, or choose **Your name and colour** in the board menu, then pick a name and a colour and choose **Save**. If your workspace uses sign-in, the name is your account name and is saved to the server. The colour stays on this device.
+Your name and colour appear next to your cursor and on the notes you write. Click your own avatar, or choose **Your name and colour** in the board menu, then pick a name and a colour and choose **Save**. If your workspace uses sign-in, the name is your account name and is saved to the server. The colour stays on this device. Your avatar shows the first letter of your name; if your name starts with an emoji, the whole emoji is the initial, the same for everyone who sees it.
 
 ## Keyboard shortcuts
 

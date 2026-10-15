@@ -90,7 +90,7 @@ Om du rensar webbläsardata tas tavlor som aldrig har synkroniserats bort. Expor
 
 ## Ditt namn och din färg
 
-Ditt namn och din färg visas bredvid markören och på lapparna du skriver. Klicka på din egen avatar eller välj **Your name and colour** i tavlans meny, välj sedan ett namn och en färg och välj **Save** (Spara). Om din arbetsyta kräver inloggning är namnet ditt kontonamn och sparas på servern. Färgen sparas på den här enheten.
+Ditt namn och din färg visas bredvid markören och på lapparna du skriver. Klicka på din egen avatar eller välj **Your name and colour** i tavlans meny, välj sedan ett namn och en färg och välj **Save** (Spara). Om din arbetsyta kräver inloggning är namnet ditt kontonamn och sparas på servern. Färgen sparas på den här enheten. Din avatar visar första bokstaven i ditt namn; om ditt namn börjar med en emoji är hela emojin initialen, likadant för alla som ser den.
 
 ## Kortkommandon
 
