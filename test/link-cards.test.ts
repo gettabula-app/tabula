@@ -57,6 +57,23 @@ describe('the letter icon', () => {
     expect(new Set(['a.test', 'b.test', 'c.test', 'd.test', 'e.test', 'f.test', 'g.test', 'h.test'].map(letterColour)).size).toBeGreaterThan(2);
   });
 
+  it('keeps a whole emoji as the letter, and draws "ilker" as "I" without asking a locale for the upper case', () => {
+    // Escapes keep the joiners visible in the source: ZWJ (U+200D), skin tone (U+1F3FD), regional indicators (U+1F1F8 U+1F1EA).
+    expect([letterOf('\u{1F98A}fox.test'), letterOf('\u{1F469}\u200D\u{1F4BB}dev.test'), letterOf('\u{1F44D}\u{1F3FD}ok.test'), letterOf('\u{1F1F8}\u{1F1EA}se.test')])
+      .toEqual(['\u{1F98A}', '\u{1F469}\u200D\u{1F4BB}', '\u{1F44D}\u{1F3FD}', '\u{1F1F8}\u{1F1EA}']);
+    // The stub is Turkish-style: i becomes İ (U+0130) before plain upper-casing, as a Turkish locale would draw it.
+    const turkish = vi.spyOn(String.prototype, 'toLocaleUpperCase')
+      .mockImplementation(function (this: string) { return String(this).replace(/i/gu, 'İ').toUpperCase(); });
+    try {
+      expect('i'.toLocaleUpperCase()).toBe('İ'); // the stub is live, so a helper that used it would print İ
+      turkish.mockClear();
+      expect([letterOf('ilker.com'), letterOf('www.ilker.com')]).toEqual(['I', 'I']);
+      expect(turkish).not.toHaveBeenCalled();
+    } finally {
+      turkish.mockRestore();
+    }
+  });
+
   it.each([...LETTER_COLOURS])('%s carries a white letter at 4.5:1 or more', (c) => {
     expect((luminance('#FFFFFF') + 0.05) / (luminance(c) + 0.05)).toBeGreaterThanOrEqual(4.5);
   });
