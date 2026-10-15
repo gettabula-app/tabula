@@ -161,6 +161,8 @@ export function fanOut({ db: dbArg, ticketId, eventId, eventType, actor, created
   const before = parseObject(event.before_json);
   const after = parseObject(event.after_json);
   const details = parseObject(event.details_json);
+  // only an AI token's bulk call collapses its notices; a person's own bulk edit in the app notifies as before
+  const batchId = actor?.type === 'mcp_token' && typeof details.batchId === 'string' && details.batchId.startsWith('bulk_') ? details.batchId : null;
   const actualEventType = event.event_type ?? eventType;
   const actorId = actorUserId(actor);
   const mentionedIds = actualEventType === 'commented' ? mentionedUserIds(db, ticketId, details) : [];
@@ -196,12 +198,15 @@ export function fanOut({ db: dbArg, ticketId, eventId, eventType, actor, created
     }
     const preference = notifyChoice(db, userId, kind);
     if (preference === 'off') continue;
+    // one bulk call changes many tickets: a person gets one notice for the whole batch, not one per ticket or per kind. The first
+    // ticket's notice is kept, so a later kind in the same batch (say status_changed after assigned) adds no row.
+    const dedupeKey = batchId ? `batch:${batchId}` : `ev:${eventId}`;
     db.prepare(
       `INSERT OR IGNORE INTO notifications
         (id, user_id, ticket_id, event_id, kind, dedupe_key, created_at, next_email_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      newId(), userId, ticketId, eventId, kind, `ev:${eventId}`, createdAt,
+      newId(), userId, ticketId, eventId, kind, dedupeKey, createdAt,
       preference === 'both' ? createdAt + EMAIL_GRACE_MS : null,
     );
   }
