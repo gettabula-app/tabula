@@ -8,4 +8,10 @@ describe('sign-in page field', () => {
     expect(rule).toContain('width: 100%');
     expect(rule).toContain('box-sizing: border-box');
   });
+
+  it('narrows only the field that sits inside the invite-recovery sentence (TAB-376): the form\'s own field fills the column', () => {
+    const source = readFileSync('src/ui/signin.ts', 'utf8');
+    expect(source).toContain("class: recoveryInvite && !initialEmail ? 'input signin-recovery-email' : 'input',");
+    expect(source).not.toMatch(/: 'input signin-recovery-email'/);
+  });
 });

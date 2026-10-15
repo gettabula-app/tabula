@@ -44,7 +44,8 @@ function lineWidthViolations(source: string): string[] {
       if (/^border(?:-(?:top|right|bottom|left))?$/.test(property) || property === 'border-width' || /^border-(?:top|right|bottom|left)-width$/.test(property) || property === 'outline' || property === 'outline-width') {
         const width = Number.parseFloat(value.match(/-?(?:\d+\.?\d*|\.\d+)px/)?.[0] ?? '0') ||
           (/\b(?:medium|thick)\b/i.test(value) || (property === 'outline' && /\bauto\b/i.test(value)) ? 3 : 0);
-        if (width > 1) {
+        // a focused field carries the app-wide 2px ring (TAB-374); every other line stays a hairline
+        if (width > 1 && !(property === 'outline' && /:focus/.test(selector))) {
           violations.push(`${selector}: ${property} ${value}`);
         }
       }

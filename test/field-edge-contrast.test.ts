@@ -40,15 +40,17 @@ describe('shared field edge styles', () => {
     expect(evergreenRulePercent).toBe(50);
     expect(styles).toMatch(/--field-rule:\s*color-mix\(in srgb, var\(--tray-text\) 58%, var\(--tray\)\);/);
     expect(evergreenRule).toMatch(/--field-rule:\s*color-mix\(in srgb, var\(--tray-text\) 50%, var\(--tray\)\);/);
-    expect(styles).toMatch(/\.input,\s*select,\s*textarea:not\(\.text-editor\),\s*\.combo\s*\{[^}]*background-color:[^}]*box-shadow:[^}]*inset 0 -1px 0 var\(--field-rule\)/);
-    expect(controls).toMatch(/\.combo\s*\{[^}]*box-shadow:[^}]*inset 0 -1px 0 var\(--field-rule\)/);
+    // TAB-374 (B2): the rule is a background line that stops at the corner radius, never a shadow cut by it
+    expect(styles).toMatch(/--rule-colour:\s*var\(--field-rule\);/);
+    expect(styles).toMatch(/\.input,\s*select,\s*textarea:not\(\.text-editor\),\s*\.combo\s*\{[^}]*background:\s*var\(--rule-image\),[^}]*box-shadow:\s*none/);
+    expect(controls).not.toMatch(/inset 0 -1px 0 var\(--field-rule\)/);
   });
 
   it('keeps strong edges on checkboxes, radios, switches, and the selected segmented thumb', () => {
     expect(styles).toMatch(/--field-edge-strong:\s*color-mix\(in srgb, var\(--tray-text\) 58%, var\(--tray\)\);/);
     expect(evergreenRule).toMatch(/--field-edge-strong:\s*color-mix\(in srgb, var\(--tray-text\) 50%, var\(--tray\)\);/);
     expect(styles).toMatch(/input\[type='checkbox'\],\s*input\[type='radio'\],\s*input\[role='switch'\],\s*\[role='switch'\]\s*\{\s*border:\s*1px solid var\(--field-edge-strong\);\s*\}/);
-    expect(styles).toMatch(/\.segmented\s*\{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--field-edge\),\s*inset 0 -1px 0 var\(--field-rule\)/);
+    expect(styles).toMatch(/\.segmented\s*\{[^}]*background:\s*var\(--rule-image-lg\),/);
     expect(styles).toMatch(/\.segmented button\.on\s*\{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--field-edge-strong\)/);
   });
 });

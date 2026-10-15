@@ -78,7 +78,8 @@ describe('accessibility audit follow-ups', () => {
     const boardName = styles.match(/\.board-name\s*\{([^}]*)\}/)?.[1] ?? '';
     const fieldFocus = styles.match(/\.input:focus,\s*select:focus,\s*textarea:not\(\.text-editor\):focus\s*\{([^}]*)\}/)?.[1] ?? '';
     expect(boardName).not.toMatch(/outline\s*:\s*none/);
-    expect(fieldFocus).toMatch(/box-shadow:\s*inset 0 0 0 1px var\(--field-edge-strong\),\s*0 0 0 3px color-mix\(in srgb, var\(--field-edge-strong\) 16%, transparent\)/);
+    // TAB-374 (B2): a focused field gets a 2px ring all round
+    expect(fieldFocus).toMatch(/outline:\s*2px solid var\(--tray-text\)/);
     const focusRingReplacesOutline = /box-shadow:\s*[^;]*inset 0 0 0 1px var\(--field-edge-strong\)[^;]*0 0 0 3px/.test(fieldFocus);
     const outlineRemoved = /outline:\s*(?:0|none)\s*;/.test(fieldFocus);
     const outlineDeclared = /outline:\s*[^;]+;/.test(fieldFocus);

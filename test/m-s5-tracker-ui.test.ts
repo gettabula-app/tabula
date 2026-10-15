@@ -16,7 +16,7 @@ describe('M-S5 tracker styling', () => {
 
   it('keeps selected rows soft, fields on a resting rule and sub-issue progress as a bar', () => {
     expect(trackerCss).toContain(".trk .trk-list-row[aria-selected='true'] { background: color-mix(in srgb, var(--trk-text) 6%, var(--trk-ground)); }");
-    expect(ticketCss).toContain('box-shadow: inset 0 -1px 0 var(--field-rule)');
+    expect(ticketCss).toContain('background: var(--rule-image), color-mix(in srgb, var(--trk-text) 4%, var(--trk-ground))');
     expect(ticketCss).toContain('.trk.tk-page .tk-subissue-meter { display: block; width: min(180px, 100%); height: 4px;');
     expect(ticketPage).toContain("role: 'progressbar'");
   });

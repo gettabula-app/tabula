@@ -136,15 +136,14 @@
 .trk.tk-page .tk-inline-input, .trk.tk-page .tk-description-input, .trk.tk-page .tk-comment-input {
   min-width: 0;
   border: 0;
-  box-shadow: inset 0 -1px 0 var(--field-rule);
   border-radius: var(--radius-sm, 8px);
-  background: color-mix(in srgb, var(--trk-text) 4%, var(--trk-ground));
+  background: var(--rule-image), color-mix(in srgb, var(--trk-text) 4%, var(--trk-ground));
   color: var(--trk-text);
 }
 .trk.tk-page .tk-inline-input { min-height: 28px; padding: 2px 8px; border-radius: var(--radius-sm, 8px); font-size: 13px; }
 .trk.tk-page .tk-inline-input[type='date'] { width: 148px; flex: none; }
 .trk.tk-page .tk-inline-field .tk-button { min-height: 28px; padding: 0 10px; border-radius: var(--radius-sm, 8px); font-size: 13px; }
-.trk.tk-page .tk-inline-input:focus-visible, .trk.tk-page .tk-description-input:focus-visible, .trk.tk-page .tk-comment-input:focus-visible { outline: 1px solid var(--trk-focus); outline-offset: 0; box-shadow: inset 0 0 0 1px var(--trk-focus); }
+.trk.tk-page .tk-inline-input:focus-visible, .trk.tk-page .tk-description-input:focus-visible, .trk.tk-page .tk-comment-input:focus-visible { outline: 2px solid var(--trk-focus); outline-offset: 2px; box-shadow: none; }
 .trk.tk-page .tk-description-input { width: 100%; min-height: 180px; padding: 12px; font-size: 14px; line-height: 1.55; resize: vertical; }
 .trk.tk-page .tk-description-body, .trk.tk-page .tk-description-preview { max-width: 720px; color: var(--trk-text); font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
 .trk.tk-page .tk-description-body { min-height: 24px; cursor: text; }

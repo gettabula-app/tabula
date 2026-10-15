@@ -37,12 +37,12 @@
   height: 34px;
   padding: 0 10px;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--tray-text) 6%, var(--tray));
-  box-shadow: inset 0 -1px 0 var(--field-rule);
+  background: var(--rule-image), color-mix(in srgb, var(--tray-text) 6%, var(--tray));
   color: var(--tray-muted);
 }
 .template-picker-search:focus-within {
-  box-shadow: inset 0 0 0 1px var(--field-edge-strong);
+  outline: 2px solid var(--tray-text);
+  outline-offset: 2px;
 }
 .template-picker-search-icon { display: flex; flex: none; align-items: center; }
 .template-picker-search-input.input,
