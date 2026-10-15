@@ -43,7 +43,7 @@ export function observePreviewChanges(doc, boardId, { unlink, now = Date.now, lo
         const eventPath = Array.isArray(event.path) ? event.path : [];
         if (eventPath.length === 0) {
           for (const [, change] of event.changes?.keys ?? []) {
-            if (change?.action === 'delete') {
+            if (change?.action === 'delete' || change?.action === 'update') {
               changed = true;
               urgent = true;
             }
