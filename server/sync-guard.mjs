@@ -372,6 +372,7 @@ export function createSyncGuard({ mode = 'report', log: rawLog = () => {}, now =
 
     const revert = () => {
       let guardrail = 0;
+      ctx.reverted = true; // the relay reads this to know the message was undone (who last edited the board)
       while (um.undoStack.length && guardrail++ < 50) um.undo();
       totals.rejected++; windowCounts.rejected++;
     };

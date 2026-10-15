@@ -79,7 +79,9 @@ describe('tracker migration 13', () => {
     expect(upgraded.findAccessToken('bad-token')).toBeNull();
     expect(upgraded.db.prepare("SELECT tracker FROM access_tokens WHERE id = 'tok1'").get()).toEqual({ tracker: null });
     for (const [name, columns] of oldColumns) {
-      expect(upgraded.db.prepare(`PRAGMA table_info("${name.replaceAll('"', '""')}")`).all()).toEqual(columns);
+      const now = upgraded.db.prepare(`PRAGMA table_info("${name.replaceAll('"', '""')}")`).all();
+      // migration 21 adds three nullable last_edited_* columns to boards after the ones this test saw
+      expect(name === 'boards' ? now.filter((c) => !String(c.name).startsWith('last_edited_')) : now).toEqual(columns);
     }
     expect(upgraded.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     const state = readSchemaState(upgraded.db);

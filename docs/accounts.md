@@ -66,7 +66,7 @@ sessions(id PK, token_hash UNIQUE, user_id FK, created_at, last_seen, expires_at
 teams(id PK, name, archived INT DEFAULT 0, created_at)
 team_members(team_id FK, user_id FK, role CHECK(admin|member), PRIMARY KEY(team_id,user_id))
 invites(id PK, token_hash UNIQUE, team_id FK, role CHECK(admin|member), created_by FK, expires_at, max_uses NULL, uses DEFAULT 0, revoked INT DEFAULT 0, created_at)
-boards(id PK, title, owner_id FK, team_id NULL FK, created_at, updated_at, deleted_at NULL)
+boards(id PK, title, owner_id FK, team_id NULL FK, created_at, updated_at, deleted_at NULL, last_edited_by NULL, last_edited_kind NULL, last_edited_at NULL)
 board_shares(board_id FK, principal_type CHECK(user|team), principal_id, role CHECK(editor|commenter|viewer), PRIMARY KEY(board_id,principal_type,principal_id))
 audit(id INTEGER PK AUTOINCREMENT, ts, actor_id NULL, action, detail JSON)
 ```
@@ -117,7 +117,8 @@ GET    /api/invites/:token              public  {team: {id,name}, role}  (404 wh
 POST   /api/invites/:token/accept       -> 200 {team: {id,name}, role}   (signed-in user joins the team; same validity rules as at sign-in; idempotent: joining a team you are already in changes nothing and uses no invite slot; promotes a member to admin only when the invite grants admin)
 GET    /api/admin/overview              -> includes mail: {refusedRecently, reason} for recent service refusals
 
-GET    /api/boards                      -> [{id,title,teamId,ownerId,role,createdAt,updatedAt}]   (every board the user can access)
+GET    /api/boards                      -> [{id,title,teamId,ownerId,role,createdAt,updatedAt,lastEditedBy,lastEditedKind,lastEditedAt}]   (every board the user can access)
+The board response also includes `lastEditedBy`, `lastEditedKind` and `lastEditedAt`: who last edited the board's objects (a person or named agent), or null until someone edits; guests, anonymous poll answers and votes never set these fields. A guest on a shared board sees a member's display name as the last editor, as they already do in presence and comments on that board.
 GET    /api/boards/presence             -> {presence: [{boardId,count,people,me?}]}   (signed-in non-guests only; live in-memory rooms among boards the caller can still open; `people` and `count` exclude the caller, each person has `userId`, `name`, `colour`, `joinedAt`, and optional `guest:true`; at most eight people per room, with `count` uncapped)
 POST   /api/boards {id, title?, teamId?} -> 201 board  (id must match the board id pattern and not be registered: 409; teamId requires team membership; guests cannot create. Adopting existing boards: if a room file `<id>.yjs` (or `<id>~comments.yjs`) already exists on disk but has no directory row, only a workspace owner/admin may register it, anyone else gets 409 `needs_admin`. A board that exists only in the caller's browser has no room file, so any member can register it and their local copy then syncs up)
 PATCH  /api/boards/:id {title?, teamId?: string|null} -> board  (board owner or workspace admin; moving into a team requires membership of that team)
