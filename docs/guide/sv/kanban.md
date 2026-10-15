@@ -23,7 +23,7 @@ På ett kort visas titeln (högst tre rader) och, när de har angetts, etikettbr
 Dubbelklicka på ett kort, markera det och tryck på `Enter`, eller välj **Open** (Öppna) i snabbåtgärdsfältet. Kortdialogrutan innehåller:
 
 - **Title** (Titel) och **Description** (Beskrivning).
-- **Owner** (Ansvarig): du, personerna som är på tavlan nu, någon som redan har namngivits på kortet eller ett namn som du skriver. Ett kort har en ansvarig.
+- **Owner** (Ansvarig): du, personerna som är på tavlan nu, någon som redan har namngivits på kortet (bara utan inloggning) eller ett namn som du skriver. Ett kort har en ansvarig.
 - **Owner type** (Typ av ansvarig): person eller AI-verktyg. Äldre kort utan ansvarigtyp tillhör personer. En ansvarig som är ett AI-verktyg är ett AI-verktyg som du har anslutit (se nedan). Brickan har en särskild åttkantig form.
 - **Link** (Länk): en webbadress som hör till kortet, till exempel ärendet som kortet kommer från. När den har sparats öppnar **Open link** (Öppna länk) adressen i en ny flik.
 - **Due date** (Förfallodatum), med webbläsarens datumväljare.
@@ -40,7 +40,7 @@ Lägg till en webbadress på ett kort, till exempel adressen till ett ärende, d
 
 ## Ansvariga
 
-Välj **Owner** i kortdialogrutan eller snabbåtgärdsfältet. Du kan välja dig själv eller någon som är på tavlan nu eller har namngivits där tidigare, eller skriva ett namn för någon som saknar konto. Namnet sparas även om personen lämnar senare. Ett kort har en ansvarig, och filtret **Mine** (Mina) visar kort som du ansvarar för.
+Välj **Owner** i kortdialogrutan eller snabbåtgärdsfältet. Du kan välja dig själv eller någon som är på tavlan nu, eller skriva ett namn för någon som saknar konto; i en arbetsyta utan inloggning erbjuder listan också personer som redan namngetts på tavlan. På en tavla med inloggning erbjuder listan bara dig själv och de inloggade personer som är på tavlan nu, och ett kort som ägs av en gammal identitet som inte längre är känd visar **Unknown** (Okänd). Namnet sparas även om personen lämnar senare. Ett kort har en ansvarig, och filtret **Mine** (Mina) visar kort som du ansvarar för.
 
 Ett kort som har ett AI-verktyg som ansvarig har en åttkantig bricka i stället för en rund i kortet, dialogrutan och listan. I kortdialogrutan kan du inte ge ett kort en ansvarig som är ett AI-verktyg eller byta namn på den ansvariga. Den ansvariga är knuten till åtkomsttokenen som tog kortet. Om du öppnar och sparar ett sådant kort i dialogrutan står AI-verktyget kvar som ansvarigt. Det blir aldrig en person när du sparar. Detsamma gäller ett namn som du har skrivit in och som saknar konto: att spara kortet ersätter inte namnet med ditt. Se [Åtkomsttoken och AI-verktyg](ai-tools.md).
 
