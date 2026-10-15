@@ -570,9 +570,16 @@ async function route() {
   app.deleted = deleted;
   current = app;
   currentBoardId = id;
-  // DEV ONLY: the board's picture on the Boards cards is written after a change and when the board is left (ui/dev-board-preview-sync.ts).
-  // Its disposer runs in app.destroy(), before the connection closes, so the store is still readable then.
-  if (import.meta.env.DEV && auth.mode === 'signed-in' && !deleted && (role === 'owner' || role === 'editor')) app.onDestroy(watchBoardPreview(conn.store, id));
+  // DEV ONLY: the picture of the board on its Boards card is kept up to date while an editor works on it, and drawn when the board is left
+  // (ui/dev-board-preview-sync.ts). The picture comes from the server's preview-source, not from this store.
+  if (import.meta.env.DEV && auth.mode === 'signed-in' && !deleted && (role === 'owner' || role === 'editor')) {
+    const preview = watchBoardPreview(id);
+    const offChange = conn.store.onChange(() => preview.touch());
+    app.onDestroy(() => {
+      offChange();
+      preview.leave();
+    });
+  }
   desktop?.watchBoard(app);
   // Inspection handle for automated tests and debugging (?debug in the URL). `__kanban` lets a seed store card heights
   // the way the app does (scripts/visual-check.mjs).

@@ -23,7 +23,8 @@ import type { TemplateDef } from '../templates';
 import { templateCard, type BoardAction, type BoardCardData, type MoveTarget, type TemplateCardData } from './board-card';
 import { boardsToolbar, loadPreviews, loadView, renderBoardSections, type BoardSection, type BoardView } from './boards-cards-view';
 import { UNTITLED, deviceCard, deviceTargets, isMine, moveTargetsFor, toBoardCard, type LiveBoard } from './boards-home-data';
-import { devBoardImage, devBoardImagesReady, loadDevBoardImages, refreshDevBoardPreviews } from './dev-board-images';
+import { devBoardImage } from './dev-board-images';
+import { PREVIEW_STORED_EVENT } from './dev-board-preview-sync';
 
 export interface HomeNav {
   open: (id: string, opts?: { template?: string; imported?: ImportedBoard; teamId?: string }) => void;
@@ -246,9 +247,10 @@ function welcomeSection(v: AccountView, display: { previews: boolean }, onHide: 
 }
 
 /** What the page knows about a board beside the server's record: who is here, its unread messages (when chat is on), a dev picture. */
-function liveFor(id: string): LiveBoard {
+function liveFor(b: Pick<ServerBoard, 'id' | 'updatedAt' | 'lastEditedAt'>): LiveBoard {
+  const id = b.id;
   const unread = chatAvailable() ? boardUnread(id) : { unread: 0, mentions: 0 };
-  return { presence: boardsPresence.get(id), unread: unread.unread, mention: unread.mentions > 0, image: devBoardImage(id) };
+  return { presence: boardsPresence.get(id), unread: unread.unread, mention: unread.mentions > 0, image: devBoardImage(id, b.lastEditedAt ?? b.updatedAt) };
 }
 
 const controlKey = (el: Element) => el.getAttribute('href') ?? el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '';
@@ -349,7 +351,7 @@ function accountSections(v: AccountView, data: AccountData, admin: boolean): Boa
   const boards = data.boards.filter((b) => matches(b.title || UNTITLED, q));
   const teams = data.teams.filter((t) => !t.archived).sort((a, b) => a.name.localeCompare(b.name));
   const cardsOf = (list: ServerBoard[]) => list
-    .map((b) => ({ ...toBoardCard(b, liveFor(b.id)), targets: moveTargetsFor(b, me, teams) }))
+    .map((b) => ({ ...toBoardCard(b, liveFor(b)), targets: moveTargetsFor(b, me, teams) }))
     .sort((a, b) => b.updatedAt - a.updatedAt);
   const sections: BoardSection[] = [];
 
@@ -462,15 +464,19 @@ export function accountPage(v: AccountView, data: AccountData | null): HTMLEleme
       }
     }
     liveRepaint(groups, ids, paintGroups);
-    if (!devBoardImagesReady()) void loadDevBoardImages().then(() => {
-      if (groups.isConnected) keepFocus(groups, paintGroups);
-    });
   };
   paintGroups();
-  // DEV ONLY: which boards have a stored picture is asked again on every render of this page (ui/dev-board-images.ts)
-  if (import.meta.env.DEV) void refreshDevBoardPreviews().then(() => {
-    if (groups.isConnected) keepFocus(groups, paintGroups);
-  });
+  // DEV ONLY: a picture stored from this page (the board just left) draws the cards again, at its new address (ui/dev-board-preview-sync.ts)
+  if (import.meta.env.DEV) {
+    const onStored = () => {
+      if (!groups.isConnected) {
+        window.removeEventListener(PREVIEW_STORED_EVENT, onStored);
+        return;
+      }
+      keepFocus(groups, paintGroups);
+    };
+    window.addEventListener(PREVIEW_STORED_EVENT, onStored);
+  }
 
   return h('div', { class: 'home-page' },
     createTopbar('boards', me),

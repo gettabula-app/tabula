@@ -4,7 +4,8 @@ import type { ImageState } from './image-loader';
 import { strToU8, strFromU8, zipSync, Unzip, UnzipInflate, UnzipPassThrough, type Zippable } from 'fflate';
 import * as Y from 'yjs';
 import type { BoardApp } from './app';
-import type { BaseObj, BoardMeta, Id, Obj, Poll, PollAnswer, Vote } from './types';
+import type { BaseObj, BoardMeta, Id, Obj, Poll, PollAnswer, Rect, Vote } from './types';
+import type { MarkupCtx } from './markup';
 import { SCHEMA_VERSION, isBox, isConnector } from './types';
 import { Store, type FlowState } from './store';
 import { COMMENTS_ORIGIN, Comments, threadVisible, type Thread } from './comments';
@@ -898,7 +899,16 @@ export async function imageDataUrls(app: BoardApp, objs: Obj[]): Promise<Map<Id,
   return out;
 }
 
-export function exportSvg(app: BoardApp, ids?: Id[], opts: { fontCss?: string; background?: boolean; images?: Map<Id, string> } = {}): { svg: string; w: number; h: number } {
+/**
+ * What a drawing export reads from a board: its store, and its renderer's bounds and drawing context. A BoardApp has both; so does the
+ * detached board a board picture is drawn from (src/preview-render.ts), which holds only what the server sent for the picture.
+ */
+export interface ExportSource {
+  store: BoardApp['store'];
+  r: { contentBounds(ids?: Iterable<Id>): Rect | null; ctx: MarkupCtx };
+}
+
+export function exportSvg(app: ExportSource, ids?: Id[], opts: { fontCss?: string; background?: boolean; images?: ReadonlyMap<Id, string> } = {}): { svg: string; w: number; h: number } {
   const objs = ids?.length ? gatherForExport(app, ids) : app.store.shown();
   const b = app.r.contentBounds(objs.map((o) => o.id)) ?? { x: 0, y: 0, w: 100, h: 100 };
   const pad = 40;
@@ -942,7 +952,7 @@ export async function exportSvgFile(app: BoardApp, ids?: Id[]): Promise<string> 
   return exportSvg(app, ids, { fontCss, images: await imageDataUrls(app, objs) }).svg;
 }
 
-function gatherForExport(app: BoardApp, ids: Id[]): Obj[] {
+function gatherForExport(app: ExportSource, ids: Id[]): Obj[] {
   const set = new Set(ids);
   const stack = [...ids];
   while (stack.length) {

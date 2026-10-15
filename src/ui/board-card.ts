@@ -103,10 +103,12 @@ function cardLabel(data: BoardCardData): string {
  * shapes, else the quiet tile. The tile keeps its size and its aria-hidden: the card's name is the label.
  */
 function tileContent(name: string, preview: PreviewModel | undefined, image: PreviewImage | undefined, tile: PreviewStyle, previews: boolean): Node {
-  const real = previews && image ? imageTile(image) : null;
-  if (real) return real;
-  const model = previews && preview && sanitizeShapes(preview).length > 0 ? preview : undefined;
-  return model ? drawPreview(model, tile) : quietPreview(name);
+  const shapes = (): Node => {
+    const model = previews && preview && sanitizeShapes(preview).length > 0 ? preview : undefined;
+    return model ? drawPreview(model, tile) : quietPreview(name);
+  };
+  const real = previews && image ? imageTile(image, shapes) : null;
+  return real ?? shapes();
 }
 
 function thumbBox(data: BoardCardData, tile: PreviewStyle, previews: boolean): HTMLElement {
@@ -228,7 +230,7 @@ export function boardRow(data: BoardCardData, opts: BoardCardOpts): HTMLLIElemen
 
 /** A template as a card of the first-run welcome: the same card, one link that creates the board, no menu, no people. */
 export function templateCard(data: TemplateCardData, opts: { tile: PreviewStyle; previews: boolean; onCreate?: (data: TemplateCardData) => void }): HTMLLIElement {
-  const real = !data.blank && opts.previews && data.image ? imageTile(data.image) : null;
+  const real = !data.blank && opts.previews && data.image ? imageTile(data.image, () => quietPreview(data.name, { plus: data.blank })) : null;
   const model = !data.blank && opts.previews && data.preview && sanitizeShapes(data.preview).length > 0 ? data.preview : undefined;
   const link = h('a', {
     class: 'bc-name', href: `#/new/${encodeURIComponent(data.id)}`,

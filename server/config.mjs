@@ -228,15 +228,6 @@ function loadTracker(env) {
   return mode === 'on';
 }
 
-// DEV ONLY (server/dev-previews.mjs, scripts/dev-boards-real.mjs): stored pictures of boards for the Boards cards. Off unless
-// TABULA_DEV_PREVIEWS=1; a hosted workspace refuses to start with it on, so no deployment can expose the routes.
-function loadDevPreviews(env, hosted) {
-  const raw = (env.TABULA_DEV_PREVIEWS ?? '').trim();
-  if (raw && raw !== '1' && raw !== '0') throw new Error(`TABULA_DEV_PREVIEWS must be 1 or 0 (got "${raw.slice(0, 20)}")`);
-  if (raw === '1' && hosted) throw new Error('TABULA_DEV_PREVIEWS=1 is not allowed on a hosted workspace');
-  return raw === '1';
-}
-
 // Diagnostics and product analytics are opt-out for hosted accounts and opt-in for self-hosted accounts.
 // An explicit operator value locks the owner control; no data leaves the instance in this phase.
 function loadTelemetry(env, hosted) {
@@ -429,7 +420,6 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const tracker = loadTracker(env);
   const linkPreviews = loadLinkPreviews(env);
   const telemetry = loadTelemetry(env, Boolean(cloud));
-  const devPreviews = loadDevPreviews(env, Boolean(cloud));
   const joinCodeMode = (env.TABULA_JOIN_CODES ?? '').trim() || 'off';
   if (joinCodeMode !== 'on' && joinCodeMode !== 'off') throw new Error(`TABULA_JOIN_CODES must be on or off (got "${joinCodeMode.slice(0, 20)}")`);
   if (joinCodeMode === 'on' && !authEnabled) warn('TABULA_JOIN_CODES=on is ignored without accounts mode (TABULA_AUTH=on)');
@@ -440,6 +430,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
 
   return {
     version: /^[A-Za-z0-9._-]{1,40}$/.test(versionLabel) ? versionLabel : null,
+    previewDev: rawEnv.TABULA_PREVIEW_DEV === '1',
     authEnabled,
     ownerEmail,
     baseUrl,
@@ -463,7 +454,6 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
     assets,
     ...(joinCodes ? { joinCodes: true } : {}),
     ...(chat ? { chat: true } : {}),
-    ...(devPreviews ? { devPreviews: true } : {}),
     tracker,
     linkPreviews,
     telemetry,

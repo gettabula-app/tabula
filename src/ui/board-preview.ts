@@ -187,10 +187,16 @@ export function initialOf(title: string): string {
  *   markup: that must be 'url'. It is parsed with DOMParser and the root is moved into the tile, so no string goes through innerHTML.
  * `alt` is accepted but not drawn: the tile is decorative, so the image always has alt="".
  */
-export type PreviewImage = { kind: 'svg'; markup: string } | { kind: 'url'; src: string; alt?: string };
+export type PreviewImage =
+  | { kind: 'svg'; markup: string }
+  /** A picture the server keeps. When it does not load (a 404: no picture yet) the caller's `missing` tile is drawn instead. */
+  | { kind: 'url'; src: string; alt?: string };
 
-/** The tile of a real picture, or null when the svg markup is not an svg (the caller then draws the shapes instead). */
-export function imageTile(image: PreviewImage): HTMLElement | null {
+/**
+ * The tile of a real picture, or null when the svg markup is not an svg (the caller then draws the shapes instead). When a picture
+ * from the server does not load, `missing` (the caller's own tile) takes its place.
+ */
+export function imageTile(image: PreviewImage, missing?: () => Node): HTMLElement | null {
   const wrap = document.createElement('div');
   wrap.className = 'bc-real';
   if (image.kind === 'url') {
@@ -199,6 +205,9 @@ export function imageTile(image: PreviewImage): HTMLElement | null {
     img.setAttribute('loading', 'lazy');
     img.setAttribute('decoding', 'async');
     img.setAttribute('alt', '');
+    img.addEventListener('error', () => {
+      if (missing) wrap.replaceChildren(missing());
+    }, { once: true });
     wrap.appendChild(img);
     return wrap;
   }

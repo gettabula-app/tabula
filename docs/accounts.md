@@ -88,7 +88,7 @@ Tokens (login, session, invite) are 32 random bytes, base64url, shown once and s
 
 ## HTTP API
 
-JSON in and out. Errors: `{error: <code>, message?: <text>}` with status `400` (bad input), `401 unauthenticated`, `403 forbidden`, `404 not_found`, `409 conflict`, `429 rate_limited`. In open mode every `/api/*` route except `/api/health`, `/api/config` and the board version routes (`docs/history.md`) answers `404`.
+JSON in and out. Errors: `{error: <code>, message?: <text>}` with status `400` (bad input), `401 unauthenticated`, `402 read_only`, `403 forbidden`, `404 not_found`, `409 conflict`, `429 rate_limited`. In open mode every `/api/*` route except `/api/health`, `/api/config` and the board version routes (`docs/history.md`) answers `404`.
 
 ```
 GET    /api/health                      public  {ok, rooms, connections}                       (exists today)
@@ -121,7 +121,9 @@ GET    /api/boards                      -> [{id,title,teamId,ownerId,role,create
 The board response also includes `lastEditedBy`, `lastEditedKind` and `lastEditedAt`: who last edited the board's objects (a person or named agent), or null until someone edits; guests, anonymous poll answers and votes never set these fields. A guest on a shared board sees a member's display name as the last editor, as they already do in presence and comments on that board.
 GET    /api/boards/presence             -> {presence: [{boardId,count,people,me?}]}   (signed-in non-guests only; live in-memory rooms among boards the caller can still open; `people` and `count` exclude the caller, each person has `userId`, `name`, `colour`, `joinedAt`, and optional `guest:true`; at most eight people per room, with `count` uncapped)
 POST   /api/boards {id, title?, teamId?} -> 201 board  (id must match the board id pattern and not be registered: 409; teamId requires team membership; guests cannot create. Adopting existing boards: if a room file `<id>.yjs` (or `<id>~comments.yjs`) already exists on disk but has no directory row, only a workspace owner/admin may register it, anyone else gets 409 `needs_admin`. A board that exists only in the caller's browser has no room file, so any member can register it and their local copy then syncs up)
-PATCH  /api/boards/:id {title?, teamId?: string|null} -> board  (board owner or workspace admin; moving into a team requires membership of that team)
+PATCH  /api/boards/:id {title?, teamId?: string|null, expectedTeamId?: string|null} -> board  (title uses the existing owner rule; a changed teamId uses the move rules below)
+POST   /api/boards/:id/move {to: string|null, expectedTeamId: string|null} -> board  (cookie session and CSRF header; both keys required)
+GET    /api/boards/:id/move-preview?to=<teamId|personal> -> {losing, gaining, sharesKept, losingNames, gainingNames}  (dry run; 60 per minute per user)
 DELETE /api/boards/:id                  -> 204  (soft delete; board owner or workspace admin)
 GET    /api/boards/:id/shares           -> [{principalType, principalId, name, role}]
 POST   /api/boards/:id/shares {principalType: 'user'|'team', principalId, role: 'editor'|'commenter'|'viewer'} -> 201
@@ -139,7 +141,17 @@ GET    /api/templates and the routes under it: custom templates shared with team
 GET    /api/boards/:id/versions   and the routes under it: version history of a board (owners and editors only), see docs/history.md
 ```
 
-Every mutating call writes an `audit` row (`action` like `team.create`, `member.remove`, `invite.create`, `board.delete`, `board.version.restore`, `template.update`).
+`POST /api/boards/:id/move` and a `PATCH` that changes `teamId` compare `expectedTeamId` with the current team inside the move transaction. A stale value returns `409 {error: 'board_moved'}`. The POST requires `expectedTeamId`; PATCH defaults it to the team read for that request. Moving to the current team is an unchanged `200` with no audit row. Moving back uses the same POST call with the previous team as `to` and the current team as `expectedTeamId`. A move is limited to 20 per hour per user (100 for workspace owners and admins) and one per board every 10 seconds; previews are limited to 60 per minute per user. Moves are refused with `402 read_only` while the workspace is read-only.
+
+| Caller | Allowed move |
+| --- | --- |
+| Workspace owner or admin | Any board that is not in the trash to any existing team or Personal; destination membership is not required. |
+| Board creator, not a guest | Personal to a team they belong to; between teams when they belong to both; team to Personal when they belong to the source team and it has no OTHER enabled team admin (a creator who is the source team's admin may take their own board to Personal). A creator whose workspace role is guest or viewer moves nothing. |
+| Everyone else, including team admins who did not create the board | No move. |
+
+An inaccessible or unknown board returns the usual `404`. An unavailable or unusable destination returns the same `403 {error: 'forbidden', message: 'You cannot move this board there'}`. Moves write one `board.move` audit row with `{boardId, from, to, by, override}` (`override` is `admin` or `creator`) and emit `access-changed` after commit. An MCP or agent write that passed its access check just before a move commits can still land once; the next call is refused. A non-creator mover gives the creator an in-app `board_moved` notice. When the creator takes a board out of a team with enabled admins, those admins get an in-app `board_moved_out` notice, except the mover. Shares and join codes stay as they were.
+
+Every mutating call writes an `audit` row (`action` like `team.create`, `member.remove`, `invite.create`, `board.delete`, `board.move`, `board.version.restore`, `template.update`).
 
 ## Relay (WebSocket `/sync/<boardId>` and `/sync/<boardId>~comments`)
 

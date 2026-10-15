@@ -1,100 +1,61 @@
 import { describe, expect, it } from 'vitest';
-import { previewSourceObjects } from '../src/preview-source';
-import { inlineForImage, paintOrder, previewSvgFor } from '../src/preview-render';
-import type { Obj } from '../src/types';
+import { previewSourceOf } from '../server/board-ops.mjs';
 
-// DEV stand-in for the production "everyone's view" (src/preview-source.ts). Objects are plain data here: the rules read ids, types,
-// `hidden`, `privateStep`, `parent` and the bound ends of connectors, and nothing else.
+const note = (id: string, extra: object = {}) => ({ id, type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: id, createdBy: 'u1', ...extra });
+const ids = (list: unknown[]) => list.map((o) => (o as { id: string }).id);
 
-const box = (id: string, extra: Record<string, unknown> = {}): Obj => ({
-  id, type: 'sticky', x: 0, y: 0, w: 100, h: 100, rotation: 0, z: id, fill: '#FFE066', text: `note ${id}`, ...extra,
-} as Obj);
-
-const arrow = (id: string, from: Obj['id'] | null, to: Obj['id'] | null): Obj => ({
-  id, type: 'connector', z: id,
-  from: from === null ? { kind: 'free', x: 0, y: 0 } : { kind: 'bound', id: from, anchor: 'auto' },
-  to: to === null ? { kind: 'free', x: 300, y: 0 } : { kind: 'bound', id: to, anchor: 'auto' },
-  route: 'straight', startHead: 'none', endHead: 'arrow',
-} as unknown as Obj);
-
-const ids = (list: Obj[]) => list.map((o) => o.id);
-const shown = { reveal: false };
-
-describe('previewSourceObjects (dev stand-in)', () => {
-  it('keeps ordinary objects in their order and does not change the input', () => {
-    const input = [box('a'), box('b'), box('c')];
-    const before = JSON.stringify(input);
-    const out = previewSourceObjects(input, shown);
-    expect(ids(out)).toEqual(['a', 'b', 'c']);
-    expect(out).not.toBe(input);
-    expect(JSON.stringify(input)).toBe(before);
-  });
-
-  it('drops an unrevealed private note and keeps it once the flow is revealed', () => {
-    const input = [box('public'), box('private', { privateStep: 'step-1', createdBy: 'maja' })];
-    expect(ids(previewSourceObjects(input, shown))).toEqual(['public']);
-    expect(ids(previewSourceObjects(input, { reveal: true }))).toEqual(['public', 'private']);
-  });
-
-  it('drops a private note of any author, the author included: the preview is what everyone sees', () => {
-    const input = [box('mine', { privateStep: 'step-1', createdBy: 'maja' }), box('theirs', { privateStep: 'step-1', createdBy: 'omar' })];
-    expect(previewSourceObjects(input, shown)).toEqual([]);
-  });
-
-  it('drops an object with hidden set, and everything inside it', () => {
-    const frame = { ...box('frame', { type: 'frame', hidden: true, w: 400, h: 300 }) } as Obj;
-    const inside = box('inside', { parent: 'frame' });
-    const deeper = box('deeper', { parent: 'inside' });
-    const sibling = box('sibling');
-    expect(ids(previewSourceObjects([frame, inside, deeper, sibling], shown))).toEqual(['sibling']);
-  });
-
-  it('drops a connector bound to a dropped note, keeps one bound to a shown note and a free line', () => {
-    const input = [
-      box('public'),
-      box('private', { privateStep: 'step-1' }),
-      arrow('to-private', 'public', 'private'),
-      arrow('to-public', 'public', 'public'),
-      arrow('free', null, 'public'),
+describe('previewSourceOf: the everyone\'s view of a board', () => {
+  it('drops unrevealed private notes whoever wrote them, and connectors bound to them; revealed shows them', () => {
+    const objects = [
+      note('a'),
+      note('p', { privateStep: 'x', createdBy: 'uploader' }),
+      { id: 'c1', type: 'connector', from: { kind: 'bound', id: 'a' }, to: { kind: 'bound', id: 'p' } },
+      { id: 'c2', type: 'connector', from: { kind: 'bound', id: 'a' }, to: { kind: 'point', x: 1, y: 1 } },
     ];
-    expect(ids(previewSourceObjects(input, shown))).toEqual(['public', 'to-public', 'free']);
+    expect(ids(previewSourceOf(objects, false))).toEqual(['a', 'c2']);
+    expect(ids(previewSourceOf(objects, true))).toEqual(['a', 'p', 'c1', 'c2']);
   });
 
-  it('ends a malformed parent cycle instead of looping', () => {
-    const input = [box('x', { parent: 'y' }), box('y', { parent: 'x' })];
-    expect(ids(previewSourceObjects(input, shown))).toEqual(['x', 'y']);
-  });
-});
-
-describe('paintOrder (dev stand-in)', () => {
-  it('gives the store order, and puts an object the store left out last, so nothing is missing from the picture', () => {
-    const a = box('a');
-    const b = box('b');
-    const c = box('c');
-    const cache = new Map([[a.id, a], [b.id, b], [c.id, c]]);
-    expect(ids(paintOrder({ ordered: () => [c, a], cache }))).toEqual(['c', 'a', 'b']);
-    expect(ids(paintOrder({ ordered: () => [a, b, c], cache }))).toEqual(['a', 'b', 'c']);
-  });
-});
-
-describe('previewSvgFor and inlineForImage (dev stand-in)', () => {
-  it('a private note never reaches the picture, and reveals with the flow', () => {
-    const secret = '#B0C4DE';
-    const objects = [box('public', { fill: '#FFF4B0' }), box('private', { fill: secret, privateStep: 'step-1' })];
-    expect(previewSvgFor(objects, shown)).not.toContain(secret);
-    expect(previewSvgFor(objects, { reveal: true })).toContain(secret);
+  it('drops a private note inside a frame and the connector bound to it', () => {
+    const objects = [
+      { id: 'f', type: 'frame', x: 0, y: 0, w: 400, h: 400, name: 'Plan' },
+      note('inner', { parent: 'f', privateStep: 'x' }),
+      note('open', { parent: 'f' }),
+      { id: 'c', type: 'connector', from: { kind: 'bound', id: 'inner' }, to: { kind: 'bound', id: 'open' } },
+    ];
+    expect(ids(previewSourceOf(objects, false))).toEqual(['f', 'open']);
   });
 
-  it('the picture has no theme variables and no color-mix, and keeps a translucent outline as an opacity', () => {
-    const svg = previewSvgFor([box('a'), { ...box('f', { type: 'frame', w: 300, h: 200 }) } as Obj], shown);
-    expect(svg.startsWith('<svg')).toBe(true);
-    expect(svg).not.toMatch(/var\(/);
-    expect(svg).not.toMatch(/color-mix\(/);
-    expect(svg).toMatch(/fill-opacity="0\.\d+"|stroke-opacity="0\.\d+"/);
+  it('drops hidden objects, the children of a hidden frame, private cards, and connectors bound to a private card', () => {
+    const objects = [
+      note('shown'),
+      note('hid', { hidden: true }),
+      { id: 'f', type: 'frame', x: 0, y: 0, w: 300, h: 300, hidden: true },
+      note('inside', { parent: 'f' }),
+      { id: 'k', type: 'card', x: 0, y: 0, w: 100, h: 50, privateStep: 'y' },
+      { id: 'ck', type: 'connector', from: { kind: 'bound', id: 'shown' }, to: { kind: 'bound', id: 'k' } },
+      { id: 'ch', type: 'connector', from: { kind: 'bound', id: 'shown' }, to: { kind: 'bound', id: 'hid' } },
+    ];
+    expect(ids(previewSourceOf(objects, false))).toEqual(['shown']);
   });
 
-  it('resolves a translucent colour attribute to its colour and opacity, and leaves plain colours alone', () => {
-    const out = inlineForImage('<svg><rect fill="color-mix(in srgb, var(--ink, #18212B) 38%, transparent)"/><rect fill="var(--paper, #FFFFFF)"/></svg>');
-    expect(out).toBe('<svg><rect fill="#18212B" fill-opacity="0.38"/><rect fill="#FFFFFF"/></svg>');
+  it('copies drawing fields only: no author, ticket, owner or vote data, even from a field added later', () => {
+    const card = { id: 'k', type: 'card', x: 1, y: 2, w: 3, h: 4, z: 'a', text: 'TAB-1 secret ticket', ownerName: 'Anna', ownerId: 'u9', tracker: { title: 'secret' }, ext: { x: 1 }, checklist: [{ id: 'i', text: 's', done: false }], futureField: 'x' };
+    const sticky = note('a', { deviceId: 'd', lockedBy: 'u2', fill: '#fff', proposedBy: { by: { name: 'Bot' } }, votes: ['u1'] });
+    const [c, s] = previewSourceOf([card, sticky], false) as Record<string, unknown>[];
+    expect(c).toEqual({ id: 'k', type: 'card', x: 1, y: 2, w: 3, h: 4, z: 'a' });
+    expect(s).toEqual({ id: 'a', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: 'a', fill: '#fff' });
+  });
+
+  it('sends an image as its asset reference only', () => {
+    const [img] = previewSourceOf([{ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: 'ast_1', mime: 'image/png', alt: 'who', url: 'https://x' }], false) as Record<string, unknown>[];
+    expect(img).toEqual({ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: 'ast_1', mime: 'image/png' });
+  });
+
+  it('ignores junk and is the same list for every caller', () => {
+    expect(previewSourceOf([null, { type: 'sticky' }] as never, false)).toEqual([]);
+    expect(previewSourceOf(undefined as never, false)).toEqual([]);
+    const objects = [note('a'), note('p', { privateStep: 'x' })];
+    expect(previewSourceOf(objects, false)).toEqual(previewSourceOf(structuredClone(objects), false));
   });
 });

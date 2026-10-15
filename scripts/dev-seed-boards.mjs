@@ -2,13 +2,13 @@
 // DEV ONLY. Seeds a fresh, throwaway accounts-mode directory with a realistic Boards home: people, teams, boards, shares
 // and last editors. Every run deletes and recreates the data dir, so nothing here reaches real data.
 //
-//   node scripts/dev-seed-boards.mjs     seeds .dev-data/boards-real and writes public/dev-board-images/manifest.json
+//   node scripts/dev-seed-boards.mjs     seeds .dev-data/boards-real (rows and content; no pictures: the app draws them)
 //   npm run dev:boards-real              the same seed, then the relay and the app (scripts/dev-boards-real.mjs)
 //
 // The rows are written through server/directory.mjs, the module the relay opens, so the schema is the real one.
-// The boards with a template get their real content (their .yjs files) and their pictures, from the app's own
-// modules (scripts/dev-board-content.mjs). A board with no template opens blank (server/relay.mjs, Room).
-// The manifest still names each board's template: it is the picture of last resort for a board with no stored picture.
+// The boards with a template get their real content (their .yjs files), from the app's own modules
+// (scripts/dev-board-content.mjs). A board with no template opens blank (server/relay.mjs, Room). No picture is seeded or
+// drawn here: the pictures come from the app (scripts/dev-board-warm.mjs drives it at launch).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,7 +19,6 @@ import { seedBoardContent } from './dev-board-content.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const DEV_ROOT = path.join(root, '.dev-data');
 export const DEFAULT_DATA_DIR = path.join(DEV_ROOT, 'boards-real');
-export const MANIFEST_PATH = path.join(root, 'public', 'dev-board-images', 'manifest.json');
 const TEMPLATES_SRC = path.join(root, 'src', 'templates.ts');
 
 const MIN = 60_000;
@@ -73,6 +72,8 @@ const BOARDS = [
   { id: 'platform-cost-model', title: 'Platform cost model', owner: 'ben', team: 'platform', template: 'lean-canvas', created: 5 * DAY, edit: { agent: 'Claude', ago: 1 * DAY } },
   { id: 'tech-debt-lean-coffee', title: 'Tech debt lean coffee', owner: 'ben', team: 'platform', template: 'lean-coffee', created: 12 * DAY, edit: { who: 'omar', ago: 2 * DAY } },
   // Maja's personal boards: 3
+  // The privacy board: the everyone's-view tests (scripts/dev-board-content.mjs privacyObjects); content only, no template
+  { id: 'preview-privacy-test', title: 'Preview privacy test', owner: 'maja', team: null, template: null, created: 1 * DAY, edit: { who: 'maja', ago: 30 * MIN } },
   { id: 'maja-weekly-plan', title: 'Weekly plan', owner: 'maja', team: null, template: 'sprint-board', created: 3 * DAY, edit: { who: 'maja', ago: 50 * MIN } },
   { id: 'maja-new-hire-empathy', title: '🧭 New-hire empathy map', owner: 'maja', team: null, template: 'empathy', created: 20 * DAY, edit: { who: 'maja', ago: 7 * DAY } },
   { id: 'maja-scratch', title: 'Scratch', owner: 'maja', team: null, template: null, created: 2 * HOUR },
@@ -93,6 +94,7 @@ const SHARES = [
   { board: 'design-sprint-onboarding', to: 'pia', role: 'commenter' },
   { board: 'maja-weekly-plan', to: 'omar', role: 'viewer' },
   { board: 'q4-roadmap', team: 'growth', role: 'viewer' },
+  { board: 'preview-privacy-test', to: 'omar', role: 'commenter' },
 ];
 
 /** Every template id a seeded board uses must exist in src/templates.ts (the built-in list). */
@@ -162,13 +164,9 @@ export function seed({ dataDir = DEFAULT_DATA_DIR, now = Date.now() } = {}) {
     }
     tokens.smoke = directory.createLoginToken({ email: OWNER_EMAIL, ttlMs: LINK_TTL_MS, now });
 
-    fs.mkdirSync(path.dirname(MANIFEST_PATH), { recursive: true });
-    const manifest = Object.fromEntries(BOARDS.map((b) => [b.id, b.template]));
-    fs.writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
 
     return {
       dataDir,
-      manifestPath: MANIFEST_PATH,
       people: PEOPLE.map((p) => ({ ...p, id: user[p.key].id })),
       teams: TEAMS.map((t) => ({ ...t, id: team[t.key].id })),
       boards: BOARDS,
@@ -181,8 +179,8 @@ export function seed({ dataDir = DEFAULT_DATA_DIR, now = Date.now() } = {}) {
 }
 
 /**
- * The rows (seed), then the content and the pictures of the boards that have a template (seedBoardContent). Returns the seed's
- * result with `content`: one entry per board written.
+ * The rows (seed), then the content of the boards that have a template (seedBoardContent). Returns the seed's result with
+ * `content`: one entry per board written.
  * @param {{ dataDir?: string, now?: number }} [options]
  */
 export async function seedAll(options = {}) {
@@ -214,7 +212,7 @@ export function describeSeed(result) {
   for (const b of BOARDS) {
     const editor = !b.edit ? 'none' : b.edit.agent ? `${b.edit.agent} (agent)` : `${name(b.edit.who)} (person)`;
     const shares = SHARES.filter((s) => s.board === b.id).map((s) => `${s.team ? teamName(s.team) : name(s.to)}:${s.role}`);
-    lines.push(`  ${b.id.padEnd(26)} ${String(b.template ?? 'no image').padEnd(14)} ${teamName(b.team).padEnd(14)} owner ${name(b.owner).padEnd(13)} edited ${editor}${shares.length ? `  shared ${shares.join(', ')}` : ''}`);
+    lines.push(`  ${b.id.padEnd(26)} ${String(b.template ?? 'no content').padEnd(14)} ${teamName(b.team).padEnd(14)} owner ${name(b.owner).padEnd(13)} edited ${editor}${shares.length ? `  shared ${shares.join(', ')}` : ''}`);
   }
   return lines.join('\n');
 }
@@ -222,6 +220,5 @@ export function describeSeed(result) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const result = await seedAll();
   console.log(describeSeed(result));
-  console.log(`\ncontent and pictures: ${result.content.length} boards with a template (${result.content.reduce((n, c) => n + c.objects, 0)} objects)`);
-  console.log(`manifest: ${result.manifestPath}`);
+  console.log(`\ncontent: ${result.content.length} boards with a template (${result.content.reduce((n, c) => n + c.objects, 0)} objects)`);
 }

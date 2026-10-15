@@ -8,7 +8,7 @@
 // The script refuses to start when either port is taken. It never kills whatever holds a port.
 // Sign-in links are single use. Stop and run the script again to get fresh ones.
 //
-// The relay runs with TABULA_DEV_PREVIEWS=1: the Boards cards show what each board holds (server/dev-previews.mjs).
+// The relay runs with TABULA_PREVIEW_DEV=1: the Boards cards show a picture of each board (the server's preview routes, docs/board-previews.md).
 // A second copy for testing: DEV_BOARDS_RELAY_PORT, DEV_BOARDS_VITE_PORT and DEV_BOARDS_DATA_DIR (a directory inside .dev-data).
 // Its sign-in links go into that directory, and its Vite cache beside it, so the copy never touches the demo's files.
 import { spawn } from 'node:child_process';
@@ -17,6 +17,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_DATA_DIR, DEV_ROOT, OWNER_EMAIL, describeSeed, seedAll } from './dev-seed-boards.mjs';
+import { warmBoardPictures } from './dev-board-warm.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RELAY_PORT = Number(process.env.DEV_BOARDS_RELAY_PORT) || 8797;
@@ -45,8 +46,7 @@ for (const port of [RELAY_PORT, VITE_PORT]) {
 
 const result = await seedAll({ dataDir: DATA_DIR });
 console.log(describeSeed(result));
-console.log(`\ncontent and pictures: ${result.content.length} boards with a template`);
-console.log(`manifest: ${result.manifestPath}`);
+console.log(`\ncontent: ${result.content.length} boards with a template`);
 
 // Links are built from the single-use tokens; the smoke token stays out of the printed list (it is for curl checks).
 const link = (token) => `${ORIGIN}/#/signin/verify?token=${token}`;
@@ -71,8 +71,8 @@ const relayEnv = {
   TABULA_OWNER_EMAIL: OWNER_EMAIL,
   TABULA_MAIL: 'log',
   TABULA_BASE_URL: ORIGIN,
-  // DEV ONLY: the Boards cards show the pictures the editors store (server/dev-previews.mjs)
-  TABULA_DEV_PREVIEWS: '1',
+  // DEV ONLY: the preview routes of the demo (docs/board-previews.md). Off by default on every other server.
+  TABULA_PREVIEW_DEV: '1',
 };
 // A copy with its own data dir gets its own Vite cache too: two dev servers on one cache can delete each other's dependencies.
 const viteEnv = {
@@ -123,3 +123,27 @@ while (!ready && Date.now() < deadline && !stopping) {
   }
 }
 console.log(ready ? `\nready: ${ORIGIN}` : `\nVite did not answer on ${ORIGIN} within ${READY_TIMEOUT_MS / 1000} s; check the output above`);
+
+// The seeded boards get their pictures now: each is opened and left as its owner, through the app's own upload (scripts/dev-board-warm.mjs).
+// DEV_BOARDS_SKIP_WARM=1 leaves that out; the boards then show the quiet tile until they are opened and left.
+if (ready && process.env.DEV_BOARDS_SKIP_WARM !== '1') {
+  const relayUp = await (async () => {
+    const until = Date.now() + 60_000;
+    while (Date.now() < until && !stopping) {
+      try {
+        if ((await fetch(`http://127.0.0.1:${RELAY_PORT}/api/health`, { signal: AbortSignal.timeout(2000) })).ok) return true;
+      } catch { /* not yet */ }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return false;
+  })();
+  if (relayUp) {
+    console.log(`\nwarming the pictures of ${result.content.length} seeded boards (open and leave each, as its owner)...`);
+    try {
+      const warm = await warmBoardPictures({ origin: ORIGIN, token: result.tokens.smoke, boardIds: result.content.map((c) => c.id), log: (line) => console.log(line) });
+      if (warm.skipped) console.log(warm.skipped);
+    } catch (err) {
+      console.log(`the picture warm-up stopped: ${err.message}`);
+    }
+  }
+}

@@ -1,151 +1,238 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Store } from '../src/store';
 import type { Obj } from '../src/types';
-import { previewSvgFor } from '../src/preview-render';
-import { PREVIEW_QUIET_MS, devPreviewWritesSettled, watchBoardPreview } from '../src/ui/dev-board-preview-sync';
+import {
+  PREVIEW_COOLDOWN_MS, PREVIEW_MAX_WAIT_MS, PREVIEW_QUIET_MS, previewModeSetting, watchBoardPreview,
+} from '../src/ui/dev-board-preview-sync';
 
-// DEV ONLY (src/ui/dev-board-preview-sync.ts): the picture of a board is written three seconds after its last change, and when it is
-// left, and never twice for the same picture. A store stands in for the board's: only cache, getFlow and onChange are read.
+// The picture of a board is kept up to date while an editor works (src/ui/dev-board-preview-sync.ts). A manual clock runs the timers: each
+// test moves time forward and sees what was sent. Every request must be same-origin (a relative address), and the picture is drawn from
+// the objects the server sent for everyone's view, never from a store.
 
-const sticky = (id: string, fill: string, extra: Record<string, unknown> = {}): Obj => ({
-  id, type: 'sticky', x: 0, y: 0, w: 100, h: 100, rotation: 0, z: id, fill, ...extra,
-} as Obj);
+const SOURCE: Obj[] = [{ id: 'a', type: 'sticky', text: 'hi', fill: '#FFE16B', x: 0, y: 0, w: 10, h: 10, rotation: 0, z: 'a' } as Obj];
 
-/** Paint order as the store gives it: frames first, then by z (src/store.ts ordered). */
-const paintOrderOf = (list: Iterable<Obj>) => [...list].sort((a, b) => Number(b.type === 'frame') - Number(a.type === 'frame') || (a.z < b.z ? -1 : a.z > b.z ? 1 : 0));
+/** Lets the pending promise chains of a picture (several awaited steps) run to their end before the next check. */
+const settle = async () => {
+  for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+};
 
-function fakeStore(objects: Obj[], flow = { reveal: false }) {
-  const cache = new Map(objects.map((o) => [o.id, o]));
-  const listeners = new Set<() => void>();
-  const store = {
-    cache,
-    getFlow: () => flow,
-    ordered: () => paintOrderOf(cache.values()),
-    onChange: (l: () => void) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
+/** A clock and its timers: `run(ms)` moves time on and fires what is due, in order. */
+function clock() {
+  let now = 0;
+  let next = 1;
+  const timers = new Map<number, { at: number; fn: () => void }>();
+  return {
+    now: () => now,
+    setTimer: (fn: () => void, ms: number) => {
+      const id = next++;
+      timers.set(id, { at: now + ms, fn });
+      return id;
+    },
+    clearTimer: (handle: unknown) => {
+      timers.delete(handle as number);
+    },
+    async run(ms: number) {
+      const end = now + ms;
+      for (;;) {
+        const due = [...timers.entries()].filter(([, t]) => t.at <= end).sort((x, y) => x[1].at - y[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        now = Math.max(now, due[1].at);
+        due[1].fn();
+        await settle();
+      }
+      now = end;
+      await settle();
     },
   };
-  /** A change, as the store announces one: the object is replaced and the listeners run. */
-  const change = (o: Obj) => {
-    cache.set(o.id, o);
-    listeners.forEach((l) => l());
-  };
-  return { store: store as unknown as Store, change, cache, listeners };
 }
 
-const puts = (fetchMock: { mock: { calls: unknown[][] } }) =>
-  fetchMock.mock.calls.filter((c) => (c[1] as RequestInit | undefined)?.method === 'PUT');
+type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
+
+/** A fetch that answers the preview source with SOURCE, takes uploads (with `put` as their status), and fails the test on a foreign address. */
+function server(put: (n: number) => Response | Error = () => new Response(null, { status: 204 })) {
+  const calls: Call[] = [];
+  let uploads = 0;
+  const fn = vi.fn<(input: unknown, init?: RequestInit) => Promise<Response>>(async (input, init) => {
+    const url = String(input);
+    if (!url.startsWith('/') || url.startsWith('//')) throw new Error(`a request left this origin: ${url}`);
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    calls.push({ url, method: init?.method ?? 'GET', headers, body: init?.body });
+    if (url.endsWith('/preview-source')) return new Response(JSON.stringify({ objects: SOURCE, revealed: false }), { status: 200 });
+    if (url.endsWith('/preview')) {
+      uploads += 1;
+      const answer = put(uploads);
+      if (answer instanceof Error) throw answer;
+      return answer;
+    }
+    return new Response(null, { status: 404 });
+  });
+  return { fn, calls, uploads: () => calls.filter((c) => c.method === 'PUT') };
+}
+
+const blob = new Blob([new Uint8Array(12)], { type: 'image/webp' });
+
+function harness(overrides: { put?: (n: number) => Response | Error; mode?: 'export' | 'blocks'; picture?: (...a: unknown[]) => string } = {}) {
+  const t = clock();
+  const net = server(overrides.put);
+  const picture = vi.fn<(...args: unknown[]) => string>(overrides.picture ?? (() => '<svg/>'));
+  const watch = watchBoardPreview('board-1', {
+    fetch: net.fn as unknown as typeof fetch,
+    now: t.now,
+    setTimer: t.setTimer,
+    clearTimer: t.clearTimer,
+    mode: () => overrides.mode ?? 'export',
+    picture: picture as never,
+    rasterize: async () => blob,
+  });
+  return { t, net, watch, picture };
+}
 
 beforeEach(() => {
-  vi.useFakeTimers();
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 204 })));
+  vi.stubGlobal('localStorage', undefined);
 });
 afterEach(() => {
-  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-describe('watchBoardPreview (dev)', () => {
-  it('writes the picture 3 seconds after the last change, not before', async () => {
-    const { store, change } = fakeStore([sticky('a', '#FFE066')]);
-    const fetchMock = vi.mocked(fetch);
-    watchBoardPreview(store, 'q4-roadmap');
-    change(sticky('a', '#FFE066', { text: 'one' }));
-    await vi.advanceTimersByTimeAsync(PREVIEW_QUIET_MS - 1);
-    expect(puts(fetchMock)).toHaveLength(0);
-    change(sticky('a', '#FFE066', { text: 'two' }));
-    await vi.advanceTimersByTimeAsync(PREVIEW_QUIET_MS - 1);
-    expect(puts(fetchMock)).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(puts(fetchMock)).toHaveLength(1);
+describe('when a picture is drawn', () => {
+  it('three seconds after the last change, not before', async () => {
+    const { t, net, watch } = harness();
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS - 1);
+    expect(net.calls).toHaveLength(0);
+    await t.run(1);
+    expect(net.calls.map((c) => c.url)).toEqual(['/api/boards/board-1/preview-source', '/api/boards/board-1/preview']);
   });
 
-  it('sends the picture of what everyone may see, as an SVG the relay takes', async () => {
-    const { store, change } = fakeStore([sticky('a', '#FFE066')]);
-    const fetchMock = vi.mocked(fetch);
-    watchBoardPreview(store, 'q4-roadmap');
-    change(sticky('b', '#B0C4DE', { privateStep: 'step-1' }));
-    await vi.advanceTimersByTimeAsync(PREVIEW_QUIET_MS);
-    const [url, init] = puts(fetchMock)[0] as [string, RequestInit];
-    expect(url).toBe('/api/dev/board-preview/q4-roadmap');
-    expect(init.credentials).toBe('same-origin');
-    expect(init.headers).toEqual({ 'content-type': 'image/svg+xml', 'x-tabula': '1' });
-    const body = String(init.body);
-    expect(body.startsWith('<svg')).toBe(true);
-    expect(body).toContain('#FFE066');
-    expect(body).not.toContain('#B0C4DE');
+  it('a long edit still shows up: at most ten seconds after its first change, then at most one picture per ten seconds', async () => {
+    const { t, net, watch } = harness();
+    for (let i = 0; i < 30; i++) {
+      watch.touch();
+      await t.run(1000);
+    }
+    const uploads = net.uploads().length;
+    expect(uploads).toBeGreaterThanOrEqual(2);
+    expect(uploads).toBeLessThanOrEqual(4);
+    // each upload waited for the cooldown: no two uploads closer than the server allows
+    const times: number[] = [];
+    const orig = net.fn.getMockImplementation()!;
+    net.fn.mockImplementation(async (input: unknown, init?: RequestInit) => {
+      if (String(input).endsWith('/preview') && init?.method === 'PUT') times.push(t.now());
+      return orig(input, init);
+    });
+    for (let i = 0; i < 40; i++) {
+      watch.touch();
+      await t.run(1000);
+    }
+    for (let i = 1; i < times.length; i++) expect(times[i]! - times[i - 1]!).toBeGreaterThanOrEqual(PREVIEW_COOLDOWN_MS);
+    expect(PREVIEW_MAX_WAIT_MS).toBe(10000);
   });
 
-  it('leaving the board writes at once when something changed, and stops listening', async () => {
-    const { store, change, listeners } = fakeStore([sticky('a', '#FFE066')]);
-    const fetchMock = vi.mocked(fetch);
-    const leave = watchBoardPreview(store, 'q4-roadmap');
-    change(sticky('a', '#FF0000'));
-    leave();
-    expect(puts(fetchMock)).toHaveLength(1);
-    expect(listeners.size).toBe(0);
-    await vi.advanceTimersByTimeAsync(PREVIEW_QUIET_MS * 2);
-    expect(puts(fetchMock)).toHaveLength(1);
+  it('leaving the board draws one picture, after the cooldown, and listens to nothing afterwards', async () => {
+    const { t, net, watch } = harness();
+    watch.leave();
+    await t.run(0);
+    expect(net.uploads()).toHaveLength(1);
+    watch.touch();
+    await t.run(60_000);
+    expect(net.uploads()).toHaveLength(1);
   });
 
-  it('leaving a board nobody changed sends nothing', async () => {
-    const { store } = fakeStore([sticky('a', '#FFE066')]);
-    const fetchMock = vi.mocked(fetch);
-    const leave = watchBoardPreview(store, 'q4-roadmap');
-    leave();
-    await vi.advanceTimersByTimeAsync(PREVIEW_QUIET_MS * 2);
-    expect(puts(fetchMock)).toHaveLength(0);
+  it('an empty board keeps no picture: nothing is drawn or uploaded, so its card shows the quiet tile', async () => {
+    const t = clock();
+    const net = server();
+    net.fn.mockImplementation(async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      net.calls.push({ url, method: init?.method ?? 'GET', headers: {}, body: init?.body });
+      if (url.endsWith('/preview-source')) return new Response(JSON.stringify({ objects: [], revealed: false }), { status: 200 });
+      return new Response(null, { status: 204 });
+    });
+    const picture = vi.fn<(...args: unknown[]) => string>(() => '<svg/>');
+    const watch = watchBoardPreview('board-1', {
+      fetch: net.fn as unknown as typeof fetch, now: t.now, setTimer: t.setTimer, clearTimer: t.clearTimer, mode: () => 'export', picture: picture as never, rasterize: async () => blob,
+    });
+    watch.leave();
+    await t.run(60_000);
+    expect(picture).not.toHaveBeenCalled();
+    expect(net.uploads()).toHaveLength(0);
   });
 
-  it('a change that leaves the picture as it was is not sent again', async () => {
-    const { store, change } = fakeStore([sticky('a', '#FFE066')]);
-    const fetchMock = vi.mocked(fetch);
-    const leave = watchBoardPreview(store, 'q4-roadmap');
-    change(sticky('a', '#FFE066', { text: 'reworded, same picture' }));
-    await vi.advanceTimersByTimeAsync(PREVIEW_QUIET_MS);
-    expect(puts(fetchMock)).toHaveLength(1);
-    change(sticky('a', '#FFE066', { text: 'reworded again' }));
-    leave();
-    expect(puts(fetchMock)).toHaveLength(1);
+  it('a second picture waits for the cooldown since the first upload', async () => {
+    const { t, net, watch } = harness();
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS);
+    expect(net.uploads()).toHaveLength(1);
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS);
+    expect(net.uploads()).toHaveLength(1);
+    await t.run(PREVIEW_COOLDOWN_MS);
+    expect(net.uploads()).toHaveLength(2);
   });
 
-  it('a frame drawn around a note is drawn under it in the picture, whatever order they were made in', async () => {
-    const note = sticky('note', '#FFE16B', { z: 'n' });
-    const frame = { id: 'frame', type: 'frame', x: -40, y: -40, w: 320, h: 320, rotation: 0, z: 'f', fill: '#E4EFFF', name: 'Ideas' } as Obj;
-    // the note was made first, so the store's cache lists it first; a picture in that order would put the frame over it
-    const { store, change } = fakeStore([note, frame]);
-    const fetchMock = vi.mocked(fetch);
-    const leave = watchBoardPreview(store, 'q4-roadmap');
-    change({ ...note, text: 'moved' } as Obj);
-    leave();
-    const body = String((puts(fetchMock)[0][1] as RequestInit).body);
-    expect(body).toBe(previewSvgFor([frame, note], { reveal: false }));
-    expect(body).not.toBe(previewSvgFor([note, frame], { reveal: false }));
+  it('draws the picture of what the server sent, in the mode the switch names', async () => {
+    const { t, net, watch, picture } = harness({ mode: 'blocks' });
+    watch.leave();
+    await t.run(0);
+    expect(picture).toHaveBeenCalledTimes(1);
+    expect(picture.mock.calls[0]![0]).toEqual(SOURCE);
+    expect(picture.mock.calls[0]![2]).toBe('blocks');
+    expect(net.uploads()[0]!.headers).toEqual({ 'content-type': 'image/webp', 'x-tabula': '1' });
+    expect(net.uploads()[0]!.body).toBe(blob);
   });
 
-  it('a refused or failed write is answered, and nothing throws', async () => {
-    const { store, change } = fakeStore([sticky('a', '#FFE066')]);
-    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('relay is down'); }));
-    const leave = watchBoardPreview(store, 'q4-roadmap');
-    change(sticky('a', '#FF0000'));
-    leave();
-    await expect(devPreviewWritesSettled()).resolves.toBeUndefined();
+  it('every request is same-origin and the upload is the image itself (its length is set by the browser)', async () => {
+    const { t, net, watch } = harness();
+    watch.leave();
+    await t.run(0);
+    expect(net.calls.every((c) => c.url.startsWith('/api/boards/board-1/'))).toBe(true);
+    expect(net.uploads()[0]!.body).toBe(blob);
+  });
+});
+
+describe('a refusal is answered quietly', () => {
+  it('a 429 on the upload waits for the server\'s retry-after, and tries again then', async () => {
+    const { t, net, watch } = harness({ put: (n) => (n === 1 ? new Response(null, { status: 429, headers: { 'retry-after': '7' } }) : new Response(null, { status: 204 })) });
+    watch.leave();
+    await t.run(0);
+    expect(net.uploads()).toHaveLength(1);
+    // the wait is the longer of the server's retry-after (7 s) and the ten seconds since the refused upload
+    await t.run(9000);
+    expect(net.uploads()).toHaveLength(1);
+    await t.run(1000);
+    expect(net.uploads()).toHaveLength(2);
   });
 
-  it('the Boards page waits for the pictures still on their way', async () => {
-    const { store, change } = fakeStore([sticky('a', '#FFE066')]);
-    let finish: (() => void) | undefined;
-    vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => { finish = () => resolve({ ok: true, status: 204 }); })));
-    const leave = watchBoardPreview(store, 'q4-roadmap');
-    change(sticky('a', '#FF0000'));
-    leave();
-    let settled = false;
-    void devPreviewWritesSettled().then(() => { settled = true; });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(settled).toBe(false);
-    finish?.();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(settled).toBe(true);
+  it('a network failure does not stop the next change from drawing a picture', async () => {
+    const { t, net, watch } = harness({ put: (n) => (n === 1 ? new Error('offline') : new Response(null, { status: 204 })) });
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS);
+    expect(net.uploads()).toHaveLength(1);
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS + PREVIEW_COOLDOWN_MS);
+    expect(net.uploads()).toHaveLength(2);
+  });
+
+  it('a board the person may not read any more is simply left alone', async () => {
+    const t = clock();
+    const fn = vi.fn<() => Promise<Response>>(async () => new Response(null, { status: 403 }));
+    const watch = watchBoardPreview('board-1', {
+      fetch: fn as unknown as typeof fetch, now: t.now, setTimer: t.setTimer, clearTimer: t.clearTimer, mode: () => 'export', picture: (() => '<svg/>') as never, rasterize: async () => blob,
+    });
+    watch.leave();
+    await t.run(60_000);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the dev switch', () => {
+  it('is the export unless localStorage names the blocks; unreadable storage is the export too', () => {
+    vi.stubGlobal('localStorage', undefined);
+    expect(previewModeSetting()).toBe('export');
+    vi.stubGlobal('localStorage', { getItem: () => 'blocks' });
+    expect(previewModeSetting()).toBe('blocks');
+    vi.stubGlobal('localStorage', { getItem: () => 'export' });
+    expect(previewModeSetting()).toBe('export');
+    vi.stubGlobal('localStorage', { getItem: () => { throw new Error('denied'); } });
+    expect(previewModeSetting()).toBe('export');
   });
 });

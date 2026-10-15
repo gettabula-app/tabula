@@ -1,11 +1,12 @@
 import './template-picker.css';
 import type { BoardApp } from '../app';
-import { authState } from '../auth';
+import { authState, onAuth } from '../auth';
 import { TEMPLATES, insertCustomTemplate, insertTemplate, type TemplateDef } from '../templates';
 import type { CustomTemplate } from '../custom-templates';
 import { listTemplates, onTemplatesChange } from '../template-store';
 import { accountId, splitMine } from '../template-share';
-import { builtinThumbnail } from '../template-thumb';
+import { builtinThumbnail, trackerThumbnail } from '../template-thumb';
+import { createTrackerFrame, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
 import { customThumbnail } from './templates-page';
 import { announce } from './announce';
 import { dialog, toast } from './common';
@@ -20,7 +21,13 @@ import {
 } from './template-picker-logic';
 
 type TemplateValue = TemplateDef | CustomTemplate;
-type PickerItem = TemplatePickerEntry & { kind: 'builtin' | 'custom'; template: TemplateValue };
+type PickerItem = TemplatePickerEntry & ({ kind: 'builtin' | 'custom'; template: TemplateValue } | { kind: 'tracker' });
+
+/** The Tracker is inserted from here, next to Kanban (TAB-390). Its id is the command id the rail button had. */
+const TRACKER_ENTRY: TemplatePickerEntry = {
+  id: 'tracker:create-frame', name: 'Tracker', category: 'Planning', source: 'builtin',
+  description: 'A live list of tickets, grouped by state. Open one, create one, or drag it to another state.',
+};
 
 let pickerSequence = 0;
 
@@ -38,13 +45,18 @@ const TONE_BY_CATEGORY: Record<string, string> = {
 
 const toneFor = (category: string) => TONE_BY_CATEGORY[category.toLowerCase()] ?? 'yellow';
 
-function allItems(saved: CustomTemplate[]): PickerItem[] {
+function allItems(saved: CustomTemplate[], trackerShown: boolean): PickerItem[] {
   const { mine, shared } = splitMine(saved, accountId(authState()));
+  const builtins: PickerItem[] = TEMPLATES.map((template): PickerItem => ({
+    id: `builtin:${template.id}`, kind: 'builtin', source: 'builtin', template,
+    name: template.name, description: template.description, category: template.category,
+  }));
+  if (trackerShown) {
+    const kanban = builtins.findIndex((item) => item.id === 'builtin:kanban');
+    builtins.splice(kanban < 0 ? builtins.length : kanban + 1, 0, { ...TRACKER_ENTRY, kind: 'tracker' });
+  }
   return [
-    ...TEMPLATES.map((template): PickerItem => ({
-      id: `builtin:${template.id}`, kind: 'builtin', source: 'builtin', template,
-      name: template.name, description: template.description, category: template.category,
-    })),
+    ...builtins,
     ...mine.map((template): PickerItem => ({
       id: `custom:${template.id}`, kind: 'custom', source: 'mine', template,
       name: template.name, description: template.description, category: template.category,
@@ -64,19 +76,41 @@ function countLabel(count: number): string {
   return `${count} ${count === 1 ? 'template' : 'templates'} found`;
 }
 
-/** Opens the template picker over the board. Closing the shared dialog returns focus to its opener. */
-export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
+/** The insert the Tracker button on the rail made: a tracker frame centred in the view, and selected. */
+function insertTrackerFrame(app: BoardApp) {
+  const viewport = app.r.viewport();
+  const frame = createTrackerFrame(app.store, {
+    x: viewport.x + (viewport.w - TRACKER_FRAME_DEFAULT_SIZE.w) / 2,
+    y: viewport.y + (viewport.h - TRACKER_FRAME_DEFAULT_SIZE.h) / 2,
+  });
+  if (frame) app.setSelection([frame.id]);
+}
+
+/**
+ * Opens the template picker over the board. Closing the shared dialog returns focus to its opener.
+ * `trackerAllowed` is the gate for the Tracker entry (signed in with the tracker, not read-only, not a scratch board or the demo);
+ * it is asked again while the picker is open, when the account or the read-only state changes.
+ */
+export function openTemplatePicker(app: BoardApp, onClose?: () => void, trackerAllowed?: () => boolean) {
   const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   opener?.setAttribute('aria-haspopup', 'dialog');
   opener?.setAttribute('aria-expanded', 'true');
   if (opener?.matches('[data-drawer="templates"]')) opener.classList.add('on');
 
   const idPrefix = `template-picker-${++pickerSequence}`;
-  let items = allItems([]);
+  const allowTracker = () => trackerAllowed?.() === true;
+  let trackerOn = allowTracker();
+  let savedTemplates: CustomTemplate[] = [];
+  const buildItems = () => {
+    trackerOn = allowTracker();
+    return allItems(savedTemplates, trackerOn);
+  };
+  let items = buildItems();
   let filter: TemplatePickerFilter = { kind: 'all' };
   let selectedId: string | null = items[0]?.id ?? null;
   let isClosed = false;
   let releaseTemplates = () => {};
+  let releaseTrackerWatch = () => {};
   let loadSequence = 0;
 
   const search = h('input', {
@@ -120,6 +154,7 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
       isClosed = true;
       thumbObserver?.disconnect();
       releaseTemplates();
+      releaseTrackerWatch();
       opener?.setAttribute('aria-expanded', 'false');
       if (opener?.matches('[data-drawer="templates"]')) opener.classList.remove('on');
       onClose?.();
@@ -201,9 +236,11 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
   };
 
   const makeCard = (entry: PickerItem, index: number) => {
-    const drawThumb = () => (entry.kind === 'builtin'
-      ? builtinThumbnail(entry.template as TemplateDef)
-      : customThumbnail(entry.template as CustomTemplate));
+    const drawThumb = () => (entry.kind === 'tracker'
+      ? trackerThumbnail()
+      : entry.kind === 'builtin'
+        ? builtinThumbnail(entry.template as TemplateDef)
+        : customThumbnail(entry.template as CustomTemplate));
     const card = h('button', {
       type: 'button',
       id: `${idPrefix}-option-${index}`,
@@ -212,6 +249,7 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
       'aria-selected': 'false',
       'data-entry-id': entry.id,
       'data-category': entry.category,
+      'data-command': entry.kind === 'tracker' ? 'tracker:create-frame' : undefined,
       tabindex: '-1',
     },
     h('span', { class: 'template-picker-preview', 'aria-hidden': 'true' }),
@@ -256,6 +294,12 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
   function use(entry?: PickerItem) {
     const chosen = entry ?? list().find((item) => item.id === selectedId);
     if (!chosen) return;
+    if (chosen.kind === 'tracker') {
+      if (!allowTracker()) return;
+      insertTrackerFrame(app);
+      modal.close();
+      return;
+    }
     if (chosen.kind === 'builtin') {
       const template = chosen.template as TemplateDef;
       reopenSession(app.user.id, app.conn.id);
@@ -320,12 +364,25 @@ export function openTemplatePicker(app: BoardApp, onClose?: () => void) {
   update();
   releaseTemplates = onTemplatesChange(() => void loadSavedTemplates());
   void loadSavedTemplates();
+  // The Tracker entry follows its gate while the picker is open: it appears or goes when the account or the read-only state changes
+  const refreshTracker = () => {
+    if (isClosed || allowTracker() === trackerOn) return;
+    items = buildItems();
+    update();
+  };
+  const offAuth = onAuth(refreshTracker);
+  const offReadOnly = app.on('readonly', refreshTracker);
+  releaseTrackerWatch = () => {
+    offAuth();
+    offReadOnly();
+  };
 
   async function loadSavedTemplates() {
     const load = ++loadSequence;
     const saved = await listTemplates();
     if (isClosed || load !== loadSequence) return;
-    items = allItems(saved);
+    savedTemplates = saved;
+    items = buildItems();
     const selectedFilter = filter;
     if (selectedFilter.kind === 'category' && !items.some((item) => item.category === selectedFilter.category)) filter = { kind: 'all' };
     if (selectedFilter.kind === 'mine' && !items.some((item) => item.source === 'mine')) filter = { kind: 'all' };

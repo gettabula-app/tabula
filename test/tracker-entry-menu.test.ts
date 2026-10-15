@@ -7,11 +7,15 @@ import { control, installFakeBrowser, textOf, type FakeBrowser, type FakeElement
 const mocks = vi.hoisted(() => ({
   auth: { mode: 'signed-in', me: { user: { id: 'u1', name: 'Johan', email: 'johan@example.test', role: 'member' }, mcp: null, chat: null, tracker: true } } as Record<string, unknown>,
   navigate: vi.fn<(...args: unknown[]) => boolean>(() => true),
+  libraryArgs: [] as unknown[][],
 }));
 
 vi.mock('../src/ui/props', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/ui/props')>()), mountProps: () => ({ el: document.createElement('aside'), toggle: () => undefined, isOpen: () => false, onToggle: () => undefined }) }));
 vi.mock('../src/ui/library', () => ({
-  mountLibrary: () => ({ tab: null, open: vi.fn<(...args: unknown[]) => void>(), onChange: vi.fn<(...args: unknown[]) => void>() }),
+  mountLibrary: (...args: unknown[]) => {
+    mocks.libraryArgs.push(args);
+    return { tab: null, open: vi.fn<(...args: unknown[]) => void>(), onChange: vi.fn<(...args: unknown[]) => void>() };
+  },
   openMermaidImport: vi.fn<(...args: unknown[]) => void>(),
 }));
 vi.mock('../src/ui/layers', () => ({ bindLayersKey: vi.fn<(...args: unknown[]) => void>() }));
@@ -148,5 +152,47 @@ describe('the Tracker link of the Boards top bar', () => {
     expect(tracker.getAttribute('href')).toBe('/t/all');
     tracker.click();
     expect(mocks.navigate).toHaveBeenCalledWith({ kind: 'view', view: 'all' });
+  });
+});
+
+describe('the Tracker in the Templates picker, from the board', () => {
+  async function mountBoard(opts: { scratch?: boolean; demo?: boolean } = {}) {
+    mocks.libraryArgs = [];
+    const { root, app } = prepareBoard();
+    const { mountBoardUi } = await import('../src/ui/board');
+    mountBoardUi(app as never, root as unknown as HTMLElement, { home: () => undefined }, opts);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { root, app };
+  }
+  // the picker is opened from the library, which gets the gate the Tracker entry asks
+  const trackerAllowed = () => (mocks.libraryArgs[0]?.[2] as { trackerAllowed: () => boolean } | undefined)?.trackerAllowed();
+
+  it('is not a rail button any more', async () => {
+    mocks.auth = signedIn(true);
+    const { root } = await mountBoard();
+    expect((root.querySelectorAll('.rail-btn') as FakeElement[]).map((b) => b.getAttribute('aria-label'))).not.toContain('Tracker');
+    expect(root.querySelector('[data-command="tracker:create-frame"]')).toBeNull();
+  });
+
+  it.each([
+    ['signed in with the tracker', () => { mocks.auth = signedIn(true); return {}; }, true],
+    ['offline with the tracker', () => { mocks.auth = { mode: 'offline', me: { user: { id: 'u1' }, tracker: true } }; return {}; }, true],
+    ['a workspace without the tracker', () => { mocks.auth = signedIn(false); return {}; }, false],
+    ['a /api/me that does not say', () => { mocks.auth = signedIn(undefined); return {}; }, false],
+    ['a guest', () => { mocks.auth = { mode: 'guest', guest: { boardId: 'b' } }; return {}; }, false],
+    ['a scratch board', () => { mocks.auth = signedIn(true); return { scratch: true }; }, false],
+    ['the demo', () => { mocks.auth = signedIn(true); return { demo: true }; }, false],
+  ])('gates the picker entry for %s', async (_name, setup, expected) => {
+    const opts = setup();
+    await mountBoard(opts);
+    expect(trackerAllowed()).toBe(expected);
+  });
+
+  it('is never offered on a read-only board, and the gate is asked again when the board turns read-only', async () => {
+    mocks.auth = signedIn(true);
+    const { app } = await mountBoard();
+    expect(trackerAllowed()).toBe(true);
+    app.readOnly = true;
+    expect(trackerAllowed()).toBe(false);
   });
 });
