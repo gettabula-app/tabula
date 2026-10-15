@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
+import { settledBox } from './settled-box';
 
 let server: ViteDevServer | undefined;
 let browser: Browser | undefined;
@@ -54,6 +55,8 @@ describe.skipIf(!available)('the board menu and its search field', { timeout: 20
     await trigger.hover();
     await page.locator('.board-export-submenu').waitFor({ state: 'visible' });
     // attached to the menu's edge and level with its row
+    await settledBox(menu);
+    await settledBox(page.locator('.board-export-submenu'));
     const place = await page.evaluate(() => {
       const m = document.querySelector('.board-menu')!.getBoundingClientRect();
       const p = document.querySelector('.board-export-submenu')!.getBoundingClientRect();
@@ -143,6 +146,7 @@ describe.skipIf(!available)('the emoji picker search', { timeout: 200_000 }, () 
       await page.waitForFunction((n) => document.querySelectorAll('.emoji-pop .emoji-cell').length >= n, min);
       expect(await pop.locator('.list-label').allTextContents()).toEqual(['Emoji']);
       // the results are inside the panel, scrollable if it is short
+      await settledBox(pop);
       const inside = await page.evaluate(() => {
         const box = document.querySelector('.emoji-pop')!.getBoundingClientRect();
         const cell = document.querySelector('.emoji-pop .emoji-cell')!.getBoundingClientRect();

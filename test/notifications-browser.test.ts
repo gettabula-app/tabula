@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright';
 import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
+import { settledBox } from './settled-box';
 
 // The notifications bell and panel in a real browser (proto/designer-preview/notifications/SPEC.md): the real component and CSS over
 // a stubbed /api/notifications. Keyboard and focus, the badge, the filter, the states, new rows behind a line, a phone's sheet.
@@ -239,6 +240,7 @@ describe.skipIf(!available)('the panel', () => {
     const { page } = await open(1280);
     await page.locator('.bell').click();
     await page.locator('.notif-row[data-id]').first().waitFor();
+    await settledBox(page.locator('.notif-pop'));
     const box = await page.locator('.notif-pop').boundingBox();
     expect(box!.width).toBe(400);
     expect(box!.height).toBeLessThanOrEqual(560);
@@ -251,6 +253,7 @@ describe.skipIf(!available)('the panel', () => {
     const { page } = await open(390);
     await page.locator('.bell').click();
     await page.locator('.notif-row[data-id]').first().waitFor();
+    await settledBox(page.locator('.notif-pop'));
     const box = await page.locator('.notif-pop').boundingBox();
     expect(box!.x).toBe(8);
     expect(box!.x + box!.width).toBe(382);

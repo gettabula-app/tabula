@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Locator, type Page } from 'playwright';
 import { existsSync, rmSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
+import { settledBox } from './settled-box';
 
 let server: ViteDevServer | undefined;
 let browser: Browser | undefined;
@@ -68,6 +69,7 @@ describe.skipIf(!available)('dialog control styles in Chromium', { timeout: 240_
       await page.getByRole('button', { name: 'Start a quick poll' }).click();
       const quick = page.locator('.poll-pop');
       await quick.waitFor();
+      await settledBox(quick);
       const multi = page.getByRole('checkbox', { name: 'More than one answer' });
       await multi.check();
       expect(await multi.isChecked()).toBe(true);
@@ -90,6 +92,7 @@ describe.skipIf(!available)('dialog control styles in Chromium', { timeout: 240_
       await page.getByRole('button', { name: /Print or save as PDF/ }).click();
       const print = page.getByRole('dialog', { name: 'Print or save as PDF' });
       await print.waitFor();
+      await settledBox(print);
       const printControl = await controlLook(page.locator('.modal input[type="checkbox"]').first());
       expect(printControl.appearance).toBe('none');
       expect(printControl.width).toBe('16px');
