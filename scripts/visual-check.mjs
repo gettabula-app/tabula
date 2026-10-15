@@ -1124,7 +1124,8 @@ async function assertTrackerLayout(page) {
         if (width > 1) failures.push(`${element.className || element.tagName} has a ${width}px border`);
       }
       const outline = Number.parseFloat(style.outlineWidth);
-      if (style.outlineStyle !== 'none' && outline > 1) failures.push(`${element.className || element.tagName} has a ${outline}px outline`);
+      // a focused field carries the app-wide 2px field ring (TAB-374, Johan's B2); everything else stays at a hairline
+      if (style.outlineStyle !== 'none' && outline > 1 && !element.matches(':focus')) failures.push(`${element.className || element.tagName} has a ${outline}px outline`);
     }
     for (const overlay of document.querySelectorAll('.trk-pop, .trk-modal .modal, .trk-link-modal, .trk-filter-suggestions:not([hidden])')) {
       if (overlay.classList.contains('tray') || overlay.closest('.tray')) failures.push(`${overlay.className || overlay.tagName} is inside a tray frame`);

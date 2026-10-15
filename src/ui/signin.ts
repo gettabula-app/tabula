@@ -52,7 +52,8 @@ export function renderSignIn(root: HTMLElement, opts: SignInOptions = {}): void 
   function showForm(notice?: string, initialEmail = opts.initialEmail ?? ''): void {
     const recoveryInvite = Boolean(opts.failedVerify && invite);
     const email = h('input', {
-      class: recoveryInvite && initialEmail ? 'input' : 'input signin-recovery-email',
+      // only the field that sits inside the invite-recovery sentence is narrow; the form's own field fills the column like its label and button (TAB-376)
+      class: recoveryInvite && !initialEmail ? 'input signin-recovery-email' : 'input',
       type: recoveryInvite && initialEmail ? 'hidden' : 'email',
       name: 'email',
       autocomplete: 'email',

@@ -253,13 +253,13 @@
 .admin .btn.primary:not(:disabled):hover { background: color-mix(in srgb, var(--ink) 88%, var(--paper)); color: var(--paper); }
 .admin .admin-select .admin-role-select {
   min-height: 34px; height: 34px; width: auto; padding: 0 28px 0 9px; border: 0; border-radius: var(--radius-sm);
-  box-shadow: inset 0 -1px 0 var(--field-rule); font: 600 12px/1.2 var(--ui); letter-spacing: normal; text-transform: none;
+  font: 600 12px/1.2 var(--ui); letter-spacing: normal; text-transform: none;
 }
 .admin .admin-select .admin-role-select.tag-yellow { background: var(--tag-yellow); color: var(--on-tag-yellow); }
 .admin .admin-select .admin-role-select.tag-blue { background: var(--tag-blue); color: var(--on-tag-blue); }
 .admin .admin-select .admin-role-select.tag-green { background: var(--tag-green); color: var(--on-tag-green); }
 .admin .admin-select .admin-role-select.tag-red { background: var(--tag-red); color: var(--on-tag-red); }
-.admin .admin-select .admin-role-select:focus { box-shadow: inset 0 0 0 1px var(--field-edge-strong); }
+.admin .admin-select .admin-role-select:focus { outline: 2px solid var(--ink); outline-offset: 2px; }
 .admin .admin-select .ico { right: 8px; width: 12px; color: currentColor; }
 .admin .admin-input,
 .admin .admin-search .input,

@@ -37,11 +37,12 @@
 .comment-mention.me { background: color-mix(in srgb, var(--signal) 40%, transparent); }
 
 /* the people list under the `@` in a comment field: a hairline box above the field, as chat's list */
-.comment-suggest { margin: 0; padding: 0; list-style: none; max-height: 160px; overflow-y: auto; background: var(--tray); border: 1px solid var(--tray-line); border-bottom: 2px solid var(--tray-text); border-radius: var(--radius-sm); }
+.comment-suggest { margin: 0; padding: 0; list-style: none; max-height: 160px; overflow-y: auto; background: linear-gradient(var(--tray-text), var(--tray-text)) center bottom / calc(100% - 2 * var(--radius-sm)) 2px no-repeat, var(--tray); border: 1px solid var(--tray-line); border-radius: var(--radius-sm); }
 .comment-suggest[hidden] { display: none; }
 .comment-option { min-height: 32px; padding: 6px 8px; border-top: 1px solid var(--tray-line); border-left: 4px solid transparent; color: var(--tray-text); font-size: 13px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .comment-option:first-child { border-top: 0; }
-.comment-option.on { background: var(--tray-2); border-left-color: var(--tray-text); }
+.comment-option { position: relative; }
+.comment-option.on::before { content: ''; position: absolute; left: 0; top: var(--bar-inset); bottom: var(--bar-inset); width: var(--bar-width); background: var(--tray-text); }
 
 /* comment tool button and its count */
 .comment-toggle { position: relative; }
