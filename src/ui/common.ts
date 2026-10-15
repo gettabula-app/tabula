@@ -4,6 +4,8 @@ import { placeBesideAnchor } from './popover-place';
 import { safeInsets } from './safe-area';
 import { placePopover } from './popover-layout';
 import { projectTarget, releaseVelocity, resumeFrom, type PickRecord } from './segmented-logic';
+import { formatShortcutLabel } from '../shortcuts';
+import { LOAD_PIXEL_RATIO, devicePixelRatioNow, pageIsZoomed } from '../zoom-keys';
 
 /** The height of what is visible: the soft keyboard shrinks the visual viewport but not the window. */
 const visibleHeight = () => Math.min(window.innerHeight, window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight);
@@ -432,3 +434,63 @@ export const fmtAgo = (t: number) => {
   const d = new Date(t);
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
 };
+
+/** What the page-zoom notice reads: the pinch scale (undefined without a visual viewport) and the device pixel ratio, and a watch for a change. */
+export interface PageZoomEnv {
+  reading: () => { visualScale: number | undefined; pixelRatio: number };
+  loadPixelRatio: number;
+  watch: (fn: () => void) => () => void;
+  platform: string;
+  storage: { getItem: (key: string) => string | null; setItem: (key: string, value: string) => void } | null;
+}
+
+const PAGE_ZOOM_DISMISSED = 'tabula.pageZoomNoticeDismissed';
+
+function browserPageZoomEnv(): PageZoomEnv {
+  return {
+    reading: () => ({ visualScale: window.visualViewport?.scale, pixelRatio: devicePixelRatioNow() }),
+    loadPixelRatio: LOAD_PIXEL_RATIO,
+    watch: (fn) => {
+      const vv = window.visualViewport;
+      vv?.addEventListener('resize', fn);
+      window.addEventListener('resize', fn);
+      return () => {
+        vv?.removeEventListener('resize', fn);
+        window.removeEventListener('resize', fn);
+      };
+    },
+    platform: typeof navigator === 'undefined' ? '' : navigator.platform,
+    storage: (() => { try { return sessionStorage; } catch { return null; } })(),
+  };
+}
+
+/**
+ * A notice on the board when the page itself is zoomed (pinched, or zoomed in the browser), since the board's own zoom does not undo
+ * that. Ctrl/Cmd+0 is named, in the platform's form. Dismissed for the session only (sessionStorage); otherwise it follows the zoom.
+ */
+export function mountPageZoomChip(host: HTMLElement, env: PageZoomEnv = browserPageZoomEnv()): () => void {
+  let dismissed = false;
+  try { dismissed = env.storage?.getItem(PAGE_ZOOM_DISMISSED) === '1'; } catch { dismissed = false; }
+  const note = h('div', { class: 'page-zoom-note', role: 'status', hidden: true },
+    h('span', { class: 'page-zoom-text' }, `Page is zoomed — press ${formatShortcutLabel('Ctrl/Cmd+0', env.platform)}`),
+    h('button', {
+      class: 'icon-btn', type: 'button', 'aria-label': 'Dismiss',
+      onclick: () => {
+        dismissed = true;
+        try { env.storage?.setItem(PAGE_ZOOM_DISMISSED, '1'); } catch { /* the notice still goes away for this page */ }
+        paint();
+      },
+    }, icon('close', 16)),
+  );
+  const paint = () => {
+    const r = env.reading();
+    note.hidden = dismissed || !pageIsZoomed(r.visualScale, r.pixelRatio, env.loadPixelRatio);
+  };
+  const stop = env.watch(paint);
+  paint();
+  host.appendChild(note);
+  return () => {
+    stop();
+    note.remove();
+  };
+}

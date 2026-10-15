@@ -50,7 +50,7 @@ Knappen **Menu** längst upp till höger innehåller åtgärder för hela tavlan
 ## Förflytta dig
 
 - **Panorera.** Håll ned `Space` och dra, använd verktyget **Hand**, dra med mitten- eller högerknappen på musen eller rulla. På en styrplatta panorerar du med två fingrar.
-- **Zooma.** Håll ned `Ctrl` (`Cmd` på Mac) och rulla, eller nyp på en styrplatta eller pekskärm. Knapparna nere till höger zoomar i steg. Klicka på procentsatsen för att återgå till 100 %.
+- **Zooma.** Håll ned `Ctrl` (`Cmd` på Mac) och rulla, eller nyp på en styrplatta eller pekskärm. Knapparna nere till höger zoomar i steg. Klicka på procentsatsen för att återgå till 100 %. Att nypa över en textruta du redigerar zoomar också tavlan, och `Ctrl+0` (`Cmd+0` på Mac) återställer tavlan till 100 % när fokus är på tavlan; en notis säger till när själva sidan är zoomad.
 - **Anpassa vyn.** **Fit board** (`Shift+1`) visar allt på tavlan. `Shift+2` anpassar vyn till markeringen. När du öppnar en tavla på en telefon anpassas den första vyn redan till tavlan mellan verktygsfältet och högerkanten, så snart innehållet har lästs in; om du flyttar eller zoomar först lämnas din vy ifred.
 - **Minikarta.** Kartknappen nere till höger visar en liten översikt. Klicka eller dra i den för att hoppa till en annan del av tavlan.
 - **Gå till en person.** Klicka på någons avatar längst upp till höger för att hoppa till platsen där personen arbetar.

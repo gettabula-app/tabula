@@ -50,7 +50,7 @@ The **Menu** button at the top right holds board-level actions, with **Search ac
 ## Move around
 
 - **Pan.** Hold `Space` and drag, use the **Hand** tool, drag with the middle or right mouse button, or scroll. On a trackpad, two fingers pan.
-- **Zoom.** Hold `Ctrl` (`Cmd` on Mac) and scroll, or pinch on a trackpad or touch screen. The buttons at the bottom right zoom in steps. Click the percentage to return to 100%.
+- **Zoom.** Hold `Ctrl` (`Cmd` on Mac) and scroll, or pinch on a trackpad or touch screen. The buttons at the bottom right zoom in steps. Click the percentage to return to 100%. Pinching over a text block you are editing zooms the board too, and `Ctrl+0` (`Cmd+0` on Mac) resets the board to 100% while the focus is on the board; a notice says when the page itself is zoomed.
 - **Fit.** **Fit board** (`Shift+1`) shows everything on the board. `Shift+2` fits your selection. When you open a board on a phone, the first view already fits the board between the tool bar and the right edge, once its content has loaded; if you move or zoom first, it leaves your view alone.
 - **Minimap.** The map button at the bottom right shows a small overview. Click or drag in it to jump.
 - **Go to a person.** Click someone's avatar at the top right to jump to where they are working.

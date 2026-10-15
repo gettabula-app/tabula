@@ -19,7 +19,7 @@ import { announce } from './announce';
 import { syncShape } from './sync-shape';
 import { leaveOutWithheld } from '../private-select';
 import { openChatNotifications } from './chat-prefs';
-import { dialog, field, popover, segmented, toast } from './common';
+import { dialog, field, mountPageZoomChip, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountEditBar } from './edit-bar';
@@ -715,6 +715,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // the canvas is one tab stop, after the tool rail and before what acts on a selection (docs/canvas-keyboard.md)
   const canvasFocus = mountCanvasFocus(app, rail);
   app.onDestroy(() => canvasFocus.destroy());
+  // the notice that the page itself is zoomed (pinched or browser-zoomed), on the board only
+  app.onDestroy(mountPageZoomChip(chrome));
   // the focusable code areas and the Wrap and Copy buttons over code blocks (docs/code-blocks.md)
   app.onDestroy(mountCodeControls(app));
   trackPanelTop(chrome, [topLeft, topRight]);

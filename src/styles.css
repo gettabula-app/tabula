@@ -604,6 +604,13 @@ select.input {
 .zoom-label:hover { background: var(--tray-hover); }
 .minimap { position: absolute; right: calc(12px + var(--safe-right) + var(--dock-inset, 0px)); bottom: calc(64px + var(--safe-bottom)); padding: 6px; display: none; }
 .minimap.show { display: block; }
+.page-zoom-note {
+  position: absolute; top: calc(68px + var(--safe-top)); left: calc((100% - var(--dock-inset, 0px)) / 2); transform: translateX(-50%); z-index: 30;
+  display: flex; align-items: center; gap: 4px; max-width: calc(100% - 24px); padding: 4px 4px 4px 14px; border-radius: 999px;
+  background: var(--tray); color: var(--tray-text); box-shadow: var(--shadow); font-size: 13px; line-height: 1.4;
+}
+.page-zoom-note[hidden] { display: none; }
+.page-zoom-text { min-width: 0; overflow-wrap: anywhere; }
 .minimap canvas { display: block; width: 220px; height: 140px; cursor: pointer; border-radius: var(--radius-xs); background: var(--tray-2); }
 
 /* facilitation bar */
