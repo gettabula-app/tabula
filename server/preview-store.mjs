@@ -152,5 +152,20 @@ export function createDevPreviewStore({ dataDir, now = Date.now }) {
     return { type: image.type, width: image.width, height: image.height, bytes: bytes.length, uploadedBy, at, etag };
   }
 
-  return { directory, read, put };
+  function remove(boardId) {
+    const root = realDirectory();
+    if (!root) return false;
+    const filename = imageName(boardId);
+    let removed = false;
+    for (const name of [filename, `${filename.slice(0, -4)}.json`]) {
+      const target = safePath(root, name);
+      if (fs.existsSync(target)) {
+        fs.rmSync(target, { force: true });
+        removed = true;
+      }
+    }
+    return removed;
+  }
+
+  return { directory, read, put, remove };
 }
