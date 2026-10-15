@@ -106,7 +106,7 @@ describe('validatePreviewImage', () => {
     ['PNG APNG fdAT', png(480, 300, [pngChunk('fdAT', Buffer.alloc(4)), pngChunk('IDAT', Buffer.from([0]))]), 'image/png', 'animated'],
     ['truncated PNG chunk', Buffer.concat([pngSignature, Buffer.from([0, 0, 0, 13]), Buffer.from('IHDR'), Buffer.alloc(8)]), 'image/png', 'truncated'],
     ['PNG chunk length past end', Buffer.concat([pngSignature, Buffer.from([0, 0, 0, 13]), Buffer.from('IHDR'), Buffer.from([0xff, 0xff, 0xff, 0xff])]), 'image/png', 'truncated'],
-    ['PNG missing IEND', Buffer.concat([pngSignature, pngChunk('IHDR', Buffer.alloc(13)), pngChunk('IDAT', Buffer.from([0]))]), 'image/png', 'truncated'],
+    ['PNG missing IEND', png().subarray(0, png().length - pngChunk('IEND').length), 'image/png', 'truncated'],
     ['PNG with data after IEND', Buffer.concat([minimalPng, Buffer.from('polyglot')]), 'image/png', 'trailing_data'],
     ['PNG width below 64', png(63, 300), 'image/png', 'invalid_dimensions'],
     ['PNG width above 1280', png(1281, 300), 'image/png', 'invalid_dimensions'],
