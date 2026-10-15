@@ -74,16 +74,17 @@ Press `Ctrl+Z` (`Cmd+Z` on Mac) to undo and `Shift+Ctrl+Z` or `Ctrl+Y` to redo, 
 
 Tabula saves every change on your device as you work. You do not press save, and a board keeps working without a network connection.
 
-When a sync server is reachable, changes reach the other people on the board live. The status next to the board name tells you the state:
+When a sync server is reachable, changes reach the other people on the board live. The sync status next to the board name is a dot. Its shape tells you the state, and its words show when you hover over it or put keyboard focus on it; screen readers read the words out when the state changes.
 
-| Status | Meaning |
+| Shape and status | Meaning |
 |---|---|
-| **Live** / **Live with 2** | Connected. Changes sync in real time, and the number is how many others are here. |
-| **Saved on this device** | Everything is saved locally. Tabula is waiting to connect and will sync when it can. |
-| **Local only** | Sync is off. The board exists only in this browser. |
-| **Sign in needed** / **No access** | The server refused the connection. Your changes stay on your device. |
+| Dot: **Live** / **Live with 2** | Connected. Changes sync in real time, and the number is how many others are here. |
+| Ring: **Saved on this device** | Everything is saved locally. Tabula is waiting to connect and will sync when it can. |
+| Ring with a dot in the centre: **Restoring…** | The workspace is being restored from a backup. Your changes are saved on this device. |
+| Bar: **Local only** | Sync is off. The board exists only in this browser. |
+| Triangle: **Sign in needed** / **No access** | The server refused the connection. Your changes stay on your device. |
 
-Click the status, or **Share**, to see and copy the board link. In open mode, anyone with the link can edit with you and does not need an account. If your workspace uses sign-in, only people with access to the board can open the link. See [Sharing, roles and teams](sharing.md).
+Choose **Share** to see and copy the board link. The sync status does not open it. In open mode, anyone with the link can edit with you and does not need an account. If your workspace uses sign-in, only people with access to the board can open the link. See [Sharing, roles and teams](sharing.md).
 
 Clearing your browser data removes boards that were never synced. Export important boards from the board menu. See [Export and import](export-import.md).
 

@@ -10,7 +10,7 @@ En **arbetsyta med inloggning** är en delad yta med medlemmar, team och behöri
 
 ## Delningsdialogrutan
 
-Välj **Share** (Dela) högst upp till höger på en tavla (eller synkroniseringsstatusen bredvid tavlans namn). Dialogrutan **Share this board** (Dela den här tavlan) visar tavlans länk med knappen **Copy link** (Kopiera länk).
+Välj **Share** (Dela) högst upp till höger på en tavla. Dialogrutan **Share this board** (Dela den här tavlan) visar tavlans länk med knappen **Copy link** (Kopiera länk).
 
 - I öppet läge står det i dialogrutan om tavlan synkroniseras. Om servern inte går att nå eller synkronisering är avstängd finns tavlan bara på din enhet tills synkroniseringen fungerar igen.
 - Med inloggning står det i dialogrutan att bara personer med åtkomst kan öppna länken. Skicka länken till personer som redan har åtkomst.
@@ -148,7 +148,7 @@ Servern kontrollerar åtkomsten medan du arbetar, så en ändring gäller även 
 - **Utloggad**: meddelandet ”Din session har avslutats. Logga in igen för att fortsätta synkronisera den här tavlan.” visas. Välj **Sign in** (Logga in).
 - **Ingen åtkomst eller tavlan hittades inte**: banderollen visar alternativet **Back to boards** (Tillbaka till tavlorna).
 
-I samtliga fall raderas inget från din enhet. Synkroniseringsstatusen visar **Inloggning krävs** eller **Ingen åtkomst**, och dina ändringar fortsätter att sparas lokalt.
+I samtliga fall raderas inget från din enhet. Synkstatusens punkt blir en triangel och dess ord säger **Inloggning krävs** eller **Ingen åtkomst**, och dina ändringar fortsätter att sparas lokalt.
 
 ## Skrivskyddade arbetsytor
 
