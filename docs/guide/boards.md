@@ -43,7 +43,7 @@ The table also has a **Here now** column. It shows who has the board open right 
 - You only see people on boards you can open. AI tools never appear. People who joined with a join code do not see this column.
 - It updates live through the chat connection. If chat is off on your server, the page checks again every 15 seconds.
 
-Owners and admins also see **Members** and **New team** buttons. Other people, except guests, see **New team**. For teams and roles, see [Sharing, roles and teams](sharing.md).
+Owners and admins also see **Members** and **New team** buttons. Other people, except guests, see **New team**. On a narrow screen, **New team** and **Members** sit behind the **More actions** button, shown as three dots. For teams and roles, see [Sharing, roles and teams](sharing.md).
 
 If your workspace has a banner message, it appears at the very top. If the server cannot be reached, a note says **You are offline. Showing the last list from this device.** and buttons that need the server are disabled.
 

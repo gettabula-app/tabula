@@ -43,7 +43,7 @@ Tabellen har också en kolumn **Here now** (Här nu). Den visar vem som har tavl
 - Du ser bara personer på tavlor du kan öppna. AI-verktyg visas aldrig. Personer som anslöt med en anslutningskod ser inte kolumnen.
 - Den uppdateras direkt via chattanslutningen. Om chatten är avstängd på din server kontrollerar sidan igen var 15:e sekund.
 
-Ägare och administratörer ser också knapparna **Members** (Medlemmar) och **New team** (Nytt team). Andra personer, förutom gäster, ser **New team**. Information om team och roller finns i [Dela, roller och team](sharing.md).
+Ägare och administratörer ser också knapparna **Members** (Medlemmar) och **New team** (Nytt team). Andra personer, förutom gäster, ser **New team**. På en smal skärm ligger **New team** och **Members** bakom knappen **More actions** (Fler åtgärder), som visas som tre punkter. Information om team och roller finns i [Dela, roller och team](sharing.md).
 
 Om din arbetsyta har ett banderollmeddelande visas det allra högst upp. Om det inte går att nå servern visas meddelandet **You are offline. Showing the last list from this device.** (Du är offline. Visar den senaste listan från den här enheten.) och knappar som behöver servern inaktiveras.
 
