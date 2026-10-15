@@ -183,7 +183,12 @@ export interface BaseObj extends Partial<StyleFields> {
   due?: string;
   link?: string;
   labels?: Id[];
+  /** A card's checklist (TAB-372): flat like `labels`, replaced whole on each change; the order is the array's. */
+  checklist?: ChecklistItem[];
 }
+
+/** One item of a card's checklist (TAB-372, po/specs/12-kanban-checklist.md): one line of text and a tick. */
+export interface ChecklistItem { id: Id; text: string; done: boolean }
 
 export interface ConnectorObj {
   id: Id;

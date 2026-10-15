@@ -514,7 +514,8 @@ export class Flow {
   /**
    * The kanbans of the board for the summary (docs/kanban.md, Export and import): a heading per kanban, a lower heading per
    * lane with its stage and limit, the cards as bullets in the order drawn, `(owner, due)` in parentheses, and the votes a
-   * card got. A hidden kanban, lane or card (TAB-198) and a card this person may not see are left out, as are the notes.
+   * card got, and a card's checklist as an indented task list under it (TAB-372). A hidden kanban, lane or card (TAB-198) and a
+   * card this person may not see are left out, as are the notes.
    */
   private kanbanLines(totals: Map<Id, number>): string[] {
     const s = this.app.store;
@@ -538,6 +539,11 @@ export class Flow {
           const link = isSafeHttpUrl(k.link) ? ` [link](<${k.link.replace(/[()<>]/g, (ch) => ({ '(': '%28', ')': '%29', '<': '%3C', '>': '%3E' })[ch]!) }>)` : '';
           const n = totals.get(k.id);
           out.push(`- ${line(k.text) || 'Untitled card'}${who ? ` (${who})` : ''}${link}${n ? ` (${n} vote${n === 1 ? '' : 's'})` : ''}`);
+          // a checklist (TAB-372) is an indented task list under its card, ticked items as [x]
+          for (const item of Array.isArray(k.checklist) ? k.checklist : []) {
+            const text = line(item.text);
+            if (text) out.push(`  - [${item.done === true ? 'x' : ' '}] ${text}`);
+          }
         }
         out.push('');
       }
