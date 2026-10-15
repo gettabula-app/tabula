@@ -10,7 +10,7 @@ If your workspace uses sign-in, you first see **Sign in to Tabula**. Enter your 
 
 ## Create your first board
 
-1. On the **Boards** page, choose **New board**.
+1. On the **Boards** page, choose **New board**, then **Blank board**.
 2. The empty board shows a hint. Press `N` for a sticky note, `R` for a rectangle, or double-click the canvas to write text.
 3. Click the board name at the top left and type a name. Press `Enter` to save it.
 
