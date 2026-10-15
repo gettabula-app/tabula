@@ -85,6 +85,9 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .group-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
 .badge { display: inline-block; padding: 0 6px; border: 1px solid var(--ink); color: var(--ink); line-height: 18px; white-space: nowrap; }
 .home-empty { margin: 0; padding: 16px 0; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); color: var(--graphite); }
+.team-empty-state { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
+.team-empty-state .home-empty { flex: 1 1 240px; }
+.team-empty-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 /* Board rows: the columns come from --cols, shared by the labels and every row. The whole row is the link. */
 .board-table { --cols: minmax(0, 1fr) 144px 32px; }
@@ -289,8 +292,7 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
 .home-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .home.empty { min-height: calc(100vh - 56px); align-content: center; }
 .home.empty .home-head,
-.home.empty .home-foot,
-.home.empty .home-templates { display: none; }
+.home.empty .home-foot { display: none; }
 
 .home-empty { padding: 16px 0; border-top: 1px solid var(--page-hairline); border-bottom: 1px solid var(--page-hairline); }
 .board-head { padding-bottom: 8px; border-bottom: 1px solid var(--page-hairline); font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; }

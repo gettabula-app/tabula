@@ -118,28 +118,30 @@ describe('the Tracker link of the Boards top bar', () => {
     const { createTopbar } = await import('../src/ui/topbar');
     const me = (tracker: boolean | undefined) => (signedIn(tracker) as unknown as { me: never }).me;
     const links = (bar: unknown) => ((bar as FakeElement).querySelectorAll('.topbar-link') as FakeElement[]).map((a) => textOf(a));
-    expect(links(createTopbar('boards', me(true)))).toEqual(['Boards', 'Tracker', 'Templates', 'Help']);
+    expect(links(createTopbar('boards', me(true)))).toEqual(['Boards', 'Tracker', 'Help']);
     // AI tool access is not in the top bar any more, even when the server has it; the name is the account menu button
     const withMcp = { ...(me(true) as object), mcp: true, ai: { personalKeys: true }, chat: true } as never;
-    expect(links(createTopbar('boards', withMcp))).toEqual(['Boards', 'Tracker', 'Templates', 'Help']);
+    expect(links(createTopbar('boards', withMcp))).toEqual(['Boards', 'Tracker', 'Help']);
     const barWithMcp = createTopbar('boards', withMcp) as unknown as FakeElement;
     expect((barWithMcp.querySelectorAll('button') as FakeElement[]).map((b) => textOf(b))).toEqual(['Johan']);
     const menuItems = () => (browser!.document.body.querySelector('.menu') as FakeElement).querySelectorAll('.menu-item').map((i) => textOf(i as FakeElement));
     const button = barWithMcp.querySelector('.topbar-me-btn') as FakeElement;
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
     button.click();
-    expect(menuItems()).toEqual(['Your name and colour', 'AI tool access', 'Your AI key', 'Notification settings', 'Sign out']);
+    expect(menuItems()).toEqual(['Your name and colour', 'My templates', 'AI tool access', 'Your AI key', 'Notification settings', 'Sign out']);
+    browser!.document.body.querySelectorAll('.menu-item').find((item) => textOf(item) === 'My templates')!.click();
+    expect(browser!.location.hash).toBe('#/templates');
     (await import('../src/ui/common')).closePopover();
     await new Promise((resolve) => setTimeout(resolve, 5)); // the popover's pointer listener is added on a timer
-    // without the server offering them, the menu is the name, Notification settings (for every signed-in account) and Sign out
+    // Without the optional profile, AI and key items, My templates and Notification settings remain available to signed-in accounts.
     const plain = createTopbar('boards', me(true)) as unknown as FakeElement;
     (plain.querySelector('.topbar-me-btn') as FakeElement).click();
-    expect(menuItems()).toEqual(['Your name and colour', 'Notification settings', 'Sign out']);
+    expect(menuItems()).toEqual(['Your name and colour', 'My templates', 'Notification settings', 'Sign out']);
     (await import('../src/ui/common')).closePopover();
     await new Promise((resolve) => setTimeout(resolve, 5)); // the popover's pointer listener is added on a timer
-    expect(links(createTopbar('boards', me(false)))).toEqual(['Boards', 'Templates', 'Help']);
-    expect(links(createTopbar('boards', me(undefined)))).toEqual(['Boards', 'Templates', 'Help']);
-    expect(links(createTopbar('boards', null))).toEqual(['Boards', 'Templates', 'Help']);
+    expect(links(createTopbar('boards', me(false)))).toEqual(['Boards', 'Help']);
+    expect(links(createTopbar('boards', me(undefined)))).toEqual(['Boards', 'Help']);
+    expect(links(createTopbar('boards', null))).toEqual(['Boards', 'Help']);
 
     const bar = createTopbar('templates', me(true)) as unknown as FakeElement;
     const tracker = (bar.querySelectorAll('.topbar-link') as FakeElement[]).find((a) => textOf(a) === 'Tracker')!;

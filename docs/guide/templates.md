@@ -6,7 +6,7 @@ Press `Esc` to close the templates drawer, or any other shape library (Shapes, U
 
 ## Browse templates
 
-Choose **Templates** in the top bar of the Boards page, or open the `#/templates` address of your Tabula server.
+On the Boards page, choose **New board**, then **From a template…**, or open the `#/templates` address of your Tabula server. In a workspace with sign-in, **My templates** in the account menu opens the same page.
 
 - **My templates** comes first and lists the templates you saved. Until you save one it says **Templates you save from a board appear here.**
 - **Shared with me** appears in a workspace with sign-in. It lists the team and workspace templates that someone else saved. Your own templates stay under **My templates**.
@@ -33,7 +33,7 @@ If you saved templates in this browser before you signed in, Tabula offers to up
 
 Tabula creates a new board named after the template, with its frames, fonts and session steps, and opens it. Rename the board from the name field at the top left.
 
-The **Start from a template** row on the Boards page shows up to four tiles: your templates first, then built-in ones. Click a tile to open a new board from it, or choose **All templates**.
+While you have no boards, the **Start from a template** row on the Boards page shows up to four tiles: your templates first, then built-in ones. Click a tile to open a new board from it, choose **All templates**, or choose **Hide** to dismiss the row on this device.
 
 A new board started from a template opens with the template already in place, and Undo does not take it away: it is where the board begins. On a phone the first view fits the template between the tool bar and the right edge.
 

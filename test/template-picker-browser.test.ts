@@ -30,9 +30,25 @@ async function openBoard(width = 1280, height = 900, coarsePointer = false): Pro
     const page = await context.newPage();
     try {
       await page.goto(`${base}?debug`);
-      await page.getByRole('button', { name: 'New board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
-      await page.locator('.rail-text-group').waitFor({ timeout: 25_000 });
-      await page.locator('.empty-hint').waitFor();
+      await page.getByRole('button', { name: 'New board', exact: true }).click({ timeout: budget(attempt >= 2 ? 90_000 : 25_000) });
+      await page.getByRole('menuitem', { name: 'Blank board', exact: true }).click({ timeout: budget(25_000) });
+      await page.locator('.rail-text-group').waitFor({ timeout: budget(25_000) });
+      await page.locator('.empty-hint').waitFor({ timeout: budget(25_000) });
+      return page;
+    } catch (error) {
+      await context.close();
+      if (attempt >= 2) throw error;
+    }
+  }
+}
+
+async function openHome(width = 360): Promise<Page> {
+  for (let attempt = 0; ; attempt++) {
+    const context = await browser!.newContext({ viewport: { width, height: 844 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    try {
+      await page.goto(base);
+      await page.getByRole('heading', { name: 'No boards yet', exact: true }).waitFor({ timeout: budget(attempt >= 2 ? 90_000 : 25_000) });
       return page;
     } catch (error) {
       await context.close();
@@ -46,6 +62,51 @@ const picker = (page: Page) => page.locator('.template-picker');
 const objectCount = (page: Page) => page.evaluate(() => (window as any).__board.store.cache.size as number);
 
 describe.skipIf(!available)('the board template picker dialog', { timeout: 200_000 }, () => {
+  it('shows home suggestions with no boards and keeps them away after opening a blank board', async () => {
+    const page = await openHome();
+    const strip = page.locator('.home-templates');
+    expect(await strip.isVisible()).toBe(true);
+    await page.getByRole('button', { name: 'New board', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Blank board', exact: true }).click();
+    await page.locator('.rail-text-group').waitFor({ timeout: budget(25_000) });
+    await page.evaluate(() => { location.hash = '#/'; });
+    await strip.waitFor({ state: 'attached', timeout: budget(25_000) });
+    expect(await strip.isVisible()).toBe(false);
+    await closePage(page);
+  });
+
+  it('opens Templates from the New board menu and fits the menu at 360 pixels', async () => {
+    const page = await openHome();
+    const opener = page.getByRole('button', { name: 'New board', exact: true });
+    await opener.click();
+    const menu = page.getByRole('menu', { name: 'New board' });
+    await menu.waitFor({ timeout: budget(10_000) });
+    for (const label of ['Blank board', 'From a template…', 'Import a file…']) {
+      expect(await menu.getByRole('menuitem', { name: label, exact: true }).count()).toBe(1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await opener.getAttribute('aria-haspopup')).toBe('menu');
+    expect(await opener.getAttribute('aria-expanded')).toBe('true');
+    await page.keyboard.press('Escape');
+    await menu.waitFor({ state: 'detached', timeout: budget(10_000) });
+    expect(await opener.getAttribute('aria-expanded')).toBe('false');
+    expect(await opener.evaluate((element) => document.activeElement === element)).toBe(true);
+    await opener.click();
+    await menu.getByRole('menuitem', { name: 'From a template…', exact: true }).click();
+    await page.getByRole('heading', { name: 'Templates', exact: true }).waitFor({ timeout: budget(25_000) });
+    expect(new URL(page.url()).hash).toBe('#/templates');
+    await closePage(page);
+  });
+
+  it('opens the file picker from Import a file… in the New board menu', async () => {
+    const page = await openHome();
+    await page.getByRole('button', { name: 'New board', exact: true }).click();
+    const fileChooser = page.waitForEvent('filechooser', { timeout: budget(10_000) });
+    await page.getByRole('menuitem', { name: 'Import a file…', exact: true }).click();
+    expect(await fileChooser).toBeDefined();
+    await closePage(page);
+  });
+
   it('opens from the rail button with dialog popup semantics', async () => {
     const page = await openBoard();
     const opener = page.getByRole('button', { name: 'Templates and team exercises' });

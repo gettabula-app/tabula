@@ -4,16 +4,15 @@ The **Boards** page lists your boards and is where you create, open, import and 
 
 ## The Boards page
 
-The top bar has the **Tabula** wordmark (click it to return here) and the links **Boards** and **Templates**. If your workspace uses sign-in, you also see your name, which is the account menu: your name and colour, **AI tool access** (if your administrator turned on AI tools), **Your AI key** (if you may use your own), chat notifications and **Sign out**. Workspace owners and admins also see **Admin**, and workspaces that have the tracker show a **Tracker** link.
+The top bar has the **Tabula** wordmark (click it to return here) and the **Boards** link. If your workspace uses sign-in, you also see your name, which is the account menu: your name and colour, **My templates**, **AI tool access** (if your administrator turned on AI tools), **Your AI key** (if you may use your own), chat notifications and **Sign out**. Workspace owners and admins also see **Admin**, and workspaces that have the tracker show a **Tracker** link.
 
 Below the top bar:
 
-- **New board** creates an empty board and opens it.
-- **Import file** creates a board from a `.drift` or `.json` file. See [Export and import](export-import.md).
+- **New board** opens a menu. **Blank board** creates an empty board and opens it, **From a template…** opens the Templates page, and **Import a file…** creates a board from a `.drift` or `.json` file. See [Export and import](export-import.md).
 - **Search boards** filters the list by title as you type.
-- A **Start from a template** row with up to four templates, your own saved templates first, and an **All templates** link. See [Templates](templates.md).
+- While you have no boards, a **Start from a template** row shows up to four templates, your own saved templates first, and an **All templates** link. Choose **Hide** to dismiss it on this device. See [Templates](templates.md).
 
-![The Boards page of a signed-in member: a Design team section, Personal, and Shared with you with one View only board, then the template row](images/teams-home.png)
+![The Boards page of a signed-in member: a Design team section, Personal, and Shared with you with one View only board](images/teams-home.png)
 
 ## Open mode
 
