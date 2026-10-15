@@ -6,7 +6,7 @@ Tryck på `Esc` för att stänga mallpanelen, ett annat formbibliotek (Shapes (F
 
 ## Bläddra bland mallar
 
-Välj **Templates** (Mallar) i det övre fältet på sidan Boards, eller öppna adressen `#/templates` på din Tabula-server.
+Välj **New board** (Ny tavla) och sedan **From a template…** (Från en mall…) på sidan Boards, eller öppna adressen `#/templates` på din Tabula-server. I en arbetsyta med inloggning öppnar **My templates** (Mina mallar) i kontomenyn samma sida.
 
 - **My templates** (Mina mallar) visas först och listar mallarna du har sparat. Innan du sparar en mall visas texten **Templates you save from a board appear here.** (Mallar som du sparar från en tavla visas här.)
 - **Shared with me** (Delat med mig) visas i en arbetsyta med inloggning. Där listas teamets och arbetsytans mallar som någon annan har sparat. Dina egna mallar ligger kvar under **My templates**.
@@ -33,7 +33,7 @@ Om du sparade mallar i den här webbläsaren innan du loggade in erbjuder Tabula
 
 Tabula skapar en ny tavla med mallens namn, ramar, typsnitt och sessionssteg, och öppnar den. Byt namn på tavlan i namnfältet längst upp till vänster.
 
-Raden **Start from a template** (Börja med en mall) på sidan Boards visar upp till fyra rutor: först dina egna mallar och sedan inbyggda mallar. Klicka på en ruta om du vill öppna en ny tavla från den, eller välj **All templates** (Alla mallar).
+Så länge du inte har några tavlor visar raden **Start from a template** (Börja med en mall) på sidan Boards upp till fyra rutor: först dina egna mallar och sedan inbyggda mallar. Klicka på en ruta om du vill öppna en ny tavla från den, välj **All templates** (Alla mallar) eller välj **Hide** (Dölj) för att dölja raden på den här enheten.
 
 En ny tavla som startas från en mall öppnas med mallen redan på plats, och Ångra tar inte bort den: det är där tavlan börjar. På en telefon anpassas den första vyn så att mallen ryms mellan verktygsfältet och högerkanten.
 

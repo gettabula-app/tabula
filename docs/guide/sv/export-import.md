@@ -63,7 +63,7 @@ Kopierar en diagrambeskrivning till urklipp: ett klassdiagram om tavlan har UML-
 
 ### Öppna en fil som en ny tavla
 
-Klicka på **Import file** (Importera fil) på startsidan och välj en `.drift`- eller `.json`-fil. Filen öppnas som en ny tavla, inzoomad så att allt får plats, med meddelandet ”Tavlan öppnades från fil”. En `.drift`-fil återställer kommentarer, omröstningar och historik. En JSON-fil återställer objekt, inställningar, sessionssteg och omröstningar samt eventuella kommentarer.
+På startsidan väljer du **New board** (Ny tavla), sedan **Import a file…** (Importera en fil…) och till sist en `.drift`- eller `.json`-fil. Filen öppnas som en ny tavla, inzoomad så att allt får plats, med meddelandet ”Tavlan öppnades från fil”. En `.drift`-fil återställer kommentarer, omröstningar och historik. En JSON-fil återställer objekt, inställningar, sessionssteg och omröstningar samt eventuella kommentarer.
 
 ### Lägga till en fil på den aktuella tavlan
 

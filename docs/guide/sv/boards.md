@@ -4,16 +4,15 @@ Sidan **Boards** (Tavlor) listar dina tavlor, och här skapar, öppnar, importer
 
 ## Sidan Boards
 
-I det övre fältet finns Tabulas ordmärke (klicka på det för att komma tillbaka hit) och länkarna **Boards** och **Templates** (Mallar). Om din arbetsyta använder inloggning visas även ditt namn, som är kontomenyn: ditt namn och din färg, **AI tool access** (om administratören har aktiverat AI-verktyg), **Your AI key** (om du får använda din egen), chattaviseringar och **Sign out** (Logga ut). Arbetsytans ägare och administratörer ser också **Admin** (Administratör), och arbetsytor som har spåraren visar en länk **Tracker**.
+I det övre fältet finns Tabulas ordmärke (klicka på det för att komma tillbaka hit) och länken **Boards** (Tavlor). Om din arbetsyta använder inloggning visas även ditt namn, som är kontomenyn: ditt namn och din färg, **My templates** (Mina mallar), **AI tool access** (om administratören har aktiverat AI-verktyg), **Your AI key** (om du får använda din egen), chattaviseringar och **Sign out** (Logga ut). Arbetsytans ägare och administratörer ser också **Admin** (Administratör), och arbetsytor som har spåraren visar en länk **Tracker**.
 
 Under det övre fältet:
 
-- **New board** (Ny tavla) skapar en tom tavla och öppnar den.
-- **Import file** (Importera fil) skapar en tavla från en `.drift`- eller `.json`-fil. Se [Exportera och importera](export-import.md).
+- **New board** (Ny tavla) öppnar en meny. **Blank board** (Tom tavla) skapar en tom tavla och öppnar den, **From a template…** (Från en mall…) öppnar sidan Mallar och **Import a file…** (Importera en fil…) skapar en tavla från en `.drift`- eller `.json`-fil. Se [Exportera och importera](export-import.md).
 - **Search boards** (Sök bland tavlor) filtrerar listan efter titel medan du skriver.
-- En rad med **Start from a template** (Börja med en mall) och upp till fyra mallar, med dina egna sparade mallar först och länken **All templates** (Alla mallar). Se [Mallar](templates.md).
+- Så länge du inte har några tavlor visas en rad med **Start from a template** (Börja med en mall) och upp till fyra mallar, med dina egna sparade mallar först och länken **All templates** (Alla mallar). Välj **Hide** (Dölj) för att dölja raden på den här enheten. Se [Mallar](templates.md).
 
-![Sidan Boards för en inloggad medlem: ett avsnitt för teamet Design, Personal (Personligt) och Shared with you (Delat med dig) med en tavla som bara går att visa, följt av mallraden](images/teams-home.png)
+![Sidan Boards för en inloggad medlem: ett avsnitt för teamet Design, Personal (Personligt) och Shared with you (Delat med dig) med en tavla som bara går att visa](images/teams-home.png)
 
 ## Öppet läge
 
