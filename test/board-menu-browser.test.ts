@@ -117,12 +117,14 @@ describe.skipIf(!available)('the board menu and its search field', { timeout: 20
       input.focus();
       const i = getComputedStyle(input);
       const w = getComputedStyle(wrap);
-      return { inputOutline: i.outlineStyle, inputShadow: i.boxShadow, wrapShadow: w.boxShadow, wrapOutline: w.outlineStyle };
+      return { inputOutline: i.outlineStyle, inputShadow: i.boxShadow, wrapShadow: w.boxShadow, wrapOutline: w.outlineStyle, wrapOutlineWidth: w.outlineWidth };
     });
     expect(look.inputOutline).toBe('none');
     expect(look.inputShadow).toBe('none');
-    expect(look.wrapShadow).not.toBe('none');
-    expect(look.wrapOutline).toBe('none');
+    // the ring is the wrapper's 2px outline; the wrapper draws no box-shadow ring of its own
+    expect(look.wrapOutline).toBe('solid');
+    expect(look.wrapOutlineWidth).toBe('2px');
+    expect(look.wrapShadow).toBe('none');
   });
 });
 
@@ -150,9 +152,10 @@ describe.skipIf(!available)('the emoji picker search', { timeout: 200_000 }, () 
     await search.fill('zzzzqq');
     await pop.getByText('No emoji found').waitFor();
     await search.focus();
-    const look = await search.evaluate((el) => ({ outline: getComputedStyle(el).outlineStyle, shadow: getComputedStyle(el).boxShadow }));
-    // one ring: the shared field focus, and no second outline on top of it
-    expect(look.outline).toBe('none');
-    expect(look.shadow).not.toBe('none');
+    const look = await search.evaluate((el) => ({ outline: getComputedStyle(el).outlineStyle, width: getComputedStyle(el).outlineWidth, shadow: getComputedStyle(el).boxShadow }));
+    // one ring: the shared field focus is the field's own 2px outline, with no box-shadow ring under it
+    expect(look.outline).toBe('solid');
+    expect(look.width).toBe('2px');
+    expect(look.shadow).toBe('none');
   });
 });
