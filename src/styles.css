@@ -586,7 +586,7 @@ select.input {
   .segmented-marker, :root[data-scheme='dark'] .segmented-marker { background: Canvas; border: 2px solid Highlight; box-shadow: none; forced-color-adjust: none; }
   .segmented.has-marker button.on { color: CanvasText; }
 }
-@media (prefers-reduced-motion: reduce) { .segmented-marker { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { .segmented-marker, .segmented.has-marker button { transition: none !important; } }
 .line-sample { display: block; width: 18px; height: var(--w); background: currentColor; border-radius: 2px; }
 .dash-sample { display: block; width: 24px; border-top: 2px solid currentColor; }
 .dash-sample.dashed { border-top-style: dashed; }
