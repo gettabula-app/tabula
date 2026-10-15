@@ -130,6 +130,12 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .tpl-tile .tpl-thumb { width: calc(100% + 32px); margin: -16px -16px 8px; }
 .link-more { display: inline-flex; align-items: center; gap: 6px; height: 32px; color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; }
 .link-more:hover { text-decoration: underline; text-underline-offset: 4px; }
+/* Hide is a button: the same text link, without the browser's frame, with a 44px target and room either side of the word */
+button.link-more { min-height: 44px; padding: 0 12px; border: 0; background: none; }
+/* The strip heading and its actions share one row while they fit. The heading takes the room left over (a zero basis, so the line fits) and wraps its own text, but never narrows below its longest word, so a very narrow screen moves the actions to a second row instead of breaking a word. */
+.home-templates .group-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.home-templates .group-head h2 { min-width: min-content; flex: 1 1 0; }
+.home-templates .group-actions { display: flex; flex-wrap: nowrap; align-items: center; white-space: nowrap; flex: 0 0 auto; }
 
 /* Templates page. */
 .tpl-toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; margin-top: 32px; }
@@ -230,6 +236,13 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .tpl-strip { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* Under 480 px New team and Members sit behind the More actions button (the markup has all three); the buttons come back from 480 px. */
+.home-actions .home-more { display: none; }
+@media (max-width: 479px) {
+  .home-actions .home-action { display: none; }
+  .home-actions .home-more { display: inline-flex; }
+}
+
 @media (max-width: 560px) {
   .save-tpl { grid-template-columns: minmax(0, 1fr); }
   .save-tpl-preview { order: -1; }
@@ -281,16 +294,12 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
 .home .btn.ghost:not(:disabled):hover { background: var(--page-hover); }
 .home-actions { gap: 8px; }
 
-.home-empty-state {
-  display: grid; justify-items: center; align-content: center; min-height: min(48vh, 420px); padding: 24px 16px; text-align: center;
-}
+/* No padding or minimum height: the empty state starts on the page's left edge and sits one section gap (the .home gap) below the toolbar, and above the strip. */
 .home-empty-state :is(h1, h2) { margin: 0; color: var(--ink); font: 400 40px/1.1 var(--font-serif); letter-spacing: -0.02em; }
 .home-empty-state p { margin: 8px 0 20px; color: var(--graphite); font-size: 14px; }
-.home-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-.home.empty { min-height: calc(100vh - 56px); align-content: center; }
+.home-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .home.empty .home-head,
-.home.empty .home-foot,
-.home.empty .home-templates { display: none; }
+.home.empty .home-foot { display: none; }
 
 .home-empty { padding: 16px 0; border-top: 1px solid var(--page-hairline); border-bottom: 1px solid var(--page-hairline); }
 .board-head { padding-bottom: 8px; border-bottom: 1px solid var(--page-hairline); font-size: 12px; font-weight: 600; letter-spacing: normal; text-transform: none; }
@@ -349,6 +358,7 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
   .home .home-search { flex: 1 1 100%; max-width: none; }
   .home-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-actions .btn { min-height: 44px; }
+  .home-actions .home-more { justify-self: start; min-width: 44px; min-height: 44px; }
   .home-empty-state :is(h1, h2) { font-size: 32px; }
   .board-list { border-top: 1px solid var(--page-hairline); }
   .board-row { padding: 8px; }

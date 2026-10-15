@@ -63,7 +63,7 @@ Copies a diagram description to the clipboard: a class diagram if the board has 
 
 ### Open a file as a new board
 
-On the home screen click **Import file** and choose a `.drift` or `.json` file. It opens as a new board, zoomed to fit, with the message "Board opened from file". A `.drift` file restores comments, polls and history. A JSON file restores objects, settings, session steps and polls, and comments if present.
+On the home screen choose **New board**, then **Import a file…**, and choose a `.drift` or `.json` file. It opens as a new board, zoomed to fit, with the message "Board opened from file". A `.drift` file restores comments, polls and history. A JSON file restores objects, settings, session steps and polls, and comments if present.
 
 ### Add a file to the current board
 

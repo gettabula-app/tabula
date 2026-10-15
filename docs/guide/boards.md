@@ -4,16 +4,15 @@ The **Boards** page lists your boards and is where you create, open, import and 
 
 ## The Boards page
 
-The top bar has the **Tabula** wordmark (click it to return here) and the links **Boards** and **Templates**. If your workspace uses sign-in, you also see your name, which is the account menu: your name and colour, **AI tool access** (if your administrator turned on AI tools), **Your AI key** (if you may use your own), chat notifications and **Sign out**. Workspace owners and admins also see **Admin**, and workspaces that have the tracker show a **Tracker** link.
+The top bar has the **Tabula** wordmark (click it to return here) and the **Boards** link. If your workspace uses sign-in, you also see your name, which is the account menu: your name and colour, **My templates**, **AI tool access** (if your administrator turned on AI tools), **Your AI key** (if you may use your own), chat notifications and **Sign out**. Workspace owners and admins also see **Admin**, and workspaces that have the tracker show a **Tracker** link.
 
 Below the top bar:
 
-- **New board** creates an empty board and opens it.
-- **Import file** creates a board from a `.drift` or `.json` file. See [Export and import](export-import.md).
+- **New board** opens a menu. **Blank board** creates an empty board and opens it, **From a template…** opens the Templates page, and **Import a file…** creates a board from a `.drift` or `.json` file. See [Export and import](export-import.md).
 - **Search boards** filters the list by title as you type.
-- A **Start from a template** row with up to four templates, your own saved templates first, and an **All templates** link. See [Templates](templates.md).
+- While you have no boards, a **Start from a template** row shows up to four templates, your own saved templates first, and an **All templates** link. Choose **Hide** to dismiss it on this device. See [Templates](templates.md).
 
-![The Boards page of a signed-in member: a Design team section, Personal, and Shared with you with one View only board, then the template row](images/teams-home.png)
+![The Boards page of a signed-in member: a Design team section, Personal, and Shared with you with one View only board](images/teams-home.png)
 
 ## Open mode
 
@@ -44,7 +43,7 @@ The table also has a **Here now** column. It shows who has the board open right 
 - You only see people on boards you can open. AI tools never appear. People who joined with a join code do not see this column.
 - It updates live through the chat connection. If chat is off on your server, the page checks again every 15 seconds.
 
-Owners and admins also see **Members** and **New team** buttons. Other people, except guests, see **New team**. For teams and roles, see [Sharing, roles and teams](sharing.md).
+Owners and admins also see **Members** and **New team** buttons. Other people, except guests, see **New team**. On a narrow screen, **New team** and **Members** sit behind the **More actions** button, shown as three dots. For teams and roles, see [Sharing, roles and teams](sharing.md).
 
 If your workspace has a banner message, it appears at the very top. If the server cannot be reached, a note says **You are offline. Showing the last list from this device.** and buttons that need the server are disabled.
 
