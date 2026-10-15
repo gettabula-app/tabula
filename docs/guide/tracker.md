@@ -6,7 +6,7 @@ The tracker is the same list of tickets wherever you see it. A change in the boa
 
 ## Put a tracker on a board
 
-Choose **Tracker** in the left toolbar. The tracker appears in the middle of what you see and is selected. If your toolbar has no **Tracker** button, your workspace does not have the tracker, or you are only viewing the board. You can add more than one tracker to a board; they all show the same tickets.
+Open **Templates and team exercises** in the left toolbar and choose **Tracker**, next to **Kanban**. The tracker appears in the middle of what you see and is selected. If the templates drawer has no **Tracker**, your workspace does not have the tracker, or you are only viewing the board. You can add more than one tracker to a board; they all show the same tickets.
 
 ![A live tracker on a board on the All tab: seven tickets grouped by state under Done, In review, In progress and To do, with the All, My and Board tabs, the New ticket button and the Open full screen button at the top](images/tracker-board.png)
 

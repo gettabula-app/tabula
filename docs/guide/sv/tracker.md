@@ -6,7 +6,7 @@ Spåraren visar samma lista med ärenden var du än ser den. En ändring i spår
 
 ## Lägg en spårare på en tavla
 
-Välj **Tracker** (spårare) i det vänstra verktygsfältet. Spåraren visas mitt i det du ser och är markerad. Om verktygsfältet saknar knappen **Tracker** har arbetsytan inte spåraren, eller så kan du bara visa tavlan. Du kan lägga till fler än en spårare på en tavla. De visar alla samma ärenden.
+Öppna **Templates and team exercises** (Mallar och teamövningar) i det vänstra verktygsfältet och välj **Tracker** (spårare) bredvid **Kanban**. Spåraren visas mitt i det du ser och är markerad. Om mallpanelen saknar **Tracker** har arbetsytan inte spåraren, eller så kan du bara visa tavlan. Du kan lägga till fler än en spårare på en tavla. De visar alla samma ärenden.
 
 ![En levande spårare på en tavla på fliken All: sju ärenden grupperade efter tillstånd under Done, In review, In progress och To do, med flikarna All, My och Board samt knapparna New ticket och Open full screen överst](images/tracker-board.png)
 

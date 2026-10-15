@@ -19,7 +19,7 @@ export type DrawerTab = 'shapes' | 'uml' | 'icons' | 'stickers' | 'templates' | 
 
 const DND = 'application/x-driftboard';
 
-export function mountLibrary(app: BoardApp, parent: HTMLElement) {
+export function mountLibrary(app: BoardApp, parent: HTMLElement, options: { trackerAllowed?: () => boolean } = {}) {
   const drawer = h('aside', { class: 'drawer tray', 'aria-label': 'Library' });
   parent.appendChild(drawer);
   let tab: DrawerTab | null = null;
@@ -38,7 +38,7 @@ export function mountLibrary(app: BoardApp, parent: HTMLElement) {
         listeners.forEach((l) => l(null));
         drawer.replaceChildren();
       }
-      if (!templatePicker) templatePicker = openTemplatePicker(app, () => { templatePicker = null; });
+      if (!templatePicker) templatePicker = openTemplatePicker(app, () => { templatePicker = null; }, options.trackerAllowed);
       return;
     }
     templatePicker?.close();

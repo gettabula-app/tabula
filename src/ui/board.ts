@@ -301,7 +301,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   );
 
   // ---------------------------------------------------------------- rail
-  const library = mountLibrary(app, chrome);
+  // The Tracker is inserted from the Templates picker, next to Kanban (TAB-390): the gate the rail button had, and never on a read-only board
+  const library = mountLibrary(app, chrome, { trackerAllowed: () => trackerEnabled() && !app.readOnly });
   bindLayersKey(app, library);
   const toolBtn = (label: string, ic: IconName, tool: Tool, key: string) => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, 'aria-keyshortcuts': key, 'data-tip-key': key.toLowerCase(), onclick: () => app.setTool(tool) }, icon(ic, 22));
@@ -547,20 +548,6 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   app.on('flow', syncVote);
   const pollBtn = h('button', { class: 'rail-btn', 'aria-label': 'Start a quick poll' }, icon('poll', 22));
   pollBtn.addEventListener('click', () => openQuickPoll(app, pollBtn));
-  // Tracker is a first-class insert action, gated by /api/me and absent on non-tracker workspaces.
-  const trackerCommand = h('button', {
-    class: 'rail-btn', hidden: true, 'data-command': 'tracker:create-frame', 'aria-label': 'Tracker', 'data-tip': 'Tracker',
-    onclick: () => {
-      const auth = authState();
-      if ((auth.mode !== 'signed-in' && auth.mode !== 'offline') || auth.me?.tracker !== true || app.readOnly) return;
-      const viewport = app.r.viewport();
-      const frame = createTrackerFrame(app.store, {
-        x: viewport.x + (viewport.w - TRACKER_FRAME_DEFAULT_SIZE.w) / 2,
-        y: viewport.y + (viewport.h - TRACKER_FRAME_DEFAULT_SIZE.h) / 2,
-      });
-      if (frame) app.setSelection([frame.id]);
-    },
-  }, icon('frame', 22));
   const rail = h('nav', { class: 'tray rail', 'aria-label': 'Tools' },
     h('div', { class: 'rail-tools' },
       toolBtn('Select', 'select', { kind: 'select' }, 'V'),
@@ -572,7 +559,6 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       connectorGroup.button,
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
       toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
-      trackerCommand,
       imageBtn,
       commentBtn,
       h('hr'),
@@ -860,7 +846,6 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const signedInWithTracker = (auth.mode === 'signed-in' || auth.mode === 'offline') && auth.me?.tracker === true;
     setTrackerMember(signedInWithTracker);
     const enabled = !scratch && !demo && (signedInWithTracker || trackerBoardMockVisual);
-    trackerCommand.hidden = !enabled;
     if (enabled && !trackerStore) {
       if (trackerBoardMockVisual) {
         if (!trackerVisualInit) {
