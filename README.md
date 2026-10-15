@@ -359,3 +359,5 @@ public/sw.js         offline cache for the app, the icon sets, Fontshare and Ico
 Tabula is free software under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You may use, change and self-host it. If you run a changed version as a service for other people, you must offer them its source code. Third-party icon sets and fonts keep their own licences (see above).
 
 Copyright © 2026 Saldes Technology Group AB. Contributions are accepted under the [contributor licence agreement](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The third-party licence notices are in [docs/third-party-notices.md](docs/third-party-notices.md), and a running Tabula serves them at /third-party-notices.txt.

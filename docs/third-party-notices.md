@@ -20159,9 +20159,9 @@ The `cutouts/`, `marks/`, `paper/`, `tape/`, and `board/` folders in `design/bra
 
 ### Favicon and Tauri icons
 
-The project-owned `public/favicon.svg` and `desktop/src-tauri/icons/{32x32.png,128x128.png,128x128@2x.png,icon.png,icon.icns,icon.ico}` are part of Tabula and licensed as AGPL-3.0-only. The favicon is a hand-written SVG; the Tauri icons are generated from it. Their provenance is recorded in [`docs/brand.md`](brand.md#provenance-of-the-app-icons) at commit `b8f11e6` on `docs/brand-icon-provenance`. That provenance commit is not an ancestor of the base revision for this task; retain it when integrating this notice.
+Favicon and install icons (public/favicon.svg, icon-192.png, icon-512.png): the Tabula monogram, the letter T outlined from Bodoni Moda ExtraBold (SIL Open Font License 1.1, which allows outlining glyphs in a logo) with the red square. No font binary is included. The files are in the repository under AGPL-3.0-only; the monogram itself is a reserved Tabula mark (see design/brand/assets/LICENSE.md): others may show it unchanged to refer to Tabula, not as their own mark. Tauri desktop icons (desktop/src-tauri/icons): generated from the earlier hand-written favicon, our own work, AGPL-3.0-only; to be redrawn from the monogram before the next desktop build (desktop frozen).
 
-The web, root, and Tauri artifact copy step for this document is a separate release integration task.
+`npm run build` copies this document to `dist/third-party-notices.txt`, which a running Tabula serves at `/third-party-notices.txt`. The Docker image and the desktop bundle carry it as a release step.
 
 ## Release integration
 
