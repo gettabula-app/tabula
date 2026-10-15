@@ -184,6 +184,36 @@ export function initialOf(title: string): string {
   return first ? first.toLocaleUpperCase() : '·';
 }
 
+/**
+ * A real picture of a board or a template, shown on its card in place of the drawn shapes. The card's name is the label, so the
+ * picture is decorative. Two kinds:
+ * - 'url': an image a server or a file serves. An <img> cannot run script, so anything stored on the server must use this kind.
+ * - 'svg': markup from our own code only (blockThumbnailSvg in src/template-thumb.ts, built on this device). Never stored or server
+ *   markup: that must be 'url'. It is parsed with DOMParser and the root is moved into the tile, so no string goes through innerHTML.
+ * `alt` is accepted but not drawn: the tile is decorative, so the image always has alt="".
+ */
+export type PreviewImage = { kind: 'svg'; markup: string } | { kind: 'url'; src: string; alt?: string };
+
+/** The tile of a real picture, or null when the svg markup is not an svg (the caller then draws the shapes instead). */
+export function imageTile(image: PreviewImage): HTMLElement | null {
+  const wrap = document.createElement('div');
+  wrap.className = 'bc-real';
+  if (image.kind === 'url') {
+    const img = document.createElement('img');
+    img.setAttribute('src', image.src);
+    img.setAttribute('loading', 'lazy');
+    img.setAttribute('decoding', 'async');
+    img.setAttribute('alt', '');
+    wrap.appendChild(img);
+    return wrap;
+  }
+  const root = new DOMParser().parseFromString(image.markup, 'image/svg+xml').documentElement;
+  // a parser error comes back as a parsererror root, so only an svg root is drawn (tagName is the name in both XML and HTML)
+  if (!root || root.tagName.toLowerCase() !== 'svg') return null;
+  wrap.appendChild(root);
+  return wrap;
+}
+
 /** The quiet tile: a dot grid with the title's first letter (or a plus for a blank board). Text is set with textContent only. */
 export function quietPreview(title: string, opts: { plus?: boolean } = {}): HTMLElement {
   const tile = document.createElement('div');

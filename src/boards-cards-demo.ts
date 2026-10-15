@@ -9,9 +9,22 @@ import { h } from './ui/dom';
 import { USER_COLORS } from './palette';
 import { boardCardSkeleton, templateCard, type BoardCardData, type TemplateCardData } from './ui/board-card';
 import { boardsToolbar, loadPreviews, loadView, renderBoardSections, type BoardSection, type BoardView } from './ui/boards-cards-view';
-import type { PreviewModel, PreviewShape, PreviewStyle, PreviewType } from './ui/board-preview';
+import type { PreviewImage, PreviewModel, PreviewShape, PreviewStyle, PreviewType } from './ui/board-preview';
+import { builtinBlockThumbnail } from './template-thumb';
+import { TEMPLATES, type TemplateDef } from './templates';
 
 type DemoState = 'normal' | 'loading' | 'empty-team' | 'few' | 'first-run' | 'previews-off';
+
+/**
+ * What a card shows: the real picture (blocks, as the server would store it), the drawn shapes (Schematic), or the schematic again
+ * for a board whose picture is stale or that this person may not see the picture of. Stale and Schematic look the same on purpose.
+ */
+type PictureMode = 'real' | 'schematic' | 'stale';
+const PICTURES: { value: PictureMode; label: string }[] = [
+  { value: 'real', label: 'Real image (blocks)' },
+  { value: 'schematic', label: 'Schematic (drawn shapes)' },
+  { value: 'stale', label: 'Stale or no access' },
+];
 
 const STATES: { value: DemoState; label: string }[] = [
   { value: 'normal', label: 'Normal' },
@@ -104,42 +117,60 @@ const LIN = { initials: 'LL', color: USER_COLORS[2] };
 const BEN = { initials: 'BN', color: USER_COLORS[3] };
 const EVA = { initials: 'EV', color: USER_COLORS[4] };
 
+// The pictures. Real = the block picture of a built-in template (blockThumbnailSvg: shapes and colour blocks, no words), the way a
+// board would be shown on the Boards home. There is no mind-map, flow-chart or wireframe template among the built-ins, so the boards
+// that were mind maps or flows use the nearest built-in. A missing template id is a mistake in a seed, so tpl() throws.
+function tpl(id: string): TemplateDef {
+  const def = TEMPLATES.find((t) => t.id === id);
+  if (!def) throw new Error(`boards-cards-demo: no built-in template "${id}"`);
+  return def;
+}
+const real = (id: string): PreviewImage => ({ kind: 'svg', markup: builtinBlockThumbnail(tpl(id)) });
+
 // Seed boards: names from the Johan examples (long, CJK, emoji, unbroken), people from the palette, times relative to now.
+// `preview` is the drawn fallback (Schematic); `image` is the real picture. Workshop, Unbroken and Duplicated board have none.
 const DESIGN: BoardCardData[] = [
-  { id: 'q4-roadmap', name: 'Q4 roadmap', editedBy: { name: 'Maja' }, updatedAt: ago(12 * MIN), here: [MAJA, OMAR, LIN], hereMore: 2, unread: 4, preview: kanban() },
-  { id: 'onboarding', name: 'Onboarding flow, version two with the new welcome screens', updatedAt: ago(26 * 60 * MIN), preview: frames('Welcome') },
-  { id: 'q4-jp', name: '第四季度产品路线图', editedBy: { name: 'Claude', agent: true }, updatedAt: ago(5 * MIN), preview: stickies('Goals', 'Risks') },
-  { id: 'interviews', name: 'Customer interviews', editedBy: { name: 'Eva' }, updatedAt: ago(120 * MIN), preview: mind() },
-  { id: 'pricing', name: 'Pricing experiments', editedBy: { name: 'Ben' }, updatedAt: ago(3 * DAY), preview: table() },
+  { id: 'q4-roadmap', name: 'Q4 roadmap', editedBy: { name: 'Maja' }, updatedAt: ago(12 * MIN), here: [MAJA, OMAR, LIN], hereMore: 2, unread: 4, preview: kanban(), image: real('kanban') },
+  { id: 'onboarding', name: 'Onboarding flow, version two with the new welcome screens', updatedAt: ago(26 * 60 * MIN), preview: frames('Welcome'), image: real('journey') },
+  { id: 'q4-jp', name: '第四季度产品路线图', editedBy: { name: 'Claude', agent: true }, updatedAt: ago(5 * MIN), preview: stickies('Goals', 'Risks'), image: real('swot') },
+  { id: 'interviews', name: 'Customer interviews', editedBy: { name: 'Eva' }, updatedAt: ago(120 * MIN), preview: mind(), image: real('empathy') },
+  { id: 'pricing', name: 'Pricing experiments', editedBy: { name: 'Ben' }, updatedAt: ago(3 * DAY), preview: table(), image: real('lean-canvas') },
+  { id: 'duplicated', name: 'Duplicated board', editedBy: { name: 'Maja' }, updatedAt: ago(4 * MIN), preview: kanban() },
   { id: 'workshop', name: 'Workshop 5 Nov', updatedAt: ago(5 * DAY), preview: drawing([]) },
 ];
 const RETRO: BoardCardData[] = [
-  { id: 'sprint-retro', name: 'Sprint retro', editedBy: { name: 'Omar' }, updatedAt: ago(2 * 60 * MIN), here: [BEN, EVA], preview: stickies() },
+  { id: 'sprint-retro', name: 'Sprint retro', editedBy: { name: 'Omar' }, updatedAt: ago(2 * 60 * MIN), here: [BEN, EVA], preview: stickies(), image: real('mad-sad-glad') },
 ];
 const PERSONAL: BoardCardData[] = [
-  { id: 'launch', name: '🚀 Launch plan', updatedAt: ago(40 * MIN), preview: stickies('Now', 'Next') },
+  { id: 'launch', name: '🚀 Launch plan', updatedAt: ago(40 * MIN), preview: stickies('Now', 'Next'), image: real('design-sprint') },
   { id: 'unbroken', name: 'Q4-roadmap-with-no-spaces-at-all-in-this-very-long-board-name-for-the-test', editedBy: { name: 'You' }, updatedAt: ago(DAY), preview: table() },
-  { id: 'ideas', name: 'Ideas', editedBy: { name: 'You' }, updatedAt: ago(3 * DAY), preview: mind() },
+  { id: 'ideas', name: 'Ideas', editedBy: { name: 'You' }, updatedAt: ago(3 * DAY), preview: mind(), image: real('crazy-8s') },
 ];
 const SHARED: BoardCardData[] = [
-  { id: 'launch-review', name: 'Launch review', role: 'viewer', editedBy: { name: 'Lin' }, updatedAt: ago(40 * MIN), preview: frames('Intro') },
-  { id: 'all-hands', name: 'Quarterly all-hands notes', role: 'viewer', updatedAt: ago(6 * DAY), preview: table() },
+  { id: 'launch-review', name: 'Launch review', role: 'viewer', editedBy: { name: 'Lin' }, updatedAt: ago(40 * MIN), preview: frames('Intro'), image: real('premortem') },
+  { id: 'all-hands', name: 'Quarterly all-hands notes', role: 'viewer', updatedAt: ago(6 * DAY), preview: table(), image: real('lean-coffee') },
 ];
 
+/** A welcome card for a built-in template: its own name, description and category, the drawn fallback and the real picture. */
+function templateSeed(id: string, preview: PreviewModel, tone?: TemplateCardData['tone']): TemplateCardData {
+  const def = tpl(id);
+  return { id, name: def.name, description: def.description, category: def.category, tone, preview, image: real(id) };
+}
+
 // Template seeds for the first-run welcome: the same card as a board, one link that creates it.
-const TEMPLATES: TemplateCardData[] = [
-  { id: 'start-stop-continue', name: 'Start / Stop / Continue', description: 'Three lanes for what to start, stop and keep doing.', category: 'Retro', tone: 'yellow', preview: lanes(['Start', 'Stop', 'Continue'], 2, ['yellow', 'teal', 'pink']) },
-  { id: 'sprint-board', name: 'Sprint board', description: 'To do, doing and done, with a card for each item.', category: 'Planning', tone: 'blue', preview: kanban() },
-  { id: 'lean-coffee', name: 'Lean coffee', description: 'Topics to vote on, then discuss one at a time.', category: 'Meeting', tone: 'green', preview: frames('Topics') },
-  { id: 'mind-map', name: 'Mind map', description: 'One idea in the middle, branches around it.', category: 'Ideas', preview: mind() },
-  { id: 'impact-effort', name: 'Impact / Effort', description: 'Sort ideas into four quadrants by impact and effort.', category: 'Planning', tone: 'blue', preview: quadrants() },
+const TEMPLATES_WELCOME: TemplateCardData[] = [
+  templateSeed('start-stop-continue', lanes(['Start', 'Stop', 'Continue'], 2, ['yellow', 'teal', 'pink']), 'yellow'),
+  templateSeed('sprint-board', kanban(), 'blue'),
+  templateSeed('lean-coffee', frames('Topics'), 'green'),
+  templateSeed('affinity', mind()),
+  templateSeed('impact-effort', quadrants(), 'blue'),
   { id: 'blank', name: 'Blank board', description: 'Start from an empty canvas.', category: 'Blank', blank: true },
 ];
 
 function sectionsFor(state: DemoState, query: string): BoardSection[] {
   const q = query.trim().toLocaleLowerCase();
   const sec = (id: string, title: string, kind: BoardSection['kind'], boards: BoardCardData[], admin = false): BoardSection => ({
-    id, title, kind, admin, boards: boards.filter((b) => q === '' || b.name.toLocaleLowerCase().includes(q)).sort((a, b) => b.updatedAt - a.updatedAt),
+    id, title, kind, admin, boards: boards.filter((b) => q === '' || b.name.toLocaleLowerCase().includes(q)).map(pictured).sort((a, b) => b.updatedAt - a.updatedAt),
   });
   const sections = state === 'first-run'
     ? [sec('personal', 'Personal', 'personal', [])]
@@ -159,7 +190,7 @@ function welcome(previews: boolean, tile: PreviewStyle, onHide: () => void): HTM
       h('h2', { class: 'home-title', id: 'bc-welcome-title' }, 'Start your first board'),
       h('button', { class: 'link-more', type: 'button', 'aria-label': 'Hide the template suggestions', onclick: onHide }, 'Hide')),
     h('p', { class: 'bc-welcome-lede' }, 'Pick a starting point, or begin with a blank board.'),
-    h('ul', { class: 'bc-grid' }, ...TEMPLATES.map((t) => templateCard(t, { tile, previews, onCreate: (d) => toast(`New board from “${d.name}”`) }))),
+    h('ul', { class: 'bc-grid' }, ...TEMPLATES_WELCOME.map((t) => templateCard(pictured(t), { tile, previews, onCreate: (d) => toast(`New board from “${d.name}”`) }))),
     h('div', { class: 'bc-skip' }, h('button', { class: 'link-more', type: 'button', onclick: () => toast('Blank board') }, 'Skip, start with a blank board')));
 }
 
@@ -192,6 +223,7 @@ if (!root) throw new Error('boards-cards-demo: #app is missing');
 let state: DemoState = 'normal';
 let view: BoardView = loadView();
 let tile: PreviewStyle = 'tint';
+let pictures: PictureMode = 'real';
 let previews = loadPreviews();
 let query = '';
 let templatesHidden = false;
@@ -221,6 +253,14 @@ const searchInput = h('input', {
   },
 });
 const newButton: HTMLButtonElement = h('button', { class: 'btn primary', type: 'button', 'aria-haspopup': 'menu', onclick: () => openNewMenu(newButton) }, 'New board');
+/** The picture a card shows: the real one, or none (the drawn shapes, or the quiet tile when there are none). */
+function pictured<T extends { image?: PreviewImage }>(item: T): T {
+  return pictures === 'real' ? item : { ...item, image: undefined };
+}
+const picturesRow = segmented<PictureMode>(PICTURES, pictures, (next) => {
+  pictures = next;
+  render();
+}, 'Board images');
 const tileRow = segmented<PreviewStyle>([
   { value: 'outline', label: 'Outline' },
   { value: 'tint', label: 'Tint' },
@@ -264,7 +304,7 @@ root.replaceChildren(h('div', { class: 'home-root' },
   h('main', { class: 'home home-page', style: 'gap: 20px' },
     h('div', { class: 'bc-toolbar', style: 'justify-content: space-between' }, h('h1', { class: 'home-title' }, 'Boards'), themeRow),
     h('div', { class: 'bc-toolbar' }, h('div', { class: 'bc-search' }, searchInput), newButton),
-    h('div', { class: 'bc-toolbar' }, previewRow, tileRow),
+    h('div', { class: 'bc-toolbar' }, previewRow, picturesRow, tileRow),
     h('div', { class: 'bc-toolbar' }, stateRow),
     welcomeHost,
     sectionsHost)));

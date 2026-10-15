@@ -3,7 +3,7 @@
 // without a popover. Data wiring (the directory, presence, roles) is a later slice.
 import { fmtAgo, popover } from './common';
 import { h, icon } from './dom';
-import { drawPreview, quietPreview, sanitizeShapes, type PreviewModel, type PreviewStyle } from './board-preview';
+import { drawPreview, imageTile, quietPreview, sanitizeShapes, type PreviewImage, type PreviewModel, type PreviewStyle } from './board-preview';
 import './board-card.css';
 
 export type BoardRole = 'owner' | 'editor' | 'commenter' | 'viewer';
@@ -21,7 +21,10 @@ export interface BoardCardData {
   here?: HereUser[];
   hereMore?: number;
   role?: BoardRole;
+  /** The drawn shapes: the fallback picture, and what shows when `image` is missing or cannot be drawn. */
   preview?: PreviewModel;
+  /** A real picture of the board, shown instead of the shapes while previews are on (see PreviewImage). */
+  image?: PreviewImage;
   unread?: number;
   onDevice?: boolean;
 }
@@ -41,6 +44,7 @@ export interface TemplateCardData {
   category: string;
   tone?: 'yellow' | 'blue' | 'green' | 'red';
   preview?: PreviewModel;
+  image?: PreviewImage;
   blank?: boolean;
 }
 
@@ -59,13 +63,13 @@ function shortDate(t: number, now: number): string {
 }
 
 /**
- * The line under a board's name. In order: on this device (open mode); No content yet (previews on, and the drawing has no shapes);
- * "Name · 12 min ago" (or "Name (agent) · ..."); otherwise "Edited 3 Oct". `now` decides whether the year is shown.
- * fmtAgo reads the clock itself, so a test fixes it with Date.now.
+ * The line under a board's name. In order: on this device (open mode); No content yet (previews on, and the drawing has no shapes and
+ * no real picture: a picture means the board has content, whatever its shapes say); "Name · 12 min ago" (or "Name (agent) · ...");
+ * otherwise "Edited 3 Oct". `now` decides whether the year is shown. fmtAgo reads the clock itself, so a test fixes it with Date.now.
  */
 export function editedLine(data: BoardCardData, now: number, previews = true): string {
   if (data.onDevice) return 'On this device';
-  if (previews && data.preview && sanitizeShapes(data.preview).length === 0) return 'No content yet';
+  if (previews && !data.image && data.preview && sanitizeShapes(data.preview).length === 0) return 'No content yet';
   const who = (data.editedBy?.name ?? '').trim();
   if (who !== '') return `${who}${data.editedBy?.agent ? ' (agent)' : ''} · ${fmtAgo(data.updatedAt)}`;
   return `Edited ${shortDate(data.updatedAt, now)}`;
@@ -75,10 +79,20 @@ function cardLabel(data: BoardCardData): string {
   return `${data.name}${data.teamLabel ? `, team ${data.teamLabel}` : ''}${data.unread ? `, ${data.unread} unread` : ''}`;
 }
 
-function thumbBox(name: string, preview: PreviewModel | undefined, tile: PreviewStyle, previews: boolean, unread?: number): HTMLElement {
+/**
+ * The picture of a card's tile: the real image while previews are on (the drawn shapes when it cannot be drawn), else the drawn
+ * shapes, else the quiet tile. The tile keeps its size and its aria-hidden: the card's name is the label.
+ */
+function tileContent(name: string, preview: PreviewModel | undefined, image: PreviewImage | undefined, tile: PreviewStyle, previews: boolean): Node {
+  const real = previews && image ? imageTile(image) : null;
+  if (real) return real;
   const model = previews && preview && sanitizeShapes(preview).length > 0 ? preview : undefined;
+  return model ? drawPreview(model, tile) : quietPreview(name);
+}
+
+function thumbBox(name: string, preview: PreviewModel | undefined, tile: PreviewStyle, previews: boolean, unread?: number, image?: PreviewImage): HTMLElement {
   return h('div', { class: 'bc-thumb', 'aria-hidden': 'true' },
-    model ? drawPreview(model, tile) : quietPreview(name),
+    tileContent(name, preview, image, tile, previews),
     unread ? h('span', { class: 'bc-unread' }, String(unread)) : null);
 }
 
@@ -160,7 +174,7 @@ export function boardCard(data: BoardCardData, opts: BoardCardOpts): HTMLLIEleme
   const now = Date.now();
   return h('li', { class: 'bc-li' },
     h('article', { class: 'bc', 'aria-label': cardLabel(data) },
-      thumbBox(data.name, data.preview, opts.tile, opts.previews, data.unread),
+      thumbBox(data.name, data.preview, opts.tile, opts.previews, data.unread, data.image),
       h('div', { class: 'bc-body' },
         nameLink(data.id, data.name),
         h('span', { class: 'bc-sub' }, editedLine(data, now, opts.previews))),
@@ -175,7 +189,7 @@ export function boardCard(data: BoardCardData, opts: BoardCardOpts): HTMLLIEleme
 export function boardRow(data: BoardCardData, opts: BoardCardOpts): HTMLLIElement {
   const now = Date.now();
   return h('li', { class: 'bc-row' },
-    thumbBox(data.name, data.preview, opts.tile, opts.previews, data.unread),
+    thumbBox(data.name, data.preview, opts.tile, opts.previews, data.unread, data.image),
     h('div', { class: 'bc-col' }, nameLink(data.id, data.name)),
     h('div', { class: 'bc-col bc-col-hide' }, hereNode(data.here ?? [], data.hereMore ?? 0) ?? h('span', { class: 'bc-sub' }, 'Nobody')),
     h('span', { class: 'bc-col bc-col-hide bc-sub' }, editedLine(data, now, opts.previews)),
@@ -185,6 +199,7 @@ export function boardRow(data: BoardCardData, opts: BoardCardOpts): HTMLLIElemen
 
 /** A template as a card of the first-run welcome: the same card, one link that creates the board, no menu, no people. */
 export function templateCard(data: TemplateCardData, opts: { tile: PreviewStyle; previews: boolean; onCreate?: (data: TemplateCardData) => void }): HTMLLIElement {
+  const real = !data.blank && opts.previews && data.image ? imageTile(data.image) : null;
   const model = !data.blank && opts.previews && data.preview && sanitizeShapes(data.preview).length > 0 ? data.preview : undefined;
   const link = h('a', {
     class: 'bc-name', href: `#/new/${encodeURIComponent(data.id)}`,
@@ -197,7 +212,7 @@ export function templateCard(data: TemplateCardData, opts: { tile: PreviewStyle;
   return h('li', { class: 'bc-li' },
     h('article', { class: 'bc bc-tpl', 'aria-label': data.name },
       h('div', { class: 'bc-thumb', 'aria-hidden': 'true' },
-        model ? drawPreview(model, opts.tile) : quietPreview(data.name, { plus: data.blank })),
+        real ?? (model ? drawPreview(model, opts.tile) : quietPreview(data.name, { plus: data.blank }))),
       h('div', { class: 'bc-body' }, link, h('span', { class: 'bc-sub' }, data.description)),
       h('div', { class: 'bc-foot' },
         h('span', { class: `badge tag${data.tone ? ` tag-${data.tone}` : ''}` }, data.category))));

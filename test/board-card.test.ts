@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from './fake-dom';
-import { boardCard, editedLine, menuActionsFor, templateCard, type BoardCardData } from '../src/ui/board-card';
+import { FakeElement, installFakeBrowser, textOf, type FakeBrowser } from './fake-dom';
+import { boardCard, boardRow, editedLine, menuActionsFor, templateCard, type BoardCardData } from '../src/ui/board-card';
 import type { PreviewModel } from '../src/ui/board-preview';
 
 // TAB-375 slice 2: the board card and its line of text, the role rules of the ⋯ menu, the previews switch and the first-run template
@@ -8,9 +8,24 @@ import type { PreviewModel } from '../src/ui/board-preview';
 
 const NOW = new Date(2026, 9, 15, 12, 0).getTime();
 let browser: FakeBrowser;
+
+/**
+ * The browser's DOMParser is not in node. This stand-in returns an svg root (with its viewBox) for svg markup, and a parser error
+ * root for anything else, which is what a browser does with markup that is not svg.
+ */
+class FakeDOMParser {
+  parseFromString(markup: string) {
+    const root = new FakeElement(/^<svg[\s>]/u.test(markup) ? 'svg' : 'parsererror');
+    const view = /viewBox="([^"]*)"/u.exec(markup);
+    if (view) root.setAttribute('viewBox', view[1]);
+    return { documentElement: root };
+  }
+}
+
 beforeEach(() => {
   browser = installFakeBrowser();
   vi.spyOn(Date, 'now').mockReturnValue(NOW);
+  vi.stubGlobal('DOMParser', FakeDOMParser);
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -47,6 +62,11 @@ describe('editedLine', () => {
 
   it('does not call a board without a drawing yet empty', () => {
     expect(editedLine(base({ editedBy: { name: 'Maja' } }), NOW)).toBe('Maja · 12 min ago');
+  });
+
+  it('does not say no content yet when the board has a real picture, whatever its shapes say', () => {
+    const picture = base({ editedBy: { name: 'Maja' }, preview: { shapes: [] }, image: { kind: 'url', src: '/boards/q4.png' } });
+    expect(editedLine(picture, NOW)).toBe('Maja · 12 min ago');
   });
 });
 
@@ -92,6 +112,59 @@ describe('boardCard', () => {
   });
 });
 
+const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 300" width="480" height="300"><rect x="0" y="0" width="480" height="300" fill="var(--paper, #FFFFFF)"/></svg>';
+const urlImage = { kind: 'url' as const, src: '/boards/q4.png', alt: 'Q4 roadmap' };
+const svgImage = { kind: 'svg' as const, markup: SVG };
+
+describe('a real picture on the card', () => {
+  it('shows a url image as a lazy, async <img> with an empty alt, in place of the drawn shapes', () => {
+    const li = asEl(boardCard(base({ preview: one, image: urlImage }), { tile: 'tint', previews: true }));
+    const img = asEl(li.querySelector('.bc-thumb img'));
+    expect(img.getAttribute('src')).toBe('/boards/q4.png');
+    expect(img.getAttribute('loading')).toBe('lazy');
+    expect(img.getAttribute('decoding')).toBe('async');
+    expect(img.getAttribute('alt')).toBe('');
+    expect(li.querySelector('.bc-real')).not.toBeNull();
+    expect(li.querySelector('.bc-thumb svg')).toBeNull();
+    expect(li.querySelector('.bc-quiet')).toBeNull();
+  });
+
+  it('shows an svg picture as its own svg, and draws no shapes beside it', () => {
+    const li = asEl(boardCard(base({ preview: one, image: svgImage }), { tile: 'tint', previews: true }));
+    const svg = asEl(li.querySelector('.bc-thumb .bc-real svg'));
+    expect(svg.getAttribute('viewBox')).toBe('0 0 480 300');
+    expect(li.querySelectorAll('.bc-thumb svg')).toHaveLength(1);
+    expect(li.querySelector('img')).toBeNull();
+  });
+
+  it('hides both kinds when previews are off, and shows the quiet tile', () => {
+    for (const image of [urlImage, svgImage]) {
+      const li = asEl(boardCard(base({ preview: one, image }), { tile: 'tint', previews: false }));
+      expect(li.querySelector('.bc-real')).toBeNull();
+      expect(li.querySelector('img')).toBeNull();
+      expect(li.querySelector('svg')).toBeNull();
+      expect(li.querySelector('.bc-quiet')).not.toBeNull();
+    }
+  });
+
+  it('falls back to the drawn shapes when there is no image', () => {
+    const li = asEl(boardCard(base({ preview: one }), { tile: 'tint', previews: true }));
+    expect(li.querySelector('.bc-real')).toBeNull();
+    expect(li.querySelector('.bc-thumb svg')).not.toBeNull();
+  });
+
+  it('falls back to the drawn shapes when the svg markup is not an svg', () => {
+    const li = asEl(boardCard(base({ preview: one, image: { kind: 'svg', markup: '<html></html>' } }), { tile: 'tint', previews: true }));
+    expect(li.querySelector('.bc-real')).toBeNull();
+    expect(li.querySelector('.bc-thumb svg')).not.toBeNull();
+  });
+
+  it('shows the picture in the list view too', () => {
+    const row = asEl(boardRow(base({ preview: one, image: urlImage }), { tile: 'tint', previews: true }));
+    expect(row.querySelector('.bc-thumb img')?.getAttribute('alt')).toBe('');
+  });
+});
+
 describe('templateCard', () => {
   it('is one link that creates the board, with no menu, and a quiet tile when previews are off', () => {
     const li = asEl(templateCard({
@@ -103,5 +176,13 @@ describe('templateCard', () => {
     expect(li.querySelector('.bc-more')).toBeNull();
     expect(li.querySelector('.bc-quiet')).not.toBeNull();
     expect(li.querySelector('svg')).toBeNull();
+  });
+
+  it('shows its real picture while previews are on, and never for a blank board', () => {
+    const card = (over: object) => asEl(templateCard({ id: 'sprint-board', name: 'Sprint board', description: 'To do.', category: 'Planning', ...over }, { tile: 'tint', previews: true }));
+    expect(card({ image: svgImage }).querySelector('.bc-real svg')).not.toBeNull();
+    const blank = asEl(templateCard({ id: 'blank', name: 'Blank board', description: 'Empty.', category: 'Blank', blank: true, image: svgImage }, { tile: 'tint', previews: true }));
+    expect(blank.querySelector('.bc-real')).toBeNull();
+    expect(blank.querySelector('.bc-quiet-mark')?.textContent).toBe('+');
   });
 });
