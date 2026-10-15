@@ -6,14 +6,16 @@ import './ui/home-presence.css';
 import { applyTheme, THEMES } from './themes';
 import { closePopover, popover, segmented, toast } from './ui/common';
 import { h } from './ui/dom';
-import { USER_COLORS } from './palette';
+import { STICKY_GREY, USER_COLORS, resolveColour } from './palette';
 import { boardCardSkeleton, templateCard, type BoardCardData, type TemplateCardData } from './ui/board-card';
 import { boardsToolbar, loadPreviews, loadView, renderBoardSections, type BoardSection, type BoardView } from './ui/boards-cards-view';
 import type { PreviewImage, PreviewModel, PreviewShape, PreviewStyle, PreviewType } from './ui/board-preview';
-import { builtinBlockThumbnail } from './template-thumb';
-import { TEMPLATES, type TemplateDef } from './templates';
+import { blockThumbnailSvg, builtinBlockThumbnail, placedObjects, templateObjects } from './template-thumb';
+import { Builder, TEMPLATES, type TemplateDef, type TemplateLane } from './templates';
+import { DEFAULT_META } from './store';
+import { isBox, type Obj } from './types';
 
-type DemoState = 'normal' | 'loading' | 'empty-team' | 'few' | 'first-run' | 'previews-off';
+type DemoState = 'normal' | 'loading' | 'empty-team' | 'few' | 'first-run' | 'same-template' | 'previews-off';
 
 /**
  * What a card shows: the real picture (blocks, as the server would store it), the drawn shapes (Schematic), or the schematic again
@@ -32,6 +34,7 @@ const STATES: { value: DemoState; label: string }[] = [
   { value: 'empty-team', label: 'Empty team' },
   { value: 'few', label: 'Few boards' },
   { value: 'first-run', label: 'First run' },
+  { value: 'same-template', label: 'Same template' },
   { value: 'previews-off', label: 'Previews off' },
 ];
 
@@ -151,6 +154,115 @@ const SHARED: BoardCardData[] = [
   { id: 'all-hands', name: 'Quarterly all-hands notes', role: 'viewer', updatedAt: ago(6 * DAY), preview: table(), image: real('lean-coffee') },
 ];
 
+// Same template: eight boards built from the three templates they share (three kanbans, three Mad / Sad / Glad, two SWOTs), changed the way
+// real boards are: which columns and quadrants have notes, the sticky colours, a column or a lane recoloured, more or fewer cards. Each
+// board is its own objects, so its real picture and its drawn tile come from the same drawing. Listed by edit time, as a team list is.
+const SAME_HOST = { user: { id: 'demo' }, store: { getMeta: () => DEFAULT_META } };
+
+/** A note in a frame's cells: a column and a row of a 2-column grid of 150-unit notes under the frame's hint line, and a palette name. */
+type Spot = readonly [col: number, row: number, colour: string];
+
+function frameNamed(objs: Obj[], name: string): Obj {
+  const frame = objs.find((o) => o.type === 'frame' && (o as unknown as { name?: unknown }).name === name);
+  if (!frame) throw new Error(`boards-cards-demo: no frame "${name}" in the template`);
+  return frame;
+}
+
+/** The notes of each frame, and the frames a board has recoloured, on the objects of a template build. */
+function arrange(objs: Obj[], notes: Record<string, Spot[]>, recolour: Record<string, string> = {}): Obj[] {
+  for (const [name, spots] of Object.entries(notes)) {
+    const frame = frameNamed(objs, name) as unknown as { x: number; y: number };
+    spots.forEach(([col, row, colour], i) => {
+      const fill = resolveColour(colour) ?? STICKY_GREY;
+      objs.push({ id: `${name}-${i}`, type: 'sticky', x: frame.x + 24 + col * 170, y: frame.y + 96 + row * 170, w: 150, h: 150, rotation: 0, z: 'a0', fill, text: '' } as unknown as Obj);
+    });
+  }
+  for (const [name, fill] of Object.entries(recolour)) Object.assign(frameNamed(objs, name), { fill });
+  return objs;
+}
+
+/** A kanban of the template's three lanes, with the cards and colours of one board. */
+function kanbanBoard(lanes: TemplateLane[]): Obj[] {
+  const b = new Builder(SAME_HOST, 0, 0);
+  b.kanban('Kanban', 0, 0, lanes);
+  return b.objs;
+}
+
+/** The schematic model of a board's objects at their placed positions: frames, lanes, notes, cards, shapes and text, with their colours. */
+function schematicOf(objs: Obj[]): PreviewModel {
+  const shapes: PreviewShape[] = [];
+  for (const o of placedObjects(objs)) {
+    if (!isBox(o)) continue;
+    const { x, y, w, h } = o;
+    const rec = o as unknown as { fill?: unknown; name?: unknown; text?: unknown };
+    const fill = typeof rec.fill === 'string' ? rec.fill : undefined;
+    const name = typeof rec.name === 'string' ? rec.name : undefined;
+    switch (o.type) {
+      case 'frame': shapes.push(box('frame', x, y, w, h, { fill, name })); break;
+      case 'container': shapes.push(box('container', x, y, w, h, { fill, name })); break;
+      case 'lane': shapes.push(box('lane', x, y, w, h, { fill, name })); break;
+      case 'sticky': shapes.push(box('sticky', x, y, w, h, { fill })); break;
+      case 'card': shapes.push(box('card', x, y, w, h, { fill })); break;
+      case 'shape': shapes.push(box('shape', x, y, w, h, { fill })); break;
+      case 'text': if (typeof rec.text === 'string' && rec.text.trim() !== '') shapes.push(box('text', x, y, w, h)); break;
+      default: break;
+    }
+  }
+  return drawing(shapes);
+}
+
+/** One board of the Same template section: its real picture and its schematic, from the same objects. */
+function sameBoard(id: string, name: string, editedBy: string, minutesAgo: number, objs: Obj[]): BoardCardData {
+  return {
+    id, name, editedBy: { name: editedBy }, updatedAt: ago(minutesAgo * MIN),
+    preview: schematicOf(objs), image: { kind: 'svg', markup: blockThumbnailSvg(objs) },
+  };
+}
+
+const MAD_SAD_GLAD_ID = 'mad-sad-glad';
+const SWOT_ID = 'swot';
+const SAME_TEMPLATE: BoardCardData[] = [
+  sameBoard('kanban-sprint', 'Sprint 14', 'Maja', 12, kanbanBoard([
+    { name: 'To do', stage: 'todo', cards: [{ title: 'Write the release note' }, { title: 'Check the export' }, { title: 'Ask design about the empty state' }, { title: 'Tidy the labels' }] },
+    { name: 'Doing', stage: 'doing', fill: 'blue', cards: [{ title: 'Board picture on the home page', fill: 'yellow' }, { title: 'Review the sync notes' }] },
+    { name: 'Done', stage: 'done', cards: [{ title: 'Fix the restore dialog' }, { title: 'Move the presence dot', fill: 'green' }, { title: 'Pricing copy' }, { title: 'Demo seed data', fill: 'green' }, { title: 'Keyboard focus ring' }, { title: 'Import test' }] },
+  ])),
+  sameBoard('kanban-bugs', 'Bug triage', 'Ben', 3 * 24 * 60, kanbanBoard([
+    { name: 'To do', stage: 'todo', cards: [{ title: 'Export drops the last row' }, { title: 'Sticky text overflows' }] },
+    { name: 'Doing', stage: 'doing', fill: 'orange', cards: [{ title: 'Login loop on Safari' }] },
+    { name: 'Done', stage: 'done', fill: '#DDF5E8' },
+  ])),
+  sameBoard('kanban-copy', 'Website copy', 'Eva', 120, kanbanBoard([
+    { name: 'To do', stage: 'todo' },
+    { name: 'Doing', stage: 'doing', cards: [{ title: 'Pricing page' }, { title: 'Security page' }, { title: 'Blog intro' }] },
+    { name: 'Done', stage: 'done', cards: [{ title: 'Home hero', fill: 'teal' }] },
+  ])),
+  sameBoard('retro-sprint', 'Sprint 14 retro', 'Omar', 30, arrange(templateObjects(tpl(MAD_SAD_GLAD_ID)), {
+    Mad: [[0, 0, 'Pink'], [1, 0, 'Orange'], [0, 1, 'Yellow']],
+    Sad: [[0, 0, 'Blue'], [1, 0, 'Blue'], [0, 1, 'Violet']],
+    Glad: [[0, 0, 'Green'], [1, 0, 'Teal'], [0, 1, 'Yellow'], [1, 1, 'Green']],
+  })),
+  sameBoard('retro-release', 'Release 3.2 retro', 'Ben', 2 * 24 * 60, arrange(templateObjects(tpl(MAD_SAD_GLAD_ID)), {
+    Mad: [[0, 0, 'Pink']],
+    Glad: [[0, 0, 'Teal'], [1, 0, 'Teal'], [0, 1, 'Green']],
+  }, { Sad: '#FFFFFF' })),
+  sameBoard('retro-crit', 'Design crit retro', 'Eva', 24 * 60, arrange(templateObjects(tpl(MAD_SAD_GLAD_ID)), {
+    Mad: [[0, 0, 'Orange'], [0, 1, 'Orange'], [1, 0, 'Pink'], [1, 1, 'Pink']],
+    Sad: [[0, 0, 'Blue']],
+    Glad: [[0, 0, 'Yellow'], [1, 0, 'Green'], [1, 1, 'Teal']],
+  }, { Mad: '#FFF2C2' })),
+  sameBoard('swot-q3', 'Q3 strategy', 'Maja', 3 * 60, arrange(templateObjects(tpl(SWOT_ID)), {
+    Strengths: [[0, 0, 'Green'], [1, 0, 'Teal'], [0, 1, 'Green']],
+    Weaknesses: [[0, 0, 'Orange'], [1, 0, 'Yellow']],
+    Threats: [[0, 0, 'Pink']],
+  })),
+  sameBoard('swot-pricing', 'Pricing review', 'Lin', 24 * 60, arrange(templateObjects(tpl(SWOT_ID)), {
+    Strengths: [[0, 0, 'Blue']],
+    Weaknesses: [[0, 0, 'Pink'], [1, 0, 'Orange'], [0, 1, 'Orange']],
+    Opportunities: [[0, 0, 'Teal'], [1, 0, 'Yellow'], [1, 1, 'Yellow']],
+  }, { Threats: '#FFFFFF' })),
+];
+
 /** A welcome card for a built-in template: its own name, description and category, the drawn fallback and the real picture. */
 function templateSeed(id: string, preview: PreviewModel, tone?: TemplateCardData['tone']): TemplateCardData {
   const def = tpl(id);
@@ -175,7 +287,9 @@ function sectionsFor(state: DemoState, query: string): BoardSection[] {
   });
   const sections = state === 'first-run'
     ? [sec('personal', 'Personal', 'personal', [])]
-    : [
+    : state === 'same-template'
+      ? [sec('same', 'Same template', 'personal', SAME_TEMPLATE)]
+      : [
       sec('design', 'Design team', 'team', state === 'empty-team' ? [] : state === 'few' ? DESIGN.slice(0, 2) : DESIGN, true),
       sec('retro', 'Retro team', 'team', RETRO),
       sec('growth', 'Growth team', 'team', []),

@@ -166,3 +166,116 @@ export function colorName(value: string): string {
   const hue = h < 15 || h >= 345 ? 'Red' : h < 40 ? (h >= 35 && l < 0.45 ? 'Amber' : 'Orange') : h < 65 ? (l < 0.45 ? 'Amber' : 'Yellow') : h < 165 ? 'Green' : h < 200 ? 'Teal' : h < 245 ? 'Blue' : h < 290 ? 'Violet' : 'Pink';
   return l < 0.3 ? `Dark ${hue.toLowerCase()}` : l > 0.75 ? `Light ${hue.toLowerCase()}` : hue;
 }
+
+// ---------------------------------------------------------------- the picture family
+// The real picture of a board (src/template-thumb.ts) and the schematic tile in the tint style (src/ui/board-preview.ts) draw from
+// the numbers and colour rules here, so a board's card looks like one family whichever picture it shows.
+
+/** The theme's paper and ink, with our fallbacks: a theme that does not set them still draws. */
+export const PAPER_VAR = 'var(--paper, #FFFFFF)';
+export const INK_VAR = 'var(--ink, #18212B)';
+
+/** The Grey sticky colour: what a sticky or a shape with no usable colour is drawn in. */
+export const STICKY_GREY = '#E2E6EB';
+
+/**
+ * The numbers of the picture family. A frame's tint is a fixed lightness and a capped saturation per hue, not a percentage of its colour
+ * over paper: a pale template tint (#E6F7EF) at 16% over white is almost white, and a pale colour's HSL saturation is near 100%, so
+ * without the cap a lilac frame comes out violet. Every coloured frame is brought to the same soft tint and its edge to the same
+ * darker one. The hue is kept, so a mint frame still reads as mint.
+ */
+export const PICTURE = {
+  /** A frame, lane or container in its own colour: its hue at this lightness (0 to 1) and at most this saturation. */
+  tintLightness: 0.93,
+  tintSaturation: 0.55,
+  /** Its 1px edge: the same hue, darker, and a little less saturated so it reads as an edge and not a stroke of colour. */
+  edgeLightness: 0.64,
+  edgeSaturation: 0.45,
+  /** Grey bars that stand in for text: ink strength in percent; height as a fraction of the picture's unit, at most this fraction of the box. */
+  barInkPct: 38,
+  barUnit: 0.01,
+  barMaxH: 0.08,
+  /** The corner radius of every box, as a fraction of the picture's unit (its larger side). */
+  radiusUnit: 0.008,
+} as const;
+
+/** The corner radius of a box in a picture whose unit is `unit`. */
+export const radiusOf = (unit: number): number => unit * PICTURE.radiusUnit;
+
+const inkAt = (pct: number) => `color-mix(in srgb, ${INK_VAR} ${pct}%, transparent)`;
+/** The grey of a grey bar: ink at a strength over nothing. */
+export const BAR_INK = inkAt(PICTURE.barInkPct);
+/** The 1px outline of a card or a shape, and the edge of a frame with no colour. */
+export const OUTLINE_INK = inkAt(28);
+
+/** Rows of grey bars: [top, width] as fractions of the box's height and width, and the left inset as a fraction of its width. */
+export interface BarSpec { rows: readonly (readonly [number, number])[]; inset: number }
+/** The bars each kind of box shows when it has text (or always, for a sticky, a card or a markdown block). */
+export const BARS: Record<'sticky' | 'text' | 'card' | 'block' | 'shape', BarSpec> = {
+  sticky: { rows: [[0.38, 0.64], [0.56, 0.44]], inset: 0.18 },
+  text: { rows: [[0.2, 0.8], [0.4, 0.6]], inset: 0.04 },
+  card: { rows: [[0.2, 0.8], [0.4, 0.6]], inset: 0.1 },
+  block: { rows: [[0.12, 0.9], [0.32, 0.8], [0.52, 0.86], [0.72, 0.55]], inset: 0.06 },
+  shape: { rows: [[0.42, 0.6]], inset: 0.2 },
+};
+
+/** The bars of one box, as rects: the same rows, weight and rounding in both pictures. Nothing when a bar would not show. */
+export function barRects(x: number, y: number, w: number, h: number, unit: number, spec: BarSpec): { x: number; y: number; w: number; h: number; rx: number }[] {
+  const bh = Math.min(unit * PICTURE.barUnit, h * PICTURE.barMaxH);
+  if (!(bh > 0)) return [];
+  return spec.rows.map(([top, width]) => ({ x: x + w * spec.inset, y: y + h * top, w: w * width, h: bh, rx: bh / 2 }));
+}
+
+const HEX6 = /^#[0-9a-fA-F]{6}$/u;
+
+/**
+ * A colour a board carries, as the picture may draw it: a plain #RRGGBB (as it is) or a sticky colour name (`blue`, as kanban lanes
+ * store it) as that palette colour. Anything else is undefined. Only our own constants or a checked hex come back, never the input.
+ */
+export function resolveColour(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  if (HEX6.test(raw)) return raw;
+  const want = raw.trim().toLowerCase();
+  return STICKY_COLORS.find((c) => c.name.toLowerCase() === want)?.fill;
+}
+
+/** #RRGGBB to [hue in degrees, saturation 0 to 1, lightness 0 to 1]. */
+export function hexToHsl(hex: string): [number, number, number] {
+  const [r, g, b] = (parseHex(hex) ?? [0, 0, 0]).map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return [0, 0, l];
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [(hue * 60 + 360) % 360, s, l];
+}
+
+/** Hue in degrees, saturation and lightness (0 to 1) to #RRGGBB. */
+export function hslToHex(h: number, s: number, l: number): string {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  const sector: [number, number, number] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return toHex(sector.map((v) => (v + m) * 255) as [number, number, number]);
+}
+
+const NEUTRAL_FILL = `color-mix(in srgb, ${INK_VAR} 6%, ${PAPER_VAR})`;
+
+/**
+ * A frame, lane or container's fill and edge. Its own colour (see resolveColour) is a soft tint of its hue, with a darker edge of the same
+ * hue. No colour, white, or anything we do not know is neutral: ink in paper, with the outline ink for the edge.
+ */
+export function frameColours(raw: unknown): { fill: string; edge: string } {
+  const hex = resolveColour(raw);
+  if (hex === undefined || hex.toUpperCase() === '#FFFFFF') return { fill: NEUTRAL_FILL, edge: OUTLINE_INK };
+  const [h, s] = hexToHsl(hex);
+  return {
+    fill: hslToHex(h, Math.min(s, PICTURE.tintSaturation), PICTURE.tintLightness),
+    edge: hslToHex(h, Math.min(s, PICTURE.edgeSaturation), PICTURE.edgeLightness),
+  };
+}
+
+/** The fill of a box that is neither a frame nor a sticky (an image, or a kind we do not draw): the neutral tint. */
+export const QUIET_FILL = NEUTRAL_FILL;
