@@ -24,4 +24,4 @@ A check on the pull request shows whether you have signed. It also covers anythi
 
 ## Security
 
-Please do not open a public issue for a security problem. Write to [SECURITY CONTACT] instead.
+Please do not open a public issue for a security problem. Write to support@gettabula.app instead.

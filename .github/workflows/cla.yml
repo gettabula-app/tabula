@@ -34,6 +34,5 @@ jobs:
           path-to-signatures: signatures/v1/cla.json
           branch: cla-signatures
           # Accounts that never need to sign: Tabula's own account(s) and bots.
-          # TODO before merge: add Johan's GitHub user name.
-          allowlist: dependabot[bot],github-actions[bot]
+          allowlist: saldestechnology,dependabot[bot],github-actions[bot]
           lock-pullrequest-aftermerge: false
