@@ -3,6 +3,9 @@ import { installFakeBrowser, textOf, type FakeBrowser, type FakeElement } from '
 import {
   PREVIEW_MAX_SHAPES, PREVIEW_NAME_MAX, drawPreview, paletteFill, previewViewBox, quietPreview, sanitizeShapes, type PreviewShape,
 } from '../src/ui/board-preview';
+import { BAR_INK, frameColours } from '../src/palette';
+import { blockThumbnailSvg } from '../src/template-thumb';
+import type { Obj } from '../src/types';
 
 // TAB-375 slice 2: the schematic preview (spec 14, section 4). The model is numbers and palette keys; the drawing creates SVG
 // elements only, names go in as text, and a hostile model draws nothing it should not.
@@ -94,19 +97,51 @@ describe('drawPreview', () => {
     expect(textOf(svg)).toContain('<script>alert(1)</script>');
   });
 
-  it('draws names only in outline and tint, and no text in dots', () => {
+  it('draws names only in outline: the tint picture has no words, like the real one', () => {
     const model = { shapes: [shape('frame', 0, 0, 200, 100, { name: 'Intro' })] };
     expect(asEl(drawPreview(model, 'outline')).querySelectorAll('text')).toHaveLength(1);
-    expect(asEl(drawPreview(model, 'tint')).querySelectorAll('text')).toHaveLength(1);
+    expect(asEl(drawPreview(model, 'tint')).querySelectorAll('text')).toHaveLength(0);
     expect(asEl(drawPreview(model, 'dots')).querySelectorAll('text')).toHaveLength(0);
   });
 
-  it('tints frames with the theme variables in the tint style only', () => {
-    const model = { shapes: [shape('frame', 0, 0, 200, 100)] };
+  it('tints a frame in its own colour in the tint style only, with the same fill and edge as the real picture', () => {
+    const model = { shapes: [shape('frame', 0, 0, 200, 100, { fill: '#FFE16B' })] };
+    const colours = frameColours('#FFE16B');
     const tinted = asEl(drawPreview(model, 'tint')).querySelector('rect');
+    expect(tinted?.getAttribute('style')).toBe(`fill:${colours.fill};stroke:${colours.edge};stroke-width:1;vector-effect:non-scaling-stroke`);
     const plain = asEl(drawPreview(model, 'outline')).querySelector('rect');
-    expect(tinted?.getAttribute('style')).toContain('color-mix(in srgb, var(--ink) 4%, var(--paper))');
-    expect(plain?.getAttribute('style')).not.toContain('4%');
+    expect(plain?.getAttribute('style')).not.toContain(colours.fill);
+  });
+
+  it('gives a frame with no colour the neutral tint', () => {
+    const tinted = asEl(drawPreview({ shapes: [shape('frame', 0, 0, 200, 100)] }, 'tint')).querySelector('rect');
+    expect(tinted?.getAttribute('style')).toContain(`fill:${frameColours(undefined).fill}`);
+  });
+
+  it('accepts a plain hex as a sticky colour, as well as a palette name', () => {
+    expect(paletteFill('#ffa3c4')).toBe('#ffa3c4');
+    expect(paletteFill('Blue')).toBe('#A3D2FF');
+    expect(paletteFill('javascript:alert(1)')).toBe('#E2E6EB');
+  });
+});
+
+describe('the tint style is the family of the real picture', () => {
+  it('draws the same frame and sticky colours, and the same two bars on the sticky, as blockThumbnailSvg', () => {
+    const frameHex = '#A3D2FF';
+    const objects = [
+      { id: 'f', type: 'frame', x: 0, y: 0, w: 1000, h: 500, rotation: 0, z: 'a0', fill: frameHex },
+      { id: 's', type: 'sticky', x: 100, y: 100, w: 300, h: 300, rotation: 0, z: 'a1', fill: '#FFE16B' },
+    ] as unknown as Obj[];
+    const real = blockThumbnailSvg(objects);
+    const colours = frameColours(frameHex);
+    expect(real).toContain(`fill="${colours.fill}" stroke="${colours.edge}" stroke-width="1"`);
+    expect(real).toContain('fill="#FFE16B"');
+    expect(real.split(BAR_INK)).toHaveLength(3);
+
+    const tile = asEl(drawPreview({ shapes: [shape('frame', 0, 0, 1000, 500, { fill: frameHex }), shape('sticky', 100, 100, 300, 300, { fill: '#FFE16B' })] }, 'tint'));
+    expect(tile.querySelector('rect')?.getAttribute('style')).toContain(`fill:${colours.fill};stroke:${colours.edge}`);
+    expect(tile.querySelectorAll('rect').filter((r) => r.getAttribute('style')?.includes(`fill:${BAR_INK}`))).toHaveLength(2);
+    expect(tile.querySelectorAll('rect')).toHaveLength(4);
   });
 });
 

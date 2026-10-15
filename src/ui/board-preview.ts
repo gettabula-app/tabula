@@ -1,7 +1,8 @@
 // TAB-375 slice 2: the schematic preview of a board on its card (spec 14, section 4). The model is numbers and palette keys, never
 // markup: sanitizeShapes() keeps only valid shapes, and drawPreview() creates SVG elements with createElementNS. Names go in as text;
-// colours come from the theme variables (in style attributes) or from the sticky palette in src/palette.ts.
-import { STICKY_COLORS } from '../palette';
+// colours are a sticky palette name or a plain #RRGGBB (resolveColour in src/palette.ts). The tint style draws from the same tint, bar and
+// radius rules as the real picture (src/template-thumb.ts), so the two are one family.
+import { BARS, BAR_INK, INK_VAR, OUTLINE_INK, PAPER_VAR, STICKY_GREY, barRects, frameColours, radiusOf, resolveColour, type BarSpec } from '../palette';
 
 export type PreviewType = 'frame' | 'container' | 'lane' | 'card' | 'sticky' | 'shape' | 'text' | 'image' | 'other';
 export interface PreviewShape { t: PreviewType; x: number; y: number; w: number; h: number; fill?: string; name?: string }
@@ -14,15 +15,13 @@ const COORD_LIMIT = 1e7;
 const TYPES: readonly string[] = ['frame', 'container', 'lane', 'card', 'sticky', 'shape', 'text', 'image', 'other'];
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-const STROKE = 'stroke:color-mix(in srgb, var(--ink) 28%, transparent);vector-effect:non-scaling-stroke';
-const FAINT = 'stroke:color-mix(in srgb, var(--ink) 14%, transparent);vector-effect:non-scaling-stroke';
-const TINT = 'fill:color-mix(in srgb, var(--ink) 4%, var(--paper))';
-const PAPER = 'fill:var(--paper)';
+const STROKE = `stroke:${OUTLINE_INK};vector-effect:non-scaling-stroke`;
+const FAINT = `stroke:color-mix(in srgb, ${INK_VAR} 14%, transparent);vector-effect:non-scaling-stroke`;
+const PAPER = `fill:${PAPER_VAR}`;
 const NONE = 'fill:none';
-const INK_DOT = 'fill:color-mix(in srgb, var(--ink) 40%, transparent)';
-const INK_BAR = 'fill:color-mix(in srgb, var(--ink) 28%, transparent)';
+const INK_DOT = `fill:color-mix(in srgb, ${INK_VAR} 40%, transparent)`;
+const BAR = `fill:${BAR_INK}`;
 const TEXT = 'fill:var(--graphite);font-family:var(--ui)';
-const TEXT_BAR = 'fill:var(--graphite);opacity:0.55';
 
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-COORD_LIMIT, Math.min(COORD_LIMIT, v)) : null);
 
@@ -66,11 +65,9 @@ export function sanitizeShapes(model: unknown): PreviewShape[] {
   return cleanShapes(list);
 }
 
-/** The sticky colour for a palette key (case-insensitive name from STICKY_COLORS); an unknown key is grey. */
+/** The fill of a sticky or a shape: its palette colour (a name, in any case) or a plain #RRGGBB; anything else is grey. */
 export function paletteFill(key: string | undefined): string {
-  const want = typeof key === 'string' ? key.trim().toLowerCase() : '';
-  const hit = STICKY_COLORS.find((c) => c.name.toLowerCase() === want);
-  return hit ? hit.fill : (STICKY_COLORS.find((c) => c.name === 'Grey')?.fill ?? '#E2E6EB');
+  return resolveColour(key) ?? STICKY_GREY;
 }
 
 /** The viewBox [x, y, w, h] around the valid shapes, with 6% padding; an empty model gets a 16:10 box at the origin. */
@@ -109,19 +106,16 @@ function label(s: PreviewShape, unit: number): SVGElement {
   return el;
 }
 
-function stickyBars(s: PreviewShape, unit: number): SVGElement[] {
-  const bh = Math.min(unit * 0.012, s.h * 0.08);
-  return [
-    node('rect', { x: s.x + s.w * 0.18, y: s.y + s.h * 0.38, width: s.w * 0.64, height: bh, rx: bh / 2 }, INK_BAR),
-    node('rect', { x: s.x + s.w * 0.18, y: s.y + s.h * 0.56, width: s.w * 0.44, height: bh, rx: bh / 2 }, INK_BAR),
-  ];
+/** The grey bars of a box, in the rows and weight of the real picture (the same numbers, see src/palette.ts). */
+function bars(s: PreviewShape, unit: number, spec: BarSpec): SVGElement[] {
+  return barRects(s.x, s.y, s.w, s.h, unit, spec).map((b) => node('rect', { x: b.x, y: b.y, width: b.w, height: b.h, rx: b.rx }, BAR));
 }
 
 function drawShape(s: PreviewShape, mode: PreviewStyle, unit: number): SVGElement[] {
   const cx = s.x + s.w / 2;
   const cy = s.y + s.h / 2;
   const dot = unit * 0.018;
-  const rx = unit * 0.008;
+  const rx = radiusOf(unit);
   const rect = (css: string) => [node('rect', { x: s.x, y: s.y, width: s.w, height: s.h, rx }, css)];
   const dotAt = (css: string) => [node('circle', { cx, cy, r: dot }, css)];
   switch (s.t) {
@@ -129,29 +123,29 @@ function drawShape(s: PreviewShape, mode: PreviewStyle, unit: number): SVGElemen
     case 'container':
     case 'lane': {
       if (mode === 'dots') return rect(`${NONE};${FAINT}`);
-      const out = rect(`${mode === 'tint' ? TINT : NONE};${STROKE}`);
+      if (mode === 'tint') {
+        const c = frameColours(s.fill);
+        return rect(`fill:${c.fill};stroke:${c.edge};stroke-width:1;vector-effect:non-scaling-stroke`);
+      }
+      const out = rect(`${NONE};${STROKE}`);
       if (s.name) out.push(label(s, unit));
       return out;
     }
     case 'card':
-      return mode === 'dots' ? dotAt(INK_DOT) : rect(`${PAPER};${STROKE}`);
+      if (mode === 'dots') return dotAt(INK_DOT);
+      return mode === 'tint' ? [...rect(`${PAPER};${STROKE}`), ...bars(s, unit, BARS.card)] : rect(`${PAPER};${STROKE}`);
     case 'sticky': {
       const colour = `fill:${paletteFill(s.fill)}`;
       if (mode === 'dots') return dotAt(colour);
-      const out = rect(colour);
-      if (mode === 'tint') out.push(...stickyBars(s, unit));
-      return out;
+      return mode === 'tint' ? [...rect(colour), ...bars(s, unit, BARS.sticky)] : rect(colour);
     }
     case 'shape': {
       const fill = s.fill === undefined ? undefined : `fill:${paletteFill(s.fill)}`;
       if (mode === 'dots') return dotAt(fill ?? INK_DOT);
       return [node('ellipse', { cx, cy, rx: s.w / 2, ry: s.h / 2 }, `${fill ?? PAPER};${STROKE}`)];
     }
-    case 'text': {
-      if (mode === 'dots') return [];
-      const bh = Math.max(Math.min(s.h, unit * 0.03), unit * 0.008);
-      return [node('rect', { x: s.x, y: cy - bh / 2, width: s.w, height: bh, rx: bh / 2 }, TEXT_BAR)];
-    }
+    case 'text':
+      return mode === 'dots' ? [] : bars(s, unit, BARS.text);
     case 'image':
       return mode === 'dots' ? [] : rect(`${PAPER};${STROKE}`);
     case 'other':
@@ -160,9 +154,10 @@ function drawShape(s: PreviewShape, mode: PreviewStyle, unit: number): SVGElemen
 }
 
 /**
- * The drawing of a board: an SVG with the shapes as theme-coloured boxes. 'outline' = frames and lanes as outlines with their names,
- * stickies as colour chips; 'tint' adds the frame tint and two small bars on each sticky; 'dots' = a dot at each sticky, card and shape,
- * frames as faint outlines, no names. Shapes without a valid type or with non-finite numbers are not drawn.
+ * The drawing of a board: an SVG of the shapes as boxes. 'tint' (the default) is the family of the real picture: frames, containers and
+ * lanes in their own colour (neutral when they have none) with a darker edge, stickies as solid colour blocks, cards, text and stickies
+ * with grey bars, and no names. 'outline' = frames and lanes as outlines with their names, stickies as colour chips. 'dots' = a dot at
+ * each sticky, card and shape, frames as faint outlines, no names. Shapes without a valid type or with non-finite numbers are not drawn.
  */
 export function drawPreview(model: PreviewModel | undefined, style: PreviewStyle): SVGSVGElement {
   const shapes = sanitizeShapes(model);

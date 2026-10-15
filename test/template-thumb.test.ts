@@ -1,6 +1,7 @@
 import { DOMParser } from '@xmldom/xmldom';
 import { describe, expect, it } from 'vitest';
 import { blockThumbnailSvg, builtinThumbnail, thumbnailSvg } from '../src/template-thumb';
+import { BAR_INK, frameColours, hexToHsl } from '../src/palette';
 import { DEFAULT_META } from '../src/store';
 import { Builder, TEMPLATES } from '../src/templates';
 import type { BaseObj, ConnectorObj, Obj } from '../src/types';
@@ -180,11 +181,12 @@ describe('blockThumbnailSvg', () => {
     expect(attributeProblems(blockThumbnailSvg(withConnector))).toEqual([]);
   });
 
-  it('draws a sticky as a colour block with two grey bars, and a frame as an outline with no name', () => {
+  it('draws a sticky as a colour block with two grey bars, and a frame as a neutral tinted box with no name', () => {
     const svg = blockThumbnailSvg([box('f', 'frame', 0, 0, 200, 200, { name: SECRET } as Partial<BaseObj>), box('s', 'sticky', 20, 20, 100, 100, { fill: '#FFE16B' } as Partial<BaseObj>)]);
     // paper frame, the frame, the sticky and its two bars
     expect(svg.match(/<rect /g)).toHaveLength(5);
     expect(svg).toContain('fill="#FFE16B"');
+    expect(svg).toContain(`fill="${frameColours(undefined).fill}"`);
     expect(svg).not.toContain(SECRET);
   });
 
@@ -230,7 +232,8 @@ describe('blockThumbnailSvg', () => {
   });
 
   it('writes no words for any built-in template, and draws the kanban lanes as columns', () => {
-    const laneFill = 'fill="color-mix(in srgb, var(--ink, #18212B) 4%, var(--paper, #FFFFFF))"';
+    // the kanban's lanes have no colour of their own, so they take the neutral tint
+    const laneFill = `fill="${frameColours(undefined).fill}"`;
     const objectsOf = (def: (typeof TEMPLATES)[number]) => {
       const b = new Builder({ user: { id: 'thumbnail' }, store: { getMeta: () => DEFAULT_META } }, 0, 0);
       def.build(b);
@@ -248,5 +251,46 @@ describe('blockThumbnailSvg', () => {
       for (const word of words) expect(svg).not.toContain(word);
     }
     expect(blockThumbnailSvg(objectsOf(TEMPLATES.find((t) => t.id === 'kanban')!))).toContain(laneFill);
+  });
+});
+
+// The picture family (src/palette.ts): a frame's own colour is a soft tint with a darker edge of the same hue, neutral when it has no
+// colour; the bars and the corners are the same numbers as the schematic tile. The picture is one board, so its unit is 1080 here.
+describe('the picture family in a block picture', () => {
+  const frameOf = (fill?: string) => blockThumbnailSvg([box('f', 'frame', 0, 0, 1000, 500, fill === undefined ? {} : { fill } as Partial<BaseObj>)]);
+
+  it('tints a frame in its own colour: a soft fill and a darker edge, both of the colour\'s hue', () => {
+    const c = frameColours('#FFE16B');
+    expect(frameOf('#FFE16B')).toContain(`fill="${c.fill}" stroke="${c.edge}" stroke-width="1"`);
+    const [hue] = hexToHsl('#FFE16B');
+    const [hueFill, , lightFill] = hexToHsl(c.fill);
+    const [hueEdge, , lightEdge] = hexToHsl(c.edge);
+    expect(Math.abs(hueFill - hue)).toBeLessThan(2);
+    expect(Math.abs(hueEdge - hue)).toBeLessThan(2);
+    expect(lightFill).toBeGreaterThan(0.9);
+    expect(lightEdge).toBeLessThan(lightFill);
+    expect(lightEdge).toBeGreaterThan(0.5);
+  });
+
+  it('draws a frame with no colour, white, or a name we do not know in the neutral tint, with the outline ink for its edge', () => {
+    const neutral = frameColours(undefined);
+    expect(neutral.fill).toBe('color-mix(in srgb, var(--ink, #18212B) 6%, var(--paper, #FFFFFF))');
+    expect(neutral.edge).toBe('color-mix(in srgb, var(--ink, #18212B) 28%, transparent)');
+    for (const fill of [undefined, 'none', '#FFFFFF', 'nope']) expect(frameOf(fill)).toContain(`fill="${neutral.fill}" stroke="${neutral.edge}"`);
+  });
+
+  it('resolves a sticky colour name the way the board draws it (kanban lanes store `blue`), and a hex is kept', () => {
+    expect(frameColours('blue')).toEqual(frameColours('#A3D2FF'));
+    expect(blockThumbnailSvg([box('l', 'lane', 0, 0, 300, 400, { fill: 'blue' } as Partial<BaseObj>)])).toContain(`fill="${frameColours('#A3D2FF').fill}"`);
+  });
+
+  it('rounds every box by the same fraction of the picture, and draws bars in 38% ink at a tenth of the unit', () => {
+    // the picture is 1080 units across (4% padding each side of a 1000-unit board): the corner radius is 1080 * 0.008
+    expect(frameOf('#FFE16B')).toContain('rx="8.64"');
+    const sticky = blockThumbnailSvg([box('s', 'sticky', 0, 0, 1000, 500, { fill: '#FFE16B' } as Partial<BaseObj>)]);
+    expect(sticky).toContain('rx="8.64"');
+    expect(BAR_INK).toBe('color-mix(in srgb, var(--ink, #18212B) 38%, transparent)');
+    expect(sticky.split(BAR_INK)).toHaveLength(3);
+    expect(sticky).toContain('height="10.8"');
   });
 });
