@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nearestSegment, projectTarget, releaseVelocity, segmentOffset, segmentWidth } from '../src/ui/segmented-logic';
+import { nearestSegment, projectTarget, releaseVelocity, resumeFrom, segmentOffset, segmentWidth } from '../src/ui/segmented-logic';
 
 // A 300px row with three segments: 4px padding, 4px gaps, so each segment is 94.67px wide.
 // Segment centres sit at 51.33, 150 and 248.67px from the left edge.
@@ -125,5 +125,41 @@ describe('projectTarget', () => {
     expect(projectTarget(260, 0, W3, 3, 4, 4, true)).toBe(0);
     // 260px - 1px/ms * 120ms = 140px, which is segment 1 in rtl.
     expect(projectTarget(260, -1, W3, 3, 4, 4, true)).toBe(1);
+  });
+});
+
+describe('resumeFrom', () => {
+  // A pointer pick that moved the marker from segment 0 to segment 1 at t = 1000ms.
+  const pick = { from: 0, to: 1, at: 1000, kbd: false };
+
+  it('resumes from the old segment when a rebuilt control reads the pick in time', () => {
+    expect(resumeFrom(pick, 1200, 1)).toBe(0);
+  });
+
+  it('resumes right up to the end of the window and no further', () => {
+    expect(resumeFrom(pick, 1400, 1)).toBe(0);
+    expect(resumeFrom(pick, 1401, 1)).toBeNull();
+  });
+
+  it('honours a custom window', () => {
+    expect(resumeFrom(pick, 1050, 1, 50)).toBe(0);
+    expect(resumeFrom(pick, 1051, 1, 50)).toBeNull();
+  });
+
+  it('does not resume after a keyboard pick', () => {
+    expect(resumeFrom({ ...pick, kbd: true }, 1200, 1)).toBeNull();
+  });
+
+  it('does not resume when the pick did not move the marker', () => {
+    expect(resumeFrom({ from: 1, to: 1, at: 1000, kbd: false }, 1200, 1)).toBeNull();
+  });
+
+  it('does not resume when the rebuilt control is not on the chosen segment', () => {
+    expect(resumeFrom(pick, 1200, 2)).toBeNull();
+  });
+
+  it('does not resume without a recorded pick or with an invalid old index', () => {
+    expect(resumeFrom(undefined, 1200, 1)).toBeNull();
+    expect(resumeFrom({ from: -1, to: 1, at: 1000, kbd: false }, 1200, 1)).toBeNull();
   });
 });

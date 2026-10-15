@@ -58,3 +58,18 @@ export function projectTarget(releaseX: number, velocityPxPerMs: number, width: 
   const clamped = Math.min(width, Math.max(0, projected));
   return nearestSegment(clamped, width, count, gap, pad, rtl);
 }
+
+/** A pick as the control records it just before its onPick runs: the index before the click, the index it chose, when, and whether a key made it. */
+export interface PickRecord { from: number; to: number; at: number; kbd: boolean }
+
+/**
+ * The index a freshly built control's marker should start from so it slides to currentIndex, or null when it should not slide.
+ * It resumes only for a pointer pick that moved from another segment, read within windowMs of the pick.
+ * Keyboard picks never resume: they do not animate.
+ */
+export function resumeFrom(prev: PickRecord | undefined, now: number, currentIndex: number, windowMs = 400): number | null {
+  if (!prev || prev.kbd) return null;
+  if (now - prev.at > windowMs) return null;
+  if (prev.to !== currentIndex || prev.from === currentIndex || prev.from < 0) return null;
+  return prev.from;
+}

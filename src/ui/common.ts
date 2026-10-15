@@ -3,7 +3,7 @@ import { focusFirst, focusIsIn, inertPage, restoreFocus, rovingRadios, trapTab }
 import { placeBesideAnchor } from './popover-place';
 import { safeInsets } from './safe-area';
 import { placePopover } from './popover-layout';
-import { SEG_GAP, SEG_PAD, projectTarget, releaseVelocity, segmentOffset, segmentWidth } from './segmented-logic';
+import { SEG_GAP, SEG_PAD, projectTarget, releaseVelocity, resumeFrom, segmentOffset, segmentWidth, type PickRecord } from './segmented-logic';
 
 /** The height of what is visible: the soft keyboard shrinks the visual viewport but not the window. */
 const visibleHeight = () => Math.min(window.innerHeight, window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight);
@@ -243,6 +243,11 @@ const translateXOf = (el: HTMLElement) => {
   return m ? parseFloat(m[1].split(',')[4] ?? '') || 0 : 0;
 };
 
+/** The last pick of each segmented control, by its label. A control rebuilt on a pick reads it to resume the slide (resumeFrom). */
+const lastPick = new Map<string, PickRecord>();
+/** Milliseconds for pick timing; Date.now() where performance is missing. */
+const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
 export function segmented<T extends string | number>(options: { value: T; label: string; icon?: HTMLElement; ariaLabel?: string }[], current: T | undefined, onPick: (v: T) => void, label: string) {
   const row = h('div', { class: 'segmented has-marker', role: 'radiogroup', 'aria-label': label });
   const marker = h('span', { class: 'segmented-marker', 'aria-hidden': 'true' });
@@ -271,14 +276,19 @@ export function segmented<T extends string | number>(options: { value: T; label:
       class: o.value === current ? 'on' : '', role: 'radio', 'aria-checked': String(o.value === current),
       'data-tip': o.icon ? o.label : undefined, 'aria-label': o.ariaLabel ?? o.label,
       onclick: (ev: MouseEvent) => {
+        const pointer = ev.detail > 0 && !keyNav;
+        const from = buttons.findIndex((x) => x.classList.contains('on'));
         for (const x of buttons) {
           x.classList.toggle('on', x === b);
           x.setAttribute('aria-checked', String(x === b));
         }
+        const to = buttons.indexOf(b);
+        // recorded before onPick, which may rebuild this control: the new row then resumes the slide from `from`
+        lastPick.set(label, { from, to, at: clock(), kbd: !pointer });
         // the class that carries the transition is in place and flushed before the position changes, so the browser has a start value to slide from
-        setMotion(ev.detail > 0 && !keyNav ? 'sail' : null);
+        setMotion(pointer ? 'sail' : null);
         void row.offsetWidth;
-        place(buttons.indexOf(b));
+        place(to);
         onPick(o.value);
       },
     }, o.icon ?? h('span', { class: 'seg-label' }, o.label));
@@ -286,10 +296,39 @@ export function segmented<T extends string | number>(options: { value: T; label:
     row.appendChild(b);
   }
   row.style.setProperty('--seg-n', String(options.length));
-  row.style.setProperty('--seg-i', String(options.findIndex((o) => o.value === current)));
+  const currentIndex = options.findIndex((o) => o.value === current);
+  // a control rebuilt on a pointer pick starts its marker where the pick left it, then slides to the new segment
+  const resumed = typeof window.requestAnimationFrame === 'function' ? resumeFrom(lastPick.get(label), clock(), currentIndex) : null;
+  if (resumed !== null) lastPick.delete(label); // one slide per pick: a second rebuild inside the window stays put
+  row.style.setProperty('--seg-i', String(resumed ?? currentIndex));
   row.style.setProperty('--seg-dir', '1');
-  // the row is not in the page yet, so its direction is read once it is
-  window.requestAnimationFrame?.(() => row.style.setProperty('--seg-dir', isRtl(row) ? '-1' : '1'));
+
+  // an ellipsized text label gets its full text as the tooltip; icon options keep the label they were given as data-tip
+  const syncTips = () => {
+    for (const b of buttons) {
+      const text = b.querySelector<HTMLElement>('.seg-label');
+      if (!text) continue;
+      if (text.scrollWidth > text.clientWidth) b.dataset.tip = text.textContent ?? '';
+      else b.removeAttribute('data-tip');
+    }
+  };
+
+  // the row is not in the page yet, so its direction and its labels are read once it is
+  window.requestAnimationFrame?.(() => {
+    row.style.setProperty('--seg-dir', isRtl(row) ? '-1' : '1');
+    syncTips();
+  });
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(syncTips).observe(row);
+
+  if (resumed !== null) {
+    window.requestAnimationFrame?.(() => {
+      if (!row.isConnected) { place(currentIndex); return; }
+      void row.offsetWidth; // the marker is painted on the old segment before the slide starts
+      setMotion('sail');
+      void row.offsetWidth;
+      place(currentIndex);
+    });
+  }
 
   row.addEventListener('keydown', () => { keyNav = true; }, true);
 

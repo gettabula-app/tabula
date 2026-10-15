@@ -559,7 +559,7 @@ select.input {
 @media (pointer: coarse) { .segmented button { height: auto; min-height: 44px; } }
 /* The selected marker (segmented() in src/ui/common.ts). JS sets --seg-i, --seg-n and --seg-dir on the row; the geometry is CSS only. */
 .segmented.has-marker { position: relative; touch-action: pan-y; user-select: none; }
-.segmented.has-marker button { position: relative; z-index: 1; color: color-mix(in srgb, var(--tray-text) 72%, var(--tray)); transition: color 120ms; }
+.segmented.has-marker button { position: relative; z-index: 1; color: color-mix(in srgb, var(--tray-text) 66%, var(--tray)); transition: color 120ms; }
 .segmented.has-marker button.on, :root[data-scheme='dark'] .segmented.has-marker button.on { background: transparent; box-shadow: none; color: var(--tray-text); }
 .segmented.has-marker button:not(.on):active { background: var(--tray-hover); }
 .segmented-marker {
@@ -573,7 +573,8 @@ select.input {
   box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 10%, transparent), 0 0 0 0.5px color-mix(in srgb, var(--shade) 6%, transparent);
   pointer-events: none;
 }
-:root[data-scheme='dark'] .segmented-marker { background: var(--seg-marker-bg, var(--tray-2)); }
+/* on a dark tray the marker is a lighter tile (text colour mixed in), so it reads clearly against the track in every theme, Matrix included */
+:root[data-tray-scheme='dark'] .segmented-marker { background: var(--seg-marker-bg, color-mix(in srgb, var(--tray-text) 16%, var(--tray))); }
 .segmented.sail .segmented-marker { transition: transform 200ms var(--ease-in-out); }
 .segmented.snap .segmented-marker { transition: transform 180ms var(--ease-out); }
 .segmented.dragging .segmented-marker { transition: none; }
