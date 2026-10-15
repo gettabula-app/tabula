@@ -395,3 +395,12 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
 .tpl-card:focus-within { border-color: color-mix(in srgb, var(--ink) 30%, var(--paper)); }
 .tpl-tile .tpl-thumb,
 .tpl-card .tpl-thumb { width: 100%; margin: 0 0 8px; border: 1px solid var(--page-hairline); border-radius: var(--radius-sm); }
+
+/* Drag between team sections (a dev stub until the server can move a board): a section a dragged card may go to is outlined,
+   a section it may not go to is dimmed with a not-allowed cursor and says so in its head. */
+.bc-group.bc-drop-ok { outline: 2px dashed var(--ink); outline-offset: 8px; border-radius: var(--radius-sm); }
+.bc-group.bc-drop-no { opacity: 0.6; cursor: not-allowed; }
+.bc-group.bc-drop-no .group-head h2::after { content: ' (not here)'; font-weight: 500; color: var(--graphite); }
+.bc-li.bc-dragging, .bc-row.bc-dragging { opacity: 0.5; }
+.bc-unread.mention { outline: 2px solid var(--danger); outline-offset: 1px; } /* the same mention outline as the table's chat badge */
+.home-head > .bc-toolbar { margin-top: 12px; }

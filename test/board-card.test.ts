@@ -71,11 +71,18 @@ describe('editedLine', () => {
 });
 
 describe('menuActionsFor', () => {
-  it('gives an owner, an editor and an unknown role the full menu, in order', () => {
+  it('gives an owner and an unknown role the full menu, in order', () => {
     const full = ['open', 'rename', 'move', 'duplicate', 'delete'];
     expect(menuActionsFor('owner')).toEqual(full);
-    expect(menuActionsFor('editor')).toEqual(full);
     expect(menuActionsFor(undefined)).toEqual(full);
+  });
+
+  it('gives an editor the menu without Delete: only the owner deletes (as the table did)', () => {
+    expect(menuActionsFor('editor')).toEqual(['open', 'rename', 'move', 'duplicate']);
+  });
+
+  it('gives a device board Open, Add to workspace and Delete', () => {
+    expect(menuActionsFor(undefined, true)).toEqual(['open', 'add', 'delete']);
   });
 
   it('gives a viewer and a commenter only Open', () => {
@@ -102,6 +109,13 @@ describe('boardCard', () => {
     const li = asEl(boardCard(base(), { tile: 'tint', previews: true }));
     expect(li.querySelector('a.bc-name')?.getAttribute('href')).toBe('#/b/q4');
     expect(li.querySelector('button.bc-more')?.getAttribute('aria-label')).toBe('More actions for Q4 roadmap');
+  });
+
+  it('caps the unread count at 99+', () => {
+    const li = asEl(boardCard(base({ unread: 120 }), { tile: 'tint', previews: true }));
+    expect(textOf(asEl(li.querySelector('.bc-unread')))).toBe('99+');
+    const few = asEl(boardCard(base({ unread: 99 }), { tile: 'tint', previews: true }));
+    expect(textOf(asEl(few.querySelector('.bc-unread')))).toBe('99');
   });
 
   it('shows a role badge only for a viewer or a commenter', () => {

@@ -18,3 +18,6 @@ pnpm-lock.yaml
 yarn.lock
 test-results.json
 .codex/
+
+# dev-only seeded workspace (scripts/dev-boards-real.mjs): throwaway directory and sign-in links
+.dev-data/

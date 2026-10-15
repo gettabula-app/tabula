@@ -7,7 +7,7 @@ import { drawPreview, imageTile, quietPreview, sanitizeShapes, type PreviewImage
 import './board-card.css';
 
 export type BoardRole = 'owner' | 'editor' | 'commenter' | 'viewer';
-export type BoardAction = 'open' | 'rename' | 'move' | 'duplicate' | 'delete';
+export type BoardAction = 'open' | 'rename' | 'move' | 'duplicate' | 'delete' | 'add';
 /** Where a board goes: a team's id, or null for Personal. */
 export interface MoveTarget { id: string | null; name: string }
 export interface HereUser { initials: string; color: string }
@@ -26,7 +26,14 @@ export interface BoardCardData {
   /** A real picture of the board, shown instead of the shapes while previews are on (see PreviewImage). */
   image?: PreviewImage;
   unread?: number;
+  /** The unread messages include one that mentions the viewer. */
+  mention?: boolean;
   onDevice?: boolean;
+  /**
+   * Where the menu's Move to… (or Add to workspace…, for a device board) may send this board. Undefined: every team and Personal
+   * (the demo). Empty: no move at all, and the menu has no Move to… item.
+   */
+  targets?: MoveTarget[];
 }
 
 export interface BoardCardOpts {
@@ -34,7 +41,13 @@ export interface BoardCardOpts {
   previews: boolean;
   teams?: { id: string; name: string }[];
   onMove?: (to: MoveTarget, data: BoardCardData) => void;
+  /** Adds a device board to the workspace (the menu's Add to workspace…). */
+  onAdd?: (to: MoveTarget, data: BoardCardData) => void;
   onAction?: (action: BoardAction, data: BoardCardData) => void;
+  /** The actions this page offers; undefined: all of them the role allows. */
+  actions?: BoardAction[];
+  /** Offline: the menu's actions other than Open are disabled. */
+  down?: boolean;
 }
 
 export interface TemplateCardData {
@@ -48,12 +61,18 @@ export interface TemplateCardData {
   blank?: boolean;
 }
 
-const MENU_LABEL: Record<BoardAction, string> = { open: 'Open', rename: 'Rename', move: 'Move to…', duplicate: 'Duplicate', delete: 'Delete' };
+const MENU_LABEL: Record<BoardAction, string> = { open: 'Open', rename: 'Rename', move: 'Move to…', duplicate: 'Duplicate', delete: 'Delete', add: 'Add to workspace…' };
 const HEX = /^#[0-9a-fA-F]{6}$/u;
 
-/** The actions a role may take from the ⋯ menu. Viewers and commenters only open a board. */
-export function menuActionsFor(role: BoardRole | undefined): BoardAction[] {
-  return role === 'viewer' || role === 'commenter' ? ['open'] : ['open', 'rename', 'move', 'duplicate', 'delete'];
+/**
+ * The actions a role may take from the ⋯ menu. Viewers and commenters only open a board; an editor may not delete one (only the
+ * owner does, as the table did). A device board (onDevice) is not on the server: it can be opened, added to the workspace or deleted.
+ */
+export function menuActionsFor(role: BoardRole | undefined, onDevice = false): BoardAction[] {
+  if (onDevice) return ['open', 'add', 'delete'];
+  if (role === 'viewer' || role === 'commenter') return ['open'];
+  if (role === 'editor') return ['open', 'rename', 'move', 'duplicate'];
+  return ['open', 'rename', 'move', 'duplicate', 'delete'];
 }
 
 function shortDate(t: number, now: number): string {
@@ -76,7 +95,7 @@ export function editedLine(data: BoardCardData, now: number, previews = true): s
 }
 
 function cardLabel(data: BoardCardData): string {
-  return `${data.name}${data.teamLabel ? `, team ${data.teamLabel}` : ''}${data.unread ? `, ${data.unread} unread` : ''}`;
+  return `${data.name}${data.teamLabel ? `, team ${data.teamLabel}` : ''}${data.unread ? `, ${data.unread} unread${data.mention ? ', mentioning you' : ''}` : ''}`;
 }
 
 /**
@@ -90,10 +109,10 @@ function tileContent(name: string, preview: PreviewModel | undefined, image: Pre
   return model ? drawPreview(model, tile) : quietPreview(name);
 }
 
-function thumbBox(name: string, preview: PreviewModel | undefined, tile: PreviewStyle, previews: boolean, unread?: number, image?: PreviewImage): HTMLElement {
+function thumbBox(data: BoardCardData, tile: PreviewStyle, previews: boolean): HTMLElement {
   return h('div', { class: 'bc-thumb', 'aria-hidden': 'true' },
-    tileContent(name, preview, image, tile, previews),
-    unread ? h('span', { class: 'bc-unread' }, String(unread)) : null);
+    tileContent(data.name, data.preview, data.image, tile, previews),
+    data.unread ? h('span', { class: data.mention ? 'bc-unread mention' : 'bc-unread' }, data.unread > 99 ? '99+' : String(data.unread)) : null);
 }
 
 /** The title is the link: its accessible name is the full text (the CSS clamps it to two lines); no native title (tooltip guard). */
@@ -125,13 +144,13 @@ function roleBadge(role: BoardRole | undefined): HTMLElement | null {
   return null;
 }
 
-function menuItem(label: string, onPick: () => void, opts: { danger?: boolean; hint?: string } = {}): HTMLButtonElement {
-  return h('button', { class: `menu-item${opts.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', onclick: onPick },
+function menuItem(label: string, onPick: () => void, opts: { danger?: boolean; hint?: string; disabled?: boolean } = {}): HTMLButtonElement {
+  return h('button', { class: `menu-item${opts.danger ? ' danger' : ''}`, type: 'button', role: 'menuitem', disabled: opts.disabled, onclick: onPick },
     h('span', null, label),
     opts.hint ? h('span', { class: 'menu-hint', 'aria-hidden': 'true' }, opts.hint) : null);
 }
 
-/** The ⋯ menu: the actions of the role, then (for Move to…) the list of teams and Personal in the same popover. */
+/** The ⋯ menu: the actions of the role the page offers, then the list of targets (Move to…, Add to workspace…) in the same popover. */
 function openMenu(anchor: HTMLElement, data: BoardCardData, opts: BoardCardOpts): void {
   const list = h('div', { class: 'bc-menu-items' });
   const pop = popover(anchor, list, { role: 'menu', className: 'bc-menu menu', label: `Actions for ${data.name}` });
@@ -140,20 +159,30 @@ function openMenu(anchor: HTMLElement, data: BoardCardData, opts: BoardCardOpts)
     fn();
   };
   const focusFirst = () => list.querySelector<HTMLElement>('button')?.focus();
-  const items: HTMLElement[] = menuActionsFor(data.role)
-    .filter((a) => a !== 'move' || opts.onMove !== undefined)
-    .map((a) => (a === 'move'
-      ? menuItem(MENU_LABEL.move, () => showTargets(), { hint: '›' })
-      : menuItem(MENU_LABEL[a], pick(() => opts.onAction?.(a, data)), { danger: a === 'delete' })));
+  const offered = (a: BoardAction) => opts.actions === undefined || opts.actions.includes(a);
+  // Move to…: the board's own list when the page gave one, else every team and Personal (the demo)
+  const moveTargets: MoveTarget[] = data.targets ?? [...(opts.teams ?? []).map((t) => ({ id: t.id, name: t.name })), { id: null, name: 'Personal' }];
+  const addTargets: MoveTarget[] = data.targets ?? [];
+  // a workspace admin may move a board they can only view: the targets the page gave say so (no targets, no Move to…)
+  const role = menuActionsFor(data.role, data.onDevice);
+  const actions = !data.onDevice && data.targets?.length && !role.includes('move') ? ['open', 'move', ...role.slice(1)] as BoardAction[] : role;
+  const items: HTMLElement[] = [];
+  for (const a of actions) {
+    if (!offered(a)) continue;
+    if (a === 'move' && (opts.onMove === undefined || moveTargets.length === 0)) continue;
+    if (a === 'add' && (opts.onAdd === undefined || addTargets.length === 0)) continue;
+    if (a === 'move') items.push(menuItem(MENU_LABEL.move, () => showTargets(moveTargets, (to) => opts.onMove?.(to, data)), { hint: '›', disabled: opts.down }));
+    else if (a === 'add') items.push(menuItem(MENU_LABEL.add, () => showTargets(addTargets, (to) => opts.onAdd?.(to, data)), { hint: '›', disabled: opts.down }));
+    else items.push(menuItem(MENU_LABEL[a], pick(() => opts.onAction?.(a, data)), { danger: a === 'delete', disabled: opts.down && a !== 'open' }));
+  }
   // the second level replaces the items inside the same popover (popover() would close this one first)
-  function showTargets(): void {
-    const targets: MoveTarget[] = [...(opts.teams ?? []).map((t) => ({ id: t.id, name: t.name })), { id: null, name: 'Personal' }];
+  function showTargets(targets: MoveTarget[], onTarget: (to: MoveTarget) => void): void {
     const back = menuItem('Back', () => {
       list.replaceChildren(...items);
       pop.place();
       focusFirst();
     });
-    list.replaceChildren(back, ...targets.map((to) => menuItem(to.name, pick(() => opts.onMove?.(to, data)))));
+    list.replaceChildren(back, ...targets.map((to) => menuItem(to.name, pick(() => onTarget(to)), { disabled: opts.down })));
     pop.place();
     focusFirst();
   }
@@ -174,7 +203,7 @@ export function boardCard(data: BoardCardData, opts: BoardCardOpts): HTMLLIEleme
   const now = Date.now();
   return h('li', { class: 'bc-li' },
     h('article', { class: 'bc', 'aria-label': cardLabel(data) },
-      thumbBox(data.name, data.preview, opts.tile, opts.previews, data.unread, data.image),
+      thumbBox(data, opts.tile, opts.previews),
       h('div', { class: 'bc-body' },
         nameLink(data.id, data.name),
         h('span', { class: 'bc-sub' }, editedLine(data, now, opts.previews))),
@@ -189,7 +218,7 @@ export function boardCard(data: BoardCardData, opts: BoardCardOpts): HTMLLIEleme
 export function boardRow(data: BoardCardData, opts: BoardCardOpts): HTMLLIElement {
   const now = Date.now();
   return h('li', { class: 'bc-row' },
-    thumbBox(data.name, data.preview, opts.tile, opts.previews, data.unread, data.image),
+    thumbBox(data, opts.tile, opts.previews),
     h('div', { class: 'bc-col' }, nameLink(data.id, data.name)),
     h('div', { class: 'bc-col bc-col-hide' }, hereNode(data.here ?? [], data.hereMore ?? 0) ?? h('span', { class: 'bc-sub' }, 'Nobody')),
     h('span', { class: 'bc-col bc-col-hide bc-sub' }, editedLine(data, now, opts.previews)),

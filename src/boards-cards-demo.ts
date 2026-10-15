@@ -170,7 +170,8 @@ const TEMPLATES_WELCOME: TemplateCardData[] = [
 function sectionsFor(state: DemoState, query: string): BoardSection[] {
   const q = query.trim().toLocaleLowerCase();
   const sec = (id: string, title: string, kind: BoardSection['kind'], boards: BoardCardData[], admin = false): BoardSection => ({
-    id, title, kind, admin, boards: boards.filter((b) => q === '' || b.name.toLocaleLowerCase().includes(q)).map(pictured).sort((a, b) => b.updatedAt - a.updatedAt),
+    id, title, kind, admin, teamId: kind === 'team' ? id : kind === 'personal' ? null : undefined, canAdd: kind !== 'shared',
+    boards: boards.filter((b) => q === '' || b.name.toLocaleLowerCase().includes(q)).map(pictured).sort((a, b) => b.updatedAt - a.updatedAt),
   });
   const sections = state === 'first-run'
     ? [sec('personal', 'Personal', 'personal', [])]

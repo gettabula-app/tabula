@@ -352,6 +352,10 @@ export interface ServerBoard {
   role: BoardRole;
   createdAt: number;
   updatedAt: number;
+  /** Who last edited the board: a person's current name ("A former member" once they are gone), or an agent's token name. */
+  lastEditedBy?: string | null;
+  lastEditedKind?: 'person' | 'agent' | null;
+  lastEditedAt?: number | null;
 }
 
 export interface BoardPresencePerson {
