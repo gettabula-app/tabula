@@ -39,6 +39,7 @@ import { OpsError, TrackerRestoringError } from './tracker/shared.mjs';
 import { trackerGateState } from './tracker/gate.mjs';
 import { ticketAccess } from './tracker/access.mjs';
 import { createTrackerRoutes } from './tracker/api-routes.mjs';
+import { DEV_PREVIEW_MAX_BYTES, previewProblem, previewVersion, readPreview, writePreview } from './dev-previews.mjs';
 import { createTrackerLinkRoutes } from './tracker/link-api-routes.mjs';
 import { createTrackerAdminRoutes } from './tracker/admin-routes.mjs';
 import { checkTrackerData as checkTrackerDataReal } from './tracker/backup-check.mjs';
@@ -181,6 +182,46 @@ function duplicateJsonKeys(source) {
   value();
   return duplicates;
 }
+
+// The raw bytes of a request body, at most `limit` (the dev previews take an SVG, not JSON). Over the limit the answer is 413 and the
+// rest of the body is drained, so the connection can close cleanly.
+function readRawBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    let settled = false;
+    const chunks = [];
+    const done = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      fn(value);
+    };
+    const tooLarge = () => new HttpError(413, 'payload_too_large', 'The request body is too large');
+    if (Number(req.headers['content-length']) > limit) {
+      req.resume();
+      done(reject, tooLarge());
+      return;
+    }
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) done(reject, tooLarge());
+      else chunks.push(chunk);
+    });
+    req.on('end', () => done(resolve, Buffer.concat(chunks)));
+    req.on('error', (err) => done(reject, err));
+    req.on('close', () => done(reject, badRequest('The request was aborted')));
+  });
+}
+
+// DEV ONLY: a board id from the URL, checked before any path is built from it.
+const devPreviewId = (raw) => {
+  if (!BOARD_ID_RE.test(raw)) throw notFound('Board not found');
+  return raw;
+};
+const DEV_PREVIEW_HEADERS = {
+  'content-type': 'image/svg+xml',
+  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+  'x-content-type-options': 'nosniff',
+};
 
 function readJson(req, limit, { rejectDuplicateMappingKeys = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -1991,6 +2032,43 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
                 }),
               ]
             : []),
+        ]
+      : []),
+
+    // ---------------------------------------------------------- dev previews (DEV ONLY: TABULA_DEV_PREVIEWS=1, server/dev-previews.mjs)
+
+    ...(config.devPreviews === true
+      ? [
+          // The pictures of the boards the caller can open, by board id: the version a card puts in its image address.
+          compile('GET', 'dev/board-previews', {}, ({ user }) => {
+            const versions = {};
+            for (const b of directory.listBoardsFor(user)) {
+              const version = previewVersion(dataDir, b.id);
+              if (version !== null) versions[b.id] = version;
+            }
+            return [200, versions];
+          }),
+          compile('GET', 'dev/board-preview/:id', {}, ({ user, params }) => {
+            const id = devPreviewId(params.id);
+            boardFor(user, id);
+            const picture = readPreview(dataDir, id);
+            if (!picture) throw notFound('This board has no picture yet');
+            return [200, picture, DEV_PREVIEW_HEADERS];
+          }),
+          // not `body: true`: the picture is an SVG, read here as raw bytes (readRawBody), capped at DEV_PREVIEW_MAX_BYTES
+          compile('PUT', 'dev/board-preview/:id', {}, async ({ req, user, params }) => {
+            const id = devPreviewId(params.id);
+            const { role } = boardFor(user, id);
+            if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can save a picture of this board');
+            const bytes = await readRawBody(req, DEV_PREVIEW_MAX_BYTES);
+            const type = String(req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
+            if (type !== 'image/svg+xml') throw new HttpError(415, 'unsupported_media_type', 'The picture must be image/svg+xml');
+            const text = bytes.toString('utf8');
+            const problem = previewProblem(text);
+            if (problem) throw badRequest(`The picture ${problem}`);
+            writePreview(dataDir, id, text);
+            return [204];
+          }),
         ]
       : []),
 

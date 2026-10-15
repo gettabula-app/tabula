@@ -7,18 +7,24 @@
 // App: http://127.0.0.1:5427   relay: http://127.0.0.1:8797   Ctrl+C stops both.
 // The script refuses to start when either port is taken. It never kills whatever holds a port.
 // Sign-in links are single use. Stop and run the script again to get fresh ones.
+//
+// The relay runs with TABULA_DEV_PREVIEWS=1: the Boards cards show what each board holds (server/dev-previews.mjs).
+// A second copy for testing: DEV_BOARDS_RELAY_PORT, DEV_BOARDS_VITE_PORT and DEV_BOARDS_DATA_DIR (a directory inside .dev-data).
+// Its sign-in links go into that directory, and its Vite cache beside it, so the copy never touches the demo's files.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEV_ROOT, OWNER_EMAIL, describeSeed, seed } from './dev-seed-boards.mjs';
+import { DEFAULT_DATA_DIR, DEV_ROOT, OWNER_EMAIL, describeSeed, seedAll } from './dev-seed-boards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const RELAY_PORT = 8797;
-const VITE_PORT = 5427;
+const RELAY_PORT = Number(process.env.DEV_BOARDS_RELAY_PORT) || 8797;
+const VITE_PORT = Number(process.env.DEV_BOARDS_VITE_PORT) || 5427;
 const ORIGIN = `http://127.0.0.1:${VITE_PORT}`;
-const LINKS_PATH = path.join(DEV_ROOT, 'sign-in-links.json');
+const CUSTOM_DATA_DIR = process.env.DEV_BOARDS_DATA_DIR ? path.resolve(process.env.DEV_BOARDS_DATA_DIR) : null;
+const DATA_DIR = CUSTOM_DATA_DIR ?? DEFAULT_DATA_DIR;
+const LINKS_PATH = CUSTOM_DATA_DIR ? path.join(CUSTOM_DATA_DIR, 'sign-in-links.json') : path.join(DEV_ROOT, 'sign-in-links.json');
 const READY_TIMEOUT_MS = 120_000;
 
 function portFree(port) {
@@ -37,9 +43,10 @@ for (const port of [RELAY_PORT, VITE_PORT]) {
   }
 }
 
-const result = seed();
+const result = await seedAll({ dataDir: DATA_DIR });
 console.log(describeSeed(result));
-console.log(`\nmanifest: ${result.manifestPath}`);
+console.log(`\ncontent and pictures: ${result.content.length} boards with a template`);
+console.log(`manifest: ${result.manifestPath}`);
 
 // Links are built from the single-use tokens; the smoke token stays out of the printed list (it is for curl checks).
 const link = (token) => `${ORIGIN}/#/signin/verify?token=${token}`;
@@ -49,11 +56,11 @@ const personas = [
   { key: 'pia', label: 'Pia Larsen, guest (sees only 3 shared boards: viewer, viewer, commenter)' },
 ];
 const links = Object.fromEntries(personas.map((p) => [p.key, link(result.tokens[p.key])]));
-fs.mkdirSync(DEV_ROOT, { recursive: true });
+fs.mkdirSync(path.dirname(LINKS_PATH), { recursive: true });
 fs.writeFileSync(LINKS_PATH, `${JSON.stringify({ origin: ORIGIN, links, smokeToken: result.tokens.smoke }, null, 2)}\n`, { mode: 0o600 });
 
 // Only the TABULA_ and MIRA_ settings below reach the children: an inherited .env or shell setting cannot change this sandbox.
-const inherited = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(TABULA|MIRA)_/.test(k) && !['DATA_DIR', 'PORT', 'HOST', 'VITE_PORT'].includes(k)));
+const inherited = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(TABULA|MIRA|DEV_BOARDS)_/.test(k) && !['DATA_DIR', 'PORT', 'HOST', 'VITE_PORT', 'VITE_CACHE_DIR'].includes(k)));
 const relayEnv = {
   ...inherited,
   TABULA_SKIP_DOTENV: '1',
@@ -64,8 +71,16 @@ const relayEnv = {
   TABULA_OWNER_EMAIL: OWNER_EMAIL,
   TABULA_MAIL: 'log',
   TABULA_BASE_URL: ORIGIN,
+  // DEV ONLY: the Boards cards show the pictures the editors store (server/dev-previews.mjs)
+  TABULA_DEV_PREVIEWS: '1',
 };
-const viteEnv = { ...inherited, PORT: String(RELAY_PORT), VITE_PORT: String(VITE_PORT) };
+// A copy with its own data dir gets its own Vite cache too: two dev servers on one cache can delete each other's dependencies.
+const viteEnv = {
+  ...inherited,
+  PORT: String(RELAY_PORT),
+  VITE_PORT: String(VITE_PORT),
+  ...(CUSTOM_DATA_DIR ? { VITE_CACHE_DIR: path.join(CUSTOM_DATA_DIR, 'vite-cache') } : {}),
+};
 
 const relay = spawn(process.execPath, [path.join(root, 'server', 'relay.mjs')], { cwd: root, env: relayEnv, stdio: 'inherit' });
 const vite = spawn(process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js'), '--host', '127.0.0.1', '--strictPort'], {

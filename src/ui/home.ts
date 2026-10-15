@@ -23,7 +23,7 @@ import type { TemplateDef } from '../templates';
 import { templateCard, type BoardAction, type BoardCardData, type MoveTarget, type TemplateCardData } from './board-card';
 import { boardsToolbar, loadPreviews, loadView, renderBoardSections, type BoardSection, type BoardView } from './boards-cards-view';
 import { UNTITLED, deviceCard, deviceTargets, isMine, moveTargetsFor, toBoardCard, type LiveBoard } from './boards-home-data';
-import { devBoardImage, devBoardImagesReady, loadDevBoardImages } from './dev-board-images';
+import { devBoardImage, devBoardImagesReady, loadDevBoardImages, refreshDevBoardPreviews } from './dev-board-images';
 
 export interface HomeNav {
   open: (id: string, opts?: { template?: string; imported?: ImportedBoard; teamId?: string }) => void;
@@ -467,6 +467,10 @@ export function accountPage(v: AccountView, data: AccountData | null): HTMLEleme
     });
   };
   paintGroups();
+  // DEV ONLY: which boards have a stored picture is asked again on every render of this page (ui/dev-board-images.ts)
+  if (import.meta.env.DEV) void refreshDevBoardPreviews().then(() => {
+    if (groups.isConnected) keepFocus(groups, paintGroups);
+  });
 
   return h('div', { class: 'home-page' },
     createTopbar('boards', me),

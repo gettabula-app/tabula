@@ -6,13 +6,15 @@
 //   npm run dev:boards-real              the same seed, then the relay and the app (scripts/dev-boards-real.mjs)
 //
 // The rows are written through server/directory.mjs, the module the relay opens, so the schema is the real one.
-// Board content is not seeded: a board without a .yjs file opens blank (server/relay.mjs, Room). The Boards home
-// shows the template thumbnail named in the manifest instead of a real image.
+// The boards with a template get their real content (their .yjs files) and their pictures, from the app's own
+// modules (scripts/dev-board-content.mjs). A board with no template opens blank (server/relay.mjs, Room).
+// The manifest still names each board's template: it is the picture of last resort for a board with no stored picture.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDirectory } from '../server/directory.mjs';
+import { seedBoardContent } from './dev-board-content.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const DEV_ROOT = path.join(root, '.dev-data');
@@ -178,6 +180,17 @@ export function seed({ dataDir = DEFAULT_DATA_DIR, now = Date.now() } = {}) {
   }
 }
 
+/**
+ * The rows (seed), then the content and the pictures of the boards that have a template (seedBoardContent). Returns the seed's
+ * result with `content`: one entry per board written.
+ * @param {{ dataDir?: string, now?: number }} [options]
+ */
+export async function seedAll(options = {}) {
+  const result = seed(options);
+  result.content = await seedBoardContent({ dataDir: result.dataDir, boards: result.boards, people: result.people });
+  return result;
+}
+
 /** A table of the seeded data, for the terminal. */
 export function describeSeed(result) {
   const name = (key) => PEOPLE.find((p) => p.key === key)?.name ?? key;
@@ -207,7 +220,8 @@ export function describeSeed(result) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const result = seed();
+  const result = await seedAll();
   console.log(describeSeed(result));
-  console.log(`\nmanifest: ${result.manifestPath}`);
+  console.log(`\ncontent and pictures: ${result.content.length} boards with a template (${result.content.reduce((n, c) => n + c.objects, 0)} objects)`);
+  console.log(`manifest: ${result.manifestPath}`);
 }

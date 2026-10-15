@@ -10,6 +10,7 @@ import { mountNewerBanner } from './ui/newer-banner';
 import { cardContentHeight } from './markup';
 import { watchFeatureGate } from './feature-gate';
 import { renderHome, type HomeNav } from './ui/home';
+import { watchBoardPreview } from './ui/dev-board-preview-sync';
 import { renderTemplates } from './ui/templates-page';
 import { renderChatPage } from './ui/chat-page';
 import { mountMentionNotices } from './ui/mention-notice';
@@ -569,6 +570,9 @@ async function route() {
   app.deleted = deleted;
   current = app;
   currentBoardId = id;
+  // DEV ONLY: the board's picture on the Boards cards is written after a change and when the board is left (ui/dev-board-preview-sync.ts).
+  // Its disposer runs in app.destroy(), before the connection closes, so the store is still readable then.
+  if (import.meta.env.DEV && auth.mode === 'signed-in' && !deleted && (role === 'owner' || role === 'editor')) app.onDestroy(watchBoardPreview(conn.store, id));
   desktop?.watchBoard(app);
   // Inspection handle for automated tests and debugging (?debug in the URL). `__kanban` lets a seed store card heights
   // the way the app does (scripts/visual-check.mjs).
