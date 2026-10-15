@@ -5,7 +5,7 @@
 
 /** How long the pointer rests on a target before the first tooltip opens. Keyboard focus opens it at once. */
 export const SHOW_DELAY = 400;
-/** After a tooltip closes, the next target still opens at once for this long (a warm group). */
+/** After a tooltip closes, the next target of the same group still opens at once for this long (a warm group). */
 export const COOL_DELAY = 400;
 /** Space between target and tooltip, and the least space kept to the edge of the viewport. */
 export const TIP_GAP = 6;
@@ -33,15 +33,20 @@ export interface TipOptions<T> {
   coolDelay?: number;
   /** A target that fails this (taken out of the page, nothing to say) never opens a tooltip. */
   live?: (target: T) => boolean;
+  /** The group a target belongs to, such as the left rail or the top bar. Warm hops stay inside one group. Default: one group for all. */
+  group?: (target: T) => unknown;
 }
 
 export interface TipController<T> {
-  /** The pointer came onto a target: open after the delay, or at once in a warm group. */
+  /** The pointer came onto a target: open after the delay, or at once when it is in the warm group of the last tooltip. */
   enter(target: T): void;
   /** Keyboard focus arrived on a target: open at once. */
   focus(target: T): void;
-  /** The pointer left, or focus left, a target. */
-  leave(target: T): void;
+  /**
+   * The pointer left, or focus left, a target. `next` is the group the pointer moved onto, with null for outside every group;
+   * when it is not the target's group the warm hop ends at once. Omitted (focus, or no group option): nothing changes.
+   */
+  leave(target: T, next?: unknown): void;
   /** Click, scroll, resize: close and stay closed until the pointer leaves the target and comes back. */
   dismiss(): boolean;
   /** Escape closes the tooltip; returns whether there was one to close. Other keys do nothing. */
@@ -55,10 +60,13 @@ export function createTipController<T>(host: TipHost<T>, opts: TipOptions<T> = {
   const showDelay = opts.showDelay ?? SHOW_DELAY;
   const coolDelay = opts.coolDelay ?? COOL_DELAY;
   const live = opts.live ?? (() => true);
+  const groupOf = opts.group ?? (() => undefined);
   let shown: T | null = null;
   let pending: { target: T; timer: unknown } | null = null;
   let coolTimer: unknown = null;
   let warm = false;
+  // The group of the target last opened: only a target of this group can open at once while warm.
+  let warmGroup: unknown = undefined;
   // Closed by a click, scroll or Escape while still on its target: nothing reopens until the target is left.
   let dismissed: T | null = null;
 
@@ -75,6 +83,7 @@ export function createTipController<T>(host: TipHost<T>, opts: TipOptions<T> = {
     cancelCool();
     if (!live(target)) return;
     warm = true;
+    warmGroup = groupOf(target);
     shown = target;
     host.show(target);
   };
@@ -96,10 +105,13 @@ export function createTipController<T>(host: TipHost<T>, opts: TipOptions<T> = {
       }, coolDelay);
     }
   };
-  const leave = (target: T) => {
+  const leave = (target: T, next?: unknown) => {
     if (dismissed === target) dismissed = null;
     if (pending?.target === target) cancelPending();
-    if (shown === target) close(true);
+    // Only with a group option does a move onto another group (or outside every group) end the warm hop at once.
+    const leftGroup = opts.group !== undefined && next !== undefined && next !== groupOf(target);
+    if (shown === target) close(!leftGroup);
+    else if (shown === null && leftGroup) close(false);
   };
   const dismiss = () => {
     const target = shown ?? pending?.target ?? null;
@@ -115,7 +127,10 @@ export function createTipController<T>(host: TipHost<T>, opts: TipOptions<T> = {
       dismissed = null;
       if (target === shown || pending?.target === target) return;
       cancelPending();
-      if (shown !== null || warm) {
+      // Another group ends the warm hop, and a tooltip still shown for the old group closes first.
+      const sameGroup = groupOf(target) === warmGroup;
+      if (!sameGroup) close(false);
+      if (sameGroup && (shown !== null || warm)) {
         open(target);
         return;
       }

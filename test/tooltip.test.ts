@@ -119,6 +119,122 @@ describe('tooltip warm group', () => {
   });
 });
 
+describe('tooltip groups', () => {
+  // 'a' and 'b' sit in the rail, 'c' in the top bar.
+  const grouped = () => rig({ group: (t) => (t === 'c' ? 'top' : 'rail') });
+
+  it('opens the next target of the same group at once within the cool-down', () => {
+    const { ctl, log } = grouped();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', 'rail');
+    vi.advanceTimersByTime(COOL_DELAY - 1);
+    ctl.enter('b');
+    expect(log).toEqual(['show a', 'hide', 'show b']);
+  });
+
+  it('waits the full delay again for the same target after the pointer left the group', () => {
+    const { ctl, log } = grouped();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', null);
+    vi.advanceTimersByTime(100);
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY - 1);
+    expect(log).toEqual(['show a', 'hide']);
+    vi.advanceTimersByTime(1);
+    expect(log).toEqual(['show a', 'hide', 'show a']);
+  });
+
+  it('waits the full delay again for another target of the group after the pointer left it', () => {
+    const { ctl, log } = grouped();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', null);
+    vi.advanceTimersByTime(100);
+    ctl.enter('b');
+    vi.advanceTimersByTime(SHOW_DELAY - 1);
+    expect(log).toEqual(['show a', 'hide']);
+    vi.advanceTimersByTime(1);
+    expect(log).toEqual(['show a', 'hide', 'show b']);
+  });
+
+  it('ends the warm hop at once when the pointer moves onto another group', () => {
+    const { ctl, log } = grouped();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', 'top');
+    expect(log).toEqual(['show a', 'hide']);
+    ctl.enter('b');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    expect(log).toEqual(['show a', 'hide', 'show b']);
+  });
+
+  it('does not open a target of another group at once while the old tooltip is shown', () => {
+    const { ctl, log } = grouped();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.enter('c');
+    expect(log).toEqual(['show a', 'hide']);
+    expect(ctl.current()).toBeNull();
+    vi.advanceTimersByTime(SHOW_DELAY - 1);
+    expect(log).toEqual(['show a', 'hide']);
+    vi.advanceTimersByTime(1);
+    expect(log).toEqual(['show a', 'hide', 'show c']);
+  });
+
+  it('makes a target of another group wait the full delay right after a same-group move', () => {
+    const { ctl, log } = grouped();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', 'rail');
+    ctl.enter('c');
+    expect(log).toEqual(['show a', 'hide']);
+    vi.advanceTimersByTime(SHOW_DELAY);
+    expect(log).toEqual(['show a', 'hide', 'show c']);
+  });
+
+  it('ends the warm hop when the pointer leaves for another group past a target that cannot open', () => {
+    const { ctl, log } = rig({ group: (t) => (t === 'c' ? 'top' : 'rail'), live: (t) => t !== 'x' });
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', 'rail');
+    ctl.enter('x');
+    ctl.leave('x', 'top');
+    ctl.enter('b');
+    expect(log).toEqual(['show a', 'hide']);
+    vi.advanceTimersByTime(SHOW_DELAY);
+    expect(log).toEqual(['show a', 'hide', 'show b']);
+  });
+
+  it('still opens at once on keyboard focus after the pointer left the group', () => {
+    const { ctl, log } = grouped();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', null);
+    ctl.focus('b');
+    expect(log).toEqual(['show a', 'hide', 'show b']);
+  });
+
+  it('still opens at once on keyboard focus into another group', () => {
+    const { ctl, log } = grouped();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', null);
+    ctl.focus('c');
+    expect(log).toEqual(['show a', 'hide', 'show c']);
+  });
+
+  it('keeps the old behaviour without a group option, even when the move is onto nothing', () => {
+    const { ctl, log } = rig();
+    ctl.enter('a');
+    vi.advanceTimersByTime(SHOW_DELAY);
+    ctl.leave('a', null);
+    ctl.enter('b');
+    expect(log).toEqual(['show a', 'hide', 'show b']);
+  });
+});
+
 describe('tooltip focus', () => {
   it('opens at once on keyboard focus and closes on blur', () => {
     const { ctl, log } = rig();
