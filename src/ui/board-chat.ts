@@ -129,9 +129,9 @@ export function mountChat(app: BoardApp, dock: ChatDock, tray: SideTray | null =
   paintButton();
 
   // the button leaves focus where it is; the M key is for typing, so it also puts the cursor in the message box
-  app.toggleChat = () => {
+  app.toggleChat = (keyboard = false) => {
     const opening = !shown();
-    dock.dispatch('toggle');
+    dock.dispatch('toggle', keyboard);
     if (opening) dock.focusComposer();
   };
   signal.addEventListener('abort', () => {
