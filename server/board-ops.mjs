@@ -235,6 +235,26 @@ export function objectVisibility(objects, revealed) {
   return { hidden, isVisible };
 }
 
+/**
+ * The "everyone's view" of a board for its preview image (slice 3, .manager/tl-board-previews-spec.md): plain objects in,
+ * plain objects out. Private notes and private cards stay out until the board is revealed (whoever wrote them), hidden
+ * objects, hidden frames' children and connectors bound to either stay out, and who made what is dropped. Nothing about
+ * the caller is an input, so the same list is right for every reader. One filter for the sync, MCP and preview paths.
+ */
+export function previewSourceOf(objects, revealed) {
+  const list = Array.isArray(objects) ? objects.filter((o) => o && typeof o === 'object' && typeof o.id === 'string') : [];
+  const { isVisible } = objectVisibility(list, revealed === true);
+  const withheld = new Set(list.filter((o) => isWithheld(o, revealed === true)).map((o) => o.id));
+  const boundToWithheld = (o) => o.type === 'connector' && [o.from, o.to].some((e) => e?.kind === 'bound' && withheld.has(e.id));
+  return list
+    .filter((o) => isVisible(o) && !withheld.has(o.id) && !boundToWithheld(o))
+    .map((o) => {
+      const copy = { ...o };
+      for (const key of ['createdBy', 'deviceId', 'lockedBy']) delete copy[key];
+      return copy;
+    });
+}
+
 export function readAll(doc) {
   const revealed = isRevealed(doc);
   const boxes = [];
