@@ -1,0 +1,10 @@
+/* The Frame tool's flyout (frame-flyout.ts). Rows, labels and the segmented control reuse menu-item, field-label, menu-hint and segmented. */
+.rail-tool-list.frame-presets { box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; width: 260px; max-width: calc(100vw - 24px); padding: 8px; }
+.rail-tool-list.frame-presets .frame-section { display: flex; flex-direction: column; gap: 8px; }
+.rail-tool-list.frame-presets .frame-section + .frame-section { padding-top: 8px; border-top: 1px solid var(--tray-line); }
+.rail-tool-list.frame-presets .frame-section-label { margin: 0; padding: 0 10px; color: var(--tray-muted); font-size: 12px; font-weight: 600; }
+.rail-tool-list.frame-presets .frame-orientation { box-sizing: border-box; width: 100%; }
+.rail-tool-list.frame-presets .frame-row { width: 100%; }
+.rail-tool-list.frame-presets .frame-row .menu-hint { font-variant-numeric: tabular-nums; }
+.frame-glyph-slot { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 26px; height: 16px; color: var(--tray-muted); }
+.frame-glyph { display: block; box-sizing: border-box; height: 14px; border: 1px solid currentColor; border-radius: 2px; }
