@@ -83,7 +83,6 @@
   /* TAB-386: a selected row carries a straight bar that stops short of the row's corners, never a border or shadow cut by the radius */
   --bar-inset: 9px;
   --bar-width: 3px;
-  --rule-image-lg: linear-gradient(var(--rule-colour), var(--rule-colour)) center bottom / calc(100% - 2 * (var(--rule-inset) + 2px)) 1px no-repeat;
   /* Johan's M ruling (13 Oct 2026): shared controls and menu rows use a 6px radius. */
   --radius-xs: 4px;
   --radius-sm: 6px;
@@ -150,7 +149,7 @@ input[role='switch'] {
   border-radius: 999px; background: color-mix(in srgb, currentColor 5%, transparent);
 }
 input[role='switch']::before, [role='switch']:not(input)::before {
-  content: ''; position: absolute; z-index: 1; top: 1px; left: 1px; width: 12px; height: 12px; border: 0; border-radius: 50%; background: var(--ctl-surface); pointer-events: none;
+  content: ''; position: absolute; z-index: 1; top: 3px; left: 3px; width: 10px; height: 10px; border: 0; border-radius: 50%; background: var(--ctl-surface); pointer-events: none;
   transform: translateX(0);
 }
 input[role='switch']::after, [role='switch']:not(input)::after {
@@ -161,7 +160,7 @@ input[role='switch']:is(:checked, [aria-checked='true']), [role='switch']:not(in
 input[role='switch']:is(:checked, [aria-checked='true'])::after, [role='switch']:not(input)[aria-checked='true']::after { background: currentColor; }
 input[role='switch']:is(:checked, [aria-checked='true'])::before, [role='switch']:not(input)[aria-checked='true']::before { transform: translateX(12px); }
 /* a switch button is a 28x24 target (24px is the smallest pointer target); the 28x16 pill is drawn inside it. On touch it is 44x44 below. */
-[role='switch']:not(input)::before { top: 5px; left: 1px; }
+[role='switch']:not(input)::before { top: 7px; left: 3px; } /* the knob is 10px with 3px all round inside the 28x16 pill, and moves 12px: equal inset in both states */
 [role='switch']:not(input)::after { inset: 4px 0; }
 [role='switch']:not(input) {
   appearance: none; -webkit-appearance: none; position: relative; display: inline-flex; align-items: center; justify-content: flex-start;
@@ -180,7 +179,7 @@ input[type='checkbox']:disabled, input[type='radio']:disabled, input[role='switc
 }
 @media (pointer: coarse) {
   [role='switch']:not(input) { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
-  [role='switch']:not(input)::before { top: 16px; left: 9px; }
+  [role='switch']:not(input)::before { top: 17px; left: 11px; }
   [role='switch']:not(input)::after { inset: 14px 8px; }
   .check:has(input[type='checkbox']), .check:has(input[type='radio']), .check:has([role='switch']) { min-height: 44px; }
 }
@@ -552,23 +551,24 @@ select.input {
 .swatch.none::after { content: ''; width: 14px; border-top: 1px solid var(--danger); transform: rotate(-45deg); }
 .swatch.on { box-shadow: 0 0 0 2px var(--tray-2), 0 0 0 4px var(--signal); }
 /* one anatomy everywhere: a soft container with a single edge, borderless buttons, and the selected one raised as a thumb; the thumb's radius is the container's minus its padding, so the corners are concentric */
-.segmented { display: flex; gap: 4px; padding: 4px; background: var(--rule-image-lg), color-mix(in srgb, var(--tray-text) 5%, var(--tray)); border-radius: calc(var(--radius-sm) + 2px); }
+.segmented { display: flex; gap: 4px; padding: 4px; background: color-mix(in srgb, var(--tray-text) 5%, var(--tray)); border-radius: calc(var(--radius-sm) + 2px); }
 .segmented .seg-label { display: block; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .segmented button { flex: 1; min-width: 0; padding-inline: 8px; height: 32px; display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; box-shadow: none; font-size: 12.5px; font-weight: 500; }
-.segmented button:hover { background: var(--tray-hover); }
+.segmented button:hover { background: color-mix(in srgb, var(--tray-text) 4%, transparent); } /* a quiet tint, never as strong as the selected tile */
 .segmented button.on { background: var(--tray); color: var(--tray-text); box-shadow: inset 0 0 0 1px var(--field-edge-strong), 0 1px 2px color-mix(in srgb, var(--shade) 5%, transparent); }
 :root[data-scheme='dark'] .segmented button.on { background: var(--tray-2); }
 .segmented button:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 @media (pointer: coarse) { .segmented button { height: auto; min-height: 44px; } }
-/* The selected marker (segmented() in src/ui/common.ts). JS sets --seg-i, --seg-n and --seg-dir on the row; the geometry is CSS only. */
+/* The selected marker (segmented() in src/ui/common.ts). JS sets --seg-i (which segment, for the fade-in) and --seg-x/--seg-w (the selected button's measured box) on the row. */
 .segmented.has-marker { position: relative; touch-action: pan-y; user-select: none; }
 .segmented.has-marker button { position: relative; z-index: 1; color: color-mix(in srgb, var(--tray-text) 66%, var(--tray)); transition: color 120ms; }
 .segmented.has-marker button.on, :root[data-scheme='dark'] .segmented.has-marker button.on { background: transparent; box-shadow: none; color: var(--tray-text); }
 .segmented.has-marker button:not(.on):active { background: var(--tray-hover); }
 .segmented-marker {
-  position: absolute; z-index: 0; top: 4px; bottom: 4px; inset-inline-start: 4px; box-sizing: border-box;
-  width: calc((100% - 8px - 4px * (var(--seg-n, 1) - 1)) / var(--seg-n, 1));
-  transform: translateX(calc(var(--seg-dir, 1) * var(--seg-i, -1) * (100% + 4px)));
+  /* the box of the selected button, measured by segmented() in common.ts (--seg-x, --seg-w in px from the row's left edge) */
+  position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; box-sizing: border-box;
+  width: var(--seg-w, 0px);
+  transform: translateX(var(--seg-x, 0px));
   opacity: clamp(0, calc(var(--seg-i, -1) + 1), 1);
   border-radius: var(--radius-sm);
   background: var(--seg-marker-bg, var(--tray));
@@ -578,8 +578,8 @@ select.input {
 }
 /* on a dark tray the marker is a lighter tile (text colour mixed in), so it reads clearly against the track in every theme, Matrix included */
 :root[data-tray-scheme='dark'] .segmented-marker { background: var(--seg-marker-bg, color-mix(in srgb, var(--tray-text) 16%, var(--tray))); }
-.segmented.sail .segmented-marker { transition: transform 200ms var(--ease-in-out); }
-.segmented.snap .segmented-marker { transition: transform 180ms var(--ease-out); }
+.segmented.sail .segmented-marker { transition: transform 200ms var(--ease-in-out), width 200ms var(--ease-in-out); }
+.segmented.snap .segmented-marker { transition: transform 180ms var(--ease-out), width 180ms var(--ease-out); }
 .segmented.dragging .segmented-marker { transition: none; }
 .segmented.dragging button:hover { background: transparent; }
 .segmented.has-marker.dragging button:not(.on):active { background: transparent; }
