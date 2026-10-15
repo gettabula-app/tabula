@@ -538,6 +538,13 @@ export const MIGRATIONS = [
   -- minReader: 11
   ALTER TABLE oauth_grants ADD COLUMN tracker TEXT CHECK (tracker IN ('read', 'write'));
   `,
+  // Last editor metadata for board directory rows (TAB-375); nullable columns keep older readers and writers compatible.
+  `
+  -- minReader: 11
+  ALTER TABLE boards ADD COLUMN last_edited_by TEXT;
+  ALTER TABLE boards ADD COLUMN last_edited_kind TEXT;
+  ALTER TABLE boards ADD COLUMN last_edited_at INTEGER;
+  `,
 ];
 
 const newId = () => crypto.randomBytes(16).toString('base64url');
@@ -570,6 +577,9 @@ const toBoard = (r) => ({
   teamId: r.team_id,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  lastEditedBy: typeof r.last_edited_by === 'string' ? r.last_edited_by : null,
+  lastEditedKind: r.last_edited_kind === 'person' || r.last_edited_kind === 'agent' ? r.last_edited_kind : null,
+  lastEditedAt: typeof r.last_edited_at === 'number' && Number.isFinite(r.last_edited_at) ? r.last_edited_at : null,
   deletedAt: r.deleted_at,
 });
 const toInvite = (r) => ({
@@ -1253,11 +1263,14 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
     teamName: r.team_name ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    lastEditedBy: typeof r.last_edited_by === 'string' ? r.last_edited_by : null,
+    lastEditedKind: r.last_edited_kind === 'person' || r.last_edited_kind === 'agent' ? r.last_edited_kind : null,
+    lastEditedAt: typeof r.last_edited_at === 'number' && Number.isFinite(r.last_edited_at) ? r.last_edited_at : null,
     deletedAt: r.deleted_at,
     shareCount: Number(r.share_count),
   });
   const ADMIN_BOARD_SELECT = `SELECT b.id, b.title, b.owner_id, u.name AS owner_name, b.team_id, t.name AS team_name,
-      b.created_at, b.updated_at, b.deleted_at,
+      b.created_at, b.updated_at, b.last_edited_by, b.last_edited_kind, b.last_edited_at, b.deleted_at,
       (SELECT COUNT(*) FROM board_shares s WHERE s.board_id = b.id) AS share_count
     FROM boards b LEFT JOIN users u ON u.id = b.owner_id LEFT JOIN teams t ON t.id = b.team_id`;
 
@@ -1274,8 +1287,26 @@ export function openDirectory(file, { ftsProbe = ftsAvailable, snapshotBarrier =
   function touchBoard(id, fields) {
     const title = fields?.title;
     if (typeof id !== 'string') return;
-    if (title === undefined) run('UPDATE boards SET updated_at = ? WHERE id = ?', Date.now(), id);
-    else run('UPDATE boards SET updated_at = ?, title = ? WHERE id = ?', Date.now(), boardTitle(title), id);
+    const sets = ['updated_at = ?'];
+    const params = [Date.now()];
+    if (title !== undefined) {
+      sets.push('title = ?');
+      params.push(boardTitle(title));
+    }
+    const editor = fields?.editor;
+    if (editor && typeof editor === 'object' && !Array.isArray(editor)
+      && (editor.kind === 'person' || editor.kind === 'agent') && typeof editor.by === 'string') {
+      // a person is stored by id and named when served (so a rename follows and a removed member is not named); an agent by its token name
+      const by = editor.kind === 'person'
+        ? (/^[A-Za-z0-9_-]{1,128}$/.test(editor.by) ? editor.by : '')
+        : [...editor.by.replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/gu, ' ').trim()].slice(0, 40).join('');
+      if (by) {
+        const at = Number.isFinite(editor.at) && Number.isInteger(editor.at) ? editor.at : Date.now();
+        sets.push('last_edited_by = ?', 'last_edited_kind = ?', 'last_edited_at = ?');
+        params.push(by, editor.kind, at);
+      }
+    }
+    run(`UPDATE boards SET ${sets.join(', ')} WHERE id = ?`, ...params, id);
   }
 
   // Guests only ever see boards shared with them, so team membership grants them nothing.

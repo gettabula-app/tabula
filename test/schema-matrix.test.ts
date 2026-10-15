@@ -182,8 +182,8 @@ for (const store of stores) {
 }
 
 describe('directory tracker rollback floor', () => {
-  it('keeps schema 20 readable and writable by the v5.0.1 schema 11 reader', () => {
-    expect(MIGRATIONS).toHaveLength(20);
+  it('keeps schema 21 readable and writable by the v5.0.1 schema 11 reader', () => {
+    expect(MIGRATIONS).toHaveLength(21);
     expect(MIGRATIONS[14]).toMatchObject({ minReader: 11 });
     expect(MIGRATIONS[15]).toMatchObject({ minReader: 11 });
     expect(MIGRATIONS[16]).toMatchObject({ minReader: 11 });
@@ -191,13 +191,15 @@ describe('directory tracker rollback floor', () => {
     expect(MIGRATIONS[18]).toMatchObject({ minReader: 11 });
     // migration 20 (OAuth ticket ceiling, TAB-365) is an annotated expand-only string, like migration 12
     expect(String(MIGRATIONS[19])).toMatch(/-- minReader: 11\s[\s\S]*ALTER TABLE oauth_grants ADD COLUMN tracker/);
+    // migration 21 (last editor metadata, TAB-375) only adds nullable board columns.
+    expect(String(MIGRATIONS[20])).toMatch(/-- minReader: 11\s[\s\S]*ALTER TABLE boards ADD COLUMN last_edited_by TEXT;[\s\S]*ALTER TABLE boards ADD COLUMN last_edited_kind TEXT;[\s\S]*ALTER TABLE boards ADD COLUMN last_edited_at INTEGER;/);
     expect(maxReaderOf(MIGRATIONS)).toBe(11);
     const file = realDatabase(stores[0]);
     const before = snapshot(file);
     const oldReader = new DatabaseSync(file);
     try {
       const state = migrate(oldReader, MIGRATIONS.slice(0, 11), 'directory v5.0.1');
-      expect(state).toMatchObject({ version: 20, minReader: 11, legacy: false });
+      expect(state).toMatchObject({ version: MIGRATIONS.length, minReader: 11, legacy: false });
       oldReader.prepare("INSERT INTO users (id, email, name, role, created_at) VALUES ('rollback-user', 'rollback@example.com', 'Rollback', 'member', 1)").run();
       oldReader.prepare("UPDATE users SET name = 'Rollback reader' WHERE id = 'rollback-user'").run();
       expect(oldReader.prepare("SELECT name FROM users WHERE id = 'rollback-user'").get()).toEqual({ name: 'Rollback reader' });
@@ -240,9 +242,84 @@ describe('directory tracker rollback floor', () => {
     expect(snapshot(file)).toEqual(before);
     const readOnly = new DatabaseSync(file, { readOnly: true });
     try {
-      expect(readOnly.prepare('PRAGMA user_version').get()).toEqual({ user_version: 20 });
+      expect(readOnly.prepare('PRAGMA user_version').get()).toEqual({ user_version: MIGRATIONS.length });
     } finally {
       readOnly.close();
     }
+  });
+
+  it('lets 20- and 19-migration readers open schema 21 and keep the new board columns intact', () => {
+    const file = realDatabase(stores[0]);
+    const seed = new DatabaseSync(file);
+    try {
+      seed.prepare("INSERT INTO users (id, email, name, role, disabled, created_at) VALUES ('editor-owner', 'editor@example.com', 'Editor', 'member', 0, 1)").run();
+      seed.prepare(
+        `INSERT INTO boards
+          (id, title, owner_id, team_id, created_at, updated_at, deleted_at, last_edited_by, last_edited_kind, last_edited_at)
+         VALUES ('editor-board', 'Original', 'editor-owner', NULL, 1, 1, NULL, 'editor-owner', 'person', 1234)`,
+      ).run();
+    } finally {
+      seed.close();
+    }
+    const before = snapshot(file);
+    const schemaDb = new DatabaseSync(file, { readOnly: true });
+    try {
+      const columns = schemaDb.prepare('PRAGMA table_info(boards)').all() as {
+        name: string;
+        type: string;
+        notnull: number;
+        dflt_value: string | null;
+      }[];
+      expect(columns.filter((column) => column.name.startsWith('last_edited_')).map(({ name, type, notnull, dflt_value }) => ({
+        name,
+        type,
+        notnull,
+        dflt_value,
+      }))).toEqual([
+        { name: 'last_edited_by', type: 'TEXT', notnull: 0, dflt_value: null },
+        { name: 'last_edited_kind', type: 'TEXT', notnull: 0, dflt_value: null },
+        { name: 'last_edited_at', type: 'INTEGER', notnull: 0, dflt_value: null },
+      ]);
+    } finally {
+      schemaDb.close();
+    }
+
+    for (const readerMigrations of [MIGRATIONS.slice(0, 20), MIGRATIONS.slice(0, 19)]) {
+      // each reader starts from the seeded row: the first reader's write must not leak into the second reader's check
+      const reset = new DatabaseSync(file);
+      try {
+        reset.prepare("UPDATE boards SET title = 'Original', updated_at = 1 WHERE id = 'editor-board'").run();
+      } finally {
+        reset.close();
+      }
+      const oldReader = new DatabaseSync(file);
+      try {
+        const state = migrate(oldReader, readerMigrations, 'directory older reader');
+        expect(state).toMatchObject({ version: 21, minReader: 11, legacy: false });
+        expect(oldReader.prepare('SELECT title, updated_at, last_edited_by, last_edited_kind, last_edited_at FROM boards WHERE id = ?').get('editor-board')).toEqual({
+          title: 'Original',
+          updated_at: 1,
+          last_edited_by: 'editor-owner',
+          last_edited_kind: 'person',
+          last_edited_at: 1234,
+        });
+
+        oldReader.prepare('UPDATE boards SET title = ?, updated_at = ? WHERE id = ?').run('Older reader write', 5678, 'editor-board');
+        expect(oldReader.prepare('SELECT title, updated_at, last_edited_by, last_edited_kind, last_edited_at FROM boards WHERE id = ?').get('editor-board')).toEqual({
+          title: 'Older reader write',
+          updated_at: 5678,
+          last_edited_by: 'editor-owner',
+          last_edited_kind: 'person',
+          last_edited_at: 1234,
+        });
+        expect(oldReader.prepare('PRAGMA user_version').get()).toEqual({ user_version: 21 });
+        expect((oldReader.prepare('PRAGMA table_info(boards)').all() as { name: string }[]).map((column) => column.name))
+          .toContain('last_edited_at');
+      } finally {
+        oldReader.close();
+      }
+    }
+
+    expect(snapshot(file)).toEqual(before);
   });
 });
