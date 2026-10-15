@@ -99,12 +99,12 @@ afterEach(async () => {
 const permissionInput = (overrides: {
   user?: Partial<{ id: string; role: string; disabled: boolean }>;
   board?: Partial<{ ownerId: string | null; deletedAt: number | null }>;
-  source?: Partial<{ id: string | null; role: string | null; exists: boolean; hasEnabledAdmin: boolean }>;
+  source?: Partial<{ id: string | null; role: string | null; exists: boolean; hasOtherEnabledAdmin: boolean }>;
   dest?: Partial<{ id: string | null; role: string | null; exists: boolean }>;
 } = {}) => ({
   user: { id: 'creator', role: 'member', disabled: false, ...overrides.user },
   board: { ownerId: 'creator', deletedAt: null, ...overrides.board },
-  source: { id: 'source', role: 'member', exists: true, hasEnabledAdmin: true, ...overrides.source },
+  source: { id: 'source', role: 'member', exists: true, hasOtherEnabledAdmin: true, ...overrides.source },
   dest: { id: 'destination', role: 'member', exists: true, ...overrides.dest },
 });
 
@@ -127,22 +127,32 @@ describe('canMoveBoard permission table', () => {
     },
     {
       name: 'creator can move a Personal board into a team they belong to',
-      input: permissionInput({ source: { id: null, role: null, hasEnabledAdmin: false } }),
+      input: permissionInput({ source: { id: null, role: null, hasOtherEnabledAdmin: false } }),
       expected: { ok: true, override: 'creator' },
     },
     {
       name: 'creator can move between teams when in both, even if the source has an admin',
-      input: permissionInput({ source: { hasEnabledAdmin: true }, dest: { role: 'member' } }),
+      input: permissionInput({ source: { hasOtherEnabledAdmin: true }, dest: { role: 'member' } }),
       expected: { ok: true, override: 'creator' },
     },
     {
       name: 'creator can move a team board to Personal when the source has no enabled admin',
-      input: permissionInput({ dest: { id: null, exists: true, role: null }, source: { hasEnabledAdmin: false } }),
+      input: permissionInput({ dest: { id: null, exists: true, role: null }, source: { hasOtherEnabledAdmin: false } }),
+      expected: { ok: true, override: 'creator' },
+    },
+    {
+      name: 'a creator demoted to workspace viewer, still in both teams, cannot move the board',
+      input: permissionInput({ user: { role: 'viewer' } }),
+      expected: { ok: false, reason: 'user_unavailable' },
+    },
+    {
+      name: 'a creator who is the source team admin (no other admin) can take the board to Personal',
+      input: permissionInput({ dest: { id: null, exists: true, role: null }, source: { role: 'admin', hasOtherEnabledAdmin: false } }),
       expected: { ok: true, override: 'creator' },
     },
     {
       name: 'creator cannot move a team board to Personal while an enabled source admin remains',
-      input: permissionInput({ dest: { id: null, exists: true, role: null }, source: { hasEnabledAdmin: true } }),
+      input: permissionInput({ dest: { id: null, exists: true, role: null }, source: { hasOtherEnabledAdmin: true } }),
       expected: { ok: false, reason: 'source_has_admin' },
     },
     {
