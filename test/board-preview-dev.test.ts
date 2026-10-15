@@ -450,6 +450,18 @@ describe('developer board previews', () => {
     expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
   });
 
+  it('removes the stored picture when the board shows nothing to everyone', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const board = world.newBoard(owner);
+    const previewPath = `/api/boards/${board.id}/preview`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+    expect((await world.call(owner, 'GET', previewPath)).status).toBe(200);
+    expect((await world.call(owner, 'GET', `${previewPath}-source`)).status).toBe(200);
+    expect((await world.call(owner, 'GET', previewPath)).status).toBe(404);
+  });
+
   it('stops serving an image 24 hours after its upload', async () => {
     const world = await setup();
     worlds.push(world);

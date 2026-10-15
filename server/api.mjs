@@ -2261,6 +2261,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               return { objects: previewSourceOf([...boxes, ...connectors], revealed), revealed };
             });
             if (source.objects.length > MAX_PREVIEW_OBJECTS) throw new HttpError(413, 'too_large', 'This board has too many objects for a preview');
+            // A board that shows nothing to everyone must not keep an older picture of what used to be on it.
+            if (source.objects.length === 0 && previewStore.remove(params.id)) audit(user, 'board.preview.remove', { boardId: params.id, by: user.id, reason: 'empty' });
             return [200, source];
           }),
           compile('PUT', 'boards/:id/preview', { cookieOnly: true }, ({ req, res, params, user }) => assetReply(async () => {
