@@ -318,7 +318,7 @@ export function createPreviewStore({ dataDir, now = Date.now, maxBytes = DEFAULT
           continue;
         }
         if (!/^[a-f0-9]{64}\.(?:img|json)$/.test(entry.name)) continue;
-        const base = entry.name.slice(0, -4);
+        const base = entry.name.slice(0, entry.name.lastIndexOf('.'));
         const image = `${base}.img`;
         const sidecar = `${base}.json`;
         if (!names.has(image) || !names.has(sidecar)) {
