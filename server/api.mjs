@@ -582,23 +582,27 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const boardMoveHourlyLimiter = createWindowLimiter(100, now, 60 * 60_000);
   const boardMoveBoardLimiter = createWindowLimiter(1, now, 10_000);
   const boardMovePreviewLimiter = createWindowLimiter(60, now);
+  const previewSourceUserLimiter = createWindowLimiter(30, now, 60_000);
+  const previewSourceBoardLimiter = createWindowLimiter(1, now, 2_000);
   const previewUploadBoardLimiter = createWindowLimiter(1, now, 10_000);
   const previewUploadUserLimiter = createWindowLimiter(60, now, 60 * 60_000);
   let previewDailyUploads = [];
 
-  function previewUploadCapacity(user, boardId, bytes) {
-    const current = now();
-    previewDailyUploads = previewDailyUploads.filter((upload) => upload.at > current - DAY_MS);
-    const boardWait = previewUploadBoardLimiter.wait(boardId);
-    const userWait = previewUploadUserLimiter.wait(user.id);
-    const dailyBytes = previewDailyUploads.reduce((total, upload) => total + upload.bytes, 0);
-    return { wait: Math.max(boardWait, userWait), daily: dailyBytes + bytes > MAX_PREVIEW_DAILY_BYTES };
+  // Every attempt is charged on entry, before the body is read, in one synchronous step: invalid bodies and two concurrent
+  // PUTs cannot get past the limit. The daily byte pool is one pool for the whole server (a demo).
+  function chargePreviewAttempt(limiters, res) {
+    const wait = Math.max(...limiters.map(([limiter, key]) => limiter.wait(key)));
+    if (wait) {
+      res.setHeader('retry-after', String(wait));
+      throw new HttpError(429, 'rate_limited', 'Too many preview requests. Try again later.');
+    }
+    for (const [limiter, key] of limiters) limiter.hit(key);
   }
 
-  function notePreviewUpload(user, boardId, bytes) {
-    previewUploadBoardLimiter.hit(boardId);
-    previewUploadUserLimiter.hit(user.id);
-    previewDailyUploads.push({ at: now(), bytes });
+  function previewDailyFull(bytes) {
+    const current = now();
+    previewDailyUploads = previewDailyUploads.filter((upload) => upload.at > current - DAY_MS);
+    return previewDailyUploads.reduce((total, upload) => total + upload.bytes, 0) + bytes > MAX_PREVIEW_DAILY_BYTES;
   }
   // refused control-token attempts on the internal routes, per address (the control plane's own calls are never counted: only a refusal is)
   const internalAuthFailures = createWindowLimiter(30, now);
@@ -2250,6 +2254,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             res.setHeader('x-content-type-options', 'nosniff');
             const { role } = boardFor(user, params.id);
             if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can read a board preview source');
+            chargePreviewAttempt([[previewSourceUserLimiter, user.id], [previewSourceBoardLimiter, params.id]], res);
             const source = roomAccess.read(params.id, (doc) => {
               const { boxes, connectors } = readAll(doc);
               const revealed = isRevealed(doc);
@@ -2260,6 +2265,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           }),
           compile('PUT', 'boards/:id/preview', { cookieOnly: true }, ({ req, res, params, user }) => assetReply(async () => {
             requirePreviewWriter(user, params.id);
+            chargePreviewAttempt([[previewUploadBoardLimiter, params.id], [previewUploadUserLimiter, user.id]], res);
             const rawLength = req.headers['content-length'];
             if (typeof rawLength !== 'string' || !/^\d+$/.test(rawLength)) {
               throw new AssetError(411, 'length_required', 'Content-Length is required');
@@ -2283,13 +2289,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
             const image = validatePreviewImage(bytes, declaredType);
             if (!image.ok) throw new AssetError(400, 'invalid_image', 'The preview image is invalid');
-            const capacity = previewUploadCapacity(current.user, params.id, bytes.length);
-            if (capacity.wait || capacity.daily) {
-              if (capacity.wait) res.setHeader('retry-after', String(capacity.wait));
-              throw new AssetError(429, 'rate_limited', 'Preview uploads are limited. Try again later.');
-            }
+            if (previewDailyFull(bytes.length)) throw new AssetError(429, 'rate_limited', 'Preview uploads are limited. Try again later.');
             previewStore.put({ boardId: params.id, bytes, image, uploadedBy: current.user.id });
-            notePreviewUpload(current.user, params.id, bytes.length);
+            previewDailyUploads.push({ at: now(), bytes: bytes.length });
             audit(current.user, 'board.preview.upload', { boardId: params.id, by: current.user.id, bytes: bytes.length });
             return [204];
           })),

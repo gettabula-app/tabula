@@ -289,6 +289,7 @@ describe('developer board previews', () => {
 
     const sourcePath = `/api/boards/${board.id}/preview-source`;
     const firstSource = await world.call(editor, 'GET', sourcePath);
+    world.clock.now += 2_001;
     const secondSource = await world.call(editor, 'GET', sourcePath);
     expect(firstSource.status).toBe(200);
     expect(firstSource.headers.get('cache-control')).toBe('private, no-store');
@@ -306,6 +307,7 @@ describe('developer board previews', () => {
 
     room.doc.getMap('flow').set('reveal', true);
     room.dirty = false;
+    world.clock.now += 2_001;
     const revealed = await world.call(editor, 'GET', sourcePath);
     expect(JSON.parse(revealed.text)).toMatchObject({ revealed: true });
     const revealedIds = (JSON.parse(revealed.text) as { objects: Array<{ id: string }> }).objects.map((item) => item.id);
@@ -318,12 +320,14 @@ describe('developer board previews', () => {
     const image = png();
     const upload = await world.call(editor, 'PUT', `/api/boards/${board.id}/preview`, image, { 'content-type': 'image/png' });
     expect(upload.status).toBe(204);
+    const uploadedAt = world.clock.now;
     expect(world.writes()).toBe(0);
     expect(world.directory.getBoard(board.id)!.updatedAt).toBe(updatedAt);
     expect(room.doc.getMap('meta').get('lastEditedBy')).toBe('last-editor-id');
     expect(room.dirty).toBe(false);
 
     world.unload(board.id);
+    world.clock.now += 2_001;
     const unloadedSource = await world.call(editor, 'GET', sourcePath);
     expect(unloadedSource.status).toBe(200);
     expect(world.isLoaded(board.id)).toBe(false);
@@ -339,7 +343,7 @@ describe('developer board previews', () => {
     const metadata = JSON.parse(fs.readFileSync(path.join(storeDir, `${boardHash}.json`), 'utf8'));
     expect(metadata).toEqual({
       type: 'image/png', width: 480, height: 300, bytes: image.length,
-      uploadedBy: editor.user.id, at: world.clock.now,
+      uploadedBy: editor.user.id, at: uploadedAt,
       etag: `"${crypto.createHash('sha256').update(image).digest('hex')}"`,
     });
     expect(world.directory.listAudit(10).filter((row) => row.action === 'board.preview.upload').map((row) => row.detail)).toEqual([{
@@ -424,6 +428,28 @@ describe('developer board previews', () => {
     expect(room.dirty).toBe(false);
   });
 
+  it('limits preview-source per board and per user, and charges every upload attempt, valid or not', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const board = world.newBoard(owner);
+    const sourcePath = `/api/boards/${board.id}/preview-source`;
+    expect((await world.call(owner, 'GET', sourcePath)).status).toBe(200);
+    const again = await world.call(owner, 'GET', sourcePath);
+    expect(again.status).toBe(429);
+    world.clock.now += 2_001;
+    expect((await world.call(owner, 'GET', sourcePath)).status).toBe(200);
+
+    const previewPath = `/api/boards/${board.id}/preview`;
+    world.clock.now += 10_001;
+    const bad = await world.call(owner, 'PUT', previewPath, Buffer.from('not an image'), { 'content-type': 'image/png' });
+    expect(bad.status).toBe(400);
+    const burned = await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' });
+    expect(burned.status).toBe(429);
+    world.clock.now += 10_001;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+  });
+
   it('rejects guests, join-code sessions, and all token headers on all preview routes', async () => {
     const world = await setup();
     worlds.push(world);
@@ -483,8 +509,10 @@ describe('developer board previews', () => {
 
     const missingLength = await world.streamed('PUT', previewPath, Buffer.alloc(0), headers);
     expect(missingLength.status).toBe(411);
+    world.clock.now += 10_001;
     const lyingLength = await world.streamed('PUT', previewPath, png(), { ...headers, 'content-length': String(png().length + 3) });
     expect(lyingLength.status).toBe(400);
+    world.clock.now += 10_001;
     const overStreamed = await world.streamed('PUT', previewPath, Buffer.alloc(MAX_PREVIEW_BYTES + 1), { ...headers, 'content-length': '1' });
     expect(overStreamed.status).toBe(413);
 
@@ -496,6 +524,7 @@ describe('developer board previews', () => {
       [animatedWebp(), 'image/webp'],
     ];
     for (const [bytes, type] of invalidImages) {
+      world.clock.now += 10_001;
       const response = await world.call(owner, 'PUT', previewPath, bytes, { 'content-type': type });
       expect(response.status).toBeGreaterThanOrEqual(400);
       expect(response.status).toBeLessThan(500);
