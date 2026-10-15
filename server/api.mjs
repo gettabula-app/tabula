@@ -250,6 +250,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const previewStore = config.previews === true
     ? suppliedPreviewStore ?? createPreviewStore({ dataDir, now, maxBytes: config.previewsMaxBytes, log })
     : null;
+  // The owner's "no picture for this board" choice (kept in settings, so a cache wipe never undoes it)
+  const boardPreviewOff = (boardId) => directory.getSetting(`boardPreview.off.${boardId}`) === '1';
   const boardPreviewsEnabled = () => config.previews === true && directory.getSetting('boardPreviews.enabled') !== '0';
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
@@ -2265,6 +2267,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             res.setHeader('x-content-type-options', 'nosniff');
             const { role } = boardFor(user, params.id);
             if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can read a board preview source');
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
             chargePreviewAttempt([[previewSourceUserLimiter, user.id], [previewSourceBoardLimiter, params.id]], res);
             const source = roomAccess.read(params.id, (doc) => {
               const { boxes, connectors } = readAll(doc);
@@ -2277,6 +2280,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('PUT', 'boards/:id/preview', { cookieOnly: true }, ({ req, res, params, user }) => assetReply(async () => {
             if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
             requirePreviewWriter(user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
             chargePreviewAttempt([[previewUploadBoardLimiter, params.id], [previewUploadUserLimiter, user.id]], res);
             const rawRevision = req.headers['x-preview-rev'];
             const validRevision = typeof rawRevision === 'string' && /^\d{1,12}$/.test(rawRevision);
@@ -2303,6 +2307,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             if (current.setCookie) res.setHeader('set-cookie', current.setCookie);
             if (current.user.id !== user.id) throw new HttpError(401, 'unauthenticated', 'Sign in required');
             requirePreviewWriter(current.user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
 
             const image = validatePreviewImage(bytes, declaredType);
             if (!image.ok) throw new AssetError(400, 'invalid_image', 'The preview image is invalid');
@@ -2322,6 +2327,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'boards/:id/preview', { cookieOnly: true }, ({ req, params, user }) => {
             if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
             boardFor(user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
             const preview = previewStore.read(params.id);
             // older than 24 h without a fresh upload falls back to the schematic (cybersec's staleness rule)
             if (!preview || now() - preview.at > DAY_MS) throw notFound('Board not found');
@@ -2348,6 +2354,32 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             audit(user, 'board.preview.remove', { boardId: board.id, by: user.id, reason: 'manual' });
             res.setHeader('clear-site-data', '"cache"');
             return [204];
+          }),
+          compile('GET', 'boards/:id/preview-off', { cookieOnly: true }, ({ params, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            const board = directory.getBoard(params.id);
+            if (!board || board.deletedAt != null) throw notFound('Board not found');
+            const role = boardRoleFor(user, board.id);
+            if (user.guest === true || (!isAdmin(user) && role !== 'owner')) throw forbidden('Only the board owner or a workspace admin can change board previews');
+            return [200, { off: boardPreviewOff(board.id) }];
+          }),
+          compile('PUT', 'boards/:id/preview-off', { cookieOnly: true, body: true }, ({ params, user, body, res }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            const board = directory.getBoard(params.id);
+            if (!board || board.deletedAt != null) throw notFound('Board not found');
+            const role = boardRoleFor(user, board.id);
+            if (user.guest === true || (!isAdmin(user) && role !== 'owner')) throw forbidden('Only the board owner or a workspace admin can change board previews');
+            for (const key of Object.keys(body)) if (key !== 'off') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+            if (typeof body.off !== 'boolean') throw badRequest('off must be a boolean');
+            directory.transaction(() => {
+              directory.setSetting(`boardPreview.off.${board.id}`, body.off ? '1' : '0');
+              audit(user, body.off ? 'board.preview.off' : 'board.preview.on', { boardId: board.id, by: user.id });
+            });
+            if (body.off) {
+              previewStore.remove(board.id);
+              res.setHeader('clear-site-data', '"cache"');
+            }
+            return [200, { off: body.off }];
           }),
         ]
       : []),

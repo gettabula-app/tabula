@@ -617,6 +617,35 @@ describe('board previews', () => {
     expect(world.previewStore!.read(board.id)).not.toBeNull();
   });
 
+  it('keeps a board without a picture when its owner turns previews off, even after the cache is cleared', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const editor = world.account();
+    const outsider = world.account();
+    const board = world.newBoard(owner);
+    world.directory.shareBoard(board.id, { principalType: 'user', principalId: editor.user.id, role: 'editor' });
+    const previewPath = `/api/boards/${board.id}/preview`;
+    const offPath = `${previewPath}-off`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+
+    expect((await world.call(editor, 'PUT', offPath, { off: true })).status).toBe(403);
+    expect((await world.call(outsider, 'GET', offPath)).status).toBeGreaterThanOrEqual(403);
+    expect((await world.call(owner, 'PUT', offPath, { off: 'yes' })).status).toBe(400);
+    expect((await world.call(owner, 'PUT', offPath, { off: true })).status).toBe(200);
+    expect(JSON.parse((await world.call(owner, 'GET', offPath)).text)).toEqual({ off: true });
+    expect(world.previewStore!.read(board.id)).toBeNull();
+    expect((await world.call(owner, 'GET', previewPath)).status).toBe(404);
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(404);
+    expect((await world.call(owner, 'GET', `${previewPath}-source`)).status).toBe(404);
+    world.previewStore!.clear();
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(404);
+
+    expect((await world.call(owner, 'PUT', offPath, { off: false })).status).toBe(200);
+    world.clock.now += 10_001;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+  });
+
   it('unlinks once the throttle window is over when a text change fell inside it', () => {
     vi.useFakeTimers();
     try {

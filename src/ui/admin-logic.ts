@@ -86,7 +86,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'auth.login', 'auth.logout', 'auth.logout_all', 'me.update',
   'team.create', 'team.update', 'team.member.role', 'team.leave', 'team.member.remove',
   'invite.create', 'invite.revoke', 'invite.accept',
-  'board.create', 'board.update', 'board.move', 'board.preview.upload', 'board.preview.remove', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
+  'board.create', 'board.update', 'board.move', 'board.preview.upload', 'board.preview.remove', 'board.preview.off', 'board.preview.on', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
   'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore', 'board.activity.revert',
   'template.create', 'template.update', 'template.delete',
   'member.update', 'member.remove',
@@ -273,6 +273,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
     }
     case 'board.preview.upload':
       return `${who} updated the preview picture of ${boardLabel}`;
+    case 'board.preview.off':
+      return `${who} turned off the preview picture of ${boardLabel}`;
+    case 'board.preview.on':
+      return `${who} turned on the preview picture of ${boardLabel}`;
     case 'board.preview.remove':
       return `${who} removed the preview picture of ${boardLabel}`;
     case 'board.delete':
