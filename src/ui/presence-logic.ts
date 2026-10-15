@@ -2,6 +2,9 @@
 // spoken label and a short text for the phone. Pure. The server's summary leaves the viewer out and says with `me` whether
 // they are on the board too (another tab).
 import { USER_COLORS, personColor } from '../palette';
+import { initialOf } from '../../shared/initials';
+
+export { initialOf };
 
 export interface PresenceUser {
   userId: string;
@@ -53,11 +56,6 @@ export interface PresenceView {
 }
 
 const nameOf = (u: PresenceUser) => (typeof u.name === 'string' && u.name.trim() ? u.name.trim() : 'Someone');
-
-export function initialOf(name: string): string {
-  const first = Array.from(name.trim())[0];
-  return first ? first.toLocaleUpperCase() : '?';
-}
 
 /** A colour from the person palette, or null when there is none to map (the square then takes the ink). */
 export function squareColour(colour: unknown): string | null {

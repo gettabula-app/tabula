@@ -7,6 +7,7 @@ import { USER_COLORS } from '../palette';
 import { navigateAppHash } from '../route';
 import { h, icon } from './dom';
 import { colourIndex } from './chat-logic';
+import { initialOf } from '../../shared/initials';
 import { openChatNotifications } from './chat-prefs';
 import { popover, toast } from './common';
 import {
@@ -115,7 +116,7 @@ function openPanel(anchor: HTMLElement, store: NotificationsStore, hold: (p: Ret
     const actor = item.actor;
     const el = h('span', { class: 'notif-sq', 'aria-hidden': 'true' });
     if (actor) {
-      el.textContent = Array.from(actor.name.trim())[0]?.toLocaleUpperCase() ?? '?';
+      el.textContent = initialOf(actor.name);
       el.setAttribute('style', `--u:${USER_COLORS[colourIndex(actor.id, USER_COLORS.length)]}`);
     } else {
       el.classList.add('neutral');

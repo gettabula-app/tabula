@@ -3,6 +3,7 @@
 // src/ui/chat.ts do the I/O around it.
 
 import type { ChatChannelEntry, ChatMessage } from '../api';
+import { wordInitials } from '../../shared/initials';
 
 /** Messages per page, as the server's default. */
 export const PAGE = 50;
@@ -312,8 +313,7 @@ export function quoteText(m: Pick<ChatMessage, 'text' | 'mentions' | 'deleted'>)
 
 /** Initials for a colour square: the first letters of the first two words. */
 export function initials(name: string): string {
-  const letters = name.trim().split(/\s+/).filter(Boolean).map((w) => [...w][0] ?? '').join('');
-  return ([...letters].slice(0, 2).join('') || '?').toUpperCase();
+  return wordInitials(name) || '?';
 }
 
 /** A stable colour index for a person id, so one person has one colour in every list. */

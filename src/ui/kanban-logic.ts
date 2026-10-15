@@ -3,6 +3,7 @@
 // No DOM and no store: the callers pass rectangles from the shared layout (shared/containers.mjs).
 
 import { KANBAN, STAGES as STAGE_VALUES, isDueDate as sharedIsDueDate, kanbanColor, type ContainerLayout, type Rect } from '../../shared/containers';
+import { firstLastInitials } from '../../shared/initials';
 
 export const isDueDate = sharedIsDueDate;
 
@@ -240,11 +241,7 @@ export function dueChip(due: string | undefined, today: string, done: boolean): 
 
 /** Initials for an owner badge: the first letters of the first and last word, upper case. */
 export function initials(name: string | undefined): string {
-  const words = (name ?? '').trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return '?';
-  const first = [...words[0]][0] ?? '';
-  const last = words.length > 1 ? [...words[words.length - 1]][0] ?? '' : '';
-  return (first + last).toUpperCase();
+  return firstLastInitials(name) || '?';
 }
 
 // ---------------------------------------------------------------- cards (docs/kanban.md, slice 3)

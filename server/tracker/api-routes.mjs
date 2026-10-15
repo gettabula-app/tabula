@@ -1,4 +1,5 @@
 import { ticketAccess } from './access.mjs';
+import { firstLastInitials } from '../../shared/initials.mjs';
 import { OpsError, actorInfo, newId } from './shared.mjs';
 import { publicEventDetails } from './events.mjs';
 import {
@@ -190,13 +191,6 @@ function normalizeAssignee(directory, body, path = '') {
   return normalized;
 }
 
-function initials(name) {
-  const parts = String(name ?? '').trim().split(/\s+/u).filter(Boolean);
-  if (!parts.length) return '?';
-  const raw = parts.length === 1 ? Array.from(parts[0])[0] : `${Array.from(parts[0])[0]}${Array.from(parts.at(-1))[0]}`;
-  return Array.from(raw.toLocaleUpperCase()).slice(0, 2).join('');
-}
-
 function actorName(db, row) {
   if (row.actor_type === 'user') {
     return db.prepare('SELECT name FROM users WHERE id = ?').get(row.actor_id)?.name ?? 'Former member';
@@ -362,7 +356,7 @@ export function createTrackerRoutes({ directory, compile, audit, cloud = null, n
     const labels = listLabels({ directory, actor }).map(({ id, name, color }) => ({ id, name, color }));
     const members = directory.db.prepare(
       "SELECT id, name FROM users WHERE role IN ('owner', 'admin', 'member') AND disabled = 0 ORDER BY name COLLATE NOCASE, id",
-    ).all().map((member) => ({ userId: member.id, name: member.name, initials: initials(member.name) }));
+    ).all().map((member) => ({ userId: member.id, name: member.name, initials: firstLastInitials(member.name) || '?' }));
     const canWrite = ticketAccess(actor, ACCESS_CHECK) === 'write' && !currentReadOnly();
     const projects = listProjects({ directory, actor }).map(({ id, name, state }) => ({ id, name, state }));
     const milestones = directory.db.prepare(
