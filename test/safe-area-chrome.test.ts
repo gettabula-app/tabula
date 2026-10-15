@@ -44,6 +44,7 @@ async function openBoard(width: number, height: number, safe: { top: number; rig
       }, safe);
       await page.goto(base);
       await page.getByRole('button', { name: 'New board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
+      await page.getByRole('menuitem', { name: 'Blank board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
       await page.locator('.rail').waitFor({ timeout: 25_000 });
       return page;
     } catch (error) {

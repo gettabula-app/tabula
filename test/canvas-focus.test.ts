@@ -34,6 +34,7 @@ async function openBoard(): Promise<Page> {
     try {
       await page.goto(`${base}?debug`);
       await page.getByRole('button', { name: 'New board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
+      await page.getByRole('menuitem', { name: 'Blank board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
       await page.waitForFunction(() => (window as unknown as { __board?: unknown }).__board, undefined, { timeout: 25_000 });
       return page;
     } catch (error) {

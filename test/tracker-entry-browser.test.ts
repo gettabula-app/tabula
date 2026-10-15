@@ -236,7 +236,7 @@ describe.skipIf(!available)('the account menu of the Boards top bar in a browser
     expect(Math.round((await name.boundingBox())!.height)).toBeGreaterThanOrEqual(44); // a 44 px target with a caret
     await name.click();
     const rows = (await page.locator('.account-menu .menu-item').allTextContents()).map((t) => t.trim());
-    expect(rows).toEqual(['Your name and colour', 'AI tool access', 'Notification settings', 'Sign out']);
+    expect(rows).toEqual(['Your name and colour', 'My templates', 'AI tool access', 'Notification settings', 'Sign out']);
     await page.close();
   });
 
@@ -244,7 +244,7 @@ describe.skipIf(!available)('the account menu of the Boards top bar in a browser
     const page = await openBar(false);
     await page.locator('#entry-bar .topbar-me-btn').click();
     const rows = (await page.locator('.account-menu .menu-item').allTextContents()).map((t) => t.trim());
-    expect(rows).toEqual(['Your name and colour', 'Notification settings', 'Sign out']);
+    expect(rows).toEqual(['Your name and colour', 'My templates', 'Notification settings', 'Sign out']);
     await page.close();
   });
 

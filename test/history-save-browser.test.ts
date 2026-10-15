@@ -41,6 +41,7 @@ async function openHistory(): Promise<{ page: Page; saves: string[] }> {
   });
   await page.goto(base);
   await page.getByRole('button', { name: 'New board' }).click({ timeout: 60_000 });
+  await page.getByRole('menuitem', { name: 'Blank board' }).click({ timeout: 60_000 });
   await page.getByRole('button', { name: 'Menu' }).click({ timeout: 25_000 });
   await page.locator('.board-menu .menu-item', { hasText: 'Version history' }).click();
   await page.getByRole('button', { name: 'Save version' }).waitFor();

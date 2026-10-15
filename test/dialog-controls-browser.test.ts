@@ -30,6 +30,7 @@ async function openBoard(theme: 'default' | 'evergreen'): Promise<Page> {
   await page.addInitScript((id) => localStorage.setItem('driftboard:theme', id), theme);
   await page.goto(base);
   await page.getByRole('button', { name: 'New board' }).click({ timeout: 60_000 });
+  await page.getByRole('menuitem', { name: 'Blank board' }).click({ timeout: 60_000 });
   await page.getByRole('button', { name: 'Menu' }).waitFor({ timeout: 30_000 });
   return page;
 }

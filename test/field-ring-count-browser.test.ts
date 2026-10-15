@@ -30,6 +30,7 @@ async function openBoard(height = 900): Promise<Page> {
     try {
       await page.goto(base);
       await page.getByRole('button', { name: 'New board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
+      await page.getByRole('menuitem', { name: 'Blank board' }).click({ timeout: attempt >= 2 ? 90_000 : 25_000 });
       await page.getByRole('button', { name: 'Menu' }).waitFor({ timeout: 25_000 });
       return page;
     } catch (error) {
