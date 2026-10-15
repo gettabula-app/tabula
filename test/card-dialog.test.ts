@@ -234,7 +234,7 @@ describe('the card dialog, for an editor', () => {
     const css = readFileSync(new URL('../src/ui/card-dialog.css', import.meta.url), 'utf8');
     const sharedCss = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
     expect(css).toMatch(/\.k-link-error\s*\{[^}]*color:\s*var\(--danger\)/s);
-    expect(sharedCss).toMatch(/:is\(\.input,\s*select,\s*textarea:not\(\.text-editor\)\):is\(\[aria-invalid='true'\],\s*\.error\)\s*\{[^}]*background-color:\s*color-mix\(in srgb,\s*var\(--danger\)\s*10%,\s*var\(--tray\)\);\s*box-shadow:\s*inset 0 0 0 1px var\(--danger\);/s);
+    expect(sharedCss).toMatch(/:is\(\.input,\s*select,\s*textarea:not\(\.text-editor\)\):is\(\[aria-invalid='true'\],\s*\.error\)\s*\{[^}]*background-color:\s*color-mix\(in srgb,\s*var\(--danger\)\s*10%,\s*var\(--tray\)\);\s*background-image:\s*none;\s*box-shadow:\s*inset 0 0 0 1px var\(--danger\);/s);
     expect(css).toMatch(/\.k-open-link\s*\{[^}]*white-space:\s*nowrap/s);
   });
 

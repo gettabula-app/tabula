@@ -6,9 +6,10 @@
 }
 .mention-stack > * { pointer-events: auto; }
 .mention-card {
-  display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-left: 4px solid var(--danger); border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; position: relative; border-radius: var(--radius-md);
   background: var(--tray); color: var(--tray-text); box-shadow: 0 0 0 1px var(--tray-line);
 }
+.mention-card::before { content: ''; position: absolute; left: 0; top: var(--radius-md); bottom: var(--radius-md); width: 4px; background: var(--danger); }
 .mention-title { margin: 0; font-size: 13px; font-weight: 600; line-height: 18px; overflow-wrap: anywhere; }
 .mention-text { margin: 0; color: var(--tray-muted); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .mention-actions { display: flex; gap: 8px; }

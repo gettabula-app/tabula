@@ -92,11 +92,11 @@ div.ks-row-title { cursor: default; }
 .ks-add-btn.refused { background: transparent; color: var(--graphite); box-shadow: inset 0 0 0 1px var(--rule); cursor: default; }
 .ks-add-go { flex: none; padding: 0 16px; }
 .ks-input {
-  flex: 1 1 auto; min-width: 0; height: 48px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); box-shadow: inset 0 -1px 0 var(--field-rule); background: color-mix(in srgb, var(--ink) 4%, var(--paper)); --placeholder: var(--ink);
+  flex: 1 1 auto; min-width: 0; height: 48px; padding: 0 12px; border: 0; border-radius: var(--radius-sm); background: var(--rule-image), color-mix(in srgb, var(--ink) 4%, var(--paper)); --placeholder: var(--ink);
   color: var(--ink); font: 500 15px var(--ui); outline: none;
 }
 .ks-input::placeholder { color: var(--placeholder); opacity: 1; }
-.ks-input:focus-visible { outline: 1px solid var(--field-edge-strong); outline-offset: 0; box-shadow: inset 0 0 0 1px var(--field-edge-strong); }
+.ks-input:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* Move to…: a bottom sheet over a tray scrim */
 .ks-move { position: fixed; inset: 0; z-index: 45; }

@@ -8,10 +8,11 @@
 .focus-stack > * { pointer-events: auto; }
 
 .focus-card, .focus-chip {
-  display: flex; flex-direction: column; gap: 12px; padding: 12px 16px; border-left: 4px solid var(--signal); border-radius: var(--radius-md);
+  display: flex; flex-direction: column; gap: 12px; padding: 12px 16px; position: relative; border-radius: var(--radius-md);
   background: var(--tray); color: var(--tray-text);
   box-shadow: 0 0 0 1px var(--tray-line), 0 2px 8px color-mix(in srgb, var(--shade) 30%, transparent);
 }
+.focus-card::before, .focus-chip::before { content: ''; position: absolute; left: 0; top: var(--radius-md); bottom: var(--radius-md); width: 4px; background: var(--signal); }
 .focus-chip { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 16px; }
 .focus-chip-text { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
 

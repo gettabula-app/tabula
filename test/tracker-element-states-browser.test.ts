@@ -99,11 +99,11 @@ describe.skipIf(!available)('tracker element states', { timeout: 200_000 }, () =
       const lum = (rgb: number[]) => { const [r, g, b] = rgb.map((x) => { const c = x / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
       const ratio = (a: number[], b: number[]) => { const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x); return (hi + 0.05) / (lo + 0.05); };
       const track = document.querySelector('.trk-frame-wrap.is-work .trk-element-switch .segmented') as HTMLElement;
-      const on = track.querySelector('button.on') as HTMLElement;
+      const on = track.querySelector('button.on') as HTMLElement; // the raised thumb is the sliding marker behind it now
       const off = [...track.querySelectorAll('button')].find((b) => !b.classList.contains('on')) as HTMLElement;
       const bg = (el: HTMLElement) => px(getComputedStyle(el).backgroundColor);
       const fg = (el: HTMLElement) => px(getComputedStyle(el).color);
-      return { theme: document.documentElement.dataset.theme ?? 'default', off: ratio(fg(off), bg(track)), on: ratio(fg(on), bg(on)) };
+      return { theme: document.documentElement.dataset.theme ?? 'default', off: ratio(fg(off), bg(track)), on: ratio(fg(on), bg(track.querySelector('.segmented-marker') as HTMLElement)) };
     });
     await shot(page, `switch-${theme}`);
     expect(result.theme).toBe(theme); // the stored theme was applied, so the check below is about that theme
