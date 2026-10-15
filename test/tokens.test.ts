@@ -215,6 +215,9 @@ describe('access tokens in the directory', () => {
       DROP TABLE ticket_counters;
       DROP TABLE labels;
       DROP TABLE trackers;
+      ALTER TABLE boards DROP COLUMN last_edited_by;
+      ALTER TABLE boards DROP COLUMN last_edited_kind;
+      ALTER TABLE boards DROP COLUMN last_edited_at;
       DROP TABLE guest_sessions;
       DROP TABLE join_codes;
       DROP TABLE user_prefs;

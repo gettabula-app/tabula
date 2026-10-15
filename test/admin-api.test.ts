@@ -175,7 +175,7 @@ function ensure(res: Res, status: number) {
   if (res.status !== status) throw new Error(`expected ${status}, got ${res.status} ${res.text}`);
 }
 
-const BOARD_KEYS = ['createdAt', 'deletedAt', 'id', 'ownerId', 'ownerName', 'shareCount', 'teamId', 'teamName', 'title', 'updatedAt'];
+const BOARD_KEYS = ['createdAt', 'deletedAt', 'id', 'lastEditedAt', 'lastEditedBy', 'lastEditedKind', 'ownerId', 'ownerName', 'shareCount', 'teamId', 'teamName', 'title', 'updatedAt'];
 
 // ---------------------------------------------------------------- access
 
