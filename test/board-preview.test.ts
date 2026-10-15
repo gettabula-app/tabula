@@ -617,6 +617,50 @@ describe('board previews', () => {
     expect(world.previewStore!.read(board.id)).not.toBeNull();
   });
 
+  it('unlinks once the throttle window is over when a text change fell inside it', () => {
+    vi.useFakeTimers();
+    try {
+      const clock = { now: 1_000_000 };
+      const doc = new Y.Doc();
+      const note = new Y.Map<unknown>([['id', 'note'], ['type', 'sticky'], ['text', 'First']]);
+      doc.getMap('objects').set('note', note);
+      const unlink = vi.fn<(boardId: string) => void>();
+      const stop = observePreviewChanges(doc, 'trailing_board', { unlink, now: () => clock.now });
+      note.set('text', 'Second');
+      expect(unlink).toHaveBeenCalledTimes(1);
+      clock.now += 5_000;
+      note.set('text', 'Third');
+      expect(unlink).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(24_999);
+      expect(unlink).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(2);
+      expect(unlink).toHaveBeenCalledTimes(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('watches a frame name and a connector label like text', () => {
+    const doc = new Y.Doc();
+    const objects = doc.getMap('objects');
+    const frame = new Y.Map<unknown>([['id', 'frame'], ['type', 'frame'], ['name', 'Secret plan']]);
+    const connector = new Y.Map<unknown>([['id', 'link'], ['type', 'connector'], ['label', 'Secret label']]);
+    objects.set('frame', frame);
+    objects.set('link', connector);
+    const unlink = vi.fn<(boardId: string) => void>();
+    const stop = observePreviewChanges(doc, 'label_board', { unlink, now: () => 5_000_000 });
+    frame.set('name', '');
+    expect(unlink).toHaveBeenCalledTimes(1);
+    stop();
+    const other = vi.fn<(boardId: string) => void>();
+    const stopOther = observePreviewChanges(doc, 'label_board_connector', { unlink: other, now: () => 5_000_000 });
+    connector.set('label', '');
+    expect(other).toHaveBeenCalledTimes(1);
+    expect(getPreviewRevision('label_board_connector')).toBe(1);
+    stopOther();
+  });
+
   it('observes MCP roomAccess writes and does not treat persisted state as a new edit', async () => {
     const world = await setup();
     worlds.push(world);
