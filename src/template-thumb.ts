@@ -4,8 +4,9 @@ import { buildConnectorLayout, objBounds, unionRects, type ConnectorLayout } fro
 import { SVG_DEFS, objectMarkup, type MarkupCtx } from './markup';
 import { DEFAULT_META } from './store';
 import { Builder, type BuilderHost, type TemplateDef } from './templates';
-import { isBox, isConnector, type Label, type Obj, type Rect } from './types';
+import { isBox, isConnector, type BaseObj, type Label, type Obj, type Rect } from './types';
 import { layoutAll } from '../shared/containers';
+import { TRACKER_FRAME_DEFAULT_SIZE, trackerPlaceholder } from './tracker-frame';
 
 const DEFAULT_MAX_OBJECTS = 400;
 const PAD = 0.04;
@@ -65,4 +66,14 @@ export function builtinThumbnail(def: TemplateDef): string {
     builtins.set(def.id, svg);
   }
   return svg;
+}
+
+/**
+ * The Tracker entry of the Templates picker: the static frame placeholder (its name and a line, never ticket data), at the size a new
+ * tracker is put on a board. Not memoised: the line it says depends on whether the person is a guest.
+ */
+export function trackerThumbnail(): string {
+  const { w, h } = TRACKER_FRAME_DEFAULT_SIZE;
+  const frame = { id: 'tracker-thumbnail', type: 'tracker', x: 0, y: 0, w, h, rotation: 0 } as unknown as BaseObj;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">${trackerPlaceholder(frame)}</svg>`;
 }
