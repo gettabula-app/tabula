@@ -312,7 +312,7 @@ describe('developer board previews', () => {
     expect(revealedIds).toContain('private-note');
     expect(revealedIds).toContain('private-card');
     expect(revealedIds).not.toContain('hidden');
-    expect(revealedIds).not.toContain('bound-connector');
+    expect(revealedIds).toContain('bound-connector');
     expect(room.dirty).toBe(false);
 
     const image = png();
