@@ -23,7 +23,10 @@ import { describeError } from './ai/errors.mjs';
 import { FEATURE_SPECS } from './ai/features.mjs';
 import { createAiRoutes } from './ai/routes.mjs';
 import { RESTORE_STATUS, RestoreError } from './restore.mjs';
-import { AssetError } from './assets.mjs';
+import { AssetError, readBytes } from './assets.mjs';
+import { isRevealed, previewSourceOf, readAll } from './board-ops.mjs';
+import { MAX_PREVIEW_BYTES, validatePreviewImage } from './preview-image.mjs';
+import { createDevPreviewStore } from './preview-store.mjs';
 import { LinkRouteError, createLinkUnfurl } from './link-routes.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
@@ -54,6 +57,8 @@ const MAX_BODY = 64 * 1024;
 const DRAIN_LIMIT = 2 * TEMPLATE_BODY_LIMIT;
 const INVITE_EXHAUSTED = 'This invitation has been used up. Ask the person who invited you for a new link.';
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_PREVIEW_OBJECTS = 5000;
+const MAX_PREVIEW_DAILY_BYTES = 20 * 1024 * 1024;
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
@@ -241,6 +246,7 @@ function compile(method, pattern, options, handler) {
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
 export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, notificationDigest = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+  const previewStore = config.previewDev === true ? createDevPreviewStore({ dataDir, now }) : null;
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -576,6 +582,24 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const boardMoveHourlyLimiter = createWindowLimiter(100, now, 60 * 60_000);
   const boardMoveBoardLimiter = createWindowLimiter(1, now, 10_000);
   const boardMovePreviewLimiter = createWindowLimiter(60, now);
+  const previewUploadBoardLimiter = createWindowLimiter(1, now, 10_000);
+  const previewUploadUserLimiter = createWindowLimiter(60, now, 60 * 60_000);
+  let previewDailyUploads = [];
+
+  function previewUploadCapacity(user, boardId, bytes) {
+    const current = now();
+    previewDailyUploads = previewDailyUploads.filter((upload) => upload.at > current - DAY_MS);
+    const boardWait = previewUploadBoardLimiter.wait(boardId);
+    const userWait = previewUploadUserLimiter.wait(user.id);
+    const dailyBytes = previewDailyUploads.reduce((total, upload) => total + upload.bytes, 0);
+    return { wait: Math.max(boardWait, userWait), daily: dailyBytes + bytes > MAX_PREVIEW_DAILY_BYTES };
+  }
+
+  function notePreviewUpload(user, boardId, bytes) {
+    previewUploadBoardLimiter.hit(boardId);
+    previewUploadUserLimiter.hit(user.id);
+    previewDailyUploads.push({ at: now(), bytes });
+  }
   // refused control-token attempts on the internal routes, per address (the control plane's own calls are never counted: only a refusal is)
   const internalAuthFailures = createWindowLimiter(30, now);
   const internalAuthLogged = createWindowLimiter(1, now);
@@ -713,6 +737,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   function requireAssetWriter(user, boardId) {
     const { role } = boardFor(user, boardId);
     if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can add images');
+  }
+
+  function requirePreviewWriter(user, boardId) {
+    const { role } = boardFor(user, boardId);
+    if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can add board previews');
   }
 
   // The asset handlers refuse with AssetError; the dispatcher answers HttpError.
@@ -2213,6 +2242,76 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       : []),
 
     // ---------------------------------------------------------- images (docs/images.md)
+
+    ...(previewStore
+      ? [
+          compile('GET', 'boards/:id/preview-source', { cookieOnly: true }, ({ params, res, user }) => {
+            res.setHeader('cache-control', 'private, no-store');
+            res.setHeader('x-content-type-options', 'nosniff');
+            const { role } = boardFor(user, params.id);
+            if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can read a board preview source');
+            const source = roomAccess.read(params.id, (doc) => {
+              const { boxes, connectors } = readAll(doc);
+              const revealed = isRevealed(doc);
+              return { objects: previewSourceOf([...boxes, ...connectors], revealed), revealed };
+            });
+            if (source.objects.length > MAX_PREVIEW_OBJECTS) throw new HttpError(413, 'too_large', 'This board has too many objects for a preview');
+            return [200, source];
+          }),
+          compile('PUT', 'boards/:id/preview', { cookieOnly: true }, ({ req, res, params, user }) => assetReply(async () => {
+            requirePreviewWriter(user, params.id);
+            const rawLength = req.headers['content-length'];
+            if (typeof rawLength !== 'string' || !/^\d+$/.test(rawLength)) {
+              throw new AssetError(411, 'length_required', 'Content-Length is required');
+            }
+            const declaredLength = Number(rawLength);
+            if (!Number.isSafeInteger(declaredLength)) throw new AssetError(400, 'bad_request', 'Content-Length is invalid');
+            if (declaredLength > MAX_PREVIEW_BYTES) throw new AssetError(413, 'payload_too_large', 'The image is too large');
+            const contentType = req.headers['content-type'];
+            const declaredType = typeof contentType === 'string' ? contentType.trim().toLowerCase() : '';
+            if (declaredType !== 'image/png' && declaredType !== 'image/webp') {
+              throw new AssetError(415, 'unsupported_media_type', 'Only PNG and WebP previews are accepted');
+            }
+            const bytes = await readBytes(req, MAX_PREVIEW_BYTES);
+            if (bytes.length !== declaredLength) throw new AssetError(400, 'bad_request', 'Content-Length does not match the request body');
+
+            const current = auth.authenticate(req.headers.cookie);
+            if (!current) throw new HttpError(401, 'unauthenticated', 'Sign in required');
+            if (current.setCookie) res.setHeader('set-cookie', current.setCookie);
+            if (current.user.id !== user.id) throw new HttpError(401, 'unauthenticated', 'Sign in required');
+            requirePreviewWriter(current.user, params.id);
+
+            const image = validatePreviewImage(bytes, declaredType);
+            if (!image.ok) throw new AssetError(400, 'invalid_image', 'The preview image is invalid');
+            const capacity = previewUploadCapacity(current.user, params.id, bytes.length);
+            if (capacity.wait || capacity.daily) {
+              if (capacity.wait) res.setHeader('retry-after', String(capacity.wait));
+              throw new AssetError(429, 'rate_limited', 'Preview uploads are limited. Try again later.');
+            }
+            previewStore.put({ boardId: params.id, bytes, image, uploadedBy: current.user.id });
+            notePreviewUpload(current.user, params.id, bytes.length);
+            audit(current.user, 'board.preview.upload', { boardId: params.id, by: current.user.id, bytes: bytes.length });
+            return [204];
+          })),
+          compile('GET', 'boards/:id/preview', { cookieOnly: true }, ({ req, params, user }) => {
+            boardFor(user, params.id);
+            const preview = previewStore.read(params.id);
+            if (!preview) throw notFound('Board not found');
+            const headers = {
+              'content-type': preview.type,
+              'x-content-type-options': 'nosniff',
+              'content-security-policy': "default-src 'none'",
+              'cross-origin-resource-policy': 'same-origin',
+              'cache-control': 'private, no-cache',
+              etag: preview.etag,
+            };
+            const validators = (req.headers['if-none-match'] ?? '').split(',').map((part) => part.trim());
+            const matches = validators.includes('*') || validators.some((value) => (value.startsWith('W/') ? value.slice(2) : value) === preview.etag);
+            if (matches) return [304, undefined, headers];
+            return [200, preview.bytes, headers];
+          }),
+        ]
+      : []),
 
     ...(assets
       ? [
