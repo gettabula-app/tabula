@@ -75,6 +75,8 @@ describe('kanban card checklist over MCP', () => {
       [{ text: '   ' }], [{ text: 'x'.repeat(201) }], [{ id: 'd', text: 'a' }, { id: 'd', text: 'b' }],
       [{ text: 'a', extra: 1 }], [{ text: 'a', done: 'yes' }], [{ id: 'bad id!', text: 'a' }], 'text',
     ];
+    // within 50 items and 200 code points each, but over the 12,000 byte cap the board enforces (4-byte characters)
+    bad.push(Array.from({ length: 50 }, (_, i) => ({ text: `${i}`.padEnd(100, '😀') })));
     for (const checklist of bad) expect({ checklist: JSON.stringify(checklist).slice(0, 40), error: (await add({ checklist })).error }).toMatchObject({ error: 'invalid_input' });
     expect((await add({ checklist: Array.from({ length: 50 }, (_, i) => ({ text: `n${i}` })) })).error).toBeUndefined();
   });

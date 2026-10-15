@@ -545,9 +545,9 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     };
   }
 
-  // TAB-372 checklist: whole-list replace, last write wins. The limits mirror the app's (developer: move to shared/containers.mjs LIMITS).
-  const CHECKLIST_MAX = 50;
-  const CHECKLIST_TEXT_MAX = 200;
+  // TAB-372 checklist: whole-list replace, last write wins. The limits are the board's (shared/containers.mjs LIMITS).
+  const CHECKLIST_MAX = KANBAN_LIMITS.checklistItems;
+  const CHECKLIST_TEXT_MAX = KANBAN_LIMITS.checklistText;
   const checklistSchema = (nullable = false) => ({
     type: nullable ? ['array', 'null'] : 'array', maxItems: CHECKLIST_MAX,
     items: { type: 'object', properties: { id: { type: 'string' }, text: { type: 'string', maxLength: CHECKLIST_TEXT_MAX }, done: { type: 'boolean' } }, required: ['text'] },
@@ -555,7 +555,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
   function checklistInput(value, path) {
     const items = check.listOf(value, path, 0, CHECKLIST_MAX);
     const seen = new Set();
-    return items.map((item, i) => {
+    const list = items.map((item, i) => {
       const at = `${path}[${i}]`;
       check.record(item, at, ['id', 'text', 'done']);
       const text = cleanCardTitle(check.text(check.required(item, 'text', at), `${at}.text`, 1, CHECKLIST_TEXT_MAX, codePointLength));
@@ -566,6 +566,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       seen.add(id);
       return { id, text, done: item.done === true };
     });
+    if (Buffer.byteLength(JSON.stringify(list), 'utf8') > KANBAN_LIMITS.checklistBytes) {
+      throw new OpsError('invalid_input', `The checklist is too large: at most ${KANBAN_LIMITS.checklistBytes} bytes`, path);
+    }
+    return list;
   }
 
   function cardOutput(doc, card, lane) {
