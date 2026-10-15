@@ -1012,7 +1012,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         id: sourceId,
         exists: sourceId === null || sourceTeam !== null,
         role: sourceId === null ? null : directory.getTeamRole(sourceId, user.id),
-        hasEnabledAdmin: enabledAdmins.length > 0,
+        // another enabled admin: an admin who is also the creator may take their own board to Personal
+        hasOtherEnabledAdmin: enabledAdmins.some((member) => member.userId !== user.id),
       },
       dest: {
         id: to,
