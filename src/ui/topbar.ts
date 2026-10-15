@@ -158,5 +158,5 @@ export function searchField(label: string, value: string, onInput: (query: strin
 }
 
 export function pageFooter(note: string): HTMLElement {
-  return h('footer', { class: 'home-foot' }, note, ' Fonts by Fontshare. Icon sets by their authors, see ', h('button', { class: 'link-btn', onclick: openIconCredits }, 'Icon credits'), '.');
+  return h('footer', { class: 'home-foot' }, note, ' Fonts by Fontshare. Icon sets by their authors, see ', h('button', { class: 'link-btn', onclick: openIconCredits }, 'Icon credits'), ' and ', h('a', { class: 'link-btn', href: '/third-party-notices.txt', target: '_blank', rel: 'noopener' }, 'Third-party notices'), '.');
 }
