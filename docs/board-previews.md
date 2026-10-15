@@ -30,3 +30,4 @@ The server cannot verify what the pixels show. An editor who has a private grant
 - A board purge relies on the hourly orphan sweep to remove its picture file (soft delete and restore remove it at once). That is fine for a cache.
 - `TABULA_PREVIEWS=0` is a machine environment variable. An upgrade that recreates the machine drops it unless the control plane carries it over.
 - A change to a text, frame name or connector label that falls inside the 30 s throttle window still removes the picture when the window is over.
+- A board owner or workspace admin can turn the picture off for one board (`PUT /api/boards/:id/preview-off {off:true}`, audit `board.preview.off`/`on`). The choice lives in the workspace settings, not in the cache directory, so clearing the cache or restoring a backup does not bring the picture back. While it is off, preview-source, upload and read all answer 404 for that board.
