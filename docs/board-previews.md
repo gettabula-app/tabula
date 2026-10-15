@@ -13,3 +13,7 @@ Uploads require a declared `Content-Length` and are limited to 40,960 bytes. Ima
 Files live in `DATA_DIR/previews-dev/`, beside `directory.sqlite`, outside the served application files. The directory uses mode `0700`; image and metadata files use `0600`. Unloaded board rooms are read from their saved Yjs file into a temporary document, which is destroyed after the response.
 
 This demo does not use the production `board_previews` table and has no cascade delete, stale flag, restore or duplicate invalidation, owner remove action, or per-person preview switch. Board deletion and restore can therefore leave a stored preview behind until the demo store is cleaned up.
+
+Rate limits: `GET preview-source` allows 30 per minute per user and 1 per 2 seconds per board. Every upload attempt is counted on entry, valid or not, before the body is read. The 20 MB per day pool is one pool for the whole server, so one editor can use it up for everyone on a demo server.
+
+Before the flag is ever turned on outside the demo: the stored image needs cascade delete with the board, a stale flag, restore and duplicate invalidation, the owner remove action, and `Clear-Site-Data` on logout (the preview route does not send it yet). A restore from backup does not bring previews back: `previews-dev/` is not part of any backup. Keep `TABULA_PREVIEW_DEV` out of every `fly.toml`, Dockerfile and CI environment; a test checks that `loadConfig` leaves it false by default.
