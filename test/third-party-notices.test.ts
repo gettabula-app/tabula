@@ -161,7 +161,7 @@ describe('third-party notices inventory', () => {
     expect(packageLicenseFilesFor({ name: 'standardwebhooks', version: '1.1.0' }, directory)).toEqual([]);
   });
 
-  it('renders font review, CC BY credits, MPL, Unicode, and the release-copy follow-up', () => {
+  it('renders font review, CC BY credits, MPL, Unicode, and the release copy', () => {
     const markdown = renderNotices({
       npmRows: [],
       cargoRows: [
@@ -179,6 +179,6 @@ describe('third-party notices inventory', () => {
     expect(markdown).toContain('The following MPL-2.0 crates are unmodified');
     expect(markdown).toContain('selectors@0.38.0');
     expect(markdown).toContain('crates.io at the listed versions');
-    expect(markdown).toContain('separate release integration task');
+    expect(markdown).toContain('dist/third-party-notices.txt');
   });
 });
