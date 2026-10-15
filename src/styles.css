@@ -698,6 +698,8 @@ select.input {
 
 /* popovers, menus, dialogs, toast */
 .popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-md); }
+/* a popover opened from inside a dialog (the font pickers in Board settings) sits above that dialog (TAB-405) */
+.modal-back ~ .popover { z-index: 61; }
 .popover.wide { width: min(720px, calc(100vw - 16px)); }
 .popover.tray, :root:not([data-theme='default']) .popover.tray { border-radius: var(--radius-md); }
 .popover .dot-presets button { border-radius: var(--radius-sm); }
