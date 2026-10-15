@@ -75,6 +75,33 @@ describe.skipIf(!available)('the board template picker dialog', { timeout: 200_0
     await closePage(page);
   });
 
+  it('keeps the strip heading and its actions on one row at 360 pixels', async () => {
+    const page = await openHome();
+    const strip = page.locator('.home-templates');
+    await strip.waitFor({ state: 'visible', timeout: budget(25_000) });
+    const heading = await page.locator('.home-templates h2').boundingBox();
+    const actions = await page.locator('.home-templates .group-actions').boundingBox();
+    const hide = await page.getByRole('button', { name: 'Hide the template suggestions', exact: true }).boundingBox();
+    if (!heading || !actions || !hide) throw new Error('the strip heading, its actions or Hide has no box');
+    const centre = (box: { y: number; height: number }) => box.y + box.height / 2;
+    expect(Math.abs(centre(heading) - centre(actions))).toBeLessThanOrEqual(4);
+    expect(Math.abs(centre(actions) - centre(hide))).toBeLessThanOrEqual(4);
+    expect(heading.x + heading.width).toBeLessThanOrEqual(actions.x);
+    expect(hide.height).toBeGreaterThanOrEqual(44);
+    await closePage(page);
+  });
+
+  it('wraps the strip actions below the heading at 280 pixels, and breaks no word', async () => {
+    const page = await openHome(280);
+    await page.locator('.home-templates').waitFor({ state: 'visible', timeout: budget(25_000) });
+    const heading = await page.locator('.home-templates h2').boundingBox();
+    const actions = await page.locator('.home-templates .group-actions').boundingBox();
+    if (!heading || !actions) throw new Error('the strip heading or its actions has no box');
+    expect(await page.locator('.home-templates h2').evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(false);
+    expect(actions.y).toBeGreaterThanOrEqual(heading.y + heading.height - 1);
+    await closePage(page);
+  });
+
   it('opens Templates from the New board menu and fits the menu at 360 pixels', async () => {
     const page = await openHome();
     const opener = page.getByRole('button', { name: 'New board', exact: true });

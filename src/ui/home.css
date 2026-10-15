@@ -132,6 +132,10 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .link-more:hover { text-decoration: underline; text-underline-offset: 4px; }
 /* Hide is a button: the same text link, without the browser's frame, with a 44px target and room either side of the word */
 button.link-more { min-height: 44px; padding: 0 12px; border: 0; background: none; }
+/* The strip heading and its actions share one row while they fit. The heading takes the room left over (a zero basis, so the line fits) and wraps its own text, but never narrows below its longest word, so a very narrow screen moves the actions to a second row instead of breaking a word. */
+.home-templates .group-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.home-templates .group-head h2 { min-width: min-content; flex: 1 1 0; }
+.home-templates .group-actions { display: flex; flex-wrap: nowrap; align-items: center; white-space: nowrap; flex: 0 0 auto; }
 
 /* Templates page. */
 .tpl-toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; margin-top: 32px; }
@@ -354,7 +358,7 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
   .home .home-search { flex: 1 1 100%; max-width: none; }
   .home-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-actions .btn { min-height: 44px; }
-  .home-actions .home-more { justify-self: start; min-width: 44px; }
+  .home-actions .home-more { justify-self: start; min-width: 44px; min-height: 44px; }
   .home-empty-state :is(h1, h2) { font-size: 32px; }
   .board-list { border-top: 1px solid var(--page-hairline); }
   .board-row { padding: 8px; }

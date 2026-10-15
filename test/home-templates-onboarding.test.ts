@@ -239,6 +239,13 @@ describe('the account toolbar under 480 px', () => {
     expect(openWorkspaceMembers).toHaveBeenCalledWith(me, refresh);
   });
 
+  it('opens More actions with its first item focused', () => {
+    const { actions } = toolbarFor('admin');
+    control(actions, 'More actions').click();
+    expect(menuItems().map(textOf)).toEqual(['New team', 'Members']);
+    expect(browser.document.activeElement).toBe(menuItems()[0]);
+  });
+
   it('offers only New team to a member', () => {
     const { actions } = toolbarFor('member');
     expect(hasControl(actions, 'Members')).toBe(false);
@@ -298,7 +305,23 @@ describe('the Boards page stylesheet', () => {
     expect(css).toMatch(/\n\.home-actions \.home-more \{ display: none; \}/);
     expect(media('max-width: 479px')).toMatch(/\.home-actions \.home-action \{ display: none; \}/);
     expect(media('max-width: 479px')).toMatch(/\.home-actions \.home-more \{ display: inline-flex; \}/);
-    expect(css).toMatch(/\.home-actions \.home-more \{ justify-self: start; min-width: 44px; \}/);
+    expect(css).toMatch(/\.home-actions \.home-more \{ justify-self: start; min-width: 44px; min-height: 44px; \}/);
+  });
+
+  it('gives More actions the shared 44px icon-button size, a minimum width and height', () => {
+    expect(css).toMatch(/\.home-actions \.home-more \{[^}]*min-width: 44px;[^}]*min-height: 44px;[^}]*\}/);
+  });
+
+  it('keeps the template strip heading and its actions in one flex row, the heading taking the room left over', () => {
+    expect(css).toMatch(/\.home-templates \.group-head \{[^}]*display: flex;[^}]*flex-wrap: wrap;[^}]*align-items: center;[^}]*justify-content: space-between;[^}]*\}/);
+    expect(css).toMatch(/\.home-templates \.group-head h2 \{[^}]*min-width: min-content;[^}]*flex: 1 1 0;[^}]*\}/);
+    expect(css).toMatch(/\.home-templates \.group-actions \{[^}]*display: flex;[^}]*flex-wrap: nowrap;[^}]*align-items: center;[^}]*white-space: nowrap;[^}]*flex: 0 0 auto;[^}]*\}/);
+  });
+
+  it('no rule in the stylesheet makes a group head a column, at any width', () => {
+    const heads = [...css.matchAll(/([^{}]*\.group-head[^{}]*)\{([^{}]*)\}/g)];
+    expect(heads.length).toBeGreaterThan(0);
+    expect(heads.filter((rule) => /flex-direction:\s*column/.test(rule[2])).map((rule) => rule[1].trim())).toEqual([]);
   });
 
   it('leaves the empty state on the page edge with no padding, minimum height or centring', () => {
