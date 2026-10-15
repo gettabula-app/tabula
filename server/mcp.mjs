@@ -141,7 +141,7 @@ const createItemSchema = {
   additionalProperties: false,
   required: ['type'],
   description:
-    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source, no HTML), x, y, w?, h?, fontSize?. code: text, x, y, lang? (ts, py, json), title?, lines?, wrap?, w?, h?. table: rows (lists of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize? (the size follows the columns and rows). frame: name, x, y, w?, h?, fill?. link: url (http or https), x, y, w?, h? (a card with the address only; no preview is fetched). Box objects may also set flipX and flipY as booleans. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?, line?. from and to are an object id, a ref, or {x, y} points. line: a plain line (type line is the same, stored as a connector): from and to are {x, y} points; optional stroke, strokeWidth?, dash?, startHead?, endHead? (defaults: none, none, 2, solid). Any object but a connector may have parent.',
+    'sticky: text, x, y, w?, h?, color? (a name such as Yellow or #RRGGBB). shape: x, y, kind?, text?, w?, h?, fill?, stroke?. text: text, x, y, w?, fontSize?. markdown: text (Markdown source, no HTML), x, y, w?, h?, fontSize?. code: text, x, y, lang? (ts, py, json), title?, lines?, wrap?, w?, h?. table: rows (lists of cell texts; inline Markdown only), x, y, headerRow?, headerCol?, fontSize?. frame: name, x, y, w?, h?, fill?. link: url (http or https; no preview is fetched), x, y, w?, h?. connector: from, to, label?, route?, startHead?, endHead?, dash?, stroke?, line?. from and to are an object id, a ref, or {x, y} points. line (stored as a connector): from and to are {x, y} points; optional stroke, strokeWidth?, dash?, startHead?, endHead? (defaults: none, none, 2, solid). Any object but a connector may have parent.',
   properties: {
     type: { enum: ['sticky', 'shape', 'text', 'markdown', 'code', 'table', 'frame', 'connector', 'line', 'link'] },
     line: { type: 'boolean', description: 'true on a connector makes it a line: both ends free, straight.' },
@@ -182,7 +182,7 @@ const updateItemSchema = {
   additionalProperties: false,
   required: ['id'],
   description:
-    'id plus the fields to change. Box objects can set flipX and flipY to mirror their drawn content; values must be booleans. Sticky notes and text do not mirror, and frames, containers, lanes and cards cannot be flipped by the board UI. Sticky, shape, text and frame objects can change their listed text, style and geometry fields. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards must use update_kanban_card; lanes and kanbans cannot be changed with this tool. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. A line (type line) can change from and to (points, or an end that attaches it, which makes it an ordinary connector), stroke, strokeWidth, dash, startHead and endHead; a bound end or a route other than straight turns it into a connector. Unknown fields are refused; null clears an optional field.',
+    'id plus the fields to change. Box objects can set flipX and flipY (booleans); sticky notes, text, frames, containers, lanes and cards cannot be flipped. Sticky, shape, text and frame objects can change their listed text, style and geometry fields. Icons, images, paths and UML objects can change x, y, w, h, rotation (degrees) and parent (frame or group id, or null). Groups can change name only. Cards need update_kanban_card; lanes and kanbans cannot be changed here. Connectors can change from, to, label, route, startHead, endHead, dash and stroke. A line can change from and to (points, or an end that attaches it, making it a connector), stroke, strokeWidth, dash, startHead and endHead; a bound end or a non-straight route also makes it a connector. Unknown fields are refused; null clears an optional field.',
   properties: {
     id: { type: 'string' },
     x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' },
@@ -545,6 +545,29 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     };
   }
 
+  // TAB-372 checklist: whole-list replace, last write wins. The limits mirror the app's (developer: move to shared/containers.mjs LIMITS).
+  const CHECKLIST_MAX = 50;
+  const CHECKLIST_TEXT_MAX = 200;
+  const checklistSchema = (nullable = false) => ({
+    type: nullable ? ['array', 'null'] : 'array', maxItems: CHECKLIST_MAX,
+    items: { type: 'object', properties: { id: { type: 'string' }, text: { type: 'string', maxLength: CHECKLIST_TEXT_MAX }, done: { type: 'boolean' } }, required: ['text'] },
+  });
+  function checklistInput(value, path) {
+    const items = check.listOf(value, path, 0, CHECKLIST_MAX);
+    const seen = new Set();
+    return items.map((item, i) => {
+      const at = `${path}[${i}]`;
+      check.record(item, at, ['id', 'text', 'done']);
+      const text = cleanCardTitle(check.text(check.required(item, 'text', at), `${at}.text`, 1, CHECKLIST_TEXT_MAX, codePointLength));
+      if (!text) throw new OpsError('invalid_input', 'A checklist item needs text', `${at}.text`);
+      if (item.done !== undefined && typeof item.done !== 'boolean') throw new OpsError('invalid_input', 'Must be true or false', `${at}.done`);
+      let id = item.id === undefined ? newObjectId() : check.idString(item.id, `${at}.id`);
+      if (seen.has(id)) throw new OpsError('invalid_input', 'Checklist item ids must be unique', `${at}.id`);
+      seen.add(id);
+      return { id, text, done: item.done === true };
+    });
+  }
+
   function cardOutput(doc, card, lane) {
     const out = {
       id: card.id,
@@ -561,6 +584,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
     if (out.ownerName || out.ownerId) out.ownerKind = OWNER_KINDS.includes(card.ownerKind) ? card.ownerKind : 'person';
     if (isDueDate(card.due)) out.due = card.due;
     if (isSafeHttpUrl(card.link)) out.link = card.link;
+    if (Array.isArray(card.checklist) && card.checklist.length) {
+      out.checklist = card.checklist.slice(0, CHECKLIST_MAX).filter((item) => item && typeof item.id === 'string' && typeof item.text === 'string')
+        .map((item) => ({ id: cleanForModel(item.id, 64).text, text: cleanForModel(item.text, CHECKLIST_TEXT_MAX).text, done: item.done === true }));
+    }
     if (card.locked === true) out.locked = true;
     return out;
   }
@@ -728,11 +755,12 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
 
   function addCardInput(doc, raw, path) {
     const field = (key) => path ? `${path}.${key}` : key;
-    check.record(raw, path, ['laneId', 'stage', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind', 'afterCardId']);
+    check.record(raw, path, ['laneId', 'stage', 'title', 'description', 'due', 'labels', 'link', 'checklist', 'ownerId', 'ownerName', 'ownerKind', 'afterCardId']);
     const input = { ...raw, title: cardTitleInput(check.required(raw, 'title', path), field('title')) };
     if (raw.description !== undefined) input.description = check.text(raw.description, field('description'), 0, KANBAN_LIMITS.description);
     if (raw.due !== undefined && !isDueDate(raw.due)) throw new OpsError('invalid_input', 'Must be a real date in YYYY-MM-DD format from 1900 to 2200', field('due'));
     if (raw.link !== undefined) input.link = linkValue(raw.link, field('link'));
+    if (raw.checklist !== undefined) input.checklist = checklistInput(raw.checklist, field('checklist'));
     if (raw.ownerKind !== undefined) input.ownerKind = check.choice(raw.ownerKind, OWNER_KINDS, field('ownerKind'));
     if (raw.ownerName !== undefined && raw.ownerName !== null) {
       input.ownerName = ownerNameInput(raw.ownerName, field('ownerName'));
@@ -788,7 +816,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       h: KANBAN.cardH,
       rotation: 0, z: typeof lane.z === 'string' ? lane.z : '', createdBy: actor.createdBy, updatedAt: stamp,
       ...(input.description ? { desc: input.description } : {}), ...(input.due ? { due: input.due } : {}),
-      ...(input.link ? { link: input.link } : {}), ...(input.labels === undefined ? {} : { labels: input.labels }),
+      ...(input.link ? { link: input.link } : {}), ...(input.checklist?.length ? { checklist: input.checklist } : {}), ...(input.labels === undefined ? {} : { labels: input.labels }),
       ...owner.sets,
     };
     for (const key of owner.unsets) delete fields[key];
@@ -1469,7 +1497,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'add_kanban_card',
       title: 'Add a kanban card',
       description:
-        'Adds one card to a lane in a kanban. Give exactly one of laneId or stage; stage uses the first visible lane with that stage. Omit afterCardId to append, pass null to put it first, or name a visible card in the target lane to insert after. ownerKind person can name a person; ownerKind agent assigns this token to itself. Links must use http or https.',
+        'Adds one card to a lane in a kanban. Give exactly one of laneId or stage (the first visible lane with that stage). Omit afterCardId to append, pass null to put it first, or name a visible card in the target lane to insert after. ownerKind person can name a person; agent assigns this token. Links must use http or https. checklist items are {id?, text, done?}.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: false },
@@ -1486,6 +1514,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           due: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
           labels: { type: 'array', items: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' }, maxItems: KANBAN_LIMITS.labelsPerCard, uniqueItems: true },
           link: { type: 'string', maxLength: CARD_LINK_MAX },
+          checklist: checklistSchema(),
           ownerId: { type: 'string', maxLength: 64 },
           ownerName: { type: 'string' },
           ownerKind: { enum: OWNER_KINDS },
@@ -1493,10 +1522,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         ['boardId', 'kanbanId', 'title'],
       ),
       run(actor, args) {
-        const boardId = boardArgs(args, ['clientRequestId', 'kanbanId', 'laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']);
+        const boardId = boardArgs(args, ['clientRequestId', 'kanbanId', 'laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'checklist', 'ownerId', 'ownerName', 'ownerKind']);
         const kanbanId = check.idString(check.required(args, 'kanbanId', ''), 'kanbanId');
         const fields = {};
-        for (const key of ['laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']) {
+        for (const key of ['laneId', 'stage', 'afterCardId', 'title', 'description', 'due', 'labels', 'link', 'checklist', 'ownerId', 'ownerName', 'ownerKind']) {
           if (Object.hasOwn(args, key)) fields[key] = args[key];
         }
         return boardPlan(actor, boardId, (doc) => {
@@ -1509,7 +1538,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'update_kanban_card',
       title: 'Update a kanban card',
       description:
-        'Changes a card title, description, due date, label ids, http(s) link or owner. Locked cards and hidden cards cannot be changed. Set ownerKind to agent to assign this token to itself; set ownerKind to person for a person or free-text owner.',
+        'Changes a card title, description, due date, label ids, http(s) link, checklist (replaces the whole list; pass ids to keep items) or owner. Locked and hidden cards cannot be changed. ownerKind agent assigns this token; person is a person or free-text owner.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: true },
@@ -1523,6 +1552,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           due: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
           labels: { type: ['array', 'null'], items: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' }, maxItems: KANBAN_LIMITS.labelsPerCard, uniqueItems: true },
           link: { type: ['string', 'null'], maxLength: CARD_LINK_MAX },
+          checklist: checklistSchema(true),
           ownerId: { type: ['string', 'null'], maxLength: 64 },
           ownerName: { type: ['string', 'null'] },
           ownerKind: { type: ['string', 'null'], enum: [...OWNER_KINDS, null] },
@@ -1530,10 +1560,10 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         ['boardId', 'kanbanId', 'cardId'],
       ),
       run(actor, args) {
-        const boardId = boardArgs(args, ['kanbanId', 'cardId', 'title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind']);
+        const boardId = boardArgs(args, ['kanbanId', 'cardId', 'title', 'description', 'due', 'labels', 'link', 'checklist', 'ownerId', 'ownerName', 'ownerKind']);
         const kanbanId = check.idString(check.required(args, 'kanbanId', ''), 'kanbanId');
         const cardId = check.idString(check.required(args, 'cardId', ''), 'cardId');
-        const editable = ['title', 'description', 'due', 'labels', 'link', 'ownerId', 'ownerName', 'ownerKind'];
+        const editable = ['title', 'description', 'due', 'labels', 'link', 'checklist', 'ownerId', 'ownerName', 'ownerKind'];
         if (!editable.some((key) => Object.hasOwn(args, key))) throw new OpsError('invalid_input', 'Give at least one card field to change', 'cardId');
         const input = { ...args };
         if (args.title !== undefined) {
@@ -1542,6 +1572,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         if (args.description !== undefined && args.description !== null) input.description = check.text(args.description, 'description', 0, KANBAN_LIMITS.description);
         if (args.due !== undefined && args.due !== null && !isDueDate(args.due)) throw new OpsError('invalid_input', 'Must be a real date in YYYY-MM-DD format from 1900 to 2200', 'due');
         if (args.link !== undefined && args.link !== null) input.link = linkValue(args.link, 'link');
+        if (args.checklist !== undefined && args.checklist !== null) input.checklist = checklistInput(args.checklist, 'checklist');
         if (args.ownerName !== undefined && args.ownerName !== null) {
           input.ownerName = ownerNameInput(args.ownerName, 'ownerName');
           if (!input.ownerName) throw new OpsError('invalid_input', 'Owner name cannot be empty; use null to clear an owner', 'ownerName');
@@ -1561,6 +1592,9 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           else if (input.labels !== undefined) sets.labels = checkedCardLabels(doc, input.labels, 'labels');
           if (input.link === null) unsets.add('link');
           else if (input.link !== undefined) sets.link = input.link;
+          if (input.checklist === null || input.checklist?.length === 0) unsets.add('checklist');
+          else if (input.checklist !== undefined) sets.checklist = input.checklist;
+          if (input.checklist !== undefined && JSON.stringify(input.checklist ?? []) !== JSON.stringify(card.checklist ?? [])) assertLinkedCardEdit(card, 'checklist', 'checklist');
           const owner = ownerChanges(actor, card, input);
           if (input.title !== undefined && input.title !== card.text) assertLinkedCardEdit(card, 'title', 'title');
           if ((input.due === null && card.due !== undefined) || (input.due !== undefined && input.due !== null && input.due !== card.due)) {
@@ -1601,7 +1635,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'move_kanban_card',
       title: 'Move a kanban card',
       description:
-        'Moves one card to a lane in the same kanban. Give exactly one of laneId or stage; stage uses the first visible lane with that stage. Omit afterCardId to append when changing lanes, pass null to put it first, or name a visible card in the target lane to insert after. A card can be reordered within its lane. Hidden, locked and cards assigned to another agent cannot be moved.',
+        'Moves one card to a lane in the same kanban, or reorders it within its lane. Give exactly one of laneId or stage (the first visible lane with that stage). Omit afterCardId to append when changing lanes, pass null to put it first, or name a visible card in the target lane to insert after. Hidden, locked and other agents\' cards cannot be moved.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: true },
@@ -1631,7 +1665,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'add_kanban_cards',
       title: 'Add kanban cards',
       description:
-        'Adds up to 25 cards in one all-or-nothing change. Each card uses the same fields and validation as add_kanban_card. WIP blocking is checked in input order. Omit afterCardId to append, pass null to put a card first, or name a visible card in its target lane to insert after.',
+        'Adds up to 25 cards, all or nothing, with the fields and validation of add_kanban_card. WIP blocking is checked in input order. afterCardId works as in add_kanban_card.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: false },
@@ -1650,6 +1684,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
             due: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
             labels: { type: 'array', items: { type: 'string', pattern: '^[A-Za-z0-9_-]{1,64}$' }, maxItems: KANBAN_LIMITS.labelsPerCard, uniqueItems: true },
             link: { type: 'string', maxLength: CARD_LINK_MAX },
+            checklist: checklistSchema(),
             ownerId: { type: 'string', maxLength: 64 }, ownerName: { type: 'string' }, ownerKind: { enum: OWNER_KINDS },
           }, ['title']),
         },
@@ -1669,7 +1704,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'move_kanban_cards',
       title: 'Move kanban cards',
       description:
-        'Moves up to 25 cards in one all-or-nothing change. Each move uses the same lane and card protections as move_kanban_card. WIP blocking is checked in input order. Omit afterCardId to append when changing lanes, pass null to put a card first, or name a visible card in the target lane to insert after.',
+        'Moves up to 25 cards, all or nothing, with the protections of move_kanban_card. WIP blocking is checked in input order. afterCardId works as in move_kanban_card.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: true },
@@ -1741,7 +1776,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       name: 'delete_objects',
       title: 'Delete objects',
       description:
-        'Deletes up to 50 objects by id, all or nothing. Lanes and kanbans cannot be deleted here: use delete_kanban_lane for a lane; delete kanbans in the board UI. Cards must be visible and unlocked; a card assigned to another agent cannot be deleted by this token. Deleting a group also deletes its members, while unrevealed private notes are kept and moved outside the deleted group. Connectors attached to deleted objects are deleted too; children of a deleted frame stay. The result lists what was removed.',
+        'Deletes up to 50 objects by id, all or nothing. Lanes and kanbans cannot be deleted here: use delete_kanban_lane for a lane; delete kanbans in the board UI. Cards must be visible, unlocked and not assigned to another agent. Deleting a group also deletes its members, except unrevealed private notes, which are kept outside it. Attached connectors are deleted too; children of a deleted frame stay. The result lists what was removed.',
       scope: 'write',
       mutating: true,
       annotations: { readOnlyHint: false, destructiveHint: true },

@@ -1309,7 +1309,7 @@ export function assertLinkedCardEdit(card, field, path = field) {
     || typeof card.extKey !== 'string' || !card.extKey) return;
   if (field === 'text' || field === 'title' || field === 'laneId' || field === 'stage'
     || field === 'owner' || field === 'ownerId' || field === 'ownerName' || field === 'ownerKind'
-    || field === 'due' || field === 'labels') {
+    || field === 'due' || field === 'labels' || field === 'checklist') {
     throw invalid(path, 'Linked card: use transition_ticket / update_ticket');
   }
 }
