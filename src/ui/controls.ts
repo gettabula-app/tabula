@@ -314,7 +314,7 @@ export function combo<T>(o: ComboOptions<T>): HTMLButtonElement {
 
 /** A labelled on/off switch (a checkbox with role switch): the label on the left, the switch on the right. */
 export function switchRow(label: string, checked: boolean, onChange: (on: boolean) => void): HTMLLabelElement {
-  const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch-input', 'aria-label': label, checked });
+  const input = h('input', { type: 'checkbox', role: 'switch', 'aria-label': label, checked });
   input.addEventListener('change', () => onChange(input.checked));
   return h('label', { class: 'check switch-row' }, h('span', null, label), input);
 }
