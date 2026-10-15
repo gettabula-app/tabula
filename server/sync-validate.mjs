@@ -71,6 +71,9 @@ export const LIMITS = Object.freeze({
   ownerName: OWNER_NAME_MAX,
   labelName: KANBAN_LIMITS.labelName,
   labelsPerCard: KANBAN_LIMITS.labelsPerCard,
+  checklistItems: KANBAN_LIMITS.checklistItems,
+  checklistText: KANBAN_LIMITS.checklistText,
+  checklistBytes: KANBAN_LIMITS.checklistBytes,
   labelsPerBoard: KANBAN_LIMITS.labels,
   link: 2000,
   idLen: 64,
@@ -327,6 +330,37 @@ const TRACKER_CARD = {
   trackerId: str(64, { pattern: TRACKER_FIELD_RE }), tracker: sizeCapped(LIMITS.trackerBytes), trackerUnmappedState: bool,
 };
 
+/**
+ * An item's text: a string that is not blank, on one line and at most 200 code points. The length is `out_of_range`, not `too_long`:
+ * the client caps this new field, so unlike the title it is enforced now rather than report-only (see `mark`).
+ */
+const checklistText = (v) => {
+  const bad = str(Infinity, { line: true })(v);
+  if (bad) return bad;
+  if (v.trim() === '') return 'too_short';
+  return cpLength(v) > LIMITS.checklistText ? 'out_of_range' : null;
+};
+
+/** One checklist item (TAB-372): an id, a text that is not blank, on one line and at most 200 code points, and an optional done flag. */
+const CHECKLIST_ITEM = shaped({
+  id, text: checklistText, done: bool,
+}, ['id', 'text']);
+
+/**
+ * A card's checklist, replaced whole on each change (TAB-372): at most 50 items, ids unique within the list, and the whole
+ * array at most 12,000 bytes of UTF-8 JSON (`too_big`, enforced: a hostile client must not bloat a card).
+ */
+const checklist = (v) => {
+  const bad = list(LIMITS.checklistItems, CHECKLIST_ITEM)(v);
+  if (bad) return bad;
+  if (new Set(v.map((item) => item.id)).size !== v.length) return 'bad_value';
+  try {
+    return new TextEncoder().encode(JSON.stringify(v)).length > LIMITS.checklistBytes ? 'too_big' : null;
+  } catch {
+    return 'bad_type';
+  }
+};
+
 /** The rule for one key of a table: a row or column rank, a column width, or a cell's text. Null for a key that is not a table part. */
 function tablePartCheck(key) {
   const p = parseTableKey(key);
@@ -370,7 +404,8 @@ function tableCountCodes(value, only) {
 /** Per type: its own fields added to BOX (or, for connector and group, a list of their own). */
 export const FIELDS = Object.freeze({
   shape: { ...BOX, kind: oneOf(SHAPE_KINDS), lineHeight: num(0.8, 3) },
-  sticky: { ...BOX, lineHeight: num(0.8, 3) },
+  // a checklist stays on a sticky when the card turns into one (as the other card-only fields do), checked as on a card (TAB-372)
+  sticky: { ...BOX, lineHeight: num(0.8, 3), checklist },
   text: { ...BOX, lineHeight: num(0.8, 3) },
   // a Markdown block's text is capped lower than a note: every viewer lays it out
   markdown: { ...BOX, text: str(LIMITS.markdown), lineHeight: num(0.8, 3) },
@@ -424,7 +459,7 @@ export const FIELDS = Object.freeze({
     ...BOX, ...KANBAN_ROW, ...TRACKER_CARD, text: str(LIMITS.cardTitle, { cp: true }), desc: str(LIMITS.desc, { cp: true }),
     ownerId: id, ownerName: str(LIMITS.ownerName * 4, { line: true }), ownerKind: oneOf(OWNER_KINDS),
     due: (v) => (typeof v !== 'string' ? 'bad_type' : isDueDate(v) ? null : 'bad_value'), link: url,
-    labels: list(LIMITS.labelsPerCard, id), fill: kanbanPaint, stroke: kanbanPaint, textColor: kanbanPaint,
+    labels: list(LIMITS.labelsPerCard, id), checklist, fill: kanbanPaint, stroke: kanbanPaint, textColor: kanbanPaint,
   },
   'uml-class': { ...BOX, stereotype: str(200), attributes: MEMBERS, operations: MEMBERS },
   'uml-actor': { ...BOX }, 'uml-usecase': { ...BOX }, 'uml-lifeline': { ...BOX }, 'uml-note': { ...BOX }, 'uml-package': { ...BOX },

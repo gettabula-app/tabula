@@ -61,6 +61,7 @@ New fields, flat on the object as everything else is, so concurrent edits to dif
 | `ownerId`, `ownerName`, `ownerKind` | card | See [Owners](#owners); an absent `ownerKind` means `person`; an MCP agent owner uses its calling access-token id. |
 | `due` | card | `YYYY-MM-DD`, a date with no time zone. |
 | `labels` | card | Array of label ids, at most 10. |
+| `checklist` | card | Array of `{ id, text, done }`, at most 50 items, text one line of at most 200 code points, ids unique, at most 12,000 bytes in all (TAB-372). Replaced whole on change. Kept on a sticky and on a ticket-linked card. |
 | `link` | card | One explicit HTTP or HTTPS URL, at most 2,000 characters, without credentials, whitespace, control or format characters, or backslashes. |
 
 `parent` already exists on `BaseObj` (`src/types.ts:73`) and keeps its meaning: "belongs to". `ObjType` gains `'container' | 'lane' | 'card'`. `childrenOf` (`src/store.ts:206`) is a linear scan of the cache today; containers add an index (parent id to child ids) kept in the same observer that maintains the connector index, because the layout asks for the children of every lane on every change.

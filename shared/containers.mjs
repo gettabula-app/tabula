@@ -111,6 +111,10 @@ export const LIMITS = Object.freeze({
   labels: 30,
   labelsPerCard: 10,
   labelName: 40,
+  // a card's checklist (TAB-372): items, text in Unicode code points, and the whole array as UTF-8 JSON bytes
+  checklistItems: 50,
+  checklistText: 200,
+  checklistBytes: 12000,
   laneName: 60,
   containerName: 80,
   laneWMin: 200,

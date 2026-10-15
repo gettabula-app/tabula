@@ -94,6 +94,9 @@ export const LIMITS: {
   readonly labels: 30;
   readonly labelsPerCard: 10;
   readonly labelName: 40;
+  readonly checklistItems: 50;
+  readonly checklistText: 200;
+  readonly checklistBytes: 12000;
   readonly laneName: 60;
   readonly containerName: 80;
   readonly laneWMin: 200;
