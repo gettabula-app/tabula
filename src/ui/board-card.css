@@ -111,3 +111,4 @@ section.bc-group + section.bc-group { margin-top: 40px; }
 @media (max-width: 419px) {
   .bc-grid { grid-template-columns: minmax(0, 1fr); }
 }
+.bc-toolbar .segmented button { flex: 1 0 auto; } /* labels are never cut: the row grows; the marker follows each button's own box */
