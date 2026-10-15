@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
+import { canMoveBoard } from './board-move.mjs';
 import { InviteExhaustedError, SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
@@ -572,6 +573,9 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const clientIp = (req) => clientRateKeyOf(req, config);
   const oauthDecisionLimiter = createWindowLimiter(10, now);
+  const boardMoveHourlyLimiter = createWindowLimiter(100, now, 60 * 60_000);
+  const boardMoveBoardLimiter = createWindowLimiter(1, now, 10_000);
+  const boardMovePreviewLimiter = createWindowLimiter(60, now);
   // refused control-token attempts on the internal routes, per address (the control plane's own calls are never counted: only a refusal is)
   const internalAuthFailures = createWindowLimiter(30, now);
   const internalAuthLogged = createWindowLimiter(1, now);
@@ -967,6 +971,184 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   // ------------------------------------------------------------ handlers
 
+  const MOVE_FORBIDDEN_MESSAGE = 'You cannot move this board there';
+  const MOVE_TOKEN_HEADERS = ['authorization', 'x-api-key', 'x-mcp-token', 'x-oauth-token', 'x-agent-token', 'x-tabula-token', 'mcp-session-id'];
+  const hasTokenAuth = (req) => MOVE_TOKEN_HEADERS.some((name) => {
+    const value = req.headers[name];
+    return typeof value === 'string' ? value.trim() !== '' : Array.isArray(value) && value.some((part) => String(part).trim() !== '');
+  });
+
+  function requireBoardMoveCapacity(user, boardId, res) {
+    // The shared 100-hit window also enforces members' 20-hit ceiling: 81 more hits cannot fit once
+    // the member has used 20. Role changes therefore keep one per-user bucket instead of resetting it.
+    const userWait = boardMoveHourlyLimiter.wait(user.id, isAdmin(user) ? 1 : 81);
+    const boardWait = boardMoveBoardLimiter.wait(boardId);
+    const wait = Math.max(userWait, boardWait);
+    if (wait) {
+      res.setHeader('retry-after', String(wait));
+      throw new HttpError(429, 'rate_limited', 'Board moves are limited. Try again later.');
+    }
+    boardMoveHourlyLimiter.hit(user.id);
+    boardMoveBoardLimiter.hit(boardId);
+  }
+
+  function requireBoardMovePreviewCapacity(user, res) {
+    const wait = boardMovePreviewLimiter.hit(user.id);
+    if (wait) {
+      res.setHeader('retry-after', String(wait));
+      throw new HttpError(429, 'rate_limited', 'Board move previews are limited. Try again later.');
+    }
+  }
+
+  function moveInputs(user, board, to) {
+    const sourceId = board.teamId ?? null;
+    const sourceTeam = sourceId === null ? null : directory.getTeam(sourceId);
+    const enabledAdmins = sourceTeam
+      ? directory.listTeamMembers(sourceId).filter((member) => member.role === 'admin' && !directory.getUser(member.userId)?.disabled)
+      : [];
+    const destinationTeam = to === null ? null : directory.getTeam(to);
+    return {
+      source: {
+        id: sourceId,
+        exists: sourceId === null || sourceTeam !== null,
+        role: sourceId === null ? null : directory.getTeamRole(sourceId, user.id),
+        hasEnabledAdmin: enabledAdmins.length > 0,
+      },
+      dest: {
+        id: to,
+        exists: to === null || destinationTeam !== null,
+        role: to === null || !destinationTeam ? null : directory.getTeamRole(to, user.id),
+      },
+      enabledAdmins,
+    };
+  }
+
+  function moveState(userId, boardId) {
+    const currentUser = directory.getUser(userId);
+    const board = directory.getBoard(boardId);
+    if (!currentUser || !board || board.deletedAt != null || directory.boardRole(boardId, userId) === null) {
+      throw notFound('Board not found');
+    }
+    return { currentUser, board };
+  }
+
+  function recordBoardMoveNotices({ mover, board, from, to, enabledAdmins }) {
+    if (!notificationStore) return;
+    const recipients = new Set();
+    if (board.ownerId && board.ownerId !== mover.id) {
+      const result = notificationStore.record({
+        userId: board.ownerId,
+        kind: 'board_moved',
+        actorId: mover.id,
+        boardId: board.id,
+        teamId: to,
+        ref: null,
+      }, { notify: false });
+      if (result?.created) recipients.add(board.ownerId);
+    }
+    if (mover.id === board.ownerId && from !== null && enabledAdmins.length) {
+      for (const admin of enabledAdmins) {
+        if (admin.userId === mover.id) continue;
+        const result = notificationStore.record({
+          userId: admin.userId,
+          kind: 'board_moved_out',
+          actorId: mover.id,
+          boardId: board.id,
+          teamId: from,
+          ref: null,
+        }, { notify: false });
+        if (result?.created) recipients.add(admin.userId);
+      }
+    }
+    if (recipients.size) directory.afterCommit(() => recipients.forEach((userId) => notificationStore.ping(userId)));
+  }
+
+  function moveBoardWithinTransaction({ userId, boardId, to, expectedTeamId, res, title }) {
+    const { currentUser, board } = moveState(userId, boardId);
+    if (currentUser.disabled || currentUser.role === 'guest') throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+    if (board.teamId !== expectedTeamId) throw conflict('board_moved', 'This board has moved. Refresh and try again.');
+    const role = directory.boardRole(board.id, currentUser.id);
+    if (title !== undefined && role !== 'owner') throw forbidden('Only the board owner can do that');
+    if (board.teamId === to) {
+      if (title === undefined) return { board, moved: false };
+      const renamed = directory.updateBoard(board.id, { title });
+      audit(currentUser, 'board.update', { boardId: board.id, title });
+      return { board: renamed, moved: false };
+    }
+
+    const { source, dest, enabledAdmins } = moveInputs(currentUser, board, to);
+    const permission = canMoveBoard({ user: currentUser, board, source, dest });
+    if (!permission.ok) throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+    requireBoardMoveCapacity(currentUser, board.id, res);
+    const updated = directory.updateBoard(board.id, { teamId: to, ...(title === undefined ? {} : { title }) });
+    audit(currentUser, 'board.move', { boardId: board.id, from: source.id, to, by: currentUser.id, override: permission.override });
+    if (title !== undefined) audit(currentUser, 'board.update', { boardId: board.id, title });
+    recordBoardMoveNotices({ mover: currentUser, board, from: source.id, to, enabledAdmins });
+    return { board: updated, moved: true };
+  }
+
+  function previewBoardMove({ userId, boardId, to }) {
+    const rollback = new Error('preview rollback');
+    try {
+      directory.transaction(() => {
+        const { currentUser, board } = moveState(userId, boardId);
+        const { source, dest } = moveInputs(currentUser, board, to);
+        const permission = canMoveBoard({ user: currentUser, board, source, dest });
+        if (!permission.ok) throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+
+        const shares = directory.listShares(board.id);
+        const candidateIds = new Set();
+        const candidateTeams = new Set([source.id, dest.id]);
+        for (const share of shares) {
+          if (share.principalType === 'user') candidateIds.add(share.principalId);
+          else if (share.principalType === 'team') candidateTeams.add(share.principalId);
+        }
+        for (const teamId of candidateTeams) {
+          if (teamId === null) continue;
+          for (const member of directory.listTeamMembers(teamId)) candidateIds.add(member.userId);
+        }
+
+        const before = new Map([...candidateIds].map((id) => [id, directory.boardRole(board.id, id)]));
+        const names = new Map([...candidateIds].map((id) => [id, directory.getUser(id)?.name ?? '']));
+        directory.updateBoard(board.id, { teamId: to });
+        const losing = [];
+        const gaining = [];
+        for (const id of candidateIds) {
+          const previous = before.get(id) ?? null;
+          const next = directory.boardRole(board.id, id);
+          if (previous !== null && next === null) losing.push(id);
+          if (previous === null && next !== null) gaining.push(id);
+        }
+
+        const canSeeEveryone = isAdmin(currentUser);
+        const visibleIds = canSeeEveryone
+          ? null
+          : new Set(directory.listTeamsFor(currentUser.id).flatMap((team) => directory.listTeamMembers(team.id).map((member) => member.userId)));
+        const cleanName = (id) => String(names.get(id) ?? '')
+          .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+          .replace(/\s+/gu, ' ')
+          .trim()
+          .slice(0, 80);
+        const visibleNames = (ids) => ids
+          .filter((id) => canSeeEveryone || visibleIds.has(id))
+          .map(cleanName)
+          .filter(Boolean)
+          .slice(0, 5);
+        rollback.result = {
+          losing: losing.length,
+          gaining: gaining.length,
+          sharesKept: shares.length,
+          losingNames: visibleNames(losing),
+          gainingNames: visibleNames(gaining),
+        };
+        throw rollback;
+      });
+    } catch (error) {
+      if (error !== rollback) throw error;
+    }
+    return rollback.result;
+  }
+
   const routes = [
     ...notificationRoutes,
 
@@ -1259,6 +1441,35 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     compile('GET', 'boards/presence', {}, ({ user }) => [200, { presence: presenceFor(user) }]),
     compile('GET', 'boards', {}, ({ user }) => [200, directory.listBoardsFor(user).map((b) => boardView(b, b.role))]),
+    compile('POST', 'boards/:id/move', { body: true, cookieOnly: true }, ({ user, params, body, res }) => {
+      if (user.guest === true || user.role === 'guest') throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+      boardFor(user, params.id);
+      if (!body || typeof body !== 'object' || Array.isArray(body)
+        || !Object.prototype.hasOwnProperty.call(body, 'to') || !Object.prototype.hasOwnProperty.call(body, 'expectedTeamId')) {
+        throw badRequest('to and expectedTeamId are required');
+      }
+      const to = body.to === null ? null : idField(body.to, 'to');
+      const expectedTeamId = body.expectedTeamId === null ? null : idField(body.expectedTeamId, 'expectedTeamId');
+      const result = directory.transaction(() => moveBoardWithinTransaction({
+        userId: user.id,
+        boardId: params.id,
+        to,
+        expectedTeamId,
+        res,
+      }));
+      if (result.moved) emit('access-changed', { boardId: result.board.id });
+      return [200, boardView(result.board, directory.boardRole(result.board.id, user.id))];
+    }),
+    compile('GET', 'boards/:id/move-preview', { cookieOnly: true }, ({ user, params, query, res }) => {
+      if (user.guest === true || user.role === 'guest') throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+      boardFor(user, params.id);
+      const requested = query.get('to');
+      if (requested === null) throw badRequest('to is required');
+      const to = requested === 'personal' ? null : idField(requested, 'to');
+      requireBoardMovePreviewCapacity(user, res);
+      const preview = directory.transaction(() => previewBoardMove({ userId: user.id, boardId: params.id, to }));
+      return [200, preview];
+    }),
     compile('POST', 'boards', { body: true }, ({ user, body }) => {
       if (typeof body.id !== 'string' || !BOARD_ID_RE.test(body.id)) throw badRequest('id must be 1 to 64 letters, digits, - or _');
       const title = body.title == null ? undefined : cleanText(body.title, 'title', 0, 200);
@@ -1277,25 +1488,43 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       });
       return [201, boardView(board, directory.boardRole(board.id, user.id))];
     }),
-    compile('PATCH', 'boards/:id', { body: true }, ({ user, params, body }) => {
-      const { board } = boardFor(user, params.id, { own: true });
+    compile('PATCH', 'boards/:id', { body: true }, ({ req, user, params, body, res }) => {
+      const { board, role } = boardFor(user, params.id);
+      if (body.teamId === undefined && role !== 'owner') throw forbidden('Only the board owner can do that');
       const patch = {};
       if (body.title !== undefined) patch.title = cleanText(body.title, 'title', 0, 200);
       if (body.teamId !== undefined) {
         patch.teamId = body.teamId === null ? null : idField(body.teamId, 'teamId');
-        if (patch.teamId !== null && directory.getTeamRole(patch.teamId, user.id) === null) {
-          throw forbidden('You are not a member of that team');
-        }
+        if (hasTokenAuth(req)) throw forbidden('This route requires a cookie session');
       }
       if (Object.keys(patch).length === 0) throw badRequest('Nothing to change');
+
+      if (patch.teamId === undefined) {
+        const updated = directory.transaction(() => {
+          const next = directory.updateBoard(board.id, patch);
+          audit(user, 'board.update', { boardId: board.id, ...patch });
+          return next;
+        });
+        if (patch.title !== undefined) emit('board-renamed', { boardId: board.id, title: updated.title });
+        return [200, boardView(updated, directory.boardRole(board.id, user.id))];
+      }
+
+      const expectedTeamId = body.expectedTeamId === undefined
+        ? board.teamId
+        : body.expectedTeamId === null ? null : idField(body.expectedTeamId, 'expectedTeamId');
       const updated = directory.transaction(() => {
-        const next = directory.updateBoard(board.id, patch);
-        audit(user, 'board.update', { boardId: board.id, ...patch });
-        return next;
+        return moveBoardWithinTransaction({
+          userId: user.id,
+          boardId: board.id,
+          to: patch.teamId,
+          expectedTeamId,
+          res,
+          title: patch.title,
+        });
       });
-      if (patch.teamId !== undefined && patch.teamId !== board.teamId) emit('access-changed', { boardId: board.id });
-      if (patch.title !== undefined) emit('board-renamed', { boardId: board.id, title: updated.title });
-      return [200, boardView(updated, directory.boardRole(board.id, user.id))];
+      if (updated.moved) emit('access-changed', { boardId: board.id });
+      if (patch.title !== undefined && updated.board.title !== board.title) emit('board-renamed', { boardId: board.id, title: updated.board.title });
+      return [200, boardView(updated.board, directory.boardRole(updated.board.id, user.id))];
     }),
     compile('DELETE', 'boards/:id', {}, ({ user, params }) => {
       const { board } = boardFor(user, params.id, { own: true });
@@ -2228,6 +2457,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
     if (guest && !guestApiAllows(method, segments, guest)) throw forbidden('This guest session is limited to one board');
     const { route, params } = resolve(method, segments);
+    if (route.cookieOnly && hasTokenAuth(req)) throw forbidden('This route requires a cookie session');
 
     if (route.internal) {
       // Bearer token only: no cookie, no CSRF header (a browser cannot send this one).
