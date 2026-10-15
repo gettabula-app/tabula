@@ -98,3 +98,26 @@ describe('rasterizePicture', () => {
     expect(await rasterizePicture(SVG, noContext.deps)).toBeNull();
   });
 });
+
+describe('an encoder that gives nothing (Safari has no WebP, and its PNG is too large)', () => {
+  it('returns null with no throw, draws the picture once, and releases its URL', async () => {
+    const { deps, calls } = fakeDeps({});
+    await expect(rasterizePicture(SVG, deps)).resolves.toBeNull();
+    expect(calls.filter((c) => c === 'drawImage')).toHaveLength(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:https://tabula.test/picture-1');
+  });
+
+  it('a canvas whose toBlob answers null for every type gives nothing, whatever it is asked for', async () => {
+    const asked: string[] = [];
+    const canvas: RasterCanvas = {
+      context: () => ({ fillStyle: '', fillRect: () => undefined, drawImage: () => undefined }),
+      toBlob: async (type) => {
+        asked.push(type);
+        return null;
+      },
+    };
+    const deps: RasterDeps = { loadImage: async () => ({} as CanvasImageSource), makeCanvas: () => canvas };
+    await expect(rasterizePicture(SVG, deps)).resolves.toBeNull();
+    expect(asked).toContain('image/png');
+  });
+});
