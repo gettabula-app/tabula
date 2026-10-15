@@ -1191,7 +1191,10 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 .chrome > .top-left .sync-status[data-state='denied'] { color: var(--tray-muted); }
 .chrome > .top-left .sync-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .chrome > .top-left .sync-status[data-state='live'] .sync-status-dot { background: var(--wire); }
-.chrome > .top-left .sync-status-label { display: inline; }
+/* the dot says it; the words are in its popover and its accessible name. A refused connection keeps its words. */
+.chrome > .top-left .sync-status { min-width: 28px; justify-content: center; }
+.chrome > .top-left .sync-status-label { display: none; }
+.chrome > .top-left .sync-status[data-state='denied'] .sync-status-label { display: inline; }
 .chrome > .top-right .avatar { width: 24px; height: 24px; font-size: 10px; }
 .chrome > .top-right .share-label { font-size: 13px; letter-spacing: normal; text-transform: none; }
 .chrome > .top-right .share-btn { height: 32px; padding: 0 12px; border-radius: var(--radius-sm); }
@@ -1268,7 +1271,8 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 @media (max-width: 480px) {
   .chrome > .top-left { max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
   .chrome > .top-left > .sync-status { width: auto; min-width: 0; height: 44px; flex: 0 1 auto; justify-content: flex-start; gap: 5px; padding: 0 6px; }
-  .chrome > .top-left > .sync-status .sync-status-label { display: inline; }
+  .chrome > .top-left > .sync-status .sync-status-label { display: none; }
+  .chrome > .top-left > .sync-status[data-state='denied'] .sync-status-label { display: inline; }
   .chrome > .top-left > .sync-status .sync-status-dot { width: 6px; height: 6px; }
   .chrome > .top-right .phone-avatar { width: 24px; height: 24px; }
   .chrome > .top-right .share-btn {

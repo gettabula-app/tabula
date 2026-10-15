@@ -153,7 +153,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       tip = GUEST_ENDED_SYNC_TIP;
     } else if (s === 'live') {
       label = others ? `Live with ${others}` : 'Live';
-      tip = 'Connected to the relay. Changes sync in real time.';
+      tip = others ? `Live with ${others}. Connected to the relay, changes sync in real time.` : 'Connected to the relay. Changes sync in real time.';
     } else if (s === 'connecting') {
       label = 'Saved on this device';
       tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
