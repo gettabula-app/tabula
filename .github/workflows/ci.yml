@@ -212,7 +212,7 @@ jobs:
       - run: npm ci
       # The key holds the lockfile hash, and the lockfile pins the Playwright version, so a new Playwright downloads a new browser.
       - name: Cache Playwright browsers
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
