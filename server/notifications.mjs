@@ -12,10 +12,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const PAGE_BATCH = 100;
 const UNREAD_LIMIT = 200;
 const KEEP_PER_USER = 500;
-const KINDS = new Set(['chat_mention', 'comment_reply', 'comment_mention', 'board_shared', 'team_joined', 'card_due_soon', 'card_overdue', 'card_assigned']);
+const KINDS = new Set(['chat_mention', 'comment_reply', 'comment_mention', 'board_shared', 'board_moved', 'board_moved_out', 'team_joined', 'card_due_soon', 'card_overdue', 'card_assigned']);
 // Card kinds read the card's first line at list time, and only while the viewer still has a role on the board and the card exists.
 const CARD_KINDS = new Set(['card_due_soon', 'card_overdue', 'card_assigned']);
 const MENTION_KINDS = new Set(['chat_mention', 'comment_mention', 'ticket_mentioned']);
+const MOVE_KINDS = new Set(['board_moved', 'board_moved_out']);
 const WORKSPACE_REF = 'main';
 
 const userIdOf = (user) => typeof user === 'string' ? user : user?.id;
@@ -230,6 +231,7 @@ export function createNotifications({
       }
       return exists;
     }
+    if (MOVE_KINDS.has(row.kind)) return Boolean(row.board_id);
     if (row.kind === 'board_shared') return Boolean(row.board_id && directory.boardRole(row.board_id, user.id) !== null);
     if (row.kind === 'team_joined') return Boolean(row.team_id && canOpenTeam(user, row.team_id));
     if (CARD_KINDS.has(row.kind)) return cardOf(user, row) !== null;
@@ -267,7 +269,9 @@ export function createNotifications({
     const card = CARD_KINDS.has(row.kind) ? cardOf(user, row) : undefined;
     if (card === null || (card === undefined && !canOpenUserRow(user, row))) return null;
     const actorUser = row.actor_id ? directory.getUser(row.actor_id) : null;
-    const boardRow = row.board_id ? directory.getBoard(row.board_id) : null;
+    const moveNotice = MOVE_KINDS.has(row.kind);
+    const mayResolveBoard = !moveNotice || directory.boardRole(row.board_id, user.id) !== null;
+    const boardRow = row.board_id && mayResolveBoard ? directory.getBoard(row.board_id) : null;
     const teamRow = row.team_id ? directory.getTeam(row.team_id) : null;
     let snippet = null;
     if (CARD_KINDS.has(row.kind)) {
