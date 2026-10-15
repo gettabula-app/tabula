@@ -771,7 +771,7 @@ describe('update_tickets budgets, all or nothing, and what a bulk may change (TA
     expect(eventsOf(a).map((event) => event.event_type)).toEqual(['created', 'archived', 'restored']);
   });
 
-  it('refuses every malformed bulk call before anything is counted, so three valid tickets still fit afterwards', async () => {
+  it('refuses every malformed bulk call without touching the hourly budget; each costs one per-minute write', async () => {
     const [a, b, c] = await ticketsFor(3, 'Refusals');
     const bot = await tokenFor('Refusals bot');
     const refusals: [Record<string, unknown>, string][] = [
@@ -795,8 +795,16 @@ describe('update_tickets budgets, all or nothing, and what a bulk may change (TA
     }
     const archived = await cap.tool(bot.token, 'update_tickets', { keys: [a], patch: { archived: true } });
     expect(archived.error).toBe('forbidden');
-    // none of them spent the hourly budget or a write: a bulk of all three still fits
+    // none of them spent the hourly budget: a bulk of all three still fits
     expect((await cap.tool(bot.token, 'update_tickets', { keys: [a, b, c], patch: { priority: 'high' } })).error).toBeUndefined();
+  });
+
+  it('counts a malformed bulk call as one per-minute write, so a stream of them is rate limited', async () => {
+    const [a] = await ticketsFor(1, 'Malformed spend');
+    const bot = await tokenFor('Malformed spend bot');
+    // 30 writes a minute: 30 malformed calls are refused as invalid, the 31st as rate limited
+    for (let i = 0; i < 30; i++) expect((await cap.tool(bot.token, 'update_tickets', { keys: [], patch: { priority: 'low' } })).error).toBe('invalid_input');
+    expectRateLimited(await cap.call(bot.token, 'tools/call', { name: 'update_tickets', arguments: { keys: [a], patch: { priority: 'low' } } }));
   });
 
   it('moves every ticket of a bulk to a state and spends only the transition budget, and refuses an archived ticket for the whole list', async () => {

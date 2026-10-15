@@ -2820,7 +2820,8 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
         auditHourlyRefusal(actor, tool.name, hourlyCap);
         return limited(id, hourlyWait);
       }
-      const wait = tool?.mutating && !bulkCost ? writes.hit(limitKey) : 0;
+      // a bulk call that is refused before it runs (malformed: n is 0) costs one per-minute write like any single call; a valid one was charged by spendBulk
+      const wait = tool?.mutating && !bulkCost?.n ? writes.hit(limitKey) : 0;
       if (wait) return limited(id, wait);
       if (hourlyKey && !isCreate) hourlyLimiter.hit(hourlyKey);
       if (isCreate && !replay) {
