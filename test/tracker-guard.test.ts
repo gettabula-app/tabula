@@ -222,6 +222,23 @@ describe('tracker linked-card guard', () => {
     f.close();
   });
 
+  it('keeps a checklist change on a linked card, and a title change made with it is still restored', () => {
+    const f = fixture();
+    const before = f.count('SELECT COUNT(*) AS n FROM ticket_events');
+    const checklist = [{ id: 'pack', text: 'Pack the slides', done: false }];
+    expect(f.run(() => card(f).set('checklist', checklist)).undone).toEqual([]);
+    expect(card(f).get('checklist')).toEqual(checklist);
+    expect(f.count('SELECT COUNT(*) AS n FROM ticket_events')).toBe(before);
+
+    const done = [{ id: 'pack', text: 'Pack the slides', done: true }];
+    expect(f.run(() => { card(f).set('text', '\nbody'); card(f).set('checklist', done); }).undone)
+      .toEqual([{ cardId: 'card-0', reason: 'title_invalid' }]);
+    expect(card(f).get('text')).toBe('Ticket 0\nBody line');
+    expect(card(f).get('checklist')).toEqual(done);
+    expect(f.count('SELECT COUNT(*) AS n FROM ticket_events')).toBe(before);
+    f.close();
+  });
+
   it('rejects stale moveBase and accepts a move with no moveBase', () => {
     const f = fixture();
     const ticket = f.tickets.get('card-0');

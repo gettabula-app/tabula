@@ -6,6 +6,7 @@ import { isBox, isConnector } from './types';
 import { boxBounds, center, rectOfPoints } from './geometry';
 import { sanitizeSvgBody } from './markup';
 import { newId } from './store';
+import { withFreshItemIds } from './checklist';
 import { isSafeColor } from '../shared/colors';
 import { TEMPLATE_STRIPPED, checkTemplateKanbanLimits, isContainerType, splitRank, templateKanbanFields, templateLabels } from '../shared/containers';
 import { STICKY_COLORS } from './palette';
@@ -187,7 +188,7 @@ export function toTemplateContent(
     // a shared template names no people and no dates (docs/kanban.md, Templates); labels stay, renumbered
     for (const key of TEMPLATE_STRIPPED) delete (o as unknown as Record<string, unknown>)[key];
     // a sticky that was once a card keeps its card fields for turning back; a template does not (docs/kanban.md)
-    if (o.type !== 'card') for (const key of ['desc', 'labels'] as const) delete (o as unknown as Record<string, unknown>)[key];
+    if (o.type !== 'card') for (const key of ['desc', 'labels', 'checklist'] as const) delete (o as unknown as Record<string, unknown>)[key];
     if (o.type === 'card' && o.labels) {
       const kept = o.labels.map((id) => labelIds.get(id)).filter((id): id is string => !!id);
       if (kept.length) o.labels = kept;
@@ -224,7 +225,8 @@ export function instantiate(content: TemplateContent, origin: Point, userId: str
   const idMap = new Map<Id, Id>();
   for (const o of content.objects) idMap.set(o.id, newId());
   // content from a file or the server is sanitised on the way in; once more here, so no path to a board skips it
-  const objects = remapObjects(content.objects.map((o) => sanitizeTemplateObject(o)), idMap, origin, () => null);
+  // a checklist's items get new ids on every use (TAB-372): a template can be placed more than once
+  const objects = remapObjects(content.objects.map((o) => sanitizeTemplateObject(o)), idMap, origin, () => null).map(withFreshItemIds);
   for (const o of objects) {
     o.createdBy = userId;
     // template content can come from a file: a stored proposedBy is never carried onto a new board (TAB-160)

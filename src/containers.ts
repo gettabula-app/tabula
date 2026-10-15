@@ -8,10 +8,11 @@ import {
 export { OWNER_NAME_MAX };
 import type { Store } from './store';
 import { newId } from './store';
-import type { BaseObj, Id, Obj, Point } from './types';
+import type { BaseObj, ChecklistItem, Id, Obj, Point } from './types';
 import { isOwnAuthor, type Who } from './identity';
 import { cardContentHeight } from './markup';
 import { cleanCardLabels, listLabels } from './labels';
+import { checklistForWrite } from './checklist';
 import { STICKY_COLORS } from './palette';
 import { cardFillFromSticky, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
 
@@ -300,6 +301,8 @@ export interface CardPatch {
   /** One http(s) URL of at most 2,000 characters, or null to clear. */
   link?: string | null;
   labels?: Id[];
+  /** The checklist, replaced whole (TAB-372); null or an empty list clears it. A list that breaks a limit refuses the patch. */
+  checklist?: ChecklistItem[] | null;
   /** The accent: a palette key or a colour `kanbanColor` accepts; null clears it. */
   fill?: string | null;
 }
@@ -314,8 +317,9 @@ const cardWidth = (store: Store, card: Obj) => (store.isLaidOut(card) ? store.ge
  * The fields a card patch writes, checked: the title is one line of at most 200 characters (an empty title is not
  * written), the description at most 4,000, the owner's name at most 80, `due` a real calendar date, `link` one safe HTTP(S)
  * URL up to 2,000 characters, labels only ones the board has (which also drops ids of deleted labels, docs/kanban.md,
- * Labels) and colours through `kanbanColor`. Owner id, name and kind are one patch. Null when the patch asks for something
- * that is not allowed. The height follows from the result, as the writer stores it.
+ * Labels), a checklist that passes the checklist rules (src/checklist.ts: refused, not cut) and colours through `kanbanColor`.
+ * Owner id, name and kind are one patch. Null when the patch asks for something that is not allowed. The height follows from
+ * the result, as the writer stores it; a checklist does not change it.
  */
 export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Partial<BaseObj> | null {
   const out: Partial<BaseObj> = {};
@@ -354,6 +358,11 @@ export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Parti
   if (patch.labels !== undefined) out.labels = cleanCardLabels(patch.labels, known);
   else if (card.labels?.length) out.labels = cleanCardLabels(card.labels, known);
   if (out.labels && !out.labels.length) out.labels = undefined;
+  if (patch.checklist !== undefined) {
+    const list = patch.checklist === null ? [] : checklistForWrite(patch.checklist);
+    if (list === null) return null;
+    out.checklist = list.length ? list : undefined;
+  }
   if (patch.fill !== undefined) out.fill = patch.fill === null ? undefined : kanbanColor(patch.fill) ?? undefined;
   const next = { ...card, ...out } as BaseObj;
   for (const k of Object.keys(out) as (keyof BaseObj)[]) if (out[k] === undefined) delete next[k];

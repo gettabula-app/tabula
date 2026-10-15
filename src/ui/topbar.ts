@@ -99,6 +99,7 @@ export function openAccountMenu(anchor: HTMLElement, me: Me) {
     h('button', { class: 'menu-item', type: 'button', onclick: () => { pop.close(); fn(); } }, h('span', null, label));
   const pop = popover(anchor, h('div', { class: 'menu account-menu' },
     canChangeProfile(authState().mode) ? item('Your name and colour', () => openProfileDialog(getUser(), (u) => saveUser(u))) : null,
+    item('My templates', () => { location.hash = '#/templates'; }),
     aiToolsAvailable(me) ? item('AI tool access', () => openTokensDialog(me)) : null,
     me.ai?.personalKeys ? item('Your AI key', () => openAiKeyDialog()) : null,
     item('Notification settings', () => openChatNotifications()),
@@ -119,7 +120,6 @@ export function createTopbar(current: TopbarPage, me: Me | null): HTMLElement {
     h('nav', { class: 'topbar-nav', 'aria-label': 'Main' },
       link('boards', 'Boards', '#/'),
       me?.tracker === true ? trackerLink() : null,
-      link('templates', 'Templates', '#/templates'),
       me && chatAvailable() ? chatLink(current) : null,
       admin ? h('a', { class: 'topbar-link', href: '#/admin' }, 'Admin') : null,
       h('a', { class: 'topbar-link', href: '/docs/' }, 'Help')),
