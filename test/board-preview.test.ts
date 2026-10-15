@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import crypto from 'node:crypto';
@@ -13,7 +13,11 @@ import { createApi } from '../server/api.mjs';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
 import { openDirectory } from '../server/directory.mjs';
-import { MAX_PREVIEW_BYTES } from '../server/preview-image.mjs';
+import { MAX_PREVIEW_BYTES, validatePreviewImage } from '../server/preview-image.mjs';
+import { createPreviewStore } from '../server/preview-store.mjs';
+import { get as getPreviewRevision, observePreviewChanges } from '../server/preview-rev.mjs';
+import { isBackupPath } from '../server/backup.mjs';
+import { budget } from './wait-budget';
 
 type Account = { user: NonNullable<ReturnType<ReturnType<typeof openDirectory>['createUser']>>; cookie: string };
 type Reply = { status: number; headers: Headers; text: string; bytes: Buffer };
@@ -22,6 +26,14 @@ type World = Awaited<ReturnType<typeof setup>>;
 
 const worlds: World[] = [];
 let serial = 0;
+
+async function waitFor(check: () => boolean, label: string): Promise<void> {
+  const deadline = Date.now() + budget(1000);
+  while (!check()) {
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}`);
+    await new Promise((resolve) => setTimeout(resolve, budget(5)));
+  }
+}
 
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
@@ -99,8 +111,8 @@ function webp() {
   return Buffer.concat([Buffer.from('RIFF'), length, body]);
 }
 
-async function setup({ previewDev = true, readOnly = false }: { previewDev?: boolean; readOnly?: boolean } = {}) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-preview-dev-'));
+async function setup({ previews = true, readOnly = false, previewMaxBytes, previewStore: overrideStore }: { previews?: boolean; readOnly?: boolean; previewMaxBytes?: number; previewStore?: ReturnType<typeof createPreviewStore> } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tabula-preview-'));
   const clock = { now: Date.UTC(2026, 9, 15, 12) };
   const config = loadConfig({
     TABULA_AUTH: 'on',
@@ -108,11 +120,12 @@ async function setup({ previewDev = true, readOnly = false }: { previewDev?: boo
     TABULA_MAIL: 'file',
     TABULA_JOIN_CODES: 'on',
     DATA_DIR: root,
-    ...(previewDev ? { TABULA_PREVIEW_DEV: '1' } : {}),
+    ...(!previews ? { TABULA_PREVIEWS: '0' } : {}),
   }, () => {});
   const directory = openDirectory(path.join(root, 'directory.sqlite'));
   const auth = createAuth({ directory, config, mailer: { send: async () => {} }, now: () => clock.now });
-  const rooms = new Map<string, Room>();
+  const previewStore = previews ? overrideStore ?? createPreviewStore({ dataDir: root, now: () => clock.now, maxBytes: previewMaxBytes, log: () => {} }) : null;
+  const rooms = new Map<string, Room & { stopPreviewObserver?: () => void }>();
   let writes = 0;
   let throwawayReads = 0;
   const roomAccess = {
@@ -130,13 +143,19 @@ async function setup({ previewDev = true, readOnly = false }: { previewDev?: boo
         doc.destroy();
       }
     },
-    write() { writes++; throw new Error('preview routes must not write a sync room'); },
+    write(name: string, _origin: unknown, fn: (doc: Y.Doc) => unknown) {
+      writes++;
+      const entry = rooms.get(name) ?? room(name);
+      let result: unknown;
+      entry.doc.transact(() => { result = fn(entry.doc); });
+      return result;
+    },
   };
   const api = createApi({
     directory, auth, config, roomExists: roomAccess.exists, events: new EventEmitter(),
     now: () => clock.now,
     cloud: readOnly ? { limits: () => ({ readOnly: true }) } as never : null,
-    dataDir: root, mailer: { send: async () => {} }, roomAccess: roomAccess as never,
+    dataDir: root, mailer: { send: async () => {} }, roomAccess: roomAccess as never, previewStore: previewStore as never,
   });
   const server = http.createServer((req, res) => {
     void api.handle(req, res).then((handled: boolean) => {
@@ -158,8 +177,9 @@ async function setup({ previewDev = true, readOnly = false }: { previewDev?: boo
   }
 
   function room(boardId: string, doc = new Y.Doc()) {
-    const entry = { doc, dirty: false };
+    const entry: Room & { stopPreviewObserver?: () => void } = { doc, dirty: false };
     doc.on('update', () => { entry.dirty = true; });
+    if (previewStore) entry.stopPreviewObserver = observePreviewChanges(doc, boardId, { unlink: (id: string) => previewStore.unlink(id), now: () => clock.now, log: () => {} });
     rooms.set(boardId, entry);
     return entry;
   }
@@ -168,6 +188,7 @@ async function setup({ previewDev = true, readOnly = false }: { previewDev?: boo
     const entry = rooms.get(boardId);
     if (!entry) return;
     fs.writeFileSync(path.join(root, `${boardId}.yjs`), Buffer.from(Y.encodeStateAsUpdate(entry.doc)), { mode: 0o600 });
+    entry.stopPreviewObserver?.();
     entry.doc.destroy();
     rooms.delete(boardId);
   }
@@ -178,6 +199,10 @@ async function setup({ previewDev = true, readOnly = false }: { previewDev?: boo
       ...(csrf && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? { 'x-tabula': '1' } : {}),
       ...headers,
     };
+    if (method === 'PUT' && urlPath.endsWith('/preview') && !Object.keys(headers).some((name) => name.toLowerCase() === 'x-preview-rev')) {
+      const boardId = urlPath.split('/').at(-2);
+      if (boardId) requestHeaders['x-preview-rev'] = String(getPreviewRevision(boardId));
+    }
     let requestBody: BodyInit | undefined;
     if (Buffer.isBuffer(body)) requestBody = new Uint8Array(body);
     else if (body !== undefined) {
@@ -239,30 +264,39 @@ async function setup({ previewDev = true, readOnly = false }: { previewDev?: boo
   const close = async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    for (const entry of rooms.values()) entry.doc.destroy();
+    for (const entry of rooms.values()) { entry.stopPreviewObserver?.(); entry.doc.destroy(); }
     rooms.clear();
     directory.close();
     fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   };
-  return { account, api, base, call, clock, close, config, directory, guest, newBoard, room, root, streamed, unload, writes: () => writes, throwawayReads: () => throwawayReads, isLoaded: (id: string) => rooms.has(id) };
+  return { account, api, base, call, clock, close, config, directory, guest, newBoard, room, roomAccess, previewStore, root, streamed, unload, writes: () => writes, throwawayReads: () => throwawayReads, isLoaded: (id: string) => rooms.has(id) };
 }
 
 afterEach(async () => {
   await Promise.all(worlds.splice(0).map((world) => world.close()));
 });
 
-describe('developer board previews', () => {
-  it('keeps all preview routes absent by default and creates no store directory', async () => {
-    const world = await setup({ previewDev: false });
+describe('board previews', () => {
+  it('keeps preview routes absent with the kill switch and creates no store directory', async () => {
+    const world = await setup({ previews: false });
     worlds.push(world);
-    expect(world.config.previewDev).toBe(false);
+    expect(world.config.previews).toBe(false);
     const owner = world.account('owner');
     const board = world.newBoard(owner);
     for (const [method, tail] of [['GET', 'preview-source'], ['PUT', 'preview'], ['GET', 'preview']] as const) {
       const response = await world.call(owner, method, `/api/boards/${board.id}/${tail}`, method === 'PUT' ? png() : undefined, method === 'PUT' ? { 'content-type': 'image/png' } : {});
       expect(response.status).toBe(404);
     }
-    expect(fs.existsSync(path.join(world.root, 'previews-dev'))).toBe(false);
+    expect(fs.existsSync(path.join(world.root, 'previews'))).toBe(false);
+  });
+
+  it('enables previews by default and exposes the workspace setting to the client', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    expect(world.config.previews).toBe(true);
+    expect((await world.call(owner, 'GET', '/api/me')).text).toContain('"boardPreviews":true');
+    expect(JSON.parse((await world.call(owner, 'GET', '/api/admin/board-previews')).text)).toEqual({ enabled: true, locked: false, setting: null });
   });
 
   it('filters preview-source, reads without dirtying a room, and stores an atomic image slot', async () => {
@@ -334,7 +368,7 @@ describe('developer board previews', () => {
     expect(world.throwawayReads()).toBeGreaterThan(0);
     expect(world.directory.getBoard(board.id)!.updatedAt).toBe(updatedAt);
 
-    const storeDir = path.join(world.root, 'previews-dev');
+    const storeDir = path.join(world.root, 'previews');
     const boardHash = crypto.createHash('sha256').update(board.id).digest('hex');
     const filenames = fs.readdirSync(storeDir).sort();
     expect(filenames).toEqual([`${boardHash}.img`, `${boardHash}.json`]);
@@ -342,7 +376,7 @@ describe('developer board previews', () => {
     for (const name of filenames) expect((fs.statSync(path.join(storeDir, name)).mode & 0o777)).toBe(0o600);
     const metadata = JSON.parse(fs.readFileSync(path.join(storeDir, `${boardHash}.json`), 'utf8'));
     expect(metadata).toEqual({
-      type: 'image/png', width: 480, height: 300, bytes: image.length,
+      boardId: board.id, type: 'image/png', width: 480, height: 300, bytes: image.length,
       uploadedBy: editor.user.id, at: uploadedAt,
       etag: `"${crypto.createHash('sha256').update(image).digest('hex')}"`,
     });
@@ -450,7 +484,7 @@ describe('developer board previews', () => {
     expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
   });
 
-  it('removes the stored picture when the board shows nothing to everyone', async () => {
+  it('leaves the stored picture untouched when preview-source is fetched', async () => {
     const world = await setup();
     worlds.push(world);
     const owner = world.account('owner');
@@ -459,6 +493,306 @@ describe('developer board previews', () => {
     expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
     expect((await world.call(owner, 'GET', previewPath)).status).toBe(200);
     expect((await world.call(owner, 'GET', `${previewPath}-source`)).status).toBe(200);
+    expect((await world.call(owner, 'GET', previewPath)).status).toBe(200);
+    expect(world.previewStore!.read(board.id)).not.toBeNull();
+  });
+
+  it('turns preview routes off workspace-wide and keeps the admin switch audited', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const admin = world.account('admin');
+    const member = world.account();
+    const board = world.newBoard(owner);
+    const previewPath = `/api/boards/${board.id}/preview`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+
+    expect((await world.call(member, 'GET', '/api/admin/board-previews')).status).toBe(403);
+    expect((await world.call(member, 'PUT', '/api/admin/board-previews', { enabled: false })).status).toBe(403);
+    const off = await world.call(admin, 'PUT', '/api/admin/board-previews', { enabled: false });
+    expect(off.status).toBe(200);
+    expect(JSON.parse(off.text)).toEqual({ enabled: false, locked: false, setting: false });
+    expect((await world.call(owner, 'GET', `/api/boards/${board.id}/preview-source`)).status).toBe(404);
+    expect((await world.call(owner, 'GET', previewPath)).status).toBe(404);
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(404);
+    expect((await world.call(owner, 'DELETE', previewPath)).status).toBe(404);
+    expect((await world.call(owner, 'GET', '/api/me')).text).not.toContain('"boardPreviews":true');
+    expect(world.directory.listAudit(10).map((row) => row.action)).toContain('boardPreviews.disabled');
+    expect(world.previewStore!.read(board.id)).not.toBeNull();
+  });
+
+  it('lets only a board owner or workspace admin remove a preview and audits the action', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const admin = world.account('admin');
+    const editor = world.account();
+    const viewer = world.account();
+    const board = world.newBoard(owner);
+    world.directory.shareBoard(board.id, { principalType: 'user', principalId: editor.user.id, role: 'editor' });
+    world.directory.shareBoard(board.id, { principalType: 'user', principalId: viewer.user.id, role: 'viewer' });
+    const previewPath = `/api/boards/${board.id}/preview`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+
+    expect((await world.call(editor, 'DELETE', previewPath)).status).toBe(403);
+    expect((await world.call(viewer, 'DELETE', previewPath)).status).toBe(403);
+    expect((await world.call(world.guest(board.id, owner), 'DELETE', previewPath)).status).toBe(403);
+    expect((await world.call(owner, 'DELETE', previewPath, undefined, { authorization: 'Bearer token' })).status).toBe(403);
+    expect((await world.call(owner, 'DELETE', '/api/boards/preview_missing/preview')).status).toBe(404);
+
+    const ownerRemove = await world.call(owner, 'DELETE', previewPath);
+    expect(ownerRemove.status).toBe(204);
+    expect(ownerRemove.headers.get('clear-site-data')).toBe('"cache"');
+    expect(world.previewStore!.read(board.id)).toBeNull();
+    world.clock.now += 10_001;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+    const adminRemove = await world.call(admin, 'DELETE', previewPath);
+    expect(adminRemove.status).toBe(204);
+    expect(world.directory.listAudit(10).filter((row) => row.action === 'board.preview.remove').map((row) => row.detail)).toEqual([
+      { boardId: board.id, by: admin.user.id, reason: 'manual' },
+      { boardId: board.id, by: owner.user.id, reason: 'manual' },
+    ]);
+    const logout = await world.call(owner, 'POST', '/api/auth/logout');
+    expect(logout.headers.get('clear-site-data')).toBe('"cache"');
+  });
+
+  it('unlinks on an object deletion', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const board = world.newBoard(owner);
+    const room = world.room(board.id);
+    room.doc.getMap('objects').set('connector', new Y.Map([['id', 'connector'], ['type', 'connector']]));
+    const previewPath = `/api/boards/${board.id}/preview`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+    const before = getPreviewRevision(board.id);
+
+    room.doc.getMap('objects').delete('connector');
+    expect(getPreviewRevision(board.id)).toBeGreaterThan(before);
+    await waitFor(() => world.previewStore!.read(board.id) === null, 'the deleted object preview to unlink');
+  });
+
+  it('unlinks when a note becomes private or an object becomes hidden', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const privateBoard = world.newBoard(owner);
+    const privateRoom = world.room(privateBoard.id);
+    const privateNote = new Y.Map([['id', 'note'], ['type', 'sticky'], ['text', 'Shared note']]);
+    privateRoom.doc.getMap('objects').set('note', privateNote);
+    const privatePath = `/api/boards/${privateBoard.id}/preview`;
+    expect((await world.call(owner, 'PUT', privatePath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+    privateNote.set('privateStep', 'step-1');
+    await waitFor(() => world.previewStore!.read(privateBoard.id) === null, 'the private note preview to unlink');
+
+    world.clock.now += 10_001;
+    const hiddenBoard = world.newBoard(owner);
+    const hiddenRoom = world.room(hiddenBoard.id);
+    const layer = new Y.Map([['id', 'frame'], ['type', 'frame'], ['text', 'Layer']]);
+    hiddenRoom.doc.getMap('objects').set('frame', layer);
+    const hiddenPath = `/api/boards/${hiddenBoard.id}/preview`;
+    expect((await world.call(owner, 'PUT', hiddenPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+    layer.set('hidden', true);
+    await waitFor(() => world.previewStore!.read(hiddenBoard.id) === null, 'the hidden object preview to unlink');
+  });
+
+  it('throttles text-edit unlinking to once per 30 seconds per board', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const board = world.newBoard(owner);
+    const room = world.room(board.id);
+    const note = new Y.Map([['id', 'note'], ['type', 'sticky'], ['text', 'First']]);
+    room.doc.getMap('objects').set('note', note);
+    const previewPath = `/api/boards/${board.id}/preview`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+
+    note.set('text', 'Second');
+    await waitFor(() => world.previewStore!.read(board.id) === null, 'the first text edit preview to unlink');
+    world.clock.now += 10_001;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+    const revision = getPreviewRevision(board.id);
+    note.set('text', 'Third');
+    expect(getPreviewRevision(board.id)).toBeGreaterThan(revision);
+    expect(world.previewStore!.read(board.id)).not.toBeNull();
+  });
+
+  it('observes MCP roomAccess writes and does not treat persisted state as a new edit', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const board = world.newBoard(owner);
+    const room = world.room(board.id);
+    const note = new Y.Map([['id', 'note'], ['type', 'sticky'], ['text', 'Shared']]);
+    room.doc.getMap('objects').set('note', note);
+    const previewPath = `/api/boards/${board.id}/preview`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+
+    world.roomAccess.write(board.id, 'mcp', (doc: Y.Doc) => {
+      (doc.getMap('objects').get('note') as Y.Map<unknown>).set('privateStep', 'step-2');
+    });
+    await waitFor(() => world.previewStore!.read(board.id) === null, 'the MCP private change preview to unlink');
+    expect(world.writes()).toBe(1);
+
+    const persisted = new Y.Doc();
+    persisted.getMap('objects').set('private-note', new Y.Map([['id', 'private-note'], ['type', 'sticky'], ['privateStep', 'step-3']]));
+    const unlink = vi.fn<(boardId: string) => void>();
+    const stop = observePreviewChanges(persisted, 'preview_initial_load', { unlink, now: () => world.clock.now });
+    expect(unlink).not.toHaveBeenCalled();
+    stop();
+    persisted.destroy();
+  });
+
+  it('rejects stale or missing preview revisions without storing pixels', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const board = world.newBoard(owner);
+    const room = world.room(board.id);
+    const note = new Y.Map([['id', 'note'], ['type', 'sticky'], ['text', 'Shared']]);
+    room.doc.getMap('objects').set('note', note);
+    const previewPath = `/api/boards/${board.id}/preview`;
+
+    const source = await world.call(owner, 'GET', `/api/boards/${board.id}/preview-source`);
+    expect(source.status).toBe(200);
+    const oldRevision = (JSON.parse(source.text) as { rev: number }).rev;
+    note.set('privateStep', 'step-1');
+    const stale = await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png', 'x-preview-rev': String(oldRevision) });
+    expect(stale.status).toBe(409);
+    expect(JSON.parse(stale.text).error).toBe('preview_stale');
+    expect(world.previewStore!.read(board.id)).toBeNull();
+
+    world.clock.now += 10_001;
+    const freshSource = await world.call(owner, 'GET', `/api/boards/${board.id}/preview-source`);
+    const newRevision = (JSON.parse(freshSource.text) as { rev: number }).rev;
+    expect(newRevision).toBeGreaterThan(oldRevision);
+    const fresh = await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png', 'x-preview-rev': String(newRevision) });
+    expect(fresh.status).toBe(204);
+    expect(world.previewStore!.read(board.id)).not.toBeNull();
+
+    const missingBoard = world.newBoard(owner);
+    const noRevision = await world.streamed('PUT', `/api/boards/${missingBoard.id}/preview`, png(), {
+      cookie: owner.cookie,
+      'x-tabula': '1',
+      'content-type': 'image/png',
+      'content-length': String(png().length),
+    });
+    expect(noRevision.status).toBe(409);
+    expect(JSON.parse(noRevision.text).error).toBe('preview_stale');
+    expect(world.previewStore!.read(missingBoard.id)).toBeNull();
+  });
+
+  it('returns 503 for a failed cache write while board room writes still save', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const board = world.newBoard(owner);
+    const put = vi.spyOn(world.previewStore!, 'put').mockImplementation(() => { throw new Error('ENOSPC'); });
+    const response = await world.call(owner, 'PUT', `/api/boards/${board.id}/preview`, png(), { 'content-type': 'image/png' });
+    expect(response.status).toBe(503);
+    expect(JSON.parse(response.text).error).toBe('preview_unavailable');
+
+    world.roomAccess.write(board.id, 'mcp', (doc: Y.Doc) => {
+      doc.getMap('objects').set('saved', new Y.Map([['id', 'saved'], ['type', 'sticky'], ['text', 'Still saved']]));
+    });
+    expect(world.roomAccess.read(board.id, (doc: Y.Doc) => doc.getMap('objects').has('saved'))).toBe(true);
+    expect(world.writes()).toBe(1);
+    put.mockRestore();
+  });
+
+  it('evicts the oldest preview when the total cache byte cap would be exceeded', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const bytes = png();
+    const image = validatePreviewImage(bytes, 'image/png');
+    if (!image.ok) throw new Error('test PNG was invalid');
+    const validatedImage = image as { ok: true; type: string; width: number; height: number };
+    const ids = ['evict_0000', 'evict_0001', 'evict_0002'];
+    const metadataBytes = Buffer.byteLength(JSON.stringify({
+      boardId: ids[0], type: validatedImage.type, width: validatedImage.width, height: validatedImage.height, bytes: bytes.length,
+      uploadedBy: 'owner', at: world.clock.now,
+      etag: `"${crypto.createHash('sha256').update(bytes).digest('hex')}"`,
+    }));
+    const recordBytes = bytes.length + metadataBytes;
+    const store = createPreviewStore({ dataDir: world.root, now: () => world.clock.now, maxBytes: recordBytes * 2, log: () => {} });
+
+    for (const id of ids) {
+      store.put({ boardId: id, bytes, image: validatedImage, uploadedBy: 'owner' });
+      world.clock.now++;
+    }
+    expect(store.read(ids[0])).toBeNull();
+    expect(store.read(ids[1])).not.toBeNull();
+    expect(store.read(ids[2])).not.toBeNull();
+    expect(store.list()).toEqual({ count: 2, bytes: recordBytes * 2 });
+  });
+
+  it('sweeps deleted-board files, orphans, and old temp files while backup allowlists exclude previews', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const bytes = png();
+    const image = validatePreviewImage(bytes, 'image/png');
+    if (!image.ok) throw new Error('test PNG was invalid');
+    const validatedImage = image as { ok: true; type: string; width: number; height: number };
+    const store = world.previewStore!;
+    store.put({ boardId: 'sweep_live', bytes, image: validatedImage, uploadedBy: 'owner' });
+    store.put({ boardId: 'sweep_deleted', bytes, image: validatedImage, uploadedBy: 'owner' });
+    const orphan = `${crypto.createHash('sha256').update('sweep_orphan').digest('hex')}.img`;
+    fs.writeFileSync(path.join(store.directory, orphan), Buffer.from('orphan'));
+    const temporary = '.preview-00000000-0000-0000-0000-000000000000.tmp';
+    const temporaryPath = path.join(store.directory, temporary);
+    fs.writeFileSync(temporaryPath, Buffer.from('left over'));
+    const oldTime = new Date(world.clock.now - 2 * 60 * 60_000);
+    fs.utimesSync(temporaryPath, oldTime, oldTime);
+
+    await store.sweep((id: string) => id === 'sweep_live');
+    expect(store.read('sweep_live')).not.toBeNull();
+    expect(store.read('sweep_deleted')).toBeNull();
+    expect(fs.existsSync(path.join(store.directory, orphan))).toBe(false);
+    expect(fs.existsSync(temporaryPath)).toBe(false);
+    expect(store.list().count).toBe(1);
+    expect(isBackupPath(`previews/${orphan}`)).toBe(false);
+    expect(isBackupPath('directory.sqlite')).toBe(true);
+    store.clear();
+    expect(store.list()).toEqual({ count: 0, bytes: 0 });
+  });
+
+  it('treats a sidecar without its board id as an absent cache entry', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const store = world.previewStore!;
+    const bytes = png();
+    const image = validatePreviewImage(bytes, 'image/png');
+    if (!image.ok) throw new Error('test PNG was invalid');
+    store.put({ boardId: 'sidecar_board', bytes, image, uploadedBy: 'owner' });
+    const name = `${crypto.createHash('sha256').update('sidecar_board').digest('hex')}.json`;
+    const sidecar = path.join(store.directory, name);
+    const metadata = JSON.parse(fs.readFileSync(sidecar, 'utf8')) as Record<string, unknown>;
+    delete metadata.boardId;
+    fs.writeFileSync(sidecar, JSON.stringify(metadata));
+
+    expect(store.read('sidecar_board')).toBeNull();
+    expect((await store.sweep()).removed).toBeGreaterThan(0);
+    expect(store.list().count).toBe(0);
+  });
+
+  it('removes preview files on board delete and before restoring a board from trash', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const admin = world.account('admin');
+    const board = world.newBoard(owner);
+    const previewPath = `/api/boards/${board.id}/preview`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+    expect((await world.call(owner, 'DELETE', `/api/boards/${board.id}`)).status).toBe(204);
+    expect(world.previewStore!.read(board.id)).toBeNull();
+
+    const bytes = png();
+    const image = validatePreviewImage(bytes, 'image/png');
+    if (!image.ok) throw new Error('test PNG was invalid');
+    world.previewStore!.put({ boardId: board.id, bytes, image, uploadedBy: owner.user.id });
+    const restored = await world.call(admin, 'POST', `/api/admin/boards/${board.id}/restore`);
+    expect(restored.status).toBe(200);
+    expect(world.previewStore!.read(board.id)).toBeNull();
     expect((await world.call(owner, 'GET', previewPath)).status).toBe(404);
   });
 
@@ -530,7 +864,7 @@ describe('developer board previews', () => {
     const owner = world.account('owner');
     const board = world.newBoard(owner);
     const previewPath = `/api/boards/${board.id}/preview`;
-    const headers = { cookie: owner.cookie, 'x-tabula': '1', 'content-type': 'image/png' };
+    const headers = { cookie: owner.cookie, 'x-tabula': '1', 'content-type': 'image/png', 'x-preview-rev': String(getPreviewRevision(board.id)) };
 
     const missingLength = await world.streamed('PUT', previewPath, Buffer.alloc(0), headers);
     expect(missingLength.status).toBe(411);
@@ -554,11 +888,11 @@ describe('developer board previews', () => {
       expect(response.status).toBeGreaterThanOrEqual(400);
       expect(response.status).toBeLessThan(500);
     }
-    expect(fs.existsSync(path.join(world.root, 'previews-dev'))).toBe(false);
+    expect(fs.existsSync(path.join(world.root, 'previews'))).toBe(false);
   });
 
   it('limits board, user, and workspace upload rates with the injected clock', async () => {
-    const world = await setup();
+    const world = await setup({ previewMaxBytes: 1024 * 1024 });
     worlds.push(world);
     const owner = world.account('owner');
     const board = world.newBoard(owner);
@@ -580,18 +914,18 @@ describe('developer board previews', () => {
     const fullDayImage = png(Buffer.alloc(MAX_PREVIEW_BYTES - 57));
     expect(fullDayImage.length).toBe(MAX_PREVIEW_BYTES);
     world.clock.now += 24 * 60 * 60_000;
-    const dailyAccounts = Array.from({ length: 9 }, () => world.account('owner'));
-    for (let index = 0; index < 512; index++) {
+    const dailyAccounts = Array.from({ length: 86 }, () => world.account('owner'));
+    for (let index = 0; index < 5120; index++) {
       const dailyBoard = world.newBoard(owner, `daily_board_${index}`);
       const response = await world.call(dailyAccounts[index % dailyAccounts.length], 'PUT', pathFor(dailyBoard.id), fullDayImage, { 'content-type': 'image/png' });
       expect(response.status, `daily upload ${index}`).toBe(204);
     }
     const dailyOver = world.newBoard(owner, 'daily_board_over');
-    const limited = await world.call(dailyAccounts[0], 'PUT', pathFor(dailyOver.id), fullDayImage, { 'content-type': 'image/png' });
+    const limited = await world.call(world.account('owner'), 'PUT', pathFor(dailyOver.id), fullDayImage, { 'content-type': 'image/png' });
     expect(limited.status).toBe(429);
     expect(JSON.parse(limited.text).error).toBe('rate_limited');
-    expect(fs.existsSync(path.join(world.root, 'previews-dev', `${crypto.createHash('sha256').update(dailyOver.id).digest('hex')}.img`))).toBe(false);
-  }, 120_000);
+    expect(fs.existsSync(path.join(world.root, 'previews', `${crypto.createHash('sha256').update(dailyOver.id).digest('hex')}.img`))).toBe(false);
+  }, budget(240_000));
 
   it('refuses a path-traversal board id before touching the store', async () => {
     const world = await setup();
@@ -599,6 +933,6 @@ describe('developer board previews', () => {
     const owner = world.account('owner');
     const response = await world.call(owner, 'GET', '/api/boards/%2F..%2Fpreview/preview');
     expect(response.status).toBe(404);
-    expect(fs.existsSync(path.join(world.root, 'previews-dev'))).toBe(false);
+    expect(fs.existsSync(path.join(world.root, 'previews'))).toBe(false);
   });
 });

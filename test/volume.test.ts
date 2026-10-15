@@ -265,7 +265,9 @@ describe('applyVolume', () => {
     directory.setSetting('backup.status', JSON.stringify({ lastManifest: null, bytesStored: 7, running: true, nextRunAt: 5 }));
     const plan = planVolume({ dataDir: d, env: { TABULA_FLY_VOLUME_ID: 'vol_2' }, workspaceId: 'ws_a', now: T0 });
     const lines: string[] = [];
-    expect(applyVolume({ dataDir: d, plan, directory, log: (l: string) => lines.push(l) })).toBe(true);
+    let previewClears = 0;
+    expect(applyVolume({ dataDir: d, plan, directory, log: (l: string) => lines.push(l), clearPreviews: () => { previewClears++; } })).toBe(true);
+    expect(previewClears).toBe(1);
 
     expect(directory.getSession(session.token)).toBeNull();
     expect(directory.listActiveSessions()).toEqual([]);

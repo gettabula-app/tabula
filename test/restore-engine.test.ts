@@ -49,10 +49,10 @@ const oldDirs = (dir: string) => fs.readdirSync(dir).filter((n) => /^\.pre-resto
 const stagingDirs = (dir: string) => fs.readdirSync(dir).filter((n) => n.startsWith('.restore-'));
 
 /** State A backed up, state B live, the restore engine ready. */
-async function scenario() {
+async function scenario(restoreOverrides: Record<string, unknown> = {}) {
   h = await lap('harness', () => harness({ accounts: true }));
   await lap('seed state A', () => seedA(h));
-  const r = rig(h);
+  const r = rig(h, restoreOverrides);
   const a = await lap('first backup', () => backupNow(r.backup));
   expect(a.ok).toBe(true);
   const stateA = await lap('read state A back', () => backedUp(h, r.backup, a.manifest as string));
@@ -132,6 +132,15 @@ describe('listing and previewing backups', () => {
     const open = forge(h, [{ path: 'b1.yjs', data: docBytes('x') }], { at: T0 + 4 * HOUR });
     const err = await expectCode(s.restore.previewManifest(open.name), 'no_directory');
     expect(err.message).toMatch(/without accounts/);
+  });
+});
+
+describe('preview cache restore hook', () => {
+  it('clears the cache after a whole-workspace restore completes', async () => {
+    let clears = 0;
+    const s = await scenario({ hooks: { clearPreviews: () => { clears++; } } });
+    await s.restore.restoreWorkspace({ manifest: s.manifest, confirm: CONFIRM, actor: s.actor });
+    expect(clears).toBe(1);
   });
 });
 
