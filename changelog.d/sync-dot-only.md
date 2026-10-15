@@ -1,3 +1,3 @@
 section: Changed
 
-- The sync status at the top left is now just its dot; the words ("Saved on this device", "Live with 2") are in the popover and the accessible name. A refused connection keeps its words.
+- The connection pill is only a dot. Its shape tells the state (dot live, ring saved on this device, ring with a centre dot restoring, bar local only, triangle sign-in or access problem), the words show on hover or focus and are read out when the state changes. It no longer opens the Share dialog.
