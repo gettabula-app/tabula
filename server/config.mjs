@@ -430,6 +430,7 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
 
   return {
     version: /^[A-Za-z0-9._-]{1,40}$/.test(versionLabel) ? versionLabel : null,
+    previewDev: rawEnv.TABULA_PREVIEW_DEV === '1',
     authEnabled,
     ownerEmail,
     baseUrl,
