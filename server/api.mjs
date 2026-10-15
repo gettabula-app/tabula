@@ -2298,7 +2298,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'boards/:id/preview', { cookieOnly: true }, ({ req, params, user }) => {
             boardFor(user, params.id);
             const preview = previewStore.read(params.id);
-            if (!preview) throw notFound('Board not found');
+            // older than 24 h without a fresh upload falls back to the schematic (cybersec's staleness rule)
+            if (!preview || now() - preview.at > DAY_MS) throw notFound('Board not found');
             const headers = {
               'content-type': preview.type,
               'x-content-type-options': 'nosniff',

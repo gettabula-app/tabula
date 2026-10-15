@@ -450,6 +450,19 @@ describe('developer board previews', () => {
     expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
   });
 
+  it('stops serving an image 24 hours after its upload', async () => {
+    const world = await setup();
+    worlds.push(world);
+    const owner = world.account('owner');
+    const board = world.newBoard(owner);
+    const previewPath = `/api/boards/${board.id}/preview`;
+    expect((await world.call(owner, 'PUT', previewPath, png(), { 'content-type': 'image/png' })).status).toBe(204);
+    world.clock.now += 24 * 60 * 60_000 - 1;
+    expect((await world.call(owner, 'GET', previewPath)).status).toBe(200);
+    world.clock.now += 2;
+    expect((await world.call(owner, 'GET', previewPath)).status).toBe(404);
+  });
+
   it('rejects guests, join-code sessions, and all token headers on all preview routes', async () => {
     const world = await setup();
     worlds.push(world);
