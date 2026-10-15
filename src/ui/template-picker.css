@@ -328,22 +328,10 @@
   .template-picker-use:focus-visible { outline: 1px solid CanvasText; }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .template-picker-dialog { animation: template-picker-in 160ms ease-out both; }
-  @keyframes template-picker-in {
-    from { opacity: .94; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-}
-
 @media (max-width: 480px) and (prefers-reduced-motion: no-preference) {
-  .template-picker-dialog { animation: template-picker-sheet-in 180ms ease-out both; }
-  @keyframes template-picker-sheet-in {
-    from { opacity: .94; transform: translateY(16px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+  .template-picker-dialog { animation: modal-sheet-in 280ms var(--ease-drawer) both; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .template-picker-dialog { animation: none; transition: none; }
+  .template-picker-dialog { animation: modal-back-in 120ms var(--ease-out) both; transform: none; transition: none; }
 }

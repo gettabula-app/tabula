@@ -109,7 +109,7 @@
 
 @media (max-width: 860px) {
   .modal-back.k-card-dialog { align-items: end; padding: 0; }
-  .k-card-dialog .modal { width: 100%; max-height: 85vh; max-height: 85dvh; border-top: 1px solid var(--tray-line); }
+  .k-card-dialog .modal { width: 100%; max-height: 85vh; max-height: 85dvh; border-top: 1px solid var(--tray-line); animation: modal-sheet-in 280ms var(--ease-drawer) both; }
   /* the head stays, the body scrolls, and the actions stay at the sheet's foot, clear of the home indicator */
   .k-card-dialog .modal-body { padding-bottom: 0; }
   .k-card-dialog .k-actions {
@@ -122,5 +122,9 @@
   .k-card-form .input, .k-card-form .btn { min-height: 40px; }
   .k-owner-kind-btn { min-height: 40px; }
   .k-chip { height: 40px; }
+}
+/* reduced motion: the sheet fades instead of sliding (the shared rule in styles.css covers the centred dialog) */
+@media (prefers-reduced-motion: reduce) {
+  .k-card-dialog .modal { animation: modal-back-in 120ms var(--ease-out) both; transform: none; }
 }
 .k-up .ico svg { transform: rotate(180deg); }
