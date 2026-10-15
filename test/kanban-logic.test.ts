@@ -288,6 +288,15 @@ describe('owner picker', () => {
     ]);
     expect(opts[0].me).toBe(true);
   });
+  it('in accounts mode offers only me and the signed-in people here: no guests, no ids from earlier cards', () => {
+    const opts = ownerOptions(
+      { id: 'usr_me', name: 'Lea' },
+      [{ id: 'usr_ben', name: 'Ben' }, { id: 'g1', name: 'Visitor', guest: true }],
+      [{ ownerId: 'usr_gone', ownerName: 'Gone' }, { ownerId: 'dev-1', ownerName: 'Old device' }, { ownerName: 'Free Name' }],
+      { deviceId: 'dev-0' },
+    );
+    expect(opts.map((o) => o.key)).toEqual(['id:usr_me', 'id:usr_ben', 'name:Free Name']);
+  });
   it('names the current owner by id, else by name', () => {
     expect(ownerKey({ ownerId: 'u1', ownerName: 'A' })).toBe('id:u1');
     expect(ownerKey({ ownerName: ' A ' })).toBe('name:A');

@@ -11,6 +11,7 @@ import { buildTrackerPath } from '../tracker-route';
 import { dialog } from './common';
 import { h, icon } from './dom';
 import { isDueDate, ownerKey, ownerOptions } from './kanban-logic';
+import { isOwnAuthor } from '../identity';
 
 // The card dialog (docs/kanban.md, Cards): title, description, owner and type, due date, link and labels, a comment
 // button, Turn into sticky and Delete. Fields save as they are left, as everywhere in the app; there is no Save button. Read-only for
@@ -233,18 +234,20 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
       );
     }
     // the owner picker: me, who is here and who is already named on this board (docs/kanban.md, Owners)
-    const present = app.participants().map((p) => ({ id: p.user.id, name: p.user.name }));
+    const present = app.participants().map((p) => ({ id: p.user.id, name: p.user.name, guest: p.user.guest }));
     const assigned = [...app.store.cache.values()].filter((o) => o.type === 'card') as BaseObj[];
-    options = ownerOptions({ id: app.user.id, name: app.user.name }, present, assigned);
+    const accounts = app.user.deviceId !== undefined || app.user.guest === true ? { deviceId: app.user.deviceId } : undefined;
+    options = ownerOptions({ id: app.user.id, name: app.user.name }, present, assigned, accounts);
     if (focused !== owner && !(focused === ownerName && !ownerName.hidden)) {
-      const cur = ownerKey(card);
+      // a card owned by this device's old id is mine now (identity.ts)
+      const cur = accounts && !card.ownerKind?.startsWith('agent') && isOwnAuthor(app.user, card.ownerId) ? `id:${app.user.id}` : ownerKey(card);
       // Agent owners are never person choices, even if an id or name happens to match one. Keep their current
       // identity as a separate selected option so opening the dialog cannot make it look like the person choice.
       const currentMissing = !!cur && (card.ownerKind === 'agent' || !options.some((o) => o.key === cur));
       owner.replaceChildren(
         h('option', { value: '' }, 'No owner'),
         ...options.map((o) => h('option', { value: o.key }, o.me ? `${o.name} (you)` : o.name)),
-        ...(currentMissing ? [h('option', { value: cur, disabled: card.ownerKind === 'agent' }, `${card.ownerName || 'Someone'}${card.ownerKind === 'agent' ? ' (agent)' : ''}`)] : []),
+        ...(currentMissing ? [h('option', { value: cur, disabled: card.ownerKind === 'agent' }, card.ownerKind === 'agent' ? `${card.ownerName || 'Someone'} (agent)` : card.ownerId && accounts ? 'Unknown' : card.ownerName || 'Someone')] : []),
         ...(editable ? [h('option', { value: OTHER }, 'Someone else…')] : []),
       );
       owner.value = cur;
