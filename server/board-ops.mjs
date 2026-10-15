@@ -13,6 +13,7 @@ import {
 import { cleanColor } from '../shared/colors.mjs';
 import { MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
+import { frameInterior, placeBlock, snapOutward, summarizeLayout } from '../shared/layout-summary.mjs';
 import { DEFAULT_COL_WIDTH, MAX_CELL_CHARS, MAX_TABLE_CHARS, gridChars, isTableKey, MAX_TABLE_COLS, MAX_TABLE_ROWS, tableFromGrid, tableModel } from '../shared/tables.mjs';
 
 export const LIMITS = Object.freeze({
@@ -239,11 +240,15 @@ export function readAll(doc) {
   const boxes = [];
   const connectors = [];
   const withheld = new Set();
+  const withheldRects = [];
   objectsOf(doc).forEach((m, id) => {
     if (!(m instanceof Y.Map)) return;
     const o = { ...m.toJSON(), id };
-    if (isWithheld(o, revealed)) withheld.add(id);
-    else if (o.type === 'connector') connectors.push(o);
+    if (isWithheld(o, revealed)) {
+      withheld.add(id);
+      // known only to the coarse grid, so the layout and the chosen positions cannot show where a private note exactly is
+      if ([o.x, o.y, o.w, o.h].every(Number.isFinite)) withheldRects.push(snapOutward(o));
+    } else if (o.type === 'connector') connectors.push(o);
     else boxes.push(o);
   });
   const boundTo = (c) => [c.from, c.to].some((e) => e?.kind === 'bound' && withheld.has(e.id));
@@ -254,7 +259,7 @@ export function readAll(doc) {
   }
   const visibleConnectors = connectors.filter((c) => !boundTo(c));
   deriveGroupGeometry(boxes, visibleConnectors);
-  return { boxes, connectors: visibleConnectors, withheld };
+  return { boxes, connectors: visibleConnectors, withheld, withheldRects };
 }
 
 function rotatedBounds(o) {
@@ -550,12 +555,30 @@ const cmpKey = (a, b) => a[0] - b[0] || (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[
 const touches = (o, b) => !(o.x > b.x + b.w || o.x + o.w < b.x || o.y > b.y + b.h || o.y + o.h < b.y);
 
 /**
+ * Where there is room on the board (TAB-379). Every visible box and every frame takes room, and so do the private notes withheld
+ * from the reader: they count as space but are never named, counted or drawn at their exact size (the occupied map is coarse).
+ * Groups are left out (their members are in) and so are hidden objects' names: a hidden frame is not listed.
+ */
+const nameOf = (v) => cleanForModel(typeof v === 'string' ? v : '', 80).text;
+
+function layoutOf({ boxes, withheldRects, hidden }) {
+  const solids = boxes.filter((o) => o.type !== 'group' && [o.x, o.y, o.w, o.h].every(Number.isFinite))
+    .map((o) => ({ id: o.id, ...rotatedBounds(o) }));
+  solids.push(...withheldRects.filter((r) => [r.x, r.y, r.w, r.h].every(Number.isFinite)));
+  const frames = boxes.filter((o) => o.type === 'frame' && !hidden.has(o.id) && [o.x, o.y, o.w, o.h].every(Number.isFinite)).map((o) => ({
+    id: o.id, name: nameOf(o.name), x: o.x, y: o.y, w: o.w, h: o.h,
+    children: boxes.filter((c) => c.parent === o.id && !hidden.has(c.id)).length,
+  }));
+  return summarizeLayout({ solids, frames });
+}
+
+/**
  * A page of the board: paint order (frames first, then z), private notes withheld.
  * @param {{ limit?: number, cursor?: string | null, frameId?: string | null, types?: string[] | null, bounds?: {x:number,y:number,w:number,h:number} | null }} [options]
  */
 export function summariseBoard(doc, options = {}) {
   const { limit = LIMITS.pageDefault, cursor = null, frameId = null, types = null, bounds = null } = options;
-  const { boxes: allBoxes, connectors, withheld } = readAll(doc);
+  const { boxes: allBoxes, connectors, withheld, withheldRects } = readAll(doc);
   const boxes = allBoxes.filter((o) => o.type !== 'group' || o.hasVisibleMembers);
 
   const typeCounts = new Map();
@@ -591,6 +614,8 @@ export function summariseBoard(doc, options = {}) {
     counts: { total: boxes.length + connectors.length, byType: Object.fromEntries(typeCounts) },
     bounds: overall,
     nextFree: nextFreeOf(overall),
+    // only on the first, whole-board page: a page, a frame or an area asks for the objects, not for the room around them
+    ...(cursor || frameId || bounds ? {} : { layout: layoutOf({ boxes: allBoxes, withheldRects, hidden: hiddenOf({ boxes: allBoxes, connectors }) }) }),
     objects: fitted.items,
     nextCursor: more && returned > 0 ? encodeCursor(pageItems[returned - 1].key) : null,
     hiddenCount: withheld.size,
@@ -1363,6 +1388,7 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
   const parents = new Map();
   const ops = [];
   const created = [];
+  const autoIds = new Set();
 
   entries.forEach(({ item, type, kind, id, path }, i) => {
     // an object an agent made is marked as a draft until a person edits or accepts it (TAB-158); a connector is not a thing to review
@@ -1404,8 +1430,12 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
         };
       }
     } else {
-      const x = coordinate(required(item, 'x', path), at(path, 'x'));
-      const y = coordinate(required(item, 'y', path), at(path, 'y'));
+      // both x and y, or neither: then the server places the object where there is room (TAB-379)
+      if ((item.x === undefined) !== (item.y === undefined)) throw invalid(at(path, item.x === undefined ? 'x' : 'y'), 'Give both x and y, or neither to let the server place the object');
+      const auto = item.x === undefined;
+      if (auto) autoIds.add(id);
+      const x = auto ? 0 : coordinate(required(item, 'x', path), at(path, 'x'));
+      const y = auto ? 0 : coordinate(required(item, 'y', path), at(path, 'y'));
       const dims = (dw, dh) => ({
         w: item.w === undefined ? dw : size(item.w, at(path, 'w')),
         h: item.h === undefined ? dh : size(item.h, at(path, 'h')),
@@ -1507,6 +1537,8 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
     }
   }
 
+  if (autoIds.size) autoPlace(doc, ops, created, autoIds, get);
+
   return {
     ops,
     result: {
@@ -1516,6 +1548,54 @@ export function planCreate(doc, items, { createdBy, now = Date.now(), proposedBy
     },
     audit: { count: entries.length, ids: created.map((c) => c.id) },
   };
+}
+
+/**
+ * Gives every object created without x and y a position (TAB-379). Objects outside any frame are placed together as one block in a
+ * hole of the board that fits it, else beyond the content; objects whose parent is a frame go inside that frame, or the whole call is
+ * refused when the frame has no room. What is on the board, what other objects of the call already hold and the private notes withheld
+ * from the caller all take room, so repeated calls never stack on one spot. The result lists the positions chosen.
+ */
+function autoPlace(doc, ops, created, autoIds, get) {
+  const board = readAll(doc);
+  const box = (o) => ({ id: o.id, ...rotatedBounds(o) });
+  const taken = [
+    ...board.boxes.filter((o) => o.type !== 'group' && [o.x, o.y, o.w, o.h].every(Number.isFinite)).map(box),
+    ...board.withheldRects.filter((r) => [r.x, r.y, r.w, r.h].every(Number.isFinite)),
+  ];
+  const fieldsOf = new Map(ops.filter((op) => op.op === 'create').map((op) => [op.fields.id, op.fields]));
+  for (const [id, f] of fieldsOf) if (!autoIds.has(id) && f.type !== 'connector' && [f.x, f.y, f.w, f.h].every(Number.isFinite)) taken.push(box(f));
+  const pending = [...autoIds];
+  // frames first, so a child placed inside a frame of the same call finds that frame already positioned
+  pending.sort((a, b) => (fieldsOf.get(a).type === 'frame' ? 0 : 1) - (fieldsOf.get(b).type === 'frame' ? 0 : 1));
+  const settle = (ids, positions) => ids.forEach((id, i) => {
+    const f = fieldsOf.get(id);
+    const x = coordinate(positions[i].x, 'x'), y = coordinate(positions[i].y, 'y');
+    f.x = x; f.y = y;
+    taken.push(box(f));
+    Object.assign(created.find((c) => c.id === id), { x, y });
+  });
+  const sizesOf = (ids) => ids.map((id) => ({ w: fieldsOf.get(id).w, h: fieldsOf.get(id).h }));
+
+  const outside = pending.filter((id) => !fieldsOf.get(id).parent);
+  if (outside.length) settle(outside, placeBlock(taken, sizesOf(outside)));
+
+  let waiting = pending.filter((id) => fieldsOf.get(id).parent);
+  while (waiting.length) {
+    // a group of children whose frame is not itself still waiting for a position
+    const parentId = waiting.map((id) => fieldsOf.get(id).parent).find((p) => !waiting.includes(p));
+    if (parentId === undefined) throw invalid('objects', 'Frames cannot be parents of each other in a loop');
+    const ids = waiting.filter((id) => fieldsOf.get(id).parent === parentId);
+    waiting = waiting.filter((id) => !ids.includes(id));
+    const frame = fieldsOf.get(parentId) ?? get(parentId);
+    const region = frameInterior(frame);
+    const placed = placeBlock(taken.filter((r) => r.id !== parentId), sizesOf(ids), { region });
+    if (!placed) {
+      const index = created.findIndex((c) => c.id === ids[0]);
+      throw invalid(`objects[${index}].parent`, `There is no free room inside frame ${parentId} for ${ids.length === 1 ? 'this object' : `these ${ids.length} objects`}: give x and y, make the frame larger or place them elsewhere`);
+    }
+    settle(ids, placed);
+  }
 }
 
 const BOX_FIELDS = ['x', 'y', 'w', 'h', 'rotation', 'parent', 'flipX', 'flipY'];
