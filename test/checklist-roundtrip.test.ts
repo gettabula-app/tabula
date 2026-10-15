@@ -237,10 +237,12 @@ describe('the card patch and undo', () => {
     expect(bo(store, id).checklist).toBeUndefined();
   });
 
-  it('does not change the card height', () => {
+  it('adds the progress row to the card height with items, and takes it back when they are cleared', () => {
     const { store, lanes } = board();
     const id = addCard(store, lanes[0], 'Paint the hall', { createdBy: 'me' })!;
     const card0 = bo(store, id);
-    expect(cardFields(store, card0, { checklist: LIST })?.h).toBe(cardFields(store, card0, {})?.h);
+    const base = cardFields(store, card0, {})!.h!;
+    expect(cardFields(store, card0, { checklist: LIST })?.h).toBe(base + 22);
+    expect(cardFields(store, card0, { checklist: [] })?.h).toBe(base);
   });
 });
