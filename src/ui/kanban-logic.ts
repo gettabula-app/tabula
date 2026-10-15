@@ -3,6 +3,7 @@
 // No DOM and no store: the callers pass rectangles from the shared layout (shared/containers.mjs).
 
 import { KANBAN, STAGES as STAGE_VALUES, isDueDate as sharedIsDueDate, kanbanColor, type ContainerLayout, type Rect } from '../../shared/containers';
+import { firstLastInitials } from '../../shared/initials';
 
 export const isDueDate = sharedIsDueDate;
 
@@ -240,11 +241,7 @@ export function dueChip(due: string | undefined, today: string, done: boolean): 
 
 /** Initials for an owner badge: the first letters of the first and last word, upper case. */
 export function initials(name: string | undefined): string {
-  const words = (name ?? '').trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return '?';
-  const first = [...words[0]][0] ?? '';
-  const last = words.length > 1 ? [...words[words.length - 1]][0] ?? '' : '';
-  return (first + last).toUpperCase();
+  return firstLastInitials(name) || '?';
 }
 
 // ---------------------------------------------------------------- cards (docs/kanban.md, slice 3)
@@ -353,12 +350,14 @@ export interface OwnerOption {
  * Who the owner picker offers (docs/kanban.md, Owners): the viewer, the people in the room now and everyone already
  * named as an owner on this board, each once; nothing from a directory. People by id, names without an id by name
  * (ignoring case, and left out when a person of that name is listed). Agent identities are not person choices; the
- * dialog keeps only the current agent as a separate option. The viewer first, then by name.
+ * dialog keeps only the current agent as a separate option. The viewer first, then by name. With `accounts` (the viewer's
+ * board id is an account id) only the viewer and the signed-in people present are offered by id.
  */
 export function ownerOptions(
   me: { id: string; name: string } | null,
-  present: readonly { id: string; name: string }[],
+  present: readonly { id: string; name: string; guest?: boolean }[],
   assigned: readonly { ownerId?: string; ownerName?: string; ownerKind?: string }[],
+  accounts?: { deviceId?: string },
 ): OwnerOption[] {
   const people = new Map<string, OwnerOption>();
   const add = (id: string, name: string, isMe = false) => {
@@ -366,8 +365,11 @@ export function ownerOptions(
     people.set(id, { key: `id:${id}`, id, name: name.trim() || 'Someone', me: isMe || undefined });
   };
   if (me) add(me.id, me.name, true);
-  for (const p of present) add(p.id, p.name);
-  for (const a of assigned) if (a.ownerKind !== 'agent' && a.ownerId) add(a.ownerId, a.ownerName ?? '');
+  // Accounts mode: the relay refuses an owner id that is not a current board member (forged_owner), and the client knows
+  // only the people in the room. So it offers the viewer and the signed-in people here (guests are not members), and an
+  // id from earlier cards is not a choice; the card's own owner still shows in the dialog.
+  for (const p of present) if (!(accounts && p.guest)) add(p.id, p.name);
+  if (!accounts) for (const a of assigned) if (a.ownerKind !== 'agent' && a.ownerId) add(a.ownerId, a.ownerName ?? '');
   const names = new Map<string, OwnerOption>();
   const taken = new Set([...people.values()].map((p) => p.name.toLowerCase()));
   for (const a of assigned) {

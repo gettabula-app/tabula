@@ -3,7 +3,7 @@ import { h, icon } from './dom';
 import type { ChatChannelEntry } from '../api';
 import { channelUnread, fetchChannels, hasUnlisted, onChatBadge, openChat, totalUnread, watchChat, type BoardChat } from '../chat';
 import { mountConversation, type Conversation, type ConversationOptions } from './chat';
-import { badgeText, channelHash, type ChannelKind } from './chat-logic';
+import { badgeText, channelHash, initials, type ChannelKind } from './chat-logic';
 import { channelKey, dockChannels, hereLine, pickChannel, splitChips, type DockChannel } from './chat-dock-channels';
 import { popover } from './common';
 import { dockInset, loadDock, nextDock, saveDock, sheetDragMinimises, type DockEvent, type DockMode, type DockPrefs } from './chat-dock-state';
@@ -269,7 +269,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     if (here.hidden) return;
     const avatars = people.slice(0, 4).map((p) => {
       const a = h('span', { class: 'avatar chat-here-avatar live', 'aria-hidden': 'true', style: `--c:${p.color}` });
-      a.textContent = p.name.split(/\s+/).map((w) => w[0] ?? '').join('').slice(0, 2).toUpperCase();
+      a.textContent = initials(p.name);
       return a;
     });
     const text = h('span', { class: 'chat-here-text' }, hereLine(people.map((p) => p.name)));

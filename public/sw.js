@@ -77,6 +77,8 @@ self.addEventListener('fetch', (event) => {
     if (url.pathname.startsWith('/sync') || url.pathname.startsWith('/api/')) return;
     // The user guide is static pages outside the app: the navigate handler below would cache every navigation as the app shell '/'.
     if (url.pathname === '/docs' || url.pathname.startsWith('/docs/')) return;
+    // The notices file is plain text, not the app shell: a navigation to it must not overwrite the cached '/' (same reason as /docs).
+    if (url.pathname === '/third-party-notices.txt') return;
     // The landing-page demo may share this origin, but has its own cache and must never be captured by the app worker.
     if (url.pathname.startsWith('/demo/')) return;
     if (url.pathname.startsWith('/icons/')) {

@@ -77,7 +77,7 @@ describe('presenceView', () => {
   });
 
   it('takes the first letter of the name as it is written', () => {
-    expect([initialOf('élan'), initialOf('  mia'), initialOf('👩‍🎤 Zo'), initialOf('')]).toEqual(['É', 'M', '👩', '?']);
+    expect([initialOf('élan'), initialOf('  mia'), initialOf('👩‍🎤 Zo'), initialOf('')]).toEqual(['É', 'M', '\u{1F469}‍\u{1F3A4}', '?']);
   });
 });
 

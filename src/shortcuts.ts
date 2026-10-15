@@ -59,6 +59,7 @@ export const SHORTCUTS: Shortcut[] = [
   { group: 'Edit', keys: 'Shift-click while voting', action: 'Remove a vote', ids: [] },
   { group: 'View', keys: 'Ctrl/Cmd+=, Ctrl/Cmd+-', action: 'Zoom in, zoom out', ids: ['mod+=', 'mod+-'] },
   { group: 'View', keys: 'Ctrl/Cmd + scroll, pinch', action: 'Zoom', ids: [] },
+  { group: 'View', keys: 'Ctrl/Cmd+0', action: 'Reset zoom to 100%', ids: ['mod+0'] },
   { group: 'View', keys: 'Shift+1 / Shift+2 / Shift+0', action: 'Fit board / fit selection / 100%', ids: ['shift+1', 'shift+2', 'shift+0'] },
   { group: 'View', keys: 'Hold Space', action: 'Pan while held', ids: ['space'] },
   { group: 'View', keys: 'Ctrl/Cmd+K or /', action: 'Ask AI', ids: ['mod+k', '/'] },

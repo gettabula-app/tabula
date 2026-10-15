@@ -1419,6 +1419,7 @@ export function createRestore({
         startedAt: oldDir.stamp,
       };
       swap(journal);
+      hooks.clearPreviews?.();
       last = record;
       return { ok: true, restarting: true, keepOldFor: retention.keepOldFor, reason: retention.reason };
     } catch (err) {
@@ -1665,6 +1666,7 @@ export function createRestore({
         for (const r of pictures) directory.putAsset({ boardId: id, hash: r.hash, mime: r.mime, bytes: r.bytes, width: r.width, height: r.height, createdBy: person.id, createdAt: now() });
         directory.audit(person.id, 'restore.done', detail);
       });
+      hooks.clearPreviews?.();
       written.length = 0;
       setLast({ kind: 'board', result: 'done', at: now(), manifest: name, files: detail.files, trackerDetached });
       say(`restored a board from ${name} as a copy`);

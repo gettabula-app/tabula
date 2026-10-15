@@ -8,6 +8,7 @@ import { openLinkPopover } from './link-add';
 import { agentName, type BoardApp, type Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
+import { wordInitials } from '../../shared/initials';
 import { createTrackerFrame, setTrackerGuest, setTrackerMember, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
 import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from '../tracker-data';
 import { openRegisteredLinkDialog, openRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
@@ -19,7 +20,7 @@ import { announce } from './announce';
 import { syncShape } from './sync-shape';
 import { leaveOutWithheld } from '../private-select';
 import { openChatNotifications } from './chat-prefs';
-import { dialog, field, popover, segmented, toast } from './common';
+import { dialog, field, mountPageZoomChip, popover, segmented, toast } from './common';
 import { mountProps } from './props';
 import { mountQuickbar } from './quickbar';
 import { mountEditBar } from './edit-bar';
@@ -715,6 +716,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   // the canvas is one tab stop, after the tool rail and before what acts on a selection (docs/canvas-keyboard.md)
   const canvasFocus = mountCanvasFocus(app, rail);
   app.onDestroy(() => canvasFocus.destroy());
+  // the notice that the page itself is zoomed (pinched or browser-zoomed), on the board only
+  app.onDestroy(mountPageZoomChip(chrome));
   // the focusable code areas and the Wrap and Copy buttons over code blocks (docs/code-blocks.md)
   app.onDestroy(mountCodeControls(app));
   trackPanelTop(chrome, [topLeft, topRight]);
@@ -916,7 +919,7 @@ async function importInto(app: BoardApp, file: File) {
   }
 }
 
-const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+const initials = (n: string) => wordInitials(n) || '?';
 
 export function firstRunHint(app: BoardApp, chrome: HTMLElement, openTemplates: () => void = () => {
   document.querySelector<HTMLElement>('[data-drawer="templates"]')?.click();

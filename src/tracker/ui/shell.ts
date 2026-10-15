@@ -23,6 +23,7 @@ import { renderSnippet } from './snippet';
 import { trackerErrorField } from './error-path';
 import { buildTrackerPath } from '../../tracker-route';
 import { trackerPeekAllowed } from './peek-rule';
+import { graphemes } from '../../../shared/initials';
 
 const TABS: ReadonlyArray<{ id: TrackerView; label: string; shortLabel: string; glyph: string }> = [
   { id: 'inbox', label: 'Inbox', shortLabel: 'Inbox', glyph: '◉' },
@@ -937,7 +938,7 @@ export function mountTrackerShell(parent: HTMLElement, options: TrackerShellOpti
           ));
           else if (column === 'project') cells.push(h('div', { class: 'trk-cell trk-col-project', role: 'gridcell' }, ticket.project?.name ?? '—'));
           else if (column === 'assignee') cells.push(h('div', { class: 'trk-cell trk-col-assignee', role: 'gridcell' }, ticket.assignee
-            ? (readOnly ? ticket.assignee.name : rowButton(ticket.assignee.name.slice(0, 2).toUpperCase(), `Assignee: ${ticket.assignee.name}`, () => void editOne(ticket, 'assignee', document.activeElement as HTMLElement), 'trk-avatar-button'))
+            ? (readOnly ? ticket.assignee.name : rowButton(graphemes(ticket.assignee.name.trim()).slice(0, 2).join('').toUpperCase(), `Assignee: ${ticket.assignee.name}`, () => void editOne(ticket, 'assignee', document.activeElement as HTMLElement), 'trk-avatar-button'))
             : (readOnly ? '—' : rowButton('—', 'Assign issue', () => void editOne(ticket, 'assignee', document.activeElement as HTMLElement), 'trk-avatar-button')),
           ));
           else if (column === 'due') cells.push(h('div', { class: 'trk-cell trk-col-due', role: 'gridcell' },

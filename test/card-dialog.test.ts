@@ -32,7 +32,7 @@ afterEach(() => browser.uninstall());
 
 type Role = 'editor' | 'commenter' | 'viewer';
 
-function setup(role: Role = 'editor') {
+function setup(role: Role = 'editor', viewer: { deviceId?: string; guest?: boolean } = {}) {
   const store = new Store(new Y.Doc());
   const { container, lanes } = newKanban({ x: 0, y: 0 }, { z: 'a0', createdBy: 'me' });
   store.transact(() => [container, ...lanes].forEach((o) => store.create(o)));
@@ -56,7 +56,7 @@ function setup(role: Role = 'editor') {
       store.setReadOnly(next !== 'editor');
       listeners.get('readonly')?.forEach((fn) => fn());
     },
-    user: { id: 'me', name: 'Visual QA', color: '#326DD3' },
+    user: { id: 'me', name: 'Visual QA', color: '#326DD3', ...viewer },
     participants: () => [{ clientId: 2, isMe: false, user: { id: 'u2', name: 'Marta Ruiz', color: '#D3332D' } }],
     notify: vi.fn<(m: string) => void>(),
     openLabels: vi.fn<() => void>(),
@@ -314,6 +314,44 @@ describe('the card dialog, for an editor', () => {
     open(app, card);
     button('Edit labels')!.click();
     expect(app.openLabels).toHaveBeenCalled();
+  });
+});
+
+describe('the owner picker, by account mode', () => {
+  // an owner id that is neither the viewer, nor this device, nor anyone present on the board
+  const setGone = (store: Store, card: Id) => store.transact(() => store.update(card, { ownerId: 'usr_gone', ownerName: 'Gone' }));
+
+  it('shows a card owner who is no longer on the board as Unknown, selected, on an accounts board', () => {
+    const { store, app, card } = setup('editor', { deviceId: 'dev-1' });
+    setGone(store, card);
+    open(app, card);
+    const owner = byLabel('Owner');
+    const options = owner.querySelectorAll('option');
+    const unknown = options.filter((o) => textOf(o) === 'Unknown');
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0].value).toBe('id:usr_gone');
+    expect(owner.value).toBe('id:usr_gone');
+    expect(options.filter((o) => o.value === 'id:usr_gone')).toHaveLength(1);
+  });
+
+  it('selects me, with no Unknown option, when the card is owned by this device id', () => {
+    const { store, app, card } = setup('editor', { deviceId: 'dev-1' });
+    store.transact(() => store.update(card, { ownerId: 'dev-1', ownerName: 'Visual QA' }));
+    open(app, card);
+    const owner = byLabel('Owner');
+    expect(owner.value).toBe('id:me');
+    expect(owner.querySelectorAll('option').map((o) => textOf(o))).toEqual(['No owner', 'Visual QA (you)', 'Marta Ruiz', 'Someone else…']);
+  });
+
+  it('keeps showing the same card owner by name in open mode, where there are no accounts', () => {
+    const { store, app, card } = setup();
+    setGone(store, card);
+    open(app, card);
+    const owner = byLabel('Owner');
+    const options = owner.querySelectorAll('option');
+    expect(owner.value).toBe('id:usr_gone');
+    expect(options.filter((o) => o.value === 'id:usr_gone').map((o) => textOf(o))).toEqual(['Gone']);
+    expect(options.map((o) => textOf(o))).not.toContain('Unknown');
   });
 });
 

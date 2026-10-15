@@ -55,6 +55,11 @@ export class CardInput {
     return this.lane;
   }
 
+  /** The input's box, hint included: an in-place editor the board's gestures belong to while it is open (src/zoom-keys.ts). */
+  get element(): HTMLElement {
+    return this.wrap;
+  }
+
   /** Opens the input at the end of a lane. */
   start(laneId: Id) {
     const { app } = this;

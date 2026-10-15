@@ -56,6 +56,8 @@ import { createPresenceRegistry } from './presence.mjs';
 import { createTrackerProjectionWorker, reconcileTrackerProjection, retryTrackerProjectionOnRoomLoad } from './tracker/projection.mjs';
 import { changedObjectIds, createTrackerGuard } from './tracker/guard.mjs';
 import { createCardDue } from './card-due.mjs';
+import { createPreviewStore } from './preview-store.mjs';
+import { observePreviewChanges } from './preview-rev.mjs';
 import { createTrackerSocketBudget } from './tracker/socket-budget.mjs';
 import { KEY_FLOOR_CHANGED_EVENT, createKeyFloorReporter } from './tracker/key-floor.mjs';
 import { trackerGateState } from './tracker/gate.mjs';
@@ -186,6 +188,10 @@ const log = (...a) => {
   if (process.env.QUIET !== '1') console.log(new Date().toISOString(), ...a);
 };
 
+const previewStore = config.previews === true && config.authEnabled
+  ? createPreviewStore({ dataDir: DATA_DIR, now: Date.now, maxBytes: config.previewsMaxBytes, log })
+  : null;
+
 // TABULA_SYNC_VALIDATE=off|report|enforce (default report: counts, blocks nothing; off is the explicit switch), read once: a bad value stops the server at startup.
 const syncGuard = createSyncGuard({ mode: syncValidateMode(process.env), log });
 
@@ -248,7 +254,7 @@ let volumeAdopted = false;
 // failed step stops the start, nothing half adopted is served.
 function settleVolume(dir) {
   try {
-    volumeAdopted = applyVolume({ dataDir: DATA_DIR, plan: volumePlan, directory: dir, log });
+    volumeAdopted = applyVolume({ dataDir: DATA_DIR, plan: volumePlan, directory: dir, log, clearPreviews: () => previewStore?.clear() });
   } catch (err) {
     console.error(err instanceof VolumeError ? err.message : `Adopting this volume failed (${err?.code ?? err?.message ?? 'error'}), so the server will not start.`);
     dir?.close();
@@ -438,6 +444,16 @@ if (config.authEnabled) {
     }).catch((err) => log('card reminders: boot backfill failed', err?.message));
   }
   settleVolume(directory);
+  if (previewStore) {
+    const sweepPreviews = () => {
+      void previewStore.sweep((id) => {
+        const board = directory.getBoard(id);
+        return !!board && board.deletedAt == null;
+      }).catch(() => {});
+    };
+    sweepPreviews();
+    setInterval(sweepPreviews, 60 * 60 * 1000).unref();
+  }
   if (config.joinCodes) {
     const { createJoinCodeService, loadJoinCodeSecret } = await import('./join-codes.mjs');
     joinCodeService = createJoinCodeService({ directory, secret: loadJoinCodeSecret(DATA_DIR) });
@@ -577,7 +593,7 @@ const restore = createRestore({
   config: backupConfig,
   dataDir: DATA_DIR,
   log,
-  hooks: { saveRooms: saveAllRooms, enterMaintenance },
+  hooks: { saveRooms: saveAllRooms, enterMaintenance, clearPreviews: () => previewStore?.clear() },
   exit: (code) => process.exit(code),
   // not documented: the relay tests keep the process in maintenance mode for a while after the answer, to look at it
   exitDelayMs: Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) > 0 ? Number(process.env.TABULA_TEST_RESTORE_EXIT_DELAY_MS) : 0,
@@ -634,7 +650,7 @@ const openLinks = !directory && config.linkPreviews?.forced === 'on' ? createOpe
 
 if (buildApi) {
   // canWriteRoom is hoisted; roomAccess is a const further down, so it is reached through a function (like liveStats)
-  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, activity, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, notificationDigest, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, roomAccess: {
+  api = buildApi({ directory, auth, config, roomExists, events, liveStats, cloud, history, activity, backupStatus, mailer, volumeStatus: () => volumeReport(volumePlan.marker, STARTED_AT), startedAt: STARTED_AT, onChange: () => backup?.noteChange(), restore, maintenance: () => maintenance, ai: { canWriteRoom, readRoom: (name, fn) => roomAccess.read(name, fn), live: aiLive }, assets, chat, notifications: notificationStore, notificationDigest, boardPresence: boardPresenceFor, joinCodeService, snapshotBarrier, backupConfig, keyFloorReporter, dataDir: DATA_DIR, log, previewStore, roomAccess: {
     read: (name, fn) => roomAccess.read(name, fn),
     write: (name, origin, fn, context) => roomAccess.write(name, origin, fn, context),
     invalidateTracker: (boardId) => trackerGuard?.invalidate(boardId),
@@ -704,6 +720,7 @@ async function enterMaintenance() {
     room.unloadTimer = null;
     room.trackerGuardTimer = null;
     room.presenceTimer = null;
+    room.stopPreviewObserver?.();
     room.doc.destroy();
   }
   rooms.clear();
@@ -750,6 +767,10 @@ class Room {
       this.doc.destroy();
       throw err;
     }
+    // Persisted Yjs state is loaded above. Attaching after it avoids treating the initial decode as a new edit.
+    this.stopPreviewObserver = this.kind === 'board' && previewStore
+      ? observePreviewChanges(this.doc, this.name, { unlink: (id) => previewStore.unlink(id), now: Date.now, log })
+      : null;
     this.awareness = new awarenessProtocol.Awareness(this.doc);
     this.awareness.setLocalState(null);
     if (this.kind === 'board' && cardDue) {
@@ -1100,6 +1121,7 @@ class Room {
         this.agentTimer = null;
         if (this.kind === 'board') trackerGuard?.clearTitles(this.name);
         if (this.kind === 'board') cardDue?.forget(this.name);
+        this.stopPreviewObserver?.();
         this.doc.destroy();
         rooms.delete(this.name);
         if (this.kind === 'board') aiLive.dropBoard(this.name);

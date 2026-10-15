@@ -2,6 +2,7 @@ import './tracker.css';
 import { h } from '../../ui/dom';
 import { actorBadgeGlyph, actorLabel, type ActorBadgeKind } from './glyphs';
 import { ticketChipText } from './keys-util';
+import { wordInitials } from '../../../shared/initials';
 
 export function keyChip(key: string): HTMLElement {
   const display = ticketChipText(key);
@@ -31,11 +32,6 @@ export type AvatarActor =
   | { kind: 'person'; name: string; imageUrl?: string | null }
   | { kind: ActorBadgeKind; name?: string };
 
-function initials(name: string): string {
-  const words = name.trim().split(/\s+/u).filter(Boolean);
-  return words.slice(0, 2).map((word) => Array.from(word)[0] ?? '').join('').toLocaleUpperCase();
-}
-
 export function avatar(actor: AvatarActor): HTMLElement {
   if (actor.kind !== 'person') {
     return h('span', { class: 'trk-actor-badge', 'aria-label': actor.name ?? actorLabel(actor.kind) },
@@ -48,7 +44,7 @@ export function avatar(actor: AvatarActor): HTMLElement {
       h('img', { src: actor.imageUrl, alt: '', 'aria-hidden': 'true' }),
     );
   }
-  return h('span', { class: 'trk-avatar', 'aria-label': actor.name }, initials(actor.name) || '?');
+  return h('span', { class: 'trk-avatar', 'aria-label': actor.name }, wordInitials(actor.name) || '?');
 }
 
 function parseTrackerDate(value: string | number | Date): Date | null {

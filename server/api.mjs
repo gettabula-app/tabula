@@ -26,7 +26,8 @@ import { RESTORE_STATUS, RestoreError } from './restore.mjs';
 import { AssetError, readBytes } from './assets.mjs';
 import { isRevealed, previewSourceOf, readAll } from './board-ops.mjs';
 import { MAX_PREVIEW_BYTES, validatePreviewImage } from './preview-image.mjs';
-import { createDevPreviewStore } from './preview-store.mjs';
+import { createPreviewStore } from './preview-store.mjs';
+import { get as getPreviewRevision } from './preview-rev.mjs';
 import { LinkRouteError, createLinkUnfurl } from './link-routes.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
@@ -58,7 +59,7 @@ const DRAIN_LIMIT = 2 * TEMPLATE_BODY_LIMIT;
 const INVITE_EXHAUSTED = 'This invitation has been used up. Ask the person who invited you for a new link.';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_PREVIEW_OBJECTS = 5000;
-const MAX_PREVIEW_DAILY_BYTES = 20 * 1024 * 1024;
+const MAX_PREVIEW_DAILY_BYTES = 200 * 1024 * 1024;
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
@@ -249,7 +250,7 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, notificationDigest = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, notificationDigest = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null, previewStore: suppliedPreviewStore = null }) {
   /** Who last edited a board, as the card shows it: a person's current name (looked up now), "A former member" once they are gone or disabled, or an agent's token name. */
   const editorLabel = (b) => {
     if (b?.lastEditedKind === 'agent') return typeof b.lastEditedBy === 'string' ? b.lastEditedBy : null;
@@ -258,7 +259,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     if (!person || person.disabled) return EDITOR_FALLBACK;
     return [...String(person.name ?? '').replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()].slice(0, 40).join('') || EDITOR_FALLBACK;
   };
-  const previewStore = config.previewDev === true ? createDevPreviewStore({ dataDir, now }) : null;
+  const previewStore = config.previews === true
+    ? suppliedPreviewStore ?? createPreviewStore({ dataDir, now, maxBytes: config.previewsMaxBytes, log })
+    : null;
+  // The owner's "no picture for this board" choice (kept in settings, so a cache wipe never undoes it)
+  const boardPreviewOff = (boardId) => directory.getSetting(`boardPreview.off.${boardId}`) === '1';
+  const boardPreviewsEnabled = () => config.previews === true && directory.getSetting('boardPreviews.enabled') !== '0';
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -1261,6 +1267,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,
       ...(assets ? { images: true } : {}),
+      ...(boardPreviewsEnabled() ? { boardPreviews: true } : {}),
       ...(config.joinCodes ? { joinCodes: true } : {}),
     }]),
 
@@ -1279,6 +1286,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         mcpOauth: config.mcp?.oauth === true,
         ...(assets ? { images: true } : {}),
         ...(linkUnfurl.enabled() ? { linkPreviews: true } : {}),
+        ...(boardPreviewsEnabled() ? { boardPreviews: true } : {}),
         ...(chatOn ? { chat: true } : {}),
         ...(notificationStore ? { notifications: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
@@ -1331,6 +1339,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       auth.logout(sessionId);
       audit(user, 'auth.logout', {});
       res.setHeader('set-cookie', auth.clearCookie());
+      res.setHeader('clear-site-data', '"cache"');
       emit('session-revoked', { userId: user.id, sessionId });
       return [204];
     }),
@@ -1343,6 +1352,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, 'auth.logout_all', {});
       });
       res.setHeader('set-cookie', auth.clearCookie());
+      res.setHeader('clear-site-data', '"cache"');
       emit('session-revoked', { userId: user.id });
       return [204];
     }),
@@ -1578,6 +1588,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         directory.deleteBoard(board.id);
         audit(user, 'board.delete', { boardId: board.id });
       });
+      previewStore?.remove(board.id);
       emit('access-changed', { boardId: board.id });
       return [204];
     }),
@@ -1902,6 +1913,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, 'board.restore', { boardId: board.id });
         return directory.getBoardAdmin(board.id);
       });
+      previewStore?.remove(board.id);
       // admins who had it open while it was deleted may write again
       emit('access-changed', { boardId: board.id });
       return [200, { ...restored, role: directory.boardRole(board.id, user.id) }];
@@ -2262,10 +2274,12 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     ...(previewStore
       ? [
           compile('GET', 'boards/:id/preview-source', { cookieOnly: true }, ({ params, res, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
             res.setHeader('cache-control', 'private, no-store');
             res.setHeader('x-content-type-options', 'nosniff');
             const { role } = boardFor(user, params.id);
             if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can read a board preview source');
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
             chargePreviewAttempt([[previewSourceUserLimiter, user.id], [previewSourceBoardLimiter, params.id]], res);
             const source = roomAccess.read(params.id, (doc) => {
               const { boxes, connectors } = readAll(doc);
@@ -2273,13 +2287,18 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               return { objects: previewSourceOf([...boxes, ...connectors], revealed), revealed };
             });
             if (source.objects.length > MAX_PREVIEW_OBJECTS) throw new HttpError(413, 'too_large', 'This board has too many objects for a preview');
-            // A board that shows nothing to everyone must not keep an older picture of what used to be on it.
-            if (source.objects.length === 0 && previewStore.remove(params.id)) audit(user, 'board.preview.remove', { boardId: params.id, by: user.id, reason: 'empty' });
-            return [200, source];
+            return [200, { ...source, rev: getPreviewRevision(params.id) }];
           }),
           compile('PUT', 'boards/:id/preview', { cookieOnly: true }, ({ req, res, params, user }) => assetReply(async () => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
             requirePreviewWriter(user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
             chargePreviewAttempt([[previewUploadBoardLimiter, params.id], [previewUploadUserLimiter, user.id]], res);
+            const rawRevision = req.headers['x-preview-rev'];
+            const validRevision = typeof rawRevision === 'string' && /^\d{1,12}$/.test(rawRevision);
+            if (!validRevision || Number(rawRevision) !== getPreviewRevision(params.id)) {
+              throw new HttpError(409, 'preview_stale', 'The board changed while its preview was being prepared');
+            }
             const rawLength = req.headers['content-length'];
             if (typeof rawLength !== 'string' || !/^\d+$/.test(rawLength)) {
               throw new AssetError(411, 'length_required', 'Content-Length is required');
@@ -2300,17 +2319,27 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             if (current.setCookie) res.setHeader('set-cookie', current.setCookie);
             if (current.user.id !== user.id) throw new HttpError(401, 'unauthenticated', 'Sign in required');
             requirePreviewWriter(current.user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
 
             const image = validatePreviewImage(bytes, declaredType);
             if (!image.ok) throw new AssetError(400, 'invalid_image', 'The preview image is invalid');
+            if (Number(rawRevision) !== getPreviewRevision(params.id)) {
+              throw new HttpError(409, 'preview_stale', 'The board changed while its preview was being prepared');
+            }
             if (previewDailyFull(bytes.length)) throw new AssetError(429, 'rate_limited', 'Preview uploads are limited. Try again later.');
-            previewStore.put({ boardId: params.id, bytes, image, uploadedBy: current.user.id });
+            try {
+              previewStore.put({ boardId: params.id, bytes, image, uploadedBy: current.user.id });
+            } catch {
+              throw new HttpError(503, 'preview_unavailable', 'The preview could not be saved');
+            }
             previewDailyUploads.push({ at: now(), bytes: bytes.length });
             audit(current.user, 'board.preview.upload', { boardId: params.id, by: current.user.id, bytes: bytes.length });
             return [204];
           })),
           compile('GET', 'boards/:id/preview', { cookieOnly: true }, ({ req, params, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
             boardFor(user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
             const preview = previewStore.read(params.id);
             // older than 24 h without a fresh upload falls back to the schematic (cybersec's staleness rule)
             if (!preview || now() - preview.at > DAY_MS) throw notFound('Board not found');
@@ -2326,6 +2355,43 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             const matches = validators.includes('*') || validators.some((value) => (value.startsWith('W/') ? value.slice(2) : value) === preview.etag);
             if (matches) return [304, undefined, headers];
             return [200, preview.bytes, headers];
+          }),
+          compile('DELETE', 'boards/:id/preview', { cookieOnly: true }, ({ params, res, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            const board = directory.getBoard(params.id);
+            if (!board || board.deletedAt != null) throw notFound('Board not found');
+            const role = boardRoleFor(user, board.id);
+            if (user.guest === true || (!isAdmin(user) && role !== 'owner')) throw forbidden('Only the board owner or a workspace admin can remove a board preview');
+            previewStore.remove(board.id);
+            audit(user, 'board.preview.remove', { boardId: board.id, by: user.id, reason: 'manual' });
+            res.setHeader('clear-site-data', '"cache"');
+            return [204];
+          }),
+          compile('GET', 'boards/:id/preview-off', { cookieOnly: true }, ({ params, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            const board = directory.getBoard(params.id);
+            if (!board || board.deletedAt != null) throw notFound('Board not found');
+            const role = boardRoleFor(user, board.id);
+            if (user.guest === true || (!isAdmin(user) && role !== 'owner')) throw forbidden('Only the board owner or a workspace admin can change board previews');
+            return [200, { off: boardPreviewOff(board.id) }];
+          }),
+          compile('PUT', 'boards/:id/preview-off', { cookieOnly: true, body: true }, ({ params, user, body, res }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            const board = directory.getBoard(params.id);
+            if (!board || board.deletedAt != null) throw notFound('Board not found');
+            const role = boardRoleFor(user, board.id);
+            if (user.guest === true || (!isAdmin(user) && role !== 'owner')) throw forbidden('Only the board owner or a workspace admin can change board previews');
+            for (const key of Object.keys(body)) if (key !== 'off') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+            if (typeof body.off !== 'boolean') throw badRequest('off must be a boolean');
+            directory.transaction(() => {
+              directory.setSetting(`boardPreview.off.${board.id}`, body.off ? '1' : '0');
+              audit(user, body.off ? 'board.preview.off' : 'board.preview.on', { boardId: board.id, by: user.id });
+            });
+            if (body.off) {
+              previewStore.remove(board.id);
+              res.setHeader('clear-site-data', '"cache"');
+            }
+            return [200, { off: body.off }];
           }),
         ]
       : []),
@@ -2413,6 +2479,29 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, body.enabled ? 'linkPreviews.enabled' : 'linkPreviews.disabled', {});
       });
       return [200, linkUnfurl.state()];
+    }),
+    compile('GET', 'admin/board-previews', {}, ({ user }) => {
+      requireAdmin(user);
+      const setting = directory.getSetting('boardPreviews.enabled');
+      return [200, {
+        enabled: boardPreviewsEnabled(),
+        locked: config.previews !== true,
+        setting: setting === null ? null : setting === '1',
+      }];
+    }),
+    compile('PUT', 'admin/board-previews', { body: true }, ({ user, body }) => {
+      requireAdmin(user);
+      for (const key of Object.keys(body)) {
+        if (key !== 'enabled') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+      }
+      if (typeof body.enabled !== 'boolean') throw badRequest('enabled must be a boolean');
+      if (config.previews !== true) throw conflict('board_previews_locked', 'TABULA_PREVIEWS=0 turns board previews off for this server');
+      directory.transaction(() => {
+        directory.setSetting('boardPreviews.enabled', body.enabled ? '1' : '0');
+        audit(user, body.enabled ? 'boardPreviews.enabled' : 'boardPreviews.disabled', {});
+      });
+      const setting = directory.getSetting('boardPreviews.enabled');
+      return [200, { enabled: boardPreviewsEnabled(), locked: false, setting: setting === '1' }];
     }),
 
     // ---------------------------------------------------------- AI settings and keys (docs/ai.md)
