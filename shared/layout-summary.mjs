@@ -21,6 +21,16 @@ const MAX_CELLS = 256;
 const MIN_CELL = 16;
 const COARSE = 160;
 
+/**
+ * A rectangle grown outward to the absolute 160-unit grid (not relative to any content). The room taken by something the reader may
+ * not see is only ever known to this precision, so no free area, no position chosen for a new object and no "all content" edge can
+ * reveal where it exactly is.
+ */
+export function snapOutward(r, cell = COARSE) {
+  const x0 = Math.floor(r.x / cell) * cell, y0 = Math.floor(r.y / cell) * cell;
+  return { x: x0, y: y0, w: Math.ceil((r.x + r.w) / cell) * cell - x0, h: Math.ceil((r.y + r.h) / cell) * cell - y0 };
+}
+
 const usable = (r) => r && [r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w >= 0 && r.h >= 0;
 const round = (v) => Math.round(v);
 const hits = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

@@ -35,6 +35,8 @@ beforeAll(async () => {
     put(box('f-room-note', 3624, 56, 192, 192, { parent: 'f-room' }));
     // a private note of a running session: withheld from the reader until it is revealed
     put(box('private-note', 1000, 5000, 192, 192, { privateStep: 'step-1', text: 'my secret' }));
+    // a private note beyond the visible content at odd coordinates: its exact edges must not show anywhere (TAB-379, cybersec)
+    put(box('odd-note', 7037, 1013, 211, 187, { privateStep: 'step-1', text: 'odd secret' }));
     for (let i = 0; i < 12; i++) put(box(`k${i}`, 3624 + (i % 3) * 100, 806 + Math.floor(i / 3) * 40, 90, 30, { parent: 'f-tiny' }));
   }, 'local');
   await until(() => h.savedDoc(board).getMap('objects').has('k11'));
@@ -83,6 +85,29 @@ describe('get_board layout', () => {
   it('counts the withheld note as space: the room below all content starts past it', async () => {
     const below = (await getBoard()).data.layout.free.find((a: Body) => a.where === 'below all content');
     expect(below.y).toBeGreaterThanOrEqual(5000 + 192);
+  });
+
+  it('shows a withheld note only on the coarse grid: none of its exact edges appears in the layout', async () => {
+    const layout = JSON.stringify((await getBoard()).data.layout);
+    const numbers = new Set([...layout.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0])));
+    for (const edge of [7037, 7037 + 211, 1013, 1013 + 187, 1000 + 192, 5000 + 192, 5000]) expect({ edge, shown: numbers.has(edge) }).toMatchObject({ shown: false });
+    const right = (await getBoard()).data.layout.free.find((a: Body) => a.where === 'right of all content');
+    // the area starts 80 past the edge of all content, which is on the 160 grid because the note is the rightmost thing
+    expect((right.x - 80) % 160).toBe(0);
+    expect(right.x - 80).toBeGreaterThanOrEqual(7037 + 211);
+  });
+
+  it('chooses positions for new objects on the coarse grid beside a withheld note, not at its exact edge', async () => {
+    const made = await h.tool(token, 'create_objects', { boardId: board, objects: Array.from({ length: 40 }, (_, i) => ({ type: 'sticky', text: `probe ${i}`, w: 8, h: 8 })) });
+    expect(made.error).toBeUndefined();
+    const secrets = [{ x: 7037, y: 1013, w: 211, h: 187 }, { x: 1000, y: 5000, w: 192, h: 192 }];
+    for (const c of made.data.created) {
+      const o = { x: c.x, y: c.y, w: 8, h: 8 };
+      for (const s of secrets) {
+        expect(hits(o, s)).toBe(false);
+        for (const edge of [s.x + s.w, s.y + s.h]) expect([c.x - edge, c.y - edge]).not.toContain(24);
+      }
+    }
   });
 
   it('never names the withheld note or lists a hidden frame', async () => {

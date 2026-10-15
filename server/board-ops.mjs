@@ -13,7 +13,7 @@ import {
 import { cleanColor } from '../shared/colors.mjs';
 import { MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs.mjs';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
-import { frameInterior, placeBlock, summarizeLayout } from '../shared/layout-summary.mjs';
+import { frameInterior, placeBlock, snapOutward, summarizeLayout } from '../shared/layout-summary.mjs';
 import { DEFAULT_COL_WIDTH, MAX_CELL_CHARS, MAX_TABLE_CHARS, gridChars, isTableKey, MAX_TABLE_COLS, MAX_TABLE_ROWS, tableFromGrid, tableModel } from '../shared/tables.mjs';
 
 export const LIMITS = Object.freeze({
@@ -246,7 +246,8 @@ export function readAll(doc) {
     const o = { ...m.toJSON(), id };
     if (isWithheld(o, revealed)) {
       withheld.add(id);
-      withheldRects.push({ x: o.x, y: o.y, w: o.w, h: o.h });
+      // known only to the coarse grid, so the layout and the chosen positions cannot show where a private note exactly is
+      if ([o.x, o.y, o.w, o.h].every(Number.isFinite)) withheldRects.push(snapOutward(o));
     } else if (o.type === 'connector') connectors.push(o);
     else boxes.push(o);
   });

@@ -18,6 +18,7 @@ export const AREA: Readonly<{ right: Size; hole: Size; frame: Size }>;
 export const FRAME_PAD: Readonly<{ top: number; side: number; bottom: number }>;
 export const MAX: Readonly<{ frames: number; free: number; occupied: number; frameAreas: number }>;
 
+export function snapOutward(rect: Rect, cell?: number): Rect;
 export function boundsOf(rects: readonly Rect[]): Rect | null;
 export function frameInterior(frame: Rect): Rect;
 export function findSpot(solids: readonly Rect[], size: Size, options?: { region?: Rect | null; gap?: number }): { x: number; y: number } | null;
