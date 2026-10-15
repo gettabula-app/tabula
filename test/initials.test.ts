@@ -82,3 +82,26 @@ describe('without Intl.Segmenter', () => {
     }
   });
 });
+
+describe('no locale (TAB-361): one name, one initial for every viewer', () => {
+  it('draws "ilker" as "I" and "ilker ismail" as "II" under the default locale', () => {
+    expect(initialOf('ilker')).toBe('I');
+    expect(wordInitials('ilker ismail')).toBe('II');
+  });
+
+  it('never asks a locale for its upper case, even where a Turkish locale would give a dotted capital', () => {
+    // The stub is Turkish-style: i becomes İ (U+0130) before plain upper-casing. It does not call toLocaleUpperCase itself.
+    const turkish = vi.spyOn(String.prototype, 'toLocaleUpperCase')
+      .mockImplementation(function (this: string) { return String(this).replace(/i/gu, 'İ').toUpperCase(); });
+    try {
+      expect('i'.toLocaleUpperCase()).toBe('İ'); // the stub is live, so a helper that used it would print İ
+      turkish.mockClear();
+      expect(initialOf('ilker')).toBe('I');
+      expect(wordInitials('ilker ismail')).toBe('II');
+      expect(firstLastInitials('ilker ismail')).toBe('II');
+      expect(turkish).not.toHaveBeenCalled();
+    } finally {
+      turkish.mockRestore();
+    }
+  });
+});

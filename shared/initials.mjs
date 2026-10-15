@@ -2,7 +2,8 @@
 // draws as a broken glyph, and an emoji with a skin tone, a ZWJ sequence or a flag is several code points. So a name is
 // cut into user-perceived characters (grapheme clusters): "🦊 Fox" starts with "🦊", "👩‍💻 Dev" with "👩‍💻", "🇸🇪 Sweden" with
 // "🇸🇪". Shared by the browser and the server, so both draw the same initials. Where Intl.Segmenter is missing the cut
-// falls back to code points, which still keeps every surrogate pair whole.
+// falls back to code points, which still keeps every surrogate pair whole. Upper case is plain toUpperCase(), with no
+// locale: a viewer's locale must not change a person's initial ("ilker" is "I" for everyone, not the Turkish "İ").
 
 const segmenter = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
   ? new Intl.Segmenter('und', { granularity: 'grapheme' })
@@ -21,18 +22,18 @@ export function firstGrapheme(text) {
 
 /** The initial a name is drawn with: its first character, upper case; '?' when the name is blank. */
 export function initialOf(name) {
-  return firstGrapheme(String(name ?? '').trim()).toLocaleUpperCase() || '?';
+  return firstGrapheme(String(name ?? '').trim()).toUpperCase() || '?';
 }
 
 const wordsOf = (name) => String(name ?? '').trim().split(/\s+/u).filter(Boolean);
 
 /** The initials of the first two words: "Ana Lima Souza" gives "AL", "ben" gives "B"; '' when the name is blank. */
 export function wordInitials(name) {
-  return wordsOf(name).slice(0, 2).map(firstGrapheme).join('').toLocaleUpperCase();
+  return wordsOf(name).slice(0, 2).map(firstGrapheme).join('').toUpperCase();
 }
 
 /** The initials of the first and the last word: "Ana Lima Souza" gives "AS", "ben" gives "B"; '' when the name is blank. */
 export function firstLastInitials(name) {
   const words = wordsOf(name);
-  return (words.length > 1 ? [words[0], words.at(-1)] : words).map(firstGrapheme).join('').toLocaleUpperCase();
+  return (words.length > 1 ? [words[0], words.at(-1)] : words).map(firstGrapheme).join('').toUpperCase();
 }
