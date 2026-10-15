@@ -185,7 +185,7 @@ input[type='checkbox']:disabled, input[type='radio']:disabled, input[role='switc
 button { cursor: pointer; }
 button:disabled { opacity: 0.4; cursor: default; }
 :focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
-:is(input:not(.board-menu-search-input):not([type='checkbox']):not([type='radio']):not([type='color']):not([type='file']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']):not([type='range']):not([aria-invalid='true']):not(.error), select:not([aria-invalid='true']):not(.error), textarea:not(.text-editor):not([aria-invalid='true']):not(.error), .combo:not([aria-invalid='true']):not(.error)):focus-visible {
+:is(input:not(.board-menu-search-input):not(.template-picker-search-input):not([type='checkbox']):not([type='radio']):not([type='color']):not([type='file']):not([type='hidden']):not([type='button']):not([type='submit']):not([type='reset']):not([type='range']):not([aria-invalid='true']):not(.error), select:not([aria-invalid='true']):not(.error), textarea:not(.text-editor):not([aria-invalid='true']):not(.error), .combo:not([aria-invalid='true']):not(.error)):focus-visible {
   outline: 2px solid var(--tray-text); outline-offset: 2px; box-shadow: none;
 }
 /* the attribute must win over any display a class sets (a hidden .btn stayed visible) */
@@ -1136,6 +1136,10 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
     outline: 2px solid Highlight !important;
     outline-offset: 1px !important;
   }
+  /* a field with a wrapper carries the one ring on the wrapper (below); the input inside shows none */
+  .board-menu-search-input.input:focus, .board-menu-search-input.input:focus-visible,
+  .template-picker-search-input.input:focus, .template-picker-search-input.input:focus-visible { outline: none !important; }
+  .template-picker-search:focus-within { outline: 2px solid Highlight; outline-offset: 1px; }
   /* the code block is edited in place: the block's selection outline is the focus, not a field ring */
   .text-editor[data-kind='code']:focus, .text-editor[data-kind='code']:focus-visible { outline: none !important; }
 }
