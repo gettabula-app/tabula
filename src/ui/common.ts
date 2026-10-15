@@ -3,7 +3,7 @@ import { focusFirst, focusIsIn, inertPage, restoreFocus, rovingRadios, trapTab }
 import { placeBesideAnchor } from './popover-place';
 import { safeInsets } from './safe-area';
 import { placePopover } from './popover-layout';
-import { SEG_GAP, SEG_PAD, projectTarget, releaseVelocity, resumeFrom, segmentOffset, segmentWidth, type PickRecord } from './segmented-logic';
+import { projectTarget, releaseVelocity, resumeFrom, type PickRecord } from './segmented-logic';
 
 /** The height of what is visible: the soft keyboard shrinks the visual viewport but not the window. */
 const visibleHeight = () => Math.min(window.innerHeight, window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight);
@@ -231,11 +231,10 @@ export function swatches(colors: { name: string; value: string }[], current: str
 /** A pointer drag of the segmented marker: px values are physical (left is positive) and relative to the page. */
 type SegDrag = {
   id: number; startX: number; grab: number; rest: number; threshold: number; active: boolean;
-  rtl: boolean; lo: number; hi: number; from: number; samples: { t: number; x: number }[];
+  lo: number; hi: number; from: number; samples: { t: number; x: number }[];
 };
 
 const clampTo = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const isRtl = (el: HTMLElement) => el.isConnected && window.getComputedStyle?.(el)?.direction === 'rtl';
 
 /** The element's current translateX in px, read from its computed transform (a running slide gives its in-between value). */
 const translateXOf = (el: HTMLElement) => {
@@ -266,9 +265,19 @@ export function segmented<T extends string | number>(options: { value: T; label:
     row.classList.add(kind);
     motionTimer = window.setTimeout(() => row.classList.remove(kind), kind === 'sail' ? 240 : 220);
   };
+  // The marker is the selected button's own box, measured (offsetLeft/offsetWidth are physical, so rtl and buttons of unequal widths need nothing special).
+  // It is measured again whenever the row or a button changes size: fonts loading, a resize, a label change, the row entering the page.
+  let shown = -1;
+  const measure = () => {
+    const b = buttons[shown];
+    if (!b || !row.isConnected) return;
+    row.style.setProperty('--seg-x', `${b.offsetLeft}px`);
+    row.style.setProperty('--seg-w', `${b.offsetWidth}px`);
+  };
   const place = (index: number) => {
+    shown = index;
     row.style.setProperty('--seg-i', String(index));
-    row.style.setProperty('--seg-dir', isRtl(row) ? '-1' : '1');
+    measure();
   };
 
   for (const o of options) {
@@ -295,13 +304,12 @@ export function segmented<T extends string | number>(options: { value: T; label:
     buttons.push(b);
     row.appendChild(b);
   }
-  row.style.setProperty('--seg-n', String(options.length));
   const currentIndex = options.findIndex((o) => o.value === current);
   // a control rebuilt on a pointer pick starts its marker where the pick left it, then slides to the new segment
   const resumed = typeof window.requestAnimationFrame === 'function' ? resumeFrom(lastPick.get(label), clock(), currentIndex) : null;
   if (resumed !== null) lastPick.delete(label); // one slide per pick: a second rebuild inside the window stays put
-  row.style.setProperty('--seg-i', String(resumed ?? currentIndex));
-  row.style.setProperty('--seg-dir', '1');
+  shown = resumed ?? currentIndex;
+  row.style.setProperty('--seg-i', String(shown));
 
   // an ellipsized text label gets its full text as the tooltip; icon options keep the label they were given as data-tip
   const syncTips = () => {
@@ -314,11 +322,13 @@ export function segmented<T extends string | number>(options: { value: T; label:
   };
 
   // the row is not in the page yet, so its direction and its labels are read once it is
-  window.requestAnimationFrame?.(() => {
-    row.style.setProperty('--seg-dir', isRtl(row) ? '-1' : '1');
-    syncTips();
-  });
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(syncTips).observe(row);
+  window.requestAnimationFrame?.(() => { measure(); syncTips(); });
+  if (typeof ResizeObserver !== 'undefined') {
+    const watch = new ResizeObserver(() => { measure(); syncTips(); });
+    watch.observe(row);
+    for (const b of buttons) watch.observe(b);
+  }
+  void document.fonts?.ready.then(measure);
 
   if (resumed !== null) {
     window.requestAnimationFrame?.(() => {
@@ -347,13 +357,13 @@ export function segmented<T extends string | number>(options: { value: T; label:
       marker.style.transform = `translateX(${tx}px)`;
     }
     const left = marker.getBoundingClientRect().left;
-    const rtl = isRtl(row);
-    const seg = segmentWidth(row.getBoundingClientRect().width, buttons.length, SEG_GAP, SEG_PAD);
-    const far = segmentOffset(buttons.length - 1, seg, SEG_GAP, rtl);
+    // the marker travels from the first button's left edge to the last button's right edge, px from the row's left edge
+    const lo = Math.min(...buttons.map((b) => b.offsetLeft));
+    const hi = Math.max(lo, Math.max(...buttons.map((b) => b.offsetLeft + b.offsetWidth)) - marker.offsetWidth);
     drag = {
       id: e.pointerId, startX: e.clientX, grab: e.clientX - left, rest: left - tx,
-      threshold: e.pointerType === 'touch' ? 8 : 4, active: false, rtl,
-      lo: Math.min(0, far), hi: Math.max(0, far), from, samples: [{ t: e.timeStamp, x: e.clientX }],
+      threshold: e.pointerType === 'touch' ? 8 : 4, active: false,
+      lo, hi, from, samples: [{ t: e.timeStamp, x: e.clientX }],
     };
   });
 
@@ -387,7 +397,7 @@ export function segmented<T extends string | number>(options: { value: T; label:
     const box = row.getBoundingClientRect();
     // the snap follows the marker's centre, not the pointer, so a grab near one edge does not delay it
     const centreX = e.clientX - d.grab + marker.offsetWidth / 2 - box.left;
-    const idx = projectTarget(centreX, releaseVelocity(d.samples, e.timeStamp), box.width, buttons.length, SEG_GAP, SEG_PAD, d.rtl);
+    const idx = projectTarget(centreX, releaseVelocity(d.samples, e.timeStamp), buttons.map((b) => b.offsetLeft + b.offsetWidth / 2));
     // the click handler moves --seg-i and the .on state, then onPick runs
     if (idx !== d.from) buttons[idx].click();
     marker.style.transform = '';

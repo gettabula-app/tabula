@@ -81,6 +81,7 @@ describe('tracker primitive chips and times', () => {
   it('renders initials for people and named square badges for non-person actors', () => {
     browser = installTrackerUiBrowser();
     expect(avatar({ kind: 'person', name: 'Maya Chen' }).textContent).toBe('MC');
+    expect(avatar({ kind: 'person', name: '\u{1F98A} Fox' }).textContent).toBe('\u{1F98A}F');
     expect(avatar({ kind: 'agent' }).getAttribute('aria-label')).toBe('Agent');
     expect(avatar({ kind: 'github' }).getAttribute('aria-label')).toBe('GitHub');
     expect(avatar({ kind: 'import' }).getAttribute('aria-label')).toBe('Import');

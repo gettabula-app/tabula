@@ -202,6 +202,8 @@ describe('initials', () => {
     expect(initials('ana maria novak')).toBe('AN');
     expect(initials('Lea')).toBe('L');
     expect(initials('  ')).toBe('?');
+    expect(initials('\u{1F98A} Fox')).toBe('\u{1F98A}F');
+    expect(initials('Ana \u{1F469}‍\u{1F4BB}')).toBe('A\u{1F469}‍\u{1F4BB}');
   });
 });
 
@@ -287,6 +289,15 @@ describe('owner picker', () => {
       ['id:me', 'Visual QA'], ['id:u3', 'Ana Novak'], ['name:Lea Brandt', 'Lea Brandt'], ['id:u2', 'Marta Ruiz'],
     ]);
     expect(opts[0].me).toBe(true);
+  });
+  it('in accounts mode offers only me and the signed-in people here: no guests, no ids from earlier cards', () => {
+    const opts = ownerOptions(
+      { id: 'usr_me', name: 'Lea' },
+      [{ id: 'usr_ben', name: 'Ben' }, { id: 'g1', name: 'Visitor', guest: true }],
+      [{ ownerId: 'usr_gone', ownerName: 'Gone' }, { ownerId: 'dev-1', ownerName: 'Old device' }, { ownerName: 'Free Name' }],
+      { deviceId: 'dev-0' },
+    );
+    expect(opts.map((o) => o.key)).toEqual(['id:usr_me', 'id:usr_ben', 'name:Free Name']);
   });
   it('names the current owner by id, else by name', () => {
     expect(ownerKey({ ownerId: 'u1', ownerName: 'A' })).toBe('id:u1');
