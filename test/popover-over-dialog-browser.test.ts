@@ -152,12 +152,40 @@ describe.skipIf(!available)('popovers opened from a dialog', { timeout: 240_000 
     await page.context().close();
   });
 
+  it('keeps focus inside the picker when the font catalogue arrives late, with a row focused', async () => {
+    const page = await openBoard();
+    // a slow (here: delayed) Fontshare answer: the picker builds its list again after the keyboard user is already in it
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    await page.route('https://api.fontshare.com/**', async (route) => {
+      await gate;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ fonts: [], has_more: false }) }).catch(() => undefined);
+    });
+    await openBoardSettings(page);
+    await openFontPicker(page, 'Heading font');
+    await page.keyboard.press('Tab'); // out of the search field, onto a row
+    await page.keyboard.press('Tab');
+    const before = await page.evaluate(() => !!document.activeElement?.closest('.popover'));
+    expect(before).toBe(true);
+    release(); // the catalogue arrives now, with the keyboard user inside the picker
+    await page.waitForTimeout(1500);
+    expect(await page.evaluate(() => !!document.activeElement?.closest('.popover'))).toBe(true);
+    await page.context().close();
+  });
+
   it('Tab and Shift+Tab stay inside the picker, across its last and first controls', async () => {
     const page = await openBoard();
     await openBoardSettings(page);
     await openFontPicker(page, 'Heading font');
+    // the picker builds its list again when the font catalogue arrives (late on a slow machine): count the controls only once that is done
+    let controls = -1;
+    await expect.poll(async () => {
+      const now = await page.locator(`${FONT_POPOVER} button, ${FONT_POPOVER} input`).count();
+      const settled = now === controls;
+      controls = now;
+      return settled && now > 5;
+    }, { timeout: 30_000, interval: 400 }).toBe(true);
     // more presses than there are controls, so Tab has to wrap from the last row back to the search field
-    const controls = await page.locator(`${FONT_POPOVER} button, ${FONT_POPOVER} input`).count();
     const presses = controls + 3;
     const focusTrail = async () => page.evaluate(() => {
       const a = document.activeElement;
