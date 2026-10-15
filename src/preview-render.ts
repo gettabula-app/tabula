@@ -170,14 +170,97 @@ const MAGIC: Record<string, (b: Uint8Array) => boolean> = {
   'image/webp': (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45,
 };
 
+/** The longest side an embedded image is drawn at: the picture frame is 480 x 300, so a larger image is never shown larger. */
+export const IMAGE_MAX_SIDE = 480;
+/** What an embedded image may weigh after it is shrunk. Three full ones stay far under the picture's source limit. */
+export const IMAGE_SHRUNK_MAX_BYTES = 150_000;
+/** The encoder quality of a shrunk image. */
+export const IMAGE_SHRINK_QUALITY = 0.7;
+
+export interface ShrunkImage { bytes: Uint8Array; type: string }
+/** Re-encodes an image at most IMAGE_MAX_SIDE across. Null when it cannot be done: the image is then left out. */
+export type ImageShrink = (bytes: Uint8Array, type: string) => Promise<ShrunkImage | null>;
+
 export interface ImageEmbedOptions {
   /** Milliseconds for all the images together. */
   budgetMs?: number;
   /** Most images a picture draws; the rest are placeholders. */
   maxImages?: number;
-  /** Bytes per image. */
+  /** Bytes per image as the asset route sends it. */
   maxBytes?: number;
   now?: () => number;
+  /** Re-encodes each image before it is embedded (strips its metadata too). The default draws it through a canvas in the browser. */
+  shrink?: ImageShrink;
+}
+
+/**
+ * The body of a response, read at most `maxBytes` long; null when it is longer, or when there is no body. The stream is read and stopped at
+ * the cap, so a body that lies about its length (or has none) cannot get past it.
+ */
+export async function readCappedBody(res: Response, maxBytes: number): Promise<Uint8Array | null> {
+  const reader = res.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out;
+}
+
+/**
+ * The browser's shrink: the image decoded, drawn at most IMAGE_MAX_SIDE across on white, and encoded as WebP, else JPEG, at quality 0.7.
+ * Null when no canvas can draw it, or neither encoding comes out under IMAGE_SHRUNK_MAX_BYTES (Safari has no WebP encoder: PNG is refused).
+ */
+export async function shrinkInBrowser(bytes: Uint8Array, type: string): Promise<ShrunkImage | null> {
+  if (typeof document === 'undefined' || typeof createImageBitmap !== 'function') return null;
+  let source: ImageBitmap;
+  try {
+    source = await createImageBitmap(new Blob([bytes as BlobPart], { type }));
+  } catch {
+    return null;
+  }
+  try {
+    const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(source.width, source.height));
+    const width = Math.max(1, Math.round(source.width * scale));
+    const height = Math.max(1, Math.round(source.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(source, 0, 0, width, height);
+    for (const encoding of ['image/webp', 'image/jpeg']) {
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, encoding, IMAGE_SHRINK_QUALITY));
+      if (blob && blob.type === encoding && blob.size <= IMAGE_SHRUNK_MAX_BYTES) {
+        return { bytes: new Uint8Array(await blob.arrayBuffer()), type: encoding };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    source.close();
+  }
 }
 
 /**
@@ -194,6 +277,7 @@ export async function embedImages(
   const budget = opts.budgetMs ?? 5000;
   const maxImages = opts.maxImages ?? 10;
   const maxBytes = opts.maxBytes ?? 1_048_576;
+  const shrink = opts.shrink ?? shrinkInBrowser;
   const now = opts.now ?? Date.now;
   const out = new Map<Id, string>();
   const candidates = objects.filter((o) => o.type === 'image'
@@ -224,14 +308,13 @@ export async function embedImages(
       if (declared !== type) continue;
       const length = Number(res.headers.get('content-length') ?? 0);
       if (length > maxBytes) continue;
-      let bytes: Uint8Array;
-      try {
-        bytes = new Uint8Array(await res.arrayBuffer());
-      } catch {
-        continue;
-      }
-      if (bytes.length === 0 || bytes.length > maxBytes || !MAGIC[type]!(bytes)) continue;
-      const url = `data:${type};base64,${base64(bytes)}`;
+      // the declared length is not trusted: the body is streamed and stopped at the cap
+      const bytes = await readCappedBody(res, maxBytes);
+      if (!bytes || bytes.length === 0 || !MAGIC[type]!(bytes)) continue;
+      const shrunk = await shrink(bytes, type).catch(() => null);
+      const check = shrunk && Object.hasOwn(MAGIC, shrunk.type) ? MAGIC[shrunk.type] : undefined;
+      if (!shrunk || shrunk.bytes.length === 0 || shrunk.bytes.length > IMAGE_SHRUNK_MAX_BYTES || !check || !check(shrunk.bytes)) continue;
+      const url = `data:${shrunk.type};base64,${base64(shrunk.bytes)}`;
       for (const id of ids) out.set(id, url);
     }
   } finally {

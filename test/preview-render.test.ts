@@ -142,10 +142,80 @@ describe('the image loader: the same origin, the cookie, and nothing else', () =
   const response = (bytes: Uint8Array, type = 'image/png', extra: Record<string, string> = {}) =>
     new Response(bytes.slice(), { status: 200, headers: { 'content-type': type, 'content-length': String(bytes.length), ...extra } });
 
+  /** The shrink of these tests returns the image as it came: the loader's own checks are what is under test here. */
+  const KEEP = { shrink: async (bytes: Uint8Array, type: string) => ({ bytes, type }) };
+  /** A body that never ends: each pull adds `chunk` bytes, and cancel() is counted. */
+  function endlessBody(chunk = 100) {
+    let pulls = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(chunk).fill(1));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    return { body, pulls: () => pulls, cancelled: () => cancelled };
+  }
+
+  it('a body that lies about its length is stopped at the cap: the declared size is not the limit', async () => {
+    const big = new Response(new Blob([new Uint8Array(3000)]), { headers: { 'content-type': 'image/png', 'content-length': '40' } });
+    const { fn } = sameOriginFetch(() => big);
+    const out = await embedImages([image('a', HASH)], BOARD, fn, { maxBytes: 1000, ...KEEP });
+    expect(out.size).toBe(0);
+  });
+
+  it('an endless stream is cancelled once it passes the cap, and nothing is read past it', async () => {
+    const endless = endlessBody(100);
+    const { fn } = sameOriginFetch(() => new Response(endless.body, { headers: { 'content-type': 'image/png' } }));
+    const out = await embedImages([image('a', HASH)], BOARD, fn, { maxBytes: 1000, ...KEEP });
+    expect(out.size).toBe(0);
+    expect(endless.cancelled()).toBe(true);
+    expect(endless.pulls()).toBeLessThanOrEqual(12);
+  });
+
+  it('readCappedBody returns the whole body under the cap, and null for a missing body or one over it', async () => {
+    const { readCappedBody } = await import('../src/preview-render');
+    const bytes = png(60);
+    expect(await readCappedBody(response(bytes), 1000)).toEqual(bytes);
+    expect(await readCappedBody(new Response(null), 1000)).toBeNull();
+    expect(await readCappedBody(new Response(new Uint8Array(2000)), 1000)).toBeNull();
+  });
+
+  it('every image is handed to the shrink as the bytes the server sent, and an image the shrink cannot make is left out', async () => {
+    const seen: string[] = [];
+    const { fn } = sameOriginFetch(() => response(png()));
+    const out = await embedImages([image('a', HASH)], BOARD, fn, {
+      shrink: async (bytes, type) => { seen.push(`${type}:${bytes.length}`); return null; },
+    });
+    expect(seen).toEqual(['image/png:40']);
+    expect(out.size).toBe(0);
+  });
+
+  it('a shrunk image over the shrunk cap, or in a type the picture does not take, is left out', async () => {
+    const { fn } = sameOriginFetch(() => response(png()));
+    const jpegOverCap = new Uint8Array(200_000);
+    jpegOverCap[0] = 0xff;
+    jpegOverCap[1] = 0xd8;
+    const huge = await embedImages([image('a', HASH)], BOARD, fn, {
+      shrink: async () => ({ bytes: jpegOverCap, type: 'image/jpeg' }),
+    });
+    const wrongType = await embedImages([image('a', HASH)], BOARD, fn, { shrink: async (bytes) => ({ bytes, type: 'image/svg+xml' }) });
+    expect([huge.size, wrongType.size]).toEqual([0, 0]);
+  });
+
+  it('the default shrink needs a canvas: with none (node, or a browser without one) the image is left out, not embedded as sent', async () => {
+    const { fn } = sameOriginFetch(() => response(png()));
+    const out = await embedImages([image('a', HASH)], BOARD, fn);
+    expect(out.size).toBe(0);
+  });
+
   it('fetches each board image once, from its own asset address, and maps every object that uses it', async () => {
     const { fn, calls } = sameOriginFetch(() => response(png()));
     const objects = [image('a', HASH), image('b', HASH), image('c', OTHER_HASH)];
-    const out = await embedImages(objects, BOARD, fn);
+    const out = await embedImages(objects, BOARD, fn, KEEP);
     expect(calls).toEqual([`/api/boards/${BOARD}/assets/${HASH}`, `/api/boards/${BOARD}/assets/${OTHER_HASH}`]);
     expect(out.get('a')).toMatch(/^data:image\/png;base64,/);
     expect(out.get('b')).toBe(out.get('a'));
@@ -160,7 +230,7 @@ describe('the image loader: the same origin, the cookie, and nothing else', () =
       image('none', 'pending:1234', 'image/png'),
       { id: 'link', type: 'link', image: HASH, icon: OTHER_HASH, url: 'https://evil.example/', x: 0, y: 0, w: 1, h: 1, rotation: 0, z: 'l' } as unknown as Obj,
     ];
-    const out = await embedImages(objects, BOARD, fn);
+    const out = await embedImages(objects, BOARD, fn, KEEP);
     expect(calls).toEqual([]);
     expect(out.size).toBe(0);
   });
@@ -176,7 +246,7 @@ describe('the image loader: the same origin, the cookie, and nothing else', () =
     ];
     for (const [label, make] of cases) {
       const { fn } = sameOriginFetch(make);
-      const out = await embedImages([image('a', HASH)], BOARD, fn, { maxBytes: 1000 });
+      const out = await embedImages([image('a', HASH)], BOARD, fn, { maxBytes: 1000, ...KEEP });
       expect([label, out.size]).toEqual([label, 0]);
     }
   });
@@ -184,13 +254,13 @@ describe('the image loader: the same origin, the cookie, and nothing else', () =
   it('draws at most ten images, and stops when the time for all of them is spent', async () => {
     const { fn, calls } = sameOriginFetch(() => response(png()));
     const many = Array.from({ length: 12 }, (_, i) => image(`i${i}`, String(i).padStart(64, 'c')));
-    const out = await embedImages(many, BOARD, fn);
+    const out = await embedImages(many, BOARD, fn, KEEP);
     expect(calls).toHaveLength(10);
     expect(out.size).toBe(10);
 
     let clock = 0;
     const slow = sameOriginFetch(async () => { clock += 3000; return response(png()); });
-    const timed = await embedImages(many, BOARD, slow.fn, { budgetMs: 5000, now: () => clock });
+    const timed = await embedImages(many, BOARD, slow.fn, { budgetMs: 5000, now: () => clock, ...KEEP });
     expect(slow.calls.length).toBeLessThan(10);
     expect(timed.size).toBe(slow.calls.length);
   });
@@ -200,7 +270,7 @@ describe('the image loader: the same origin, the cookie, and nothing else', () =
       if (url.includes(HASH)) throw new TypeError('down');
       return response(png());
     });
-    const out = await embedImages([image('a', HASH), image('b', OTHER_HASH)], BOARD, fn);
+    const out = await embedImages([image('a', HASH), image('b', OTHER_HASH)], BOARD, fn, KEEP);
     expect(out.has('a')).toBe(false);
     expect(out.has('b')).toBe(true);
   });
