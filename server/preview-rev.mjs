@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 
 const revisions = new Map();
 const lastTextUnlinkAt = new Map();
+const trailingUnlink = new Map();
 const TEXT_UNLINK_INTERVAL_MS = 30_000;
 let textTimestampCleanup = null;
 
@@ -65,7 +66,10 @@ export function observePreviewChanges(doc, boardId, { unlink, now = Date.now, lo
           } else if (key === 'hidden' && change?.action !== 'delete' && field('hidden') === true) {
             changed = true;
             urgent = true;
-          } else if (key === 'text' && ['sticky', 'text', 'shape', 'frame'].includes(field('type'))) {
+          } else if (
+            ((key === 'text' || key === 'name') && ['sticky', 'text', 'shape', 'frame'].includes(field('type')))
+            || (key === 'label' && field('type') === 'connector')
+          ) {
             changed = true;
             textChanged = true;
           }
@@ -80,9 +84,21 @@ export function observePreviewChanges(doc, boardId, { unlink, now = Date.now, lo
         if (previous === undefined || currentTime - previous >= TEXT_UNLINK_INTERVAL_MS) {
           retainTextTimestamp(boardId, currentTime);
           shouldUnlink = true;
+        } else if (!trailingUnlink.has(boardId)) {
+          // a change inside the throttle window still removes the picture, once the window is over
+          const timer = setTimeout(() => {
+            trailingUnlink.delete(boardId);
+            try { unlink(boardId); } catch { /* sync is never affected */ }
+          }, Math.max(1, TEXT_UNLINK_INTERVAL_MS - (currentTime - previous)));
+          timer.unref?.();
+          trailingUnlink.set(boardId, timer);
         }
       }
-      if (shouldUnlink) unlink(boardId);
+      if (shouldUnlink) {
+        clearTimeout(trailingUnlink.get(boardId));
+        trailingUnlink.delete(boardId);
+        unlink(boardId);
+      }
     } catch {
       try { log('warn', 'previews: document observer failed'); } catch { /* logging cannot affect sync */ }
     }

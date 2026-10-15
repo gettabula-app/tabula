@@ -24,3 +24,9 @@ A preview is unlinked when any object is deleted, a note becomes private, an obj
 The file cache is optional and regenerable, but it still uses local disk. An empty cache or a partially restored directory shows no picture until a fresh upload. A stale image older than 24 hours also falls back to the board schematic.
 
 The server cannot verify what the pixels show. An editor who has a private grant can upload arbitrary pixels, including content others may not see. Treat every stored picture as an untrusted upload, not proof of board content. A board owner or workspace admin can remove it, which returns the card to its schematic fallback.
+
+## Operating notes
+
+- A board purge relies on the hourly orphan sweep to remove its picture file (soft delete and restore remove it at once). That is fine for a cache.
+- `TABULA_PREVIEWS=0` is a machine environment variable. An upgrade that recreates the machine drops it unless the control plane carries it over.
+- A change to a text, frame name or connector label that falls inside the 30 s throttle window still removes the picture when the window is over.
