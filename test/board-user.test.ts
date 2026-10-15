@@ -7,6 +7,7 @@ import { Builder, TEMPLATES } from '../src/templates';
 import { createSyncGuard } from '../server/sync-guard.mjs';
 import { isHiddenNow } from '../src/history';
 import { isOwnAuthor } from '../src/identity';
+import { ownerOptions } from '../src/ui/kanban-logic';
 import type { AuthState } from '../src/auth';
 import type { Obj } from '../src/types';
 
@@ -74,5 +75,23 @@ describe('the relay in its default mode', () => {
     guard.run(room, ws, ctx, () => doc.transact(() => doc.getMap('objects').set('a', sticky), ws));
     expect(doc.getMap('objects').has('a')).toBe(true);
     expect(guard.stats()).toMatchObject({ rejected: 0, violations: 1, byCode: { forged_author: 1 } });
+  });
+});
+
+describe('the card owner picker', () => {
+  it('offers account ids, so picking a person passes the relay\'s board-member check (no forged_owner)', () => {
+    const user = boardUser({ mode: 'signed-in', me } as unknown as AuthState);
+    const options = ownerOptions({ id: user.id, name: user.name }, [{ id: 'usr_acct456', name: 'Ben' }], []);
+    expect(options.map((o) => o.id)).toEqual([me.user.id, 'usr_acct456']);
+    const members = new Set([me.user.id, 'usr_acct456']);
+    const ctx = { writer: { id: me.user.id, name: me.user.name }, isBoardMember: (id: string) => members.has(id), canEditObject: () => true };
+    for (const o of options) {
+      const card = { id: 'c', type: 'card', x: 1, y: 2, w: 3, h: 4, rotation: 0, z: 'a0', createdBy: me.user.id, ownerId: o.id, ownerName: o.name, ownerKind: 'person' };
+      expect(validateChangedKeys([{ kind: 'object', key: 'c', value: card, isNew: true }], ctx)).toEqual({ ok: true });
+    }
+    // the device id the picker used to offer is not a member
+    const old = { id: 'c', type: 'card', x: 1, y: 2, w: 3, h: 4, rotation: 0, z: 'a0', createdBy: me.user.id, ownerId: DEVICE.id, ownerName: 'Lea', ownerKind: 'person' };
+    const bad = validateChangedKeys([{ kind: 'object', key: 'c', value: old, isNew: true }], ctx) as { ok: boolean; violations?: { code: string }[] };
+    expect(bad.violations!.map((v) => v.code)).toEqual(['forged_owner']);
   });
 });
