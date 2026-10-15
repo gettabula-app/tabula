@@ -616,7 +616,7 @@ export function updateTicket({
 }
 
 /** @param {any} options */
-export function transitionTicket({ directory, db: dbArg, actor, key, state: targetState, ifUpdatedSeq, source = 'app', readOnly = () => false, now = Date.now() } = {}) {
+export function transitionTicket({ directory, db: dbArg, actor, key, state: targetState, ifUpdatedSeq, source = 'app', readOnly = () => false, now = Date.now(), details = {} } = {}) {
   requireWritable(readOnly);
   const db = getDb({ directory, db: dbArg });
   if (typeof targetState !== 'string' || !targetState.trim()) throw invalid('state', 'Must be a state name or key');
@@ -634,7 +634,7 @@ export function transitionTicket({ directory, db: dbArg, actor, key, state: targ
     const before = { state: { id: row.state_id, key: row.state_key, name: row.state_name, category: row.state_category } };
     const after = { state: { id: target.id, key: target.state_key, name: target.name, category: target.category } };
     db.prepare('UPDATE tickets SET state_id = ?, updated_at = ? WHERE id = ?').run(target.id, now, row.id);
-    const seq = appendTicketEvent({ db, ticketId: row.id, eventType: 'transitioned', actor, source, createdAt: now, before, after });
+    const seq = appendTicketEvent({ db, ticketId: row.id, eventType: 'transitioned', actor, source, createdAt: now, before, after, details });
     fanOut({ db, ticketId: row.id, eventId: seq, eventType: 'transitioned', actor, createdAt: now });
     db.prepare('UPDATE tickets SET updated_seq = ? WHERE id = ?').run(seq, row.id);
     enqueueTicketProjection({ db, ticketId: row.id, eventSeq: seq, now });
