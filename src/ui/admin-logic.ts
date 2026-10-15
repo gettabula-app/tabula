@@ -86,7 +86,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'auth.login', 'auth.logout', 'auth.logout_all', 'me.update',
   'team.create', 'team.update', 'team.member.role', 'team.leave', 'team.member.remove',
   'invite.create', 'invite.revoke', 'invite.accept',
-  'board.create', 'board.update', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
+  'board.create', 'board.update', 'board.move', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
   'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore', 'board.activity.revert',
   'template.create', 'template.update', 'template.delete',
   'member.update', 'member.remove',
@@ -265,6 +265,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       if (d.teamId === null) return `${who} moved ${boardLabel} to personal`;
       if (text(d.teamId)) return `${who} moved ${boardLabel} to ${teamLabel}`;
       return `${who} updated ${boardLabel}`;
+    }
+    case 'board.move': {
+      const place = (id: unknown) => (text(id) ? teamLabelFor(id) : 'Personal');
+      return `${who} moved ${boardLabel} from ${place(d.from)} to ${place(d.to)}`;
     }
     case 'board.delete':
       return `${who} deleted ${boardLabel}`;
