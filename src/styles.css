@@ -327,7 +327,8 @@ select, textarea:not(.text-editor) { padding: 0 10px; }
   box-shadow: inset 0 0 0 1px var(--danger);
 }
 :is(.input, select, textarea:not(.text-editor)):is([aria-invalid='true'], .error):focus {
-  box-shadow: inset 0 0 0 1px var(--danger), 0 0 0 3px color-mix(in srgb, var(--danger) 10%, transparent);
+  outline: 2px solid var(--tray-text); outline-offset: 2px;
+  box-shadow: inset 0 0 0 1px var(--danger);
 }
 :is(.input, select, textarea:not(.text-editor)):disabled { opacity: 0.5; }
 textarea.input { height: auto; padding: 8px 10px; line-height: 1.5; }
@@ -695,7 +696,7 @@ select.input {
 }
 .board-menu-search .ico { flex: none; }
 .board-menu-search-input.input { flex: 1; min-width: 0; height: 34px; padding: 0 2px; border: 0; background: transparent; box-shadow: none; color: var(--tray-text); }
-/* the wrapper is the field: it carries the shared focus (inset edge and soft ring); the input inside draws nothing of its own */
+/* the wrapper is the field: it carries the shared focus (the 2px ring); the input inside draws nothing of its own */
 .board-menu-search-input.input, .board-menu-search-input.input:focus, .board-menu-search-input.input:focus-visible { outline: 0; box-shadow: none; }
 .board-menu-search:focus-within { outline: 2px solid var(--tray-text); outline-offset: 2px; }
 .board-menu-search-input::placeholder { color: var(--tray-muted); opacity: 1; }
