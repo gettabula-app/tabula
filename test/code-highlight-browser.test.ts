@@ -152,11 +152,13 @@ describe.skipIf(!available)('a hostile block', { timeout: 200_000 }, () => {
         setInterval(() => { const n = performance.now(); w.__gaps.push(n - last); last = n; }, 20);
         const orig = Worker;
         w.__workers = 0;
-        w.Worker = class extends orig { constructor(...a: ConstructorParameters<typeof Worker>) { super(...a); w.__workers++; } };
+        w.__answers = 0;
+        w.Worker = class extends orig { constructor(...a: ConstructorParameters<typeof Worker>) { super(...a); w.__workers++; this.addEventListener('message', () => { w.__answers++; }); } };
       });
       await seed(page, { text, lang });
-      // the watchdog (1.5 s) ends the request and starts a second worker; with the idle wait the block is settled within about 3 s
-      await page.waitForFunction(() => (window as any).__workers >= 2, null, { timeout: budget(4000), polling: 50 });
+      // The block ends plain one of two ways: the watchdog (1.5 s) ends the request and starts a second worker, or the worker's own tokenizer limit answers first
+      // (it does on a loaded machine, where the cold 1 s limit lands before the watchdog). Either way the block is settled; wait for that, not for a worker count.
+      await page.waitForFunction(() => (window as any).__workers >= 2 || (window as any).__answers >= 1, null, { timeout: budget(15_000), polling: 50 });
       await page.waitForTimeout(budget(500));
       const f = await fills(page);
       expect(f.fills, 'drawn plain').toEqual([]);
