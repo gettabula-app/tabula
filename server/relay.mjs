@@ -190,6 +190,25 @@ const log = (...a) => {
 const syncGuard = createSyncGuard({ mode: syncValidateMode(process.env), log });
 
 /** The validator's view of the socket's person (server/sync-validate.mjs ctx). No user id (open mode) means no identity. */
+// Who last edited a board, for the Boards home cards (TAB-375). Only a change to the board's objects counts, and the editor's own
+// automatic height correction (which writes only `h`, and `updatedAt`) does not: opening a board must not make you its editor.
+const NON_EDIT_FIELDS = new Set(['h', 'updatedAt']);
+function isAttributableChange(transaction, doc) {
+  const objects = doc.getMap('objects');
+  for (const [type, keys] of transaction.changed) {
+    if (type === objects) {
+      if (keys.size) return true;
+      continue;
+    }
+    if (type._item?.parent === objects) for (const key of keys) if (typeof key === 'string' && !NON_EDIT_FIELDS.has(key)) return true;
+  }
+  return false;
+}
+/** A display name for the card: plain text, no control characters, at most 40 characters. A name is untrusted text. */
+function editorName(value) {
+  return typeof value === 'string' ? [...value.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()].slice(0, 40).join('').trim() : '';
+}
+
 function syncContext(ws, room) {
   const writerRole = ws.role;
   const mayEdit = ws.canWrite === true && (writerRole === 'owner' || writerRole === 'editor' || !directory);
@@ -739,8 +758,14 @@ class Room {
 
     /** While a guarded message runs, updates wait here and go out as one, so nobody sees a forbidden change. */
     this.held = null;
+    /** The change in progress that may name an editor, and the editor not yet saved to the directory (TAB-375). */
+    this.edit = null;
+    this.lastEditor = null;
     this.doc.on('update', (update, origin, _doc, transaction) => {
       this.dirty = true;
+      if (this.kind === 'board' && this.edit && !this.edit.meaningful && origin === this.edit.origin) {
+        try { this.edit.meaningful = isAttributableChange(transaction, this.doc); } catch { /* attribution is best effort */ }
+      }
       if (this.held) this.held.push(update);
       else this.broadcastUpdate(update);
       this.scheduleSave();
@@ -875,6 +900,15 @@ class Room {
     this.presenceTimer.unref?.();
   }
 
+  /** Remembers the person behind the last attributable edit until the next save writes it to the directory. Guests never count. */
+  noteEditor(ws) {
+    if (!directory || this.kind !== 'board' || !ws.userId || ws.guest === true) return;
+    const user = directory.getUser(ws.userId);
+    if (!user || user.disabled || user.role === 'guest') return;
+    const name = editorName(user.name);
+    if (name) this.lastEditor = { name, kind: 'person', at: Date.now() };
+  }
+
   broadcastUpdate(update) {
     const enc = encoding.createEncoder();
     encoding.writeVarUint(enc, MSG_SYNC);
@@ -980,7 +1014,8 @@ class Room {
     if (directory && this.kind === 'board' && changed) {
       try {
         const title = this.doc.getMap('meta').get('name');
-        directory.touchBoard(this.name, typeof title === 'string' && title.trim() ? { title } : {});
+        directory.touchBoard(this.name, { ...(typeof title === 'string' && title.trim() ? { title } : {}), ...(this.lastEditor ? { editor: this.lastEditor } : {}) });
+        this.lastEditor = null;
       } catch (err) {
         log(`room ${this.name}: could not update the directory`, err?.message);
       }
@@ -1188,8 +1223,17 @@ class Room {
           else if (this.guard && ws.userId && syncType !== syncProtocol.messageYjsSyncStep1) this.guarded(ws, apply);
           else apply();
         };
-        if (syncGuard.enabled && syncType !== syncProtocol.messageYjsSyncStep1) syncGuard.run(this, ws, syncContext(ws, this), guardedApply);
-        else guardedApply();
+        // who edited (TAB-375): a verified person's message that changed the objects and was not reverted by the sync guard
+        const edit = this.kind === 'board' && syncType !== syncProtocol.messageYjsSyncStep1 ? { origin: ws, meaningful: false } : null;
+        const guardCtx = syncContext(ws, this);
+        this.edit = edit;
+        try {
+          if (syncGuard.enabled && syncType !== syncProtocol.messageYjsSyncStep1) syncGuard.run(this, ws, guardCtx, guardedApply);
+          else guardedApply();
+        } finally {
+          this.edit = null;
+        }
+        if (edit?.meaningful && guardCtx.reverted !== true) this.noteEditor(ws);
         if (encoding.length(enc) > 1) send(ws, encoding.toUint8Array(enc));
       } else if (type === MSG_AWARENESS) {
         const update = decoding.readVarUint8Array(dec);
@@ -1314,6 +1358,10 @@ const roomAccess = {
       const apply = () => room.doc.transact(() => {
         result = fn(room.doc);
       }, origin);
+      // an MCP write names its agent (TAB-375): the same rule as a person's, from this write's own changes
+      const editedBy = room.kind === 'board' && typeof trackerContext?.editedBy?.name === 'string' ? trackerContext.editedBy : null;
+      const edit = editedBy ? { origin, meaningful: false } : null;
+      room.edit = edit;
       if (room.kind === 'board' && trackerGuard && trackerContext?.actor) {
         const guarded = trackerGuard.run(room, trackerContext.actor, apply, { source: trackerContext.source ?? 'board' });
         const refused = guarded.undone.find((entry) => entry.reason !== 'limit_exceeded');
@@ -1322,6 +1370,11 @@ const roomAccess = {
           throw new OpsError(code, `Linked card write was refused (${refused.reason}).`, refused.reason === 'title_invalid' ? 'title' : undefined);
         }
       } else apply();
+      room.edit = null;
+      if (edit?.meaningful) {
+        const name = editorName(editedBy.name);
+        if (name) room.lastEditor = { name, kind: 'agent', at: Date.now() };
+      }
       if (trace) {
         try {
           trace.off?.();
