@@ -816,6 +816,8 @@ describe('loadConfig', () => {
       baseUrl: 'http://localhost:8787',
       baseUrlSet: false,
       slowRequestMs: 300,
+      previews: true,
+      previewsMaxBytes: 64 * 1024 * 1024,
       origin: 'http://localhost:8787',
       secureCookies: false,
       cookieName: 'tabula_session',
@@ -845,6 +847,13 @@ describe('loadConfig', () => {
     expect(loadConfig({ TABULA_LINK_PREVIEWS: 'on' }).linkPreviews).toEqual({ forced: 'on' });
     expect(loadConfig({ TABULA_LINK_PREVIEWS: ' off ' }).linkPreviews).toEqual({ forced: 'off' });
     expect(() => loadConfig({ TABULA_LINK_PREVIEWS: 'maybe' })).toThrow(/TABULA_LINK_PREVIEWS must be on or off/);
+  });
+
+  it('enables board previews by default and clamps their cache size', () => {
+    expect(loadConfig({}).previews).toBe(true);
+    expect(loadConfig({ TABULA_PREVIEWS: '0' }).previews).toBe(false);
+    expect(loadConfig({ TABULA_PREVIEWS_MAX_MB: '0' }).previewsMaxBytes).toBe(1024 * 1024);
+    expect(loadConfig({ TABULA_PREVIEWS_MAX_MB: '2048' }).previewsMaxBytes).toBe(1024 * 1024 * 1024);
   });
 
   it('reads the deprecated MIRA_ names, warning once with the names to use instead', () => {

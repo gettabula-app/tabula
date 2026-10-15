@@ -43,6 +43,8 @@ export interface Me {
   images?: boolean;
   /** Present (true) when the server fetches link previews for this workspace (docs/link-cards.md). */
   linkPreviews?: boolean;
+  /** Present (true) when board preview pictures are enabled for this workspace. */
+  boardPreviews?: boolean;
   /** Present only when this person may bring their own AI key (docs/ai.md). */
   ai?: { personalKeys: true };
   /** Present (true) when team chat is on for this server (docs/chat.md). */
@@ -162,6 +164,13 @@ export interface AdminUpdates {
 /** GET and PUT /api/admin/privacy. */
 /** GET and PUT /api/admin/link-previews: whether the server fetches previews for link cards (docs/link-cards.md). `locked` is the operator's kill switch. */
 export interface AdminLinkPreviews {
+  enabled: boolean;
+  locked: boolean;
+  setting: boolean | null;
+}
+
+/** GET and PUT /api/admin/board-previews: workspace default for board preview pictures. */
+export interface AdminBoardPreviews {
   enabled: boolean;
   locked: boolean;
   setting: boolean | null;
@@ -996,6 +1005,8 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     setAdminUpdates: (auto: boolean) => call<AdminUpdates>('PUT', '/api/admin/updates', { auto }),
     adminLinkPreviews: () => call<AdminLinkPreviews>('GET', '/api/admin/link-previews'),
     setAdminLinkPreviews: (enabled: boolean) => call<AdminLinkPreviews>('PUT', '/api/admin/link-previews', { enabled }),
+    adminBoardPreviews: () => call<AdminBoardPreviews>('GET', '/api/admin/board-previews'),
+    setAdminBoardPreviews: (enabled: boolean) => call<AdminBoardPreviews>('PUT', '/api/admin/board-previews', { enabled }),
     adminPrivacy: () => call<AdminPrivacy>('GET', '/api/admin/privacy'),
     setAdminPrivacy: (enabled: boolean) => call<AdminPrivacy>('PUT', '/api/admin/privacy', { enabled }),
     adminPrivacyPreview: () => call<AdminPrivacyPreview>('GET', '/api/admin/privacy/preview'),

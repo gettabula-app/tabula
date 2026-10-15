@@ -98,6 +98,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
   'linkPreviews.enabled', 'linkPreviews.disabled',
+  'boardPreviews.enabled', 'boardPreviews.disabled',
   'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
   'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards', 'backup.tracker_findings',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
@@ -335,6 +336,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} turned link previews on`;
     case 'linkPreviews.disabled':
       return `${who} turned link previews off`;
+    case 'boardPreviews.enabled':
+      return `${who} turned board preview pictures on`;
+    case 'boardPreviews.disabled':
+      return `${who} turned board preview pictures off`;
     case 'updates.auto':
       return `${who} turned automatic updates ${flag(d.to) === false ? 'off' : 'on'}`;
     case 'telemetry.enabled':

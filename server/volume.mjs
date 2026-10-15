@@ -240,10 +240,10 @@ function closeTrackerAfterAdoption(directory, nowMs) {
 /**
  * Carries out a plan: for an adoption, every step in order, and the marker last. Throws on the first step that fails
  * (the relay then exits); the next start finds the old marker and adopts again, which is safe to repeat.
- * @param {{ dataDir: string, plan: ReturnType<typeof decideVolume>, directory?: any, log?: (...args: any[]) => void }} options
+ * @param {{ dataDir: string, plan: ReturnType<typeof decideVolume>, directory?: any, log?: (...args: any[]) => void, clearPreviews?: () => void }} options
  * @returns {boolean} whether the volume was adopted
  */
-export function applyVolume({ dataDir, plan, directory = null, log = () => {} }) {
+export function applyVolume({ dataDir, plan, directory = null, log = () => {}, clearPreviews = () => {} }) {
   if (plan.action === 'error') throw new VolumeError(plan.message);
   for (const note of plan.notes) log(note);
   if (plan.action === 'adopt') {
@@ -251,6 +251,8 @@ export function applyVolume({ dataDir, plan, directory = null, log = () => {} })
     if (restorePending(dataDir)) throw new VolumeError(`The volume holds a restore that is not finished, so it was not adopted and the server will not start; ${DOCS}.`);
     // (b) what a backup run left behind
     clearRunState({ dataDir, directory });
+    // A copied volume can carry cache files from another board state. They are optional and never block adoption.
+    try { clearPreviews(); } catch { log('warn', 'previews: cache cleanup failed'); }
     // (c) and (d) together: nobody stays signed in, and the audit log says why.
     if (directory) {
       directory.transaction(() => {
