@@ -4,16 +4,15 @@ Sidan **Boards** (Tavlor) listar dina tavlor, och här skapar, öppnar, importer
 
 ## Sidan Boards
 
-I det övre fältet finns Tabulas ordmärke (klicka på det för att komma tillbaka hit) och länkarna **Boards** och **Templates** (Mallar). Om din arbetsyta använder inloggning visas även ditt namn, som är kontomenyn: ditt namn och din färg, **AI tool access** (om administratören har aktiverat AI-verktyg), **Your AI key** (om du får använda din egen), chattaviseringar och **Sign out** (Logga ut). Arbetsytans ägare och administratörer ser också **Admin** (Administratör), och arbetsytor som har spåraren visar en länk **Tracker**.
+I det övre fältet finns Tabulas ordmärke (klicka på det för att komma tillbaka hit) och länken **Boards** (Tavlor). Om din arbetsyta använder inloggning visas även ditt namn, som är kontomenyn: ditt namn och din färg, **My templates** (Mina mallar), **AI tool access** (om administratören har aktiverat AI-verktyg), **Your AI key** (om du får använda din egen), chattaviseringar och **Sign out** (Logga ut). Arbetsytans ägare och administratörer ser också **Admin** (Administratör), och arbetsytor som har spåraren visar en länk **Tracker**.
 
 Under det övre fältet:
 
-- **New board** (Ny tavla) skapar en tom tavla och öppnar den.
-- **Import file** (Importera fil) skapar en tavla från en `.drift`- eller `.json`-fil. Se [Exportera och importera](export-import.md).
+- **New board** (Ny tavla) öppnar en meny. **Blank board** (Tom tavla) skapar en tom tavla och öppnar den, **From a template…** (Från en mall…) öppnar sidan Mallar och **Import a file…** (Importera en fil…) skapar en tavla från en `.drift`- eller `.json`-fil. Se [Exportera och importera](export-import.md).
 - **Search boards** (Sök bland tavlor) filtrerar listan efter titel medan du skriver.
-- En rad med **Start from a template** (Börja med en mall) och upp till fyra mallar, med dina egna sparade mallar först och länken **All templates** (Alla mallar). Se [Mallar](templates.md).
+- Så länge du inte har några tavlor visas en rad med **Start from a template** (Börja med en mall) och upp till fyra mallar, med dina egna sparade mallar först och länken **All templates** (Alla mallar). Välj **Hide** (Dölj) för att dölja raden på den här enheten. Se [Mallar](templates.md).
 
-![Sidan Boards för en inloggad medlem: ett avsnitt för teamet Design, Personal (Personligt) och Shared with you (Delat med dig) med en tavla som bara går att visa, följt av mallraden](images/teams-home.png)
+![Sidan Boards för en inloggad medlem: ett avsnitt för teamet Design, Personal (Personligt) och Shared with you (Delat med dig) med en tavla som bara går att visa](images/teams-home.png)
 
 ## Öppet läge
 
@@ -44,7 +43,7 @@ Tabellen har också en kolumn **Here now** (Här nu). Den visar vem som har tavl
 - Du ser bara personer på tavlor du kan öppna. AI-verktyg visas aldrig. Personer som anslöt med en anslutningskod ser inte kolumnen.
 - Den uppdateras direkt via chattanslutningen. Om chatten är avstängd på din server kontrollerar sidan igen var 15:e sekund.
 
-Ägare och administratörer ser också knapparna **Members** (Medlemmar) och **New team** (Nytt team). Andra personer, förutom gäster, ser **New team**. Information om team och roller finns i [Dela, roller och team](sharing.md).
+Ägare och administratörer ser också knapparna **Members** (Medlemmar) och **New team** (Nytt team). Andra personer, förutom gäster, ser **New team**. På en smal skärm ligger **New team** och **Members** bakom knappen **More actions** (Fler åtgärder), som visas som tre punkter. Information om team och roller finns i [Dela, roller och team](sharing.md).
 
 Om din arbetsyta har ett banderollmeddelande visas det allra högst upp. Om det inte går att nå servern visas meddelandet **You are offline. Showing the last list from this device.** (Du är offline. Visar den senaste listan från den här enheten.) och knappar som behöver servern inaktiveras.
 

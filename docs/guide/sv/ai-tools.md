@@ -69,6 +69,8 @@ Serveradressen är samma som du använder för Tabula, följd av `/mcp`. När ve
 
 Ett verktyg med åtkomstnivån **Read and edit** kan skapa klisterlappar, former, textrutor, ramar och kopplingslinjer. Det kan bara ändra de egenskaper som finns för varje objekttyp: om verktyget försöker ändra ett fält som inte hör till objektet eller ändra objekttypen avbryts ändringen och inget sparas. En grupp kan döpas om men inte få en ny stil. Bilder, ikoner och ritningar kan flyttas, ändra storlek på, roteras och läggas in i eller tas ut ur en ram eller grupp.
 
+Ett verktyg kan också se var det finns plats på en tavla, det vill säga ramarna och de lediga ytorna, när det läser tavlan. Objekt som det lägger till utan position placeras på ledig yta, eller inuti en ram när ramen är objektets överordnade.
+
 Kanbantavlor kräver försiktighet:
 
 - Ett verktyg kan inte ändra ett kanbankort med det vanliga redigeringsverktyget. Det måste använda kortverktygen nedan. Det kan inte heller ändra kolumner eller etiketter med det vanliga redigeringsverktyget, utan använder kolumn- och etikettverktygen nedan. Det kan skapa en kanbantavla (se Skapa kanbantavlor nedan), men inte döpa om, ändra storlek på eller ta bort den. Gör det i appen.
@@ -95,7 +97,7 @@ När ett verktyg med åtkomsttoken ändrar en tavla kan alla på tavlan se det:
 
 I en arbetsyta med inloggning kan varje token (och varje OAuth-anslutning) göra 2 000 ändringar på tavlor per dag. Räkningen gäller objekt, inte anrop: att skapa 10 klisterlappar i ett anrop räknas som 10. Den nollställs vid midnatt UTC, och ett verktyg som når gränsen får veta att den dagliga gränsen är nådd och när den nollställs. Läsning begränsas inte på det sättet, och det gör inte ärenden heller. Den som driver din server kan ändra talet eller stänga av gränsen.
 
-Ärendeverktyg har en egen gräns per token och timme: upp till 120 ärendeuppdateringar, 120 tillståndsändringar och 120 kommentarer (var och en räknas för sig) samt upp till 60 nya ärenden. Ett anrop över gränsen nekas med en tid att försöka igen och ändrar ingenting.
+Ärendeverktyg har en egen gräns per token och timme: upp till 120 ärendeuppdateringar, 120 tillståndsändringar och 120 kommentarer (var och en räknas för sig) samt upp till 60 nya ärenden. Ett anrop över gränsen nekas med en tid att försöka igen och ändrar ingenting. Att ändra upp till 25 ärenden i ett anrop räknas mot samma gränser som att ändra dem ett i taget, och att länka ärenden räknas som en uppdatering. Ett verktyg kan arkivera och återställa ärenden men aldrig ta bort dem.
 
 Ett AI-verktyg kan fråga vem det agerar som och se hur många ändringar det har använt i dag och när räkningen nollställs.
 

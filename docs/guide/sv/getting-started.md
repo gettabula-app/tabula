@@ -10,7 +10,7 @@ Om din arbetsyta kräver inloggning visas först **Sign in to Tabula** (Logga in
 
 ## Skapa din första tavla
 
-1. Välj **New board** (Ny tavla) på sidan **Boards**.
+1. Välj **New board** (Ny tavla) och sedan **Blank board** (Tom tavla) på sidan **Boards**.
 2. Den tomma tavlan visar ett tips. Tryck på `N` för att skapa en lapp, `R` för en rektangel eller dubbelklicka på tavelytan för att skriva text.
 3. Klicka på tavlans namn längst upp till vänster och skriv ett namn. Tryck på `Enter` för att spara det.
 
