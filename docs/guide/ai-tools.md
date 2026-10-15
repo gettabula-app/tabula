@@ -69,6 +69,8 @@ The server address is the one you use for Tabula, followed by `/mcp`. Once conne
 
 A tool with **Read and edit** can create sticky notes, shapes, text, frames and connectors. It can only change the properties each kind of object has: a field that does not belong to that object, or an attempt to change its kind, is refused and nothing is saved. A group can be renamed but not restyled, and images, icons and drawings can be moved, resized, rotated and put in or taken out of a frame or group.
 
+A tool can also see where there is room on a board, meaning its frames and free areas, when it reads the board. Objects it adds without a position are placed in free space, or inside a frame when that frame is their parent.
+
 Kanban boards need care:
 
 - A tool cannot change a kanban card through the ordinary edit tool: it has to use the card tools below. It cannot change lanes or labels through the ordinary edit tool either: it uses the lane and label tools below. It can create a kanban (see Creating kanbans below) but cannot rename, resize or delete one; do that in the app.

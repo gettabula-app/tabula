@@ -69,6 +69,8 @@ Serveradressen är samma som du använder för Tabula, följd av `/mcp`. När ve
 
 Ett verktyg med åtkomstnivån **Read and edit** kan skapa klisterlappar, former, textrutor, ramar och kopplingslinjer. Det kan bara ändra de egenskaper som finns för varje objekttyp: om verktyget försöker ändra ett fält som inte hör till objektet eller ändra objekttypen avbryts ändringen och inget sparas. En grupp kan döpas om men inte få en ny stil. Bilder, ikoner och ritningar kan flyttas, ändra storlek på, roteras och läggas in i eller tas ut ur en ram eller grupp.
 
+Ett verktyg kan också se var det finns plats på en tavla, det vill säga ramarna och de lediga ytorna, när det läser tavlan. Objekt som det lägger till utan position placeras på ledig yta, eller inuti en ram när ramen är objektets överordnade.
+
 Kanbantavlor kräver försiktighet:
 
 - Ett verktyg kan inte ändra ett kanbankort med det vanliga redigeringsverktyget. Det måste använda kortverktygen nedan. Det kan inte heller ändra kolumner eller etiketter med det vanliga redigeringsverktyget, utan använder kolumn- och etikettverktygen nedan. Det kan skapa en kanbantavla (se Skapa kanbantavlor nedan), men inte döpa om, ändra storlek på eller ta bort den. Gör det i appen.
