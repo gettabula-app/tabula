@@ -33,7 +33,7 @@ describe('dialog entrance motion', () => {
     const phone = cardDialog.slice(cardDialog.indexOf('@media (max-width: 860px) {'), cardDialog.indexOf('@media (prefers-reduced-motion: reduce)'));
     expect(phone).toMatch(/\.k-card-dialog \.modal \{[^}]*animation:\s*modal-sheet-in 280ms var\(--ease-drawer\)/);
     expect(keyframeLine(styles, 'modal-sheet-in')).toContain('translateY(100%)');
-    expect(templatePicker).toMatch(/@media \(max-width: 480px\) and \(prefers-reduced-motion: no-preference\) \{\s*\.template-picker-dialog \{ animation: modal-sheet-in 280ms var\(--ease-drawer\) both; \}/);
+    expect(templatePicker).toMatch(/@media \(max-width: 480px\) and \(prefers-reduced-motion: no-preference\) \{\s*\.template-picker-dialog \{ animation: modal-sheet-in 280ms var\(--ease-drawer\) backwards; \}/);
   });
 
   it('removes transform under reduced motion and keeps only a 120 ms fade for the scrim and the dialog', () => {

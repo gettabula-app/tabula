@@ -34,4 +34,11 @@ describe('popover motion (src/styles.css)', () => {
     expect(block).not.toContain('scale');
     expect(css).toContain('@keyframes popover-fade { from { opacity: 0; } to { opacity: 1; } }');
   });
+
+  it('never holds a transform after an entrance: fill-mode forwards or both would make the element a containing block for fixed children (the board menu submenus)', () => {
+    const all = [css, ...['card-dialog', 'template-picker'].map((n) => fs.readFileSync(new URL(`../src/ui/${n}.css`, import.meta.url), 'utf8'))].join('\n');
+    const entrances = [...all.matchAll(/animation:\s*(popover-in|modal-in|modal-sheet-in)\b[^;]*;/g)].map((m) => m[0]);
+    expect(entrances.length).toBeGreaterThanOrEqual(4);
+    expect(entrances.filter((rule) => !/\bbackwards;$/.test(rule))).toEqual([]);
+  });
 });
