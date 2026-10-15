@@ -21,15 +21,9 @@ describe.each(THEMES)('resting field cue in $name', (theme) => {
   const percentage = theme.id === 'evergreen' ? evergreenRulePercent : sharedRulePercent;
   const cue = srgbMix(theme.vars['--tray-text'], percentage, theme.vars['--tray']);
   const fill = srgbMix(theme.vars['--tray-text'], 6, theme.vars['--tray']);
-  const segmentedFill = srgbMix(theme.vars['--tray-text'], 5, theme.vars['--tray']);
 
   it.each(['--tray', '--paper', '--canvas'] as const)('contrasts with the field fill and %s by at least 3:1', (surface) => {
     expect(contrast(cue, fill)).toBeGreaterThanOrEqual(3);
-    expect(contrast(cue, theme.vars[surface])).toBeGreaterThanOrEqual(3);
-  });
-
-  it.each(['--tray', '--paper', '--canvas'] as const)('contrasts with the segmented track fill and %s by at least 3:1', (surface) => {
-    expect(contrast(cue, segmentedFill)).toBeGreaterThanOrEqual(3);
     expect(contrast(cue, theme.vars[surface])).toBeGreaterThanOrEqual(3);
   });
 });
@@ -50,7 +44,8 @@ describe('shared field edge styles', () => {
     expect(styles).toMatch(/--field-edge-strong:\s*color-mix\(in srgb, var\(--tray-text\) 58%, var\(--tray\)\);/);
     expect(evergreenRule).toMatch(/--field-edge-strong:\s*color-mix\(in srgb, var\(--tray-text\) 50%, var\(--tray\)\);/);
     expect(styles).toMatch(/input\[type='checkbox'\],\s*input\[type='radio'\],\s*input\[role='switch'\],\s*\[role='switch'\]\s*\{\s*border:\s*1px solid var\(--field-edge-strong\);\s*\}/);
-    expect(styles).toMatch(/\.segmented\s*\{[^}]*background:\s*var\(--rule-image-lg\),/);
+    // the track has no bottom rule: the raised marker is the cue, and a rule under the whole track clashed with it
+    expect(styles).not.toMatch(/\.segmented\s*\{[^}]*--rule-image-lg/);
     expect(styles).toMatch(/\.segmented button\.on\s*\{[^}]*box-shadow:\s*inset 0 0 0 1px var\(--field-edge-strong\)/);
   });
 });
