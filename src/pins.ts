@@ -2,6 +2,7 @@ import type { Thread } from './comments';
 import { anchorPosition } from './comments';
 import type { Obj, Point } from './types';
 import { personColor } from './palette';
+import { initialOf } from '../shared/initials';
 
 /** A pin as the overlay draws it. Positions are world coordinates; sizes are screen pixels (scaled by the renderer). */
 export interface PinView {
@@ -13,11 +14,6 @@ const DRAFT_ID = '__draft__';
 const DRAFT_COLOR = '#FFD23F';
 const HIT_TOLERANCE = 3;
 
-const initial = (name: string): string => {
-  const first = Array.from(name.trim())[0];
-  return first ? first.toUpperCase() : '?';
-};
-
 /** Pins for the threads the caller may show, plus the draft pin while a composer is open. */
 export function pinViews(opts: { threads: Thread[]; get: (id: string) => Obj | undefined; openId: string | null; draft: Point | null; visible: boolean }): PinView[] {
   const out: PinView[] = [];
@@ -25,7 +21,7 @@ export function pinViews(opts: { threads: Thread[]; get: (id: string) => Obj | u
     for (const t of opts.threads) {
       const p = anchorPosition(t.anchor, opts.get);
       out.push({
-        id: t.id, x: p.x, y: p.y, label: initial(t.authorName), color: personColor(t.authorColor), resolved: t.resolved,
+        id: t.id, x: p.x, y: p.y, label: initialOf(t.authorName), color: personColor(t.authorColor), resolved: t.resolved,
         count: 1 + t.replies.length, selected: t.id === opts.openId,
       });
     }

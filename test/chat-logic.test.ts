@@ -219,6 +219,7 @@ describe('quotes, initials and colours', () => {
     expect(initials('Ana Lima Souza')).toBe('AL');
     expect(initials('ben')).toBe('B');
     expect(initials('  ')).toBe('?');
+    expect(initials('\u{1F469}‍\u{1F4BB} Dev')).toBe('\u{1F469}‍\u{1F4BB}D');
     expect(colourIndex('user-1', 8)).toBe(colourIndex('user-1', 8));
     expect(colourIndex(null, 8)).toBe(0);
     for (const id of ['a', 'bb', 'ccc', 'dddd']) expect(colourIndex(id, 8)).toBeLessThan(8);

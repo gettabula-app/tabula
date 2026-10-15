@@ -202,6 +202,8 @@ describe('initials', () => {
     expect(initials('ana maria novak')).toBe('AN');
     expect(initials('Lea')).toBe('L');
     expect(initials('  ')).toBe('?');
+    expect(initials('\u{1F98A} Fox')).toBe('\u{1F98A}F');
+    expect(initials('Ana \u{1F469}‍\u{1F4BB}')).toBe('A\u{1F469}‍\u{1F4BB}');
   });
 });
 

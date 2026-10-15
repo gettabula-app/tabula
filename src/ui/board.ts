@@ -8,6 +8,7 @@ import { openLinkPopover } from './link-add';
 import { agentName, type BoardApp, type Tool } from '../app';
 import type { GridType } from '../types';
 import { isBox } from '../types';
+import { wordInitials } from '../../shared/initials';
 import { createTrackerFrame, setTrackerGuest, setTrackerMember, TRACKER_FRAME_DEFAULT_SIZE } from '../tracker-frame';
 import { createTrackerStore, createHttpTrackerApi, type TrackerApi, type TrackerStore } from '../tracker-data';
 import { openRegisteredLinkDialog, openRegisteredUnlinkConfirm } from '../tracker/ui/link-seam';
@@ -916,7 +917,7 @@ async function importInto(app: BoardApp, file: File) {
   }
 }
 
-const initials = (n: string) => n.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+const initials = (n: string) => wordInitials(n) || '?';
 
 export function firstRunHint(app: BoardApp, chrome: HTMLElement, openTemplates: () => void = () => {
   document.querySelector<HTMLElement>('[data-drawer="templates"]')?.click();

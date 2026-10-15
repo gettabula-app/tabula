@@ -1,6 +1,8 @@
 // Link cards (docs/link-cards.md, proto/designer-preview/link-cards/SPEC.md): the pure rules. What counts as a web address, what looks
 // like a secret, which layout a size has, what the card says about itself. No DOM, no network.
 
+import { initialOf } from '../shared/initials';
+
 export const LINK_URL_MAX = 2048;
 
 export type LinkLayout = 'compact' | 'card' | 'large';
@@ -107,9 +109,9 @@ export function domainOf(url: string): string {
 /** White letter on each at 4.5:1 or more (test/link-cards.test.ts); the same six as the presence squares. */
 export const LETTER_COLOURS = ['#3A71DD', '#C0551E', '#1E845C', '#C93A7A', '#845FD2', '#966F08'] as const;
 
+/** The letter a site's card is drawn with: the same initial rule as a name's (shared/initials.mjs), so no locale. */
 export function letterOf(domain: string): string {
-  const first = Array.from(domain.replace(/^www\./i, ''))[0];
-  return first ? first.toLocaleUpperCase() : '?';
+  return initialOf(domain.replace(/^www\./i, ''));
 }
 
 /** One colour per domain, always the same. */
