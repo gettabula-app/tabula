@@ -16,6 +16,7 @@ import { installTrackerUnlinkConfirm } from '../tracker/ui/unlink-confirm';
 import { mountTrackerFrames } from '../tracker/ui/frame';
 import { h, icon, ICONS } from './dom';
 import { announce } from './announce';
+import { syncShape } from './sync-shape';
 import { leaveOutWithheld } from '../private-select';
 import { openChatNotifications } from './chat-prefs';
 import { dialog, field, popover, segmented, toast } from './common';
@@ -137,7 +138,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   document.title = `${app.store.getMeta().name} - Tabula`;
   // the page's h1 for a screen reader: the board's name (the visible name is an input)
   const heading = h('h1', { class: 'sr-only' }, app.store.getMeta().name);
-  const status = h('button', { class: 'sync-status', onclick: () => openShare(app) });
+  // status only: the Share button beside it opens sharing, this does nothing when pressed (its words are in the tooltip)
+  const status = h('button', { class: 'sync-status', type: 'button' });
   const renderStatus = () => {
     const s = app.conn.status;
     const others = app.participants().filter((p) => !p.isMe).length;
@@ -145,32 +147,30 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     const deniedForGuest = denialForGuestSession(opts.guestId ?? null, currentAuth, app.conn.denied);
     const guestLinkRemoved = guestAccessEnded(currentAuth, deniedForGuest);
     status.dataset.state = guestLinkRemoved ? 'denied' : s;
+    status.dataset.shape = syncShape({ status: s, denied: app.conn.denied, guestEnded: guestLinkRemoved });
+    // the tooltip starts with the label for every state: the dot has no visible words, so the tooltip says the state on its own
     let label = 'Local only';
-    let tip = 'Sync is off. Every change is saved on this device.';
+    let tip = 'Local only. Sync is off. Every change is saved on this device.';
     if (guestLinkRemoved) {
       app.comments.setReadOnly(true);
       label = GUEST_ENDED_SYNC_LABEL;
-      tip = GUEST_ENDED_SYNC_TIP;
+      tip = `${label}. ${GUEST_ENDED_SYNC_TIP}`;
     } else if (s === 'live') {
       label = others ? `Live with ${others}` : 'Live';
-      tip = 'Connected to the relay. Changes sync in real time.';
+      tip = `${label}. Connected to the relay. Changes sync in real time.`;
     } else if (s === 'connecting') {
       label = 'Saved on this device';
-      tip = 'Every change is saved on this device. Waiting for the relay to sync with others.';
+      tip = `${label}. Waiting for the relay to sync with others.`;
     } else if (s === 'denied') {
       const restoring = app.conn.denied === 'restoring';
       label = restoring ? 'Restoring…' : app.conn.denied === 'unauthenticated' ? 'Sign in needed' : 'No access';
       tip = restoring
-        ? 'The workspace is being restored from a backup. Your changes are saved on this device.'
-        : 'The server refused this connection. Your changes are still saved on this device.';
+        ? `${label} The workspace is being restored from a backup. Your changes are saved on this device.`
+        : `${label}. The server refused this connection. Your changes are still saved on this device.`;
     }
-    status.replaceChildren(h('span', { class: 'sync-status-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-status-label' }, s === 'live' ? 'Live' : label));
+    status.replaceChildren(h('span', { class: 'sync-status-dot', 'aria-hidden': 'true' }), h('span', { class: 'sync-status-label' }, label));
     status.setAttribute('aria-label', label);
-    if (window.innerWidth <= 480) {
-      status.dataset.tip = label;
-    } else {
-      status.dataset.tip = tip;
-    }
+    status.dataset.tip = tip;
     // a change of state is announced; the count of people changing inside "live" is announced by name below
     if (lastState !== null && s !== lastState) announce(`Sync: ${label}`, { key: 'sync', delay: 800 });
     lastState = s;

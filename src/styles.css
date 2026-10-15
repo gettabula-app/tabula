@@ -357,9 +357,6 @@ select.input {
 .sync-status[data-state='live'] { color: color-mix(in srgb, var(--wire) 30%, var(--tray-text)); }
 .sync-status[data-state='denied'] { color: color-mix(in srgb, var(--danger) 70%, var(--tray-text)); }
 
-@media (max-width: 479px) {
-  .sync-status[data-state='denied'] .sync-status-label { display: none; }
-}
 
 .top-right { position: absolute; top: calc(12px + var(--safe-top)); right: calc(12px + var(--safe-right)); display: flex; flex-wrap: nowrap; align-items: center; gap: 6px; padding: 4px; }
 .top-right .comment-count { right: -2px; }
@@ -975,11 +972,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
     flex: 1 1 0; min-width: 0; width: auto; max-width: none; height: 44px; padding: 0 2px;
     box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .sync-status { justify-content: center; gap: 0; padding: 0; background: transparent; }
   .sync-status:hover { background: var(--tray-hover); }
-  .sync-status > .ico, .sync-status-label { display: none; }
-  .sync-status-dot { display: block; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
-  .sync-status[data-state='live'] .sync-status-dot { background: var(--wire); }
   .top-right > button { width: 44px; min-width: 44px; height: 44px; padding: 0; flex: 0 0 44px; box-sizing: border-box; }
   .people { display: none; }
   .phone-people {
@@ -1241,13 +1234,30 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 .chrome > .rail .rail-btn[data-tool='sticky']::after { display: none; }
 .chrome > .rail .rail-btn:focus-visible { outline-offset: 2px; }
 .chrome > .top-left .board-name { font: 500 16px var(--font-serif); }
-.chrome > .top-left .sync-status { height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font-size: 12px; }
+.chrome > .top-left .sync-status { width: 36px; min-width: 36px; height: 36px; padding: 0; justify-content: center; gap: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font-size: 12px; }
 .chrome > .top-left .sync-status:hover { background: var(--tray-hover); }
 .chrome > .top-left .sync-status[data-state='live'],
 .chrome > .top-left .sync-status[data-state='denied'] { color: var(--tray-muted); }
-.chrome > .top-left .sync-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.chrome > .top-left .sync-status[data-state='live'] .sync-status-dot { background: var(--wire); }
-.chrome > .top-left .sync-status-label { display: inline; }
+/* The status is its shape alone, so colour is never the only cue (data-shape is set with data-state in renderStatus); the words are in the
+   shared tooltip and the accessible name. The label stays in the DOM, visually hidden. The dot is status only: it does nothing when pressed. */
+.chrome > .top-left .sync-status .sync-status-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.chrome > .top-left .sync-status .sync-status-dot { display: block; width: 10px; height: 10px; flex: none; color: var(--tray-text); background: none; box-shadow: none; }
+.chrome > .top-left .sync-status[data-shape='dot'] .sync-status-dot { border-radius: 50%; background: var(--wire); }
+.chrome > .top-left .sync-status[data-shape='ring'] .sync-status-dot { border-radius: 50%; box-shadow: inset 0 0 0 2px currentColor; }
+.chrome > .top-left .sync-status[data-shape='ringdot'] .sync-status-dot { border-radius: 50%; box-shadow: inset 0 0 0 2px currentColor; background: radial-gradient(circle, currentColor 0 2px, transparent 2.5px); }
+.chrome > .top-left .sync-status[data-shape='bar'] .sync-status-dot { width: 12px; height: 3px; border-radius: 1px; background: currentColor; }
+.chrome > .top-left .sync-status[data-shape='tri'] .sync-status-dot { width: 12px; height: 11px; clip-path: polygon(50% 0, 100% 100%, 0 100%); background: color-mix(in srgb, var(--danger) 70%, var(--tray-text)); }
+.chrome > .top-left .sync-status:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+@media (pointer: coarse) { .chrome > .top-left .sync-status { width: 44px; min-width: 44px; height: 44px; } }
+@media (forced-colors: active) {
+  .chrome > .top-left .sync-status .sync-status-dot { forced-color-adjust: none; }
+  .chrome > .top-left .sync-status[data-shape='dot'] .sync-status-dot,
+  .chrome > .top-left .sync-status[data-shape='bar'] .sync-status-dot,
+  .chrome > .top-left .sync-status[data-shape='tri'] .sync-status-dot { background: CanvasText; }
+  .chrome > .top-left .sync-status[data-shape='ring'] .sync-status-dot,
+  .chrome > .top-left .sync-status[data-shape='ringdot'] .sync-status-dot { background: none; box-shadow: none; border: 2px solid CanvasText; }
+  .chrome > .top-left .sync-status[data-shape='ringdot'] .sync-status-dot { background: radial-gradient(circle, CanvasText 0 2px, transparent 2.5px); }
+}
 .chrome > .top-right .avatar { width: 24px; height: 24px; font-size: 10px; }
 .chrome > .top-right .share-label { font-size: 13px; letter-spacing: normal; text-transform: none; }
 .chrome > .top-right .share-btn { height: 32px; padding: 0 12px; border-radius: var(--radius-sm); }
@@ -1323,9 +1333,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 }
 @media (max-width: 480px) {
   .chrome > .top-left { max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right)); }
-  .chrome > .top-left > .sync-status { width: auto; min-width: 0; height: 44px; flex: 0 1 auto; justify-content: flex-start; gap: 5px; padding: 0 6px; }
-  .chrome > .top-left > .sync-status .sync-status-label { display: inline; }
-  .chrome > .top-left > .sync-status .sync-status-dot { width: 6px; height: 6px; }
+  .chrome > .top-left > .sync-status { width: 44px; min-width: 44px; height: 44px; flex: 0 0 44px; }
   .chrome > .top-right .phone-avatar { width: 24px; height: 24px; }
   .chrome > .top-right .share-btn {
     width: auto; min-width: 0; height: 44px; flex: 0 0 auto; gap: 6px; padding: 0 10px;
@@ -1333,13 +1341,10 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   }
   .chrome > .top-right .share-label { display: inline; }
 }
-/* at phone width the title keeps its room: the status shows its dot, and its name stays on the button for screen readers */
 @media (max-width: 400px) {
-  .chrome > .top-left > .sync-status[data-state='live'] .sync-status-label { display: none; }
-  /* the title gets the room first: Share keeps its icon and its accessible name, and the live dot gives way */
+  /* the title gets the room first: Share keeps its icon and its accessible name */
   .chrome > .top-right .share-label { display: none; }
   .chrome > .top-right .share-btn { width: 44px; padding: 0; justify-content: center; }
-  .chrome > .top-left > .sync-status[data-state='live'] { display: none; }
 }
 @media (pointer: coarse) {
   .chrome button, .chrome [role='button'], .chrome [role='tab'], .chrome [role='menuitem'],
