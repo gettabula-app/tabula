@@ -48,8 +48,8 @@ describe('previewSourceOf: the everyone\'s view of a board', () => {
   });
 
   it('sends an image as its asset reference only', () => {
-    const [img] = previewSourceOf([{ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: 'ast_1', mime: 'image/png', alt: 'who', url: 'https://x' }], false) as Record<string, unknown>[];
-    expect(img).toEqual({ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: 'ast_1', mime: 'image/png' });
+    const [img] = previewSourceOf([{ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: 'a'.repeat(64), mime: 'image/png', alt: 'who', url: 'https://x' }], false) as Record<string, unknown>[];
+    expect(img).toEqual({ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: 'a'.repeat(64), mime: 'image/png' });
   });
 
   it('ignores junk and is the same list for every caller', () => {
@@ -57,5 +57,10 @@ describe('previewSourceOf: the everyone\'s view of a board', () => {
     expect(previewSourceOf(undefined as never, false)).toEqual([]);
     const objects = [note('a'), note('p', { privateStep: 'x' })];
     expect(previewSourceOf(objects, false)).toEqual(previewSourceOf(structuredClone(objects), false));
+  });
+
+  it('drops an image asset that is not a content hash, and an unknown mime or size', () => {
+    const [img] = previewSourceOf([{ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, asset: '../x?y=1', mime: 'text/html', nw: -4, nh: 'big' }], false) as Record<string, unknown>[];
+    expect(img).toEqual({ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10 });
   });
 });

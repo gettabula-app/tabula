@@ -2273,6 +2273,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
               return { objects: previewSourceOf([...boxes, ...connectors], revealed), revealed };
             });
             if (source.objects.length > MAX_PREVIEW_OBJECTS) throw new HttpError(413, 'too_large', 'This board has too many objects for a preview');
+            // A board that shows nothing to everyone must not keep an older picture of what used to be on it.
+            if (source.objects.length === 0 && previewStore.remove(params.id)) audit(user, 'board.preview.remove', { boardId: params.id, by: user.id, reason: 'empty' });
             return [200, source];
           }),
           compile('PUT', 'boards/:id/preview', { cookieOnly: true }, ({ req, res, params, user }) => assetReply(async () => {
@@ -2310,7 +2312,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           compile('GET', 'boards/:id/preview', { cookieOnly: true }, ({ req, params, user }) => {
             boardFor(user, params.id);
             const preview = previewStore.read(params.id);
-            if (!preview) throw notFound('Board not found');
+            // older than 24 h without a fresh upload falls back to the schematic (cybersec's staleness rule)
+            if (!preview || now() - preview.at > DAY_MS) throw notFound('Board not found');
             const headers = {
               'content-type': preview.type,
               'x-content-type-options': 'nosniff',
