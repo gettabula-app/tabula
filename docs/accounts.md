@@ -145,7 +145,7 @@ GET    /api/boards/:id/versions   and the routes under it: version history of a 
 | Caller | Allowed move |
 | --- | --- |
 | Workspace owner or admin | Any board that is not in the trash to any existing team or Personal; destination membership is not required. |
-| Board creator, not a guest | Personal to a team they belong to; between teams when they belong to both; team to Personal when they belong to the source team and it has no enabled team admin. |
+| Board creator, not a guest | Personal to a team they belong to; between teams when they belong to both; team to Personal when they belong to the source team and it has no OTHER enabled team admin (a creator who is the source team's admin may take their own board to Personal). A creator whose workspace role is guest or viewer moves nothing. |
 | Everyone else, including team admins who did not create the board | No move. |
 
 An inaccessible or unknown board returns the usual `404`. An unavailable or unusable destination returns the same `403 {error: 'forbidden', message: 'You cannot move this board there'}`. Moves write one `board.move` audit row with `{boardId, from, to, by, override}` (`override` is `admin` or `creator`) and emit `access-changed` after commit. An MCP or agent write that passed its access check just before a move commits can still land once; the next call is refused. A non-creator mover gives the creator an in-app `board_moved` notice. When the creator takes a board out of a team with enabled admins, those admins get an in-app `board_moved_out` notice, except the mover. Shares and join codes stay as they were.
