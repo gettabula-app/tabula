@@ -111,6 +111,10 @@ export const LIMITS = Object.freeze({
   labels: 30,
   labelsPerCard: 10,
   labelName: 40,
+  // a card's checklist (TAB-372): items, text in Unicode code points, and the whole array as UTF-8 JSON bytes
+  checklistItems: 50,
+  checklistText: 200,
+  checklistBytes: 12000,
   laneName: 60,
   containerName: 80,
   laneWMin: 200,
@@ -481,6 +485,43 @@ export function wipCheck(lane, cards, moving) {
  * Card fields a template never carries: it names no people or agents, no due dates or card links, and tracker links are
  * reserved. Saving a template strips them; a template that has them anyway is refused.
  */
+// A card's checklist (TAB-372, po/specs/12-kanban-checklist.md): the rules the sync validator applies (server/sync-validate.mjs),
+// kept here too so a template is checked the same way in the app and on the server.
+const CHECKLIST_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const CHECKLIST_LINE_BREAK = /\p{Cc}|[\u2028\u2029]/u;
+const CHECKLIST_KEYS = new Set(['id', 'text', 'done']);
+
+/**
+ * Why a card's checklist cannot be stored (at most 50 items, each a plain object with a well-formed unique id, a text that is not
+ * blank, on one line and at most 200 code points, and an optional boolean `done`; no other keys; at most 12,000 bytes of UTF-8
+ * JSON), as a short reason; null when it can.
+ * @param {unknown} list
+ * @returns {string | null}
+ */
+export function checklistProblem(list) {
+  if (!Array.isArray(list)) return 'is not a list';
+  if (list.length > LIMITS.checklistItems) return `has more than ${LIMITS.checklistItems} items`;
+  const ids = new Set();
+  for (const item of list) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return 'has an item that is not an object';
+    if (Object.keys(item).some((k) => !CHECKLIST_KEYS.has(k))) return 'has an item with a key that is not id, text or done';
+    if (typeof item.id !== 'string' || !CHECKLIST_ID_RE.test(item.id) || ids.has(item.id)) return 'has an item whose id is missing, malformed or repeated';
+    ids.add(item.id);
+    if (typeof item.text !== 'string') return 'has an item whose text is not text';
+    if (item.text.trim() === '') return 'has an empty item';
+    if (CHECKLIST_LINE_BREAK.test(item.text)) return 'has an item on more than one line';
+    if (codePointLength(item.text) > LIMITS.checklistText) return `has an item over ${LIMITS.checklistText} characters`;
+    if (item.done !== undefined && typeof item.done !== 'boolean') return 'has an item whose done is not true or false';
+  }
+  let bytes;
+  try {
+    bytes = new TextEncoder().encode(JSON.stringify(list)).length;
+  } catch {
+    return 'cannot be stored';
+  }
+  return bytes > LIMITS.checklistBytes ? `is over ${LIMITS.checklistBytes.toLocaleString('en')} bytes` : null;
+}
+
 export const TEMPLATE_STRIPPED = Object.freeze([
   'ownerId', 'ownerName', 'ownerKind', 'due', 'link', 'extProvider', 'extKey', 'extUrl', 'trackerId', 'tracker', 'ext', 'trackerUnmappedState',
 ]);
@@ -598,6 +639,12 @@ export function templateKanbanFields(o, what, ctx) {
       if (new Set(o.labels).size !== o.labels.length) refuse(`${what} has a label twice.`);
       for (const id of o.labels) if (typeof id !== 'string' || !ctx.labels.has(id)) refuse(`${what} has a label that is not in the template.`);
       out.labels = [...o.labels];
+    }
+    // a checklist (TAB-372) is kept with its item ids; a template use gives the items new ids (src/custom-templates.ts)
+    if (o.checklist !== undefined) {
+      const problem = checklistProblem(o.checklist);
+      if (problem) refuse(`${what} checklist ${problem}.`);
+      out.checklist = o.checklist.map((item) => ({ id: item.id, text: item.text, done: item.done === true }));
     }
   } else refuse(`${what} is not a kanban part.`);
   return out;

@@ -7,6 +7,7 @@
 // are left to `styleOf` (shared/colors.mjs), which knows each type's default.
 
 import type { Obj, ProposedBy } from './types';
+import { cleanChecklist } from './checklist';
 import { HEADS, SHAPE_KINDS } from './shapes';
 import { RELATIONS } from './uml';
 import { DEFAULT_CODE_LANG, MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs.mjs';
@@ -223,6 +224,13 @@ export function safeObj<T extends Obj>(o: T): T {
   if ('attributes' in out) out.attributes = members(out.attributes);
   if ('operations' in out) out.operations = members(out.operations);
   if ('labels' in out && !(Array.isArray(out.labels) && out.labels.every((l) => typeof l === 'string'))) delete out.labels;
+  // a checklist (TAB-372) is a card's and a sticky's, as the validator takes it; an item with a bad id is left out, not renumbered,
+  // because this runs on every draw
+  if ('checklist' in out) {
+    const list = o.type === 'card' || o.type === 'sticky' ? cleanChecklist(out.checklist, { badIds: 'drop' }) : undefined;
+    if (list) out.checklist = list;
+    else delete out.checklist;
+  }
   for (const k of ['locked', 'sticker', 'hidden', 'flipX', 'flipY']) if (k in out && typeof out[k] !== 'boolean') delete out[k];
   if (o.type === 'connector' || o.type === 'group') {
     delete out.flipX;

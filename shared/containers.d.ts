@@ -94,6 +94,9 @@ export const LIMITS: {
   readonly labels: 30;
   readonly labelsPerCard: 10;
   readonly labelName: 40;
+  readonly checklistItems: 50;
+  readonly checklistText: 200;
+  readonly checklistBytes: 12000;
   readonly laneName: 60;
   readonly containerName: 80;
   readonly laneWMin: 200;
@@ -149,6 +152,8 @@ export function layoutAll(objects: Iterable<{ id: string; type: string; parent?:
 export function wipCheck(lane: { wip?: number; wipMode?: string }, cards: Iterable<{ id: string }>, moving: Iterable<string>): WipVerdict;
 
 export const TEMPLATE_STRIPPED: readonly string[];
+/** Why a card's checklist cannot be stored (TAB-372), as a short reason; null when it can. */
+export function checklistProblem(list: unknown): string | null;
 export function templateLabels(list: unknown): { id: string; name: string; color: string }[];
 export function templateKanbanFields(o: Record<string, unknown>, what: string, ctx: { types: Map<string, string>; labels: Set<string> }): Record<string, unknown>;
 export function checkTemplateKanbanLimits(objects: Iterable<{ id: string; type: string; parent?: unknown }>): void;

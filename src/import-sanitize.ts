@@ -4,6 +4,7 @@
 //   - what names a person who is not on the target board becomes the importer or is cleared;
 //   - the keys `__proto__`, `constructor` and `prototype` are dropped at any depth (the key, not the object);
 //   - the tracker links of a card, a kanban and a tracker frame belong to the board they came from and are left behind;
+//   - a card's checklist (TAB-372) is cleaned as the app writes it and kept with its item ids; a sticky keeps it too, others lose it;
 //   - a file's `proposedBy` (which AI run made an object, and for whom) is dropped; a paste keeps it in its clean shape;
 //   - a table (docs/tables.md) is one object with a key per row, column, width, alignment, fill and cell: the keys that are not
 //     well-formed table parts are dropped, the rest kept as they are; a table past the editor's own limits is refused (`tableProblem`);
@@ -15,6 +16,7 @@ import { ALIGNS, MAX_CELL_CHARS, MAX_COL_WIDTH, MAX_TABLE_CHARS, MAX_TABLE_COLS,
 import { isSafeHttpUrl } from '../shared/containers';
 import { DEFAULT_CODE_LANG, MAX_CODE_CHARS, MAX_CODE_TITLE, normaliseCodeLang } from '../shared/code-langs';
 import { cleanProposedBy } from './safe-obj';
+import { cleanChecklist } from './checklist';
 import type { Obj, Poll, PollAnswer, Vote } from './types';
 
 /** The people the target board knows: the importer, and whoever `known` says. */
@@ -162,6 +164,14 @@ export function cleanMarkdownLinks(text: string): string {
   });
 }
 
+/** A checklist (TAB-372) stays on a card and on a sticky, the two types the relay takes it on, cleaned as the app writes it; elsewhere it goes. */
+function cleanChecklistField(o: Record<string, unknown>): void {
+  if (!('checklist' in o)) return;
+  const list = o.type === 'card' || o.type === 'sticky' ? cleanChecklist(o.checklist) : undefined;
+  if (list) o.checklist = list;
+  else delete o.checklist;
+}
+
 /** The address fields of an object in place: `link` (a card), `url` and `finalUrl` (a link card) are kept only when they are http(s) addresses; a Markdown block's links and a table's cells likewise. */
 function cleanLinkFields(o: Record<string, unknown>): void {
   for (const f of ['link', 'url', 'finalUrl', 'extUrl']) if (f in o && !isSafeHttpUrl(o[f])) delete o[f];
@@ -216,6 +226,7 @@ export function sanitizeTemplateObject<T extends object>(src: T): T {
   if (KANBAN_TEMPLATE_TYPES.has(type)) {
     for (const f of [...OWNER_FIELDS, ...TRACKER_CARD_FIELDS, 'createdBy', 'proposedBy', 'privateStep', 'locked', 'hidden', 'updatedAt']) delete o[f];
   }
+  cleanChecklistField(o);
   if (type === 'table') cleanTableParts(o);
   if (type === 'code') cleanCodeFields(o);
   cleanLinkFields(o);
@@ -253,6 +264,7 @@ export function sanitizeImportedObjects<T extends Obj>(objs: readonly T[], impor
       if (o.type === 'code') cleanCodeFields(o);
     }
     cleanLinkFields(o);
+    cleanChecklistField(o);
     if (o.type === 'card' || o.type === 'container') for (const f of TRACKER_CARD_FIELDS) delete o[f];
     if (o.type === 'tracker') for (const f of TRACKER_FRAME_FIELDS) delete o[f];
     if (options.proposedBy === 'keep') {

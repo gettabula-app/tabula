@@ -62,6 +62,7 @@ import { flipDisabledReason, planFlip, type FlipAxis } from './flip';
 import { fontCss, measure } from './text';
 import { OBJECT_TEXT_MAX } from '../shared/text-limits.mjs';
 import { sanitizeImportedObjects, tableProblem } from './import-sanitize';
+import { withFreshItemIds } from './checklist';
 import { isMappedTrackerLane, LINKED_LANE_DELETE_MESSAGE } from './tracker/linked-lane';
 
 /** A finger, not a mouse: the pointer that targets are sized for (handles and line hit areas grow). */
@@ -3133,7 +3134,8 @@ export class BoardApp {
     // this board already shows that person on a card (a paste from another board must not name a stranger)
     const owners = new Set<string>();
     for (const o of this.store.cache.values()) if ((o as BaseObj).ownerId) owners.add((o as BaseObj).ownerId!);
-    const out = sanitizeImportedObjects(remapped, this.user.id, (id) => owners.has(id), { proposedBy: 'keep' });
+    // a copy's checklist items get new ids too (TAB-372): duplicate, paste and an imported board all come through here
+    const out = sanitizeImportedObjects(remapped, this.user.id, (id) => owners.has(id), { proposedBy: 'keep' }).map(withFreshItemIds);
     const zs = this.store.topZs(objs.length);
     out.forEach((o, i) => {
       o.z = zs[i];

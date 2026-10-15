@@ -353,6 +353,58 @@ describe('rejections', () => {
     expect(paths(check(card({ labels: Array.from({ length: 11 }, (_, i) => `l${i}`) })))).toEqual(['too_many:labels']);
   });
 
+  it('checks a card checklist: items, text, ids, done and the whole size (TAB-372)', () => {
+    const item = (id: string, extra: Record<string, unknown> = {}) => ({ id, text: `Step ${id}`, done: false, ...extra });
+    const withList = (items: unknown) => card({ checklist: items });
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `i${String(i).padStart(2, '0')}`);
+    expect(check(withList([item('a'), item('b', { done: true }), { id: 'c', text: 'No done flag' }]))).toEqual({ ok: true });
+    expect(check(withList([]))).toEqual({ ok: true });
+    expect(check(withList(ids(50).map((id) => item(id))))).toEqual({ ok: true });
+    expect(paths(check(withList(ids(51).map((id) => item(id)))))).toEqual(['too_many:checklist']);
+    expect(paths(check(withList('x')))).toEqual(['bad_type:checklist']);
+    expect(paths(check(withList({ id: 'a', text: 'x' })))).toEqual(['bad_type:checklist']);
+    expect(paths(check(withList(['a'])))).toEqual(['bad_type:checklist']);
+    expect(paths(check(withList([item('a', { color: 'red' })])))).toEqual(['unknown_field:checklist']);
+    expect(paths(check(withList([{ text: 'No id' }])))).toEqual(['missing_field:checklist']);
+    expect(paths(check(withList([{ id: 'a' }])))).toEqual(['missing_field:checklist']);
+    expect(paths(check(withList([item('bad id!')])))).toEqual(['bad_value:checklist']);
+    expect(paths(check(withList([item('a', { done: 'yes' })])))).toEqual(['bad_type:checklist']);
+    expect(paths(check(withList([item('a'), item('a', { text: 'Other step' })])))).toEqual(['bad_value:checklist']);
+    expect(paths(check(withList([item('a', { text: 'Line one\nLine two' })])))).toEqual(['bad_chars:checklist']);
+    expect(paths(check(withList([item('a', { text: 'Line one\r\nLine two' })])))).toEqual(['bad_chars:checklist']);
+    expect(paths(check(withList([item('a', { text: '' })])))).toEqual(['too_short:checklist']);
+    expect(paths(check(withList([item('a', { text: '   ' })])))).toEqual(['too_short:checklist']);
+    expect(paths(check(withList([item('a', { text: 'a\tb' })])))).toEqual(['bad_chars:checklist']);
+    // the item-count, unknown-key and empty-text rules are hard, not report-only (a long item and a heavy list are hard too, with their own codes)
+    expect(shouldReject('enforce', check(withList(ids(51).map((id) => item(id)))))).toBe(true);
+    expect(shouldReject('enforce', check(withList([item('a', { color: 'red' })])))).toBe(true);
+    expect(shouldReject('enforce', check(withList([item('a', { text: '' })])))).toBe(true);
+
+    // 200 code points, each two UTF-16 units: the cap counts code points, so 200 emoji pass and 201 do not
+    const emoji = (n: number) => '😀'.repeat(n);
+    expect(check(withList([item('e', { text: emoji(200) })]))).toEqual({ ok: true });
+    const long = check(withList([item('e', { text: emoji(201) })]));
+    expect(long).toMatchObject({ ok: false, violations: [{ code: 'out_of_range', path: 'checklist' }] });
+    expect(shouldReject('enforce', long)).toBe(true);
+
+    // the whole array counts UTF-8 bytes: 50 ASCII items of 200 characters fit, 50 CJK items of 200 characters do not
+    const ascii = ids(50).map((id) => item(id, { text: 'x'.repeat(200) }));
+    expect(check(withList(ascii))).toEqual({ ok: true });
+    const cjk = (n: number) => ids(n).map((id) => item(id, { text: '中'.repeat(200) }));
+    expect(check(withList(cjk(18)))).toEqual({ ok: true });
+    const heavy = check(withList(cjk(20)));
+    expect(heavy).toMatchObject({ ok: false, violations: [{ code: 'too_big' }] });
+    expect(shouldReject('enforce', heavy)).toBe(true);
+  });
+
+  it('accepts a checklist on a sticky, which keeps it when a card turns into one, and checks it there too', () => {
+    const item = { id: 'a', text: 'Pack', done: false };
+    expect(check(sticky({ labels: ['a', 'b'] }))).toEqual({ ok: true });
+    expect(check(sticky({ checklist: [item] }))).toEqual({ ok: true });
+    expect(paths(check(sticky({ checklist: [{ ...item, text: '' }] })))).toEqual(['too_short:checklist']);
+    expect(paths(check(sticky({ checklist: 'x' })))).toEqual(['bad_type:checklist']);
+  });
+
   it('checks connector ends and uml members', () => {
     const connector = (extra: Record<string, unknown>) => ({ id: 'k1', type: 'connector', z: 'a', from: { kind: 'free', x: 1, y: 2 }, to: { kind: 'bound', id: 's1', anchor: 'auto' }, route: 'elbow', startHead: 'none', endHead: 'arrow', ...extra });
     expect(check(connector({}))).toEqual({ ok: true });
