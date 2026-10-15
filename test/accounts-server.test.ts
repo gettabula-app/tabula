@@ -639,6 +639,75 @@ describe('accounts mode server', () => {
       expect(await roleOn(owner.cookie, id)).toBe('owner');
     });
 
+    it('returns last editor fields in the board list and admin board views', async () => {
+      const id = await newBoard(owner.cookie);
+      const before = await api(owner.cookie, 'GET', '/api/boards');
+      expect(before.status).toBe(200);
+      expect((before.body as Body[]).find((board) => board.id === id)).toMatchObject({
+        lastEditedBy: null,
+        lastEditedKind: null,
+        lastEditedAt: null,
+      });
+
+      // Simulate the values persisted by touchBoard so this test isolates HTTP serialization from relay writes.
+      const db = new DatabaseSync(path.join(dataDir, 'directory.sqlite'));
+      try {
+        const updated = db.prepare(
+          'UPDATE boards SET last_edited_by = ?, last_edited_kind = ?, last_edited_at = ? WHERE id = ?',
+        ).run('Anna', 'agent', 1_700_000_000_123, id);
+        expect(updated.changes).toBe(1);
+      } finally {
+        db.close();
+      }
+
+      const expected = { lastEditedBy: 'Anna', lastEditedKind: 'agent', lastEditedAt: 1_700_000_000_123 };
+      const listed = await api(owner.cookie, 'GET', '/api/boards');
+      expect((listed.body as Body[]).find((board) => board.id === id)).toMatchObject(expected);
+
+      const adminList = await api(owner.cookie, 'GET', '/api/admin/boards');
+      expect((adminList.body as Body[]).find((board) => board.id === id)).toMatchObject(expected);
+    });
+
+    it('names a person who last edited a board by their current name, "A former member" once disabled or removed, and an agent by its token name', async () => {
+      const team = await newTeam(owner.cookie);
+      const person = await joinTeam(owner.cookie, team.id);
+      const removed = await joinTeam(owner.cookie, team.id);
+      const board = await newBoard(owner.cookie);
+      const removedBoard = await newBoard(owner.cookie);
+      const agentBoard = await newBoard(owner.cookie);
+      const listed = async (id: string) => ((await api(owner.cookie, 'GET', '/api/boards')).body as Body[]).find((b) => b.id === id);
+
+      // the directory keeps the person's id (the relay writes it that way); the card shows the name they have now
+      const setLastEditor = (boardId: string, by: string, kind: 'person' | 'agent', at: number) => {
+        const db = new DatabaseSync(path.join(dataDir, 'directory.sqlite'));
+        try {
+          return db.prepare('UPDATE boards SET last_edited_by = ?, last_edited_kind = ?, last_edited_at = ? WHERE id = ?').run(by, kind, at, boardId).changes;
+        } finally {
+          db.close();
+        }
+      };
+      expect(setLastEditor(board, person.user.id, 'person', 1_700_000_000_000)).toBe(1);
+      expect((await api(person.cookie, 'PATCH', '/api/me', { name: 'Anna Lind' })).status).toBe(200);
+      expect(await listed(board)).toMatchObject({ lastEditedBy: 'Anna Lind', lastEditedKind: 'person', lastEditedAt: 1_700_000_000_000 });
+
+      // a rename follows on the next list, capped at 40 characters
+      expect((await api(person.cookie, 'PATCH', '/api/me', { name: `Anna ${'x'.repeat(60)}` })).status).toBe(200);
+      expect(await listed(board)).toMatchObject({ lastEditedBy: `Anna ${'x'.repeat(35)}`, lastEditedKind: 'person' });
+
+      // a disabled person is not named
+      expect((await api(owner.cookie, 'PATCH', `/api/members/${person.user.id}`, { disabled: true })).status).toBe(200);
+      expect(await listed(board)).toMatchObject({ lastEditedBy: 'A former member', lastEditedKind: 'person', lastEditedAt: 1_700_000_000_000 });
+
+      // nor is a removed one
+      expect(setLastEditor(removedBoard, removed.user.id, 'person', 1_700_000_000_001)).toBe(1);
+      expect((await api(owner.cookie, 'DELETE', `/api/members/${removed.user.id}`)).status).toBe(204);
+      expect(await listed(removedBoard)).toMatchObject({ lastEditedBy: 'A former member', lastEditedKind: 'person', lastEditedAt: 1_700_000_000_001 });
+
+      // an agent is shown by its token name, with kind 'agent'
+      expect(setLastEditor(agentBoard, 'Claude Desk', 'agent', 1_700_000_000_002)).toBe(1);
+      expect(await listed(agentBoard)).toMatchObject({ lastEditedBy: 'Claude Desk', lastEditedKind: 'agent', lastEditedAt: 1_700_000_000_002 });
+    });
+
     it('tells each listed user who owns a board, including viewers it was shared with', async () => {
       const team = await newTeam(owner.cookie);
       const ada = await joinTeam(owner.cookie, team.id);

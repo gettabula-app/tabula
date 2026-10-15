@@ -905,8 +905,8 @@ class Room {
     if (!directory || this.kind !== 'board' || !ws.userId || ws.guest === true) return;
     const user = directory.getUser(ws.userId);
     if (!user || user.disabled || user.role === 'guest') return;
-    const name = editorName(user.name);
-    if (name) this.lastEditor = { name, kind: 'person', at: Date.now() };
+    // the person's id, not their name: the name is looked up when a card is served, so a rename follows and a removed member is not named
+    this.lastEditor = { by: user.id, kind: 'person', at: Date.now() };
   }
 
   broadcastUpdate(update) {
@@ -1372,8 +1372,8 @@ const roomAccess = {
       } else apply();
       room.edit = null;
       if (edit?.meaningful) {
-        const name = editorName(editedBy.name);
-        if (name) room.lastEditor = { name, kind: 'agent', at: Date.now() };
+        const by = editorName(editedBy.name);
+        if (by) room.lastEditor = { by, kind: 'agent', at: Date.now() };
       }
       if (trace) {
         try {
@@ -1419,6 +1419,7 @@ const roomAccess = {
       }
       return result;
     } finally {
+      room.edit = null;
       trace?.off?.();
       room.releaseIfIdle();
     }
