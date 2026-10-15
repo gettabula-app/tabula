@@ -8,28 +8,51 @@ export const devicePixelRatioNow = (): number => (typeof window !== 'undefined' 
 /** The device pixel ratio when this page loaded: a later change of it is browser zoom. */
 export const LOAD_PIXEL_RATIO = devicePixelRatioNow();
 
-const PAGE_ELEMENTS = new Set(['BODY', 'HTML']);
+/** The two parts of the board a gesture can land on: the board surface (`.board-surface`) and the canvas (the SVG) in it. */
+export interface BoardElements {
+  surface: Element;
+  canvas: Element;
+}
 
-/**
- * Whether the board owns a Ctrl/Cmd zoom key (+, =, - and 0): nothing is focused, focus is on the page body, or focus is on the
- * canvas's one tab stop (`canvas`). Anything else (a text field, a button, a toolbar, a dialog, a menu, the tracker) keeps the
- * browser's own key.
- */
-export function boardOwnsZoomKey(active: Element | null, canvas: Element | null): boolean {
-  if (!active || PAGE_ELEMENTS.has(active.tagName.toUpperCase())) return true;
-  return !!canvas && (active === canvas || canvas.contains(active));
+/** Whether `el` is `root` or inside it. */
+function within(el: Element, root: Element): boolean {
+  return el === root || root.contains(el);
 }
 
 /**
- * Whether a board gesture (a Safari pinch, or Ctrl/Cmd+wheel over the markdown block being edited) belongs to the board. It does
- * when the target is the board surface (the canvas and the text editor's own surface) or the markdown block's text box while it is
- * in edit state. Other text editors (sticky notes, labels, code, table cells) and all chrome keep the page's own pinch.
+ * Whether focus is in something that takes typed text or a choice: an input, a select, a textarea, or an editable area (or something
+ * inside one). The page keeps its own Ctrl/Cmd keys there.
  */
-export function boardOwnsGesture(target: Element | null, surface: Element | null, markdownEditor: Element | null): boolean {
-  if (!target || !surface) return false;
-  if (markdownEditor && target === markdownEditor) return true;
-  if (target.classList.contains('text-editor')) return false;
-  return target === surface || surface.contains(target);
+export function takesTyping(el: Element): boolean {
+  const tag = el.tagName.toUpperCase();
+  return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable === true;
+}
+
+/**
+ * Whether the board owns a Ctrl/Cmd zoom key (+, =, - and 0). It does unless focus is in something that takes typing, or a dialog,
+ * a popover or the tracker is open over the board (`overlayOpen`). Focus on the page body, the canvas, a toolbar button or anything
+ * else that takes no typing is the board's, so the key zooms the board there.
+ */
+export function boardOwnsZoomKey(active: Element | null, overlayOpen: boolean): boolean {
+  if (overlayOpen) return false;
+  return !active || !takesTyping(active);
+}
+
+/** Whether `target` is one of the open in-place editors' elements, or inside one. */
+export function inOpenEditor(target: Element, editors: readonly Element[]): boolean {
+  return editors.some((editor) => within(target, editor));
+}
+
+/**
+ * Whether a board gesture (a Safari pinch, or Ctrl/Cmd+wheel) belongs to the board: over the board surface itself, over the canvas,
+ * or over an in-place editor that is open (`editors`: the text box of a sticky, label, frame name, code block, table cell, Markdown
+ * block or class, and a kanban card's title being typed). Chrome mounted over the surface (toolbars, dialogs, the tracker's frames,
+ * the code buttons) and an editor that is closed keep the page's own gesture.
+ */
+export function boardOwnsGesture(target: Element | null, board: BoardElements | null, editors: readonly Element[]): boolean {
+  if (!target || !board) return false;
+  if (target === board.surface || within(target, board.canvas)) return true;
+  return inOpenEditor(target, editors);
 }
 
 /** The zoom factor a Ctrl/Cmd+wheel step makes. Chrome and Firefox report a trackpad pinch this way, with ctrlKey set. */

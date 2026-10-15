@@ -79,12 +79,12 @@ describe('Ctrl/Cmd zoom keys on the board', () => {
     expect(e.preventDefault).toHaveBeenCalledOnce();
   });
 
-  it('leave Ctrl/Cmd+0 to the browser with focus on a button: not prevented, the board keeps its zoom', () => {
+  it('reset the board from a toolbar button too: focus on a button is not a text field, so the board owns the key', () => {
     const b = board(2);
     b.doc.activeElement = b.button;
     const e = press('0', b.button, { ctrl: true });
-    expect(b.cam.zoom).toBe(2);
-    expect(e.preventDefault).not.toHaveBeenCalled();
+    expect(b.cam.zoom).toBe(1);
+    expect(e.preventDefault).toHaveBeenCalledOnce();
   });
 
   it('zoom the board in and out from the canvas, and are prevented', () => {
@@ -98,14 +98,44 @@ describe('Ctrl/Cmd zoom keys on the board', () => {
     expect(minus.preventDefault).toHaveBeenCalledOnce();
   });
 
-  it('leave zoom in and out to the browser with focus on a button', () => {
+  it('zoom the board in and out from a toolbar button, and are prevented', () => {
     const b = board(1);
     b.doc.activeElement = b.button;
     const plus = press('=', b.button, { ctrl: true });
+    expect(b.cam.zoom).toBeCloseTo(1.25);
     const minus = press('-', b.button, { ctrl: true });
+    expect(b.cam.zoom).toBeCloseTo(1);
+    expect(plus.preventDefault).toHaveBeenCalledOnce();
+    expect(minus.preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it('leave the keys to the browser while focus is in a text field, a select, a textarea or an editable area', () => {
+    const b = board(1);
+    const field = b.doc.createElement('input');
+    const select = b.doc.createElement('select');
+    const textarea = b.doc.createElement('textarea');
+    const editable = b.doc.createElement('div');
+    (editable as unknown as { isContentEditable: boolean }).isContentEditable = true;
+    b.doc.body.append(field, select, textarea, editable);
+    for (const el of [field, select, textarea, editable]) {
+      b.doc.activeElement = el;
+      const plus = press('=', el, { ctrl: true });
+      const zero = press('0', el, { meta: true });
+      expect(b.cam.zoom).toBe(1);
+      expect(plus.preventDefault).not.toHaveBeenCalled();
+      expect(zero.preventDefault).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each(['modal-back', 'popover'])('leave the keys to the browser while a %s is open, even with focus on a button', (className) => {
+    const b = board(1);
+    const overlay = b.doc.createElement('div');
+    overlay.className = className;
+    b.doc.body.appendChild(overlay);
+    b.doc.activeElement = b.button;
+    const plus = press('=', b.button, { ctrl: true });
     expect(b.cam.zoom).toBe(1);
     expect(plus.preventDefault).not.toHaveBeenCalled();
-    expect(minus.preventDefault).not.toHaveBeenCalled();
   });
 
   it('leave the keys to the browser while a tracker is open over the board', () => {

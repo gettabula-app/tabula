@@ -173,11 +173,6 @@ export class TextEditor {
     return this.active && this.mode === 'text';
   }
 
-  /** A markdown block is being typed in: its text box is the board's for a pinch or Ctrl/Cmd+wheel (src/zoom-gestures.ts). */
-  get markdownEditing(): boolean {
-    return this.isMarkdown();
-  }
-
   get textarea() {
     return this.ta;
   }

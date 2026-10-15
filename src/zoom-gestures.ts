@@ -1,13 +1,13 @@
-import { boardOwnsGesture, gestureZoomStep, wheelZoomFactor } from './zoom-keys';
+import { boardOwnsGesture, gestureZoomStep, inOpenEditor, wheelZoomFactor, type BoardElements } from './zoom-keys';
 
 /** Safari's trackpad pinch: WebKit's gesture events, which lib.dom does not type. `scale` is cumulative from gesturestart. */
 export type GestureEventLike = Event & { scale: number; clientX: number; clientY: number };
 
 export interface BoardGestureHooks {
-  /** The board surface (`.board-surface`): the canvas and the text editor are in it; the chrome over it is not. */
-  surface: Element;
-  /** The text box of the markdown block in edit state, or null. */
-  markdownEditor: () => Element | null;
+  /** The board: its surface (`.board-surface`, where the in-place editors are mounted too) and the canvas in it. */
+  board: BoardElements;
+  /** The elements of the in-place editors open over the board now (empty when none is open): a gesture over one zooms the board. */
+  editors: () => readonly Element[];
   /** Zooms the board around a point in the viewport. */
   zoomAt: (clientX: number, clientY: number, factor: number) => void;
   /** Whether a two-finger touch pinch is zooming now (the board's own pointer handling), so a gesture must not zoom it again. */
@@ -20,14 +20,14 @@ export interface BoardGestures {
 }
 
 /**
- * Trackpad pinches zoom the board, not the page, when they land on the board: Safari's gesture events, and Ctrl/Cmd+wheel over the
- * markdown block being edited (the text box would otherwise zoom the page). The board's own wheel is app.ts's `onWheel`. Gestures
- * over other chrome are left alone, so the page's zoom works there. `doc` is where the page's own pinch is stopped for the board.
+ * Trackpad pinches zoom the board, not the page, when they land on the board: Safari's gesture events, and Ctrl/Cmd+wheel over an
+ * in-place editor that is open (a text box would otherwise zoom the page). The canvas's own wheel is app.ts's `onWheel`. Gestures over
+ * other chrome are left alone, so the page's zoom works there. `doc` is where the page's own pinch is stopped for the board.
  */
 export function bindBoardGestures(doc: EventTarget, hooks: BoardGestureHooks, signal: AbortSignal): BoardGestures {
-  const { surface } = hooks;
+  const { surface } = hooks.board;
   const opts = { passive: false, signal };
-  const owned = (e: Event) => boardOwnsGesture(e.target as Element | null, surface, hooks.markdownEditor());
+  const owned = (e: Event) => boardOwnsGesture(e.target as Element | null, hooks.board, hooks.editors());
   let gesturing = false;
   let last: number | undefined;
 
@@ -52,13 +52,13 @@ export function bindBoardGestures(doc: EventTarget, hooks: BoardGestureHooks, si
     gesturing = false;
     last = undefined;
   }, opts);
-  // Ctrl/Cmd+wheel over the markdown block's text box: the text box would otherwise zoom the page. Plain wheel still scrolls the text.
+  // Ctrl/Cmd+wheel over an open in-place editor: its text would otherwise zoom the page. Plain wheel still scrolls the text.
   surface.addEventListener('wheel', (e) => {
     const w = e as WheelEvent;
-    const editor = hooks.markdownEditor();
-    if (!editor || w.target !== editor || !(w.ctrlKey || w.metaKey)) return;
+    const target = w.target as Element | null;
+    if (!target || !(w.ctrlKey || w.metaKey) || !inOpenEditor(target, hooks.editors())) return;
     w.preventDefault();
-    // a Safari pinch over this text box is already zooming the board through its gesture events; its wheel echo must not zoom it twice
+    // a Safari pinch over this editor is already zooming the board through its gesture events; its wheel echo must not zoom it twice
     if (!gesturing) hooks.zoomAt(w.clientX, w.clientY, wheelZoomFactor(w));
   }, opts);
   return { gesturing: () => gesturing };

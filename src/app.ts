@@ -917,10 +917,10 @@ export class BoardApp {
     svg.addEventListener('pointerup', end);
     svg.addEventListener('pointercancel', end);
     this.isPinching = () => pinch !== null;
-    // Safari's trackpad pinch, and Ctrl/Cmd+wheel over the markdown block being edited, zoom the board (src/zoom-gestures.ts)
+    // Safari's trackpad pinch, and Ctrl/Cmd+wheel over an in-place editor that is open, zoom the board (src/zoom-gestures.ts)
     const gestures = bindBoardGestures(document, {
-      surface: this.r.root,
-      markdownEditor: () => (this.editor.markdownEditing ? this.editor.textarea : null),
+      board: { surface: this.r.root, canvas: this.r.svg },
+      editors: () => this.openEditors(),
       zoomAt: (x, y, factor) => this.zoomFromClient(x, y, factor),
       touchPinching: () => this.isPinching(),
     }, this.lifetime.signal);
@@ -929,6 +929,17 @@ export class BoardApp {
 
   private isPinching: () => boolean = () => false;
   private gestureActive: () => boolean = () => false;
+
+  /**
+   * The elements of the in-place editors open over the board now: the text box (a sticky, label, frame name, code block, table cell,
+   * Markdown block or class) and a kanban card's title being typed. Both are mounted in the board surface.
+   */
+  private openEditors(): Element[] {
+    const open: Element[] = [];
+    if (this.editor.active) open.push(this.editor.textarea);
+    if (this.cardInput.active) open.push(this.cardInput.element);
+    return open;
+  }
 
   /** Zooms the board around a point in the viewport: a gesture or a Ctrl/Cmd+wheel step. */
   private zoomFromClient(clientX: number, clientY: number, factor: number) {
@@ -2750,9 +2761,9 @@ export class BoardApp {
     return document.querySelector('.trk-route-root, .trk-fullscreen-portal') !== null;
   }
 
-  /** Whether a Ctrl/Cmd zoom key is the board's: focus is on the canvas or the page body, and no tracker or dialog is open over it. */
+  /** Whether a Ctrl/Cmd zoom key is the board's: focus is not in a text field, select or editable area, and no tracker, dialog or popover is open. */
   private zoomKeysOwned(): boolean {
-    return boardOwnsZoomKey(document.activeElement, document.querySelector('.canvas-focus')) && !this.trackerRouteOpen() && !document.querySelector('.popover, .modal-back');
+    return boardOwnsZoomKey(document.activeElement, this.trackerRouteOpen() || !!document.querySelector('.popover, .modal-back'));
   }
 
   private bindKeys() {
