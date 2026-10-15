@@ -109,6 +109,13 @@ describe('keyboard shortcuts dialog', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('lists Ctrl/Cmd+0 as the board reset to 100%, with the Mac label', () => {
+    const row = SHORTCUTS.find((s) => s.ids.includes('mod+0'));
+    expect(row?.action).toMatch(/reset zoom to 100%/i);
+    expect(shortcutKeys('mod+0')).toBe('Ctrl/Cmd+0');
+    expect(formatShortcutLabel(row!.keys, 'MacIntel')).toBe('⌘0');
+  });
+
   it('says ] brings to front and [ sends to back', () => {
     const row = (id: string) => SHORTCUTS.find((s) => s.ids.includes(id));
     expect(row(']')?.action).toMatch(/bring to front/i);

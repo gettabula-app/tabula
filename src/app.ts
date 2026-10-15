@@ -42,6 +42,8 @@ import { RELATIONS, classHeight, type UmlElementDef } from './uml';
 import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, personColor } from './palette';
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
+import { boardOwnsZoomKey, devicePixelRatioNow, pageIsZoomed, wheelZoomFactor } from './zoom-keys';
+import { bindBoardGestures } from './zoom-gestures';
 import { LINE_HIT_PX, LINE_HIT_PX_COARSE, LINE_MIN_SCREEN_PX, axisLock, isLine, lineFlag, lineLabel, snapAngle } from './line-geometry';
 import { guestMark } from './ui/guest-mark';
 import { escapeAction } from './ui/escape-priority';
@@ -915,9 +917,36 @@ export class BoardApp {
     svg.addEventListener('pointerup', end);
     svg.addEventListener('pointercancel', end);
     this.isPinching = () => pinch !== null;
+    // Safari's trackpad pinch, and Ctrl/Cmd+wheel over an in-place editor that is open, zoom the board (src/zoom-gestures.ts)
+    const gestures = bindBoardGestures(document, {
+      board: { surface: this.r.root, canvas: this.r.svg },
+      editors: () => this.openEditors(),
+      zoomAt: (x, y, factor) => this.zoomFromClient(x, y, factor),
+      touchPinching: () => this.isPinching(),
+    }, this.lifetime.signal);
+    this.gestureActive = gestures.gesturing;
   }
 
   private isPinching: () => boolean = () => false;
+  private gestureActive: () => boolean = () => false;
+
+  /**
+   * The elements of the in-place editors open over the board now: the text box (a sticky, label, frame name, code block, table cell,
+   * Markdown block or class) and a kanban card's title being typed. Both are mounted in the board surface.
+   */
+  private openEditors(): Element[] {
+    const open: Element[] = [];
+    if (this.editor.active) open.push(this.editor.textarea);
+    if (this.cardInput.active) open.push(this.cardInput.element);
+    return open;
+  }
+
+  /** Zooms the board around a point in the viewport: a gesture or a Ctrl/Cmd+wheel step. */
+  private zoomFromClient(clientX: number, clientY: number, factor: number) {
+    const s = this.r.size();
+    this.r.zoomAt({ x: clientX - s.left, y: clientY - s.top }, factor);
+    if (this.editor.active) this.editor.reposition();
+  }
 
   private worldOf(e: { clientX: number; clientY: number }) {
     return this.r.clientToWorld(e.clientX, e.clientY);
@@ -2712,8 +2741,8 @@ export class BoardApp {
     const s = this.r.size();
     const sp = { x: e.clientX - s.left, y: e.clientY - s.top };
     if (e.ctrlKey || e.metaKey) {
-      const k = e.deltaMode === 1 ? 0.05 : 0.0025;
-      this.r.zoomAt(sp, Math.exp(-e.deltaY * k * (e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 50 ? 3 : 1)));
+      // a Safari pinch is already zooming the board through its gesture events; its wheel echo must not zoom it twice
+      if (!this.gestureActive()) this.r.zoomAt(sp, wheelZoomFactor(e));
     } else if (this.scrollCodeByWheel(e)) {
       return;
     } else {
@@ -2730,6 +2759,11 @@ export class BoardApp {
   /** A full-screen tracker covers the board: whatever it leaves focused, the board's delete and undo keys are not for the frame under it. */
   private trackerRouteOpen(): boolean {
     return document.querySelector('.trk-route-root, .trk-fullscreen-portal') !== null;
+  }
+
+  /** Whether a Ctrl/Cmd zoom key is the board's: focus is not in a text field, select or editable area, and no tracker, dialog or popover is open. */
+  private zoomKeysOwned(): boolean {
+    return boardOwnsZoomKey(document.activeElement, this.trackerRouteOpen() || !!document.querySelector('.popover, .modal-back'));
   }
 
   private bindKeys() {
@@ -2821,8 +2855,15 @@ export class BoardApp {
       if (mod && k === 'd') { e.preventDefault(); if (!ro) this.duplicate(); return; }
       if (mod && k === 'c') { if (!this.tables.copy()) this.copy(); return; }
       if (mod && k === 'x') { if (!ro) { this.copy(); this.deleteSelection(); } return; }
-      if (mod && (k === '=' || k === '+')) { e.preventDefault(); this.zoomBy(1.25); return; }
-      if (mod && k === '-') { e.preventDefault(); this.zoomBy(0.8); return; }
+      if (mod && (k === '=' || k === '+')) { if (!this.zoomKeysOwned()) return; e.preventDefault(); this.zoomBy(1.25); return; }
+      if (mod && k === '-') { if (!this.zoomKeysOwned()) return; e.preventDefault(); this.zoomBy(0.8); return; }
+      // while the page itself is zoomed, Ctrl/Cmd+0 is the browser's reset, the one the page-zoom notice names
+      if (mod && k === '0') {
+        if (!this.zoomKeysOwned() || pageIsZoomed(window.visualViewport?.scale, devicePixelRatioNow())) return;
+        e.preventDefault();
+        this.zoomTo(1);
+        return;
+      }
       if (mod) return;
       if (e.shiftKey && e.code === 'Digit1') return this.zoomToFit();
       if (e.shiftKey && e.code === 'Digit2') return this.zoomToSelection();
