@@ -13,6 +13,8 @@ import { renderHome, type HomeNav } from './ui/home';
 import { renderTemplates } from './ui/templates-page';
 import { renderChatPage } from './ui/chat-page';
 import { mountMentionNotices } from './ui/mention-notice';
+import { mountRestartNote } from './ui/restart-note';
+import { createRestartNotice } from './restart-notice';
 import { mountTitleBadge } from './ui/title-badge';
 import { offerTemplateUpload } from './ui/template-upload';
 import { renderInvite, renderSignIn, renderVerify } from './ui/signin';
@@ -35,7 +37,7 @@ import { dockHiddenOn } from './ui/chat-dock-state';
 import { commentNoticeText } from './comments';
 import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
-import { ApiError, api, onRestoring, type Me, type ServerBoard } from './api';
+import { ApiError, api, onRestoring, type Me, type ServerBoard, type Workspace } from './api';
 import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
 import { boardUser } from './board-user';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
@@ -664,6 +666,22 @@ async function boot() {
   await initAuth();
   registerTrackerRouteHost();
   startMeRefresh();
+  // The notice before a planned server restart (docs/cloud.md, Restart). Mounted once for every page; it is fed from the
+  // signed-in state, which carries each fresh /api/me answer, and cleared whenever the state is not signed in.
+  const restartNote = mountRestartNote(document.body, createRestartNotice());
+  let fedWorkspace: Workspace | null | undefined;
+  let fedOnce = false;
+  const syncRestartNote = () => {
+    const a = authState();
+    // Offline and signed-out states carry no live answer (a cached /api/me may hold an old restart), so they clear it.
+    const workspace = a.mode === 'signed-in' ? a.me.workspace : null;
+    // onAuth also fires for a commit that repeats the same answer: only a new answer moves the countdown
+    if (fedOnce && workspace === fedWorkspace) return;
+    fedOnce = true;
+    fedWorkspace = workspace;
+    restartNote.update(workspace);
+  };
+  syncRestartNote();
   // the cards for mentions in channels you are not looking at, while chat is on for this person
   let stopMentions: (() => void) | null = null;
   let stopTitle: (() => void) | null = null;
@@ -692,6 +710,7 @@ async function boot() {
     }
     syncMentions();
     syncDock();
+    syncRestartNote();
   });
   if (!DEMO && isDesktop()) {
     try {

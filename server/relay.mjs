@@ -1934,6 +1934,12 @@ if (config.authEnabled) {
       if (hint) send(ws, hint);
     }
   });
+  // A restart notice (docs/cloud.md, "Restart notice") is a nudge, not a change of access: every open socket gets the workspace hint and the app
+  // asks /api/me for the countdown. The payload is the one the hint has always carried; clients ignore it.
+  events.on('restart-notice-changed', () => {
+    const hint = workspaceHint(knownReadOnly);
+    for (const ws of allSockets()) send(ws, hint);
+  });
   setInterval(() => {
     for (const ws of allSockets()) refresh(ws, false);
   }, 1000);

@@ -91,7 +91,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'template.create', 'template.update', 'template.delete',
   'member.update', 'member.remove',
   'admin.sessions.revoke', 'admin.session.revoke',
-  'cloud.limits', 'cloud.notify',
+  'cloud.limits', 'cloud.notify', 'cloud.restart_notice',
   'updates.auto',
   'telemetry.enabled', 'telemetry.disabled', 'telemetry.settings',
   'ai.settings', 'ai.key.set', 'ai.key.delete', 'ai.key.test',
@@ -322,6 +322,12 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       const count = typeof d.count === 'number' ? d.count : null;
       const notice = d.template === 'trial-ending' ? 'the trial-ending notice' : 'a notice';
       return `${who} sent ${notice} to ${count === null ? 'the workspace owners' : countLabel(count, 'workspace owner', 'workspace owners')}`;
+    }
+    case 'cloud.restart_notice': {
+      const seconds = typeof d.seconds === 'number' && Number.isFinite(d.seconds) ? d.seconds : 0;
+      if (seconds <= 0) return `${who} cleared the restart notice`;
+      const minutes = Math.max(1, Math.ceil(seconds / 60));
+      return `${who} announced a restart in about ${countLabel(minutes, 'minute', 'minutes')}`;
     }
     case 'linkPreviews.enabled':
       return `${who} turned link previews on`;

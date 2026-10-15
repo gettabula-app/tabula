@@ -5,7 +5,7 @@ import type { AuthState } from './auth';
 
 export const READ_ONLY_BADGE = 'Workspace is read-only';
 export const DELETED_BADGE = 'Deleted board';
-export const ME_REFRESH_MS = 5 * 60 * 1000;
+export const ME_REFRESH_MS = 60 * 1000;
 /** Hints that arrive this close together (the board and comments sockets get one each) become one refresh. */
 export const HINT_COALESCE_MS = 150;
 
@@ -100,7 +100,12 @@ export function portalTarget(url: unknown): string | null {
   }
 }
 
-export const meChanged = (before: Me | null, after: Me): boolean => JSON.stringify(before) !== JSON.stringify(after);
+/**
+ * A pending restart notice counts down on the client from its first receipt, so a later answer with fewer seconds left is not a
+ * change; a new, replaced or cleared notice (another id, or none) is.
+ */
+const comparable = (me: Me | null) => (me?.workspace?.restart ? { ...me, workspace: { ...me.workspace, restart: { id: me.workspace.restart.id } } } : me);
+export const meChanged = (before: Me | null, after: Me): boolean => JSON.stringify(comparable(before)) !== JSON.stringify(comparable(after));
 
 export interface MeRefreshDeps {
   /** Only a signed-in person on a hosted workspace has anything to refresh. */
@@ -118,7 +123,7 @@ export interface MeRefreshDeps {
   clearTimeout?: (handle: unknown) => void;
 }
 
-/** Asks the server who the user is every few minutes, so a banner or a read-only switch shows up without a reload. */
+/** Asks the server who the user is every minute, so a banner or a read-only switch shows up without a reload. */
 export function createMeRefresher(deps: MeRefreshDeps, ms = ME_REFRESH_MS) {
   const startTimer = deps.setTimeout ?? ((fn, delay) => setTimeout(fn, delay));
   const stopTimer = deps.clearTimeout ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));

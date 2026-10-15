@@ -39,6 +39,7 @@ async function setup(opts: { env?: Record<string, string>; hosted?: boolean; now
     ? {
       limits: () => ({ readOnly: false }),
       workspaceView: () => ({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 0 }),
+      restartView: () => null,
       tokenOk: (header: string | undefined) => header === `Bearer ${TOKEN}`,
       workspaceId: config.cloud?.workspaceId,
       seatUsage: () => ({}),
