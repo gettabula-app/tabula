@@ -6,6 +6,12 @@ import { placePopover } from './popover-layout';
 import { projectTarget, releaseVelocity, resumeFrom, type PickRecord } from './segmented-logic';
 import { formatShortcutLabel } from '../shortcuts';
 import { LOAD_PIXEL_RATIO, devicePixelRatioNow, pageIsZoomed } from '../zoom-keys';
+import { popoverOrigin, type PopoverBox } from './popover-origin';
+
+/** Grows the panel from the anchor's centre (popover-in in styles.css). Set after left/top, so the box is where it will be. */
+const setOrigin = (el: HTMLElement, anchor: PopoverBox, left: number, top: number) => {
+  el.style.setProperty('--pop-origin', popoverOrigin(anchor, { left, top, width: el.offsetWidth, height: el.offsetHeight }));
+};
 
 /** The height of what is visible: the soft keyboard shrinks the visual viewport but not the window. */
 const visibleHeight = () => Math.min(window.innerHeight, window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight);
@@ -25,17 +31,20 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
   }
   document.body.appendChild(el);
   const place = () => {
-    const r = el.getBoundingClientRect();
+    // layout size, not the rect: the opening animation scales the box, and a scaled size would skew the placement (no later pass re-measures it)
+    const r = { width: el.offsetWidth, height: el.offsetHeight };
     const safe = safeInsets();
     if (opts.avoidAnchor) {
       // never under the anchor (a finger is still on it); shorter and scrolling when the room is small
       el.style.maxHeight = '';
       el.style.overflowY = '';
-      const at = placeBesideAnchor(anchor.getBoundingClientRect(), { width: r.width, height: el.getBoundingClientRect().height }, { width: window.innerWidth, height: window.innerHeight }, safe);
+      const anchorRect = anchor.getBoundingClientRect();
+      const at = placeBesideAnchor(anchorRect, { width: r.width, height: el.offsetHeight }, { width: window.innerWidth, height: window.innerHeight }, safe);
       el.style.maxHeight = `${at.maxHeight}px`;
       el.style.overflowY = 'auto';
       el.style.left = `${at.left}px`;
       el.style.top = `${at.top}px`;
+      setOrigin(el, anchorRect, at.left, at.top);
       return;
     }
     const side = opts.side ?? 'bottom';
@@ -49,6 +58,7 @@ export function popover(anchor: HTMLElement, content: HTMLElement, opts: { side?
     else el.style.maxHeight = `${pos.maxHeight}px`;
     el.style.left = `${pos.left}px`;
     el.style.top = `${pos.top}px`;
+    setOrigin(el, a, pos.left, pos.top);
   };
   place();
   requestAnimationFrame(place);
