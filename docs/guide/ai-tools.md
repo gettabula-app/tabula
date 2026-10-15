@@ -95,7 +95,7 @@ When a tool with an access token changes a board, everyone on the board can see 
 
 In a workspace with sign-in, each token (and each OAuth connection) can make 2,000 changes to boards per day. The count is in items, not calls: creating 10 sticky notes in one call counts as 10. It resets at midnight UTC, and a tool that hits it is told the daily limit has been reached and when it resets. Reading is not limited this way, and neither are tickets. Whoever runs your server can change the number or turn the limit off.
 
-Ticket tools have their own limit per token and hour: up to 120 ticket updates, 120 state changes and 120 comments (each counted separately), and up to 60 new tickets. A call over the limit is refused with a time to retry, and changes nothing.
+Ticket tools have their own limit per token and hour: up to 120 ticket updates, 120 state changes and 120 comments (each counted separately), and up to 60 new tickets. A call over the limit is refused with a time to retry, and changes nothing. Changing up to 25 tickets in one call counts against the same limits as changing them one at a time, and linking tickets counts as an update. A tool can archive and restore tickets but never delete them.
 
 An AI tool can ask who it is acting as and see how many changes it has used today and when the count resets.
 
