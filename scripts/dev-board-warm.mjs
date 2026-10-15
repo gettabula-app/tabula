@@ -1,6 +1,6 @@
 // DEV ONLY. Gives the seeded boards their pictures at launch (scripts/dev-boards-real.mjs). A seeded board holds real content but no
 // picture yet, so the first load of the Boards page would show quiet tiles. This opens each board in a browser as its owner and leaves it:
-// the app's own client render (src/ui/dev-board-preview-sync.ts) then sends the picture through the real upload route, the same as an
+// the app's own client render (src/ui/board-preview-sync.ts) then sends the picture through the real upload route, the same as an
 // editor leaving a board does. Nothing is drawn or stored here. Without a browser the warm-up is skipped and the cards show the quiet tile
 // until each board is opened and left.
 //

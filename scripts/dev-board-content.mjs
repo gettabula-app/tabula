@@ -8,7 +8,7 @@
 //
 // The result is written as the room file the relay opens (`<dataDir>/<id>.yjs`, the Yjs update of the board's Store), and the comments of a
 // board as `<dataDir>/<id>~comments.yjs`. No picture is written here: a board's picture is drawn by the browser when an editor leaves it
-// (ui/dev-board-preview-sync.ts), because only the browser can draw the export.
+// (ui/board-preview-sync.ts), because only the browser can draw the export.
 //
 // The code is the app's own: Vite loads src/store.ts, src/templates.ts and the other modules in Node (ssrLoadModule), so there is no second
 // copy of the object model here. The write mirrors place() in src/templates.ts (the part that needs no BoardApp).

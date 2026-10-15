@@ -23,8 +23,8 @@ import type { TemplateDef } from '../templates';
 import { templateCard, type BoardAction, type BoardCardData, type MoveTarget, type TemplateCardData } from './board-card';
 import { boardsToolbar, loadPreviews, loadView, renderBoardSections, type BoardSection, type BoardView } from './boards-cards-view';
 import { UNTITLED, deviceCard, deviceTargets, isMine, moveTargetsFor, toBoardCard, type LiveBoard } from './boards-home-data';
-import { devBoardImage } from './dev-board-images';
-import { PREVIEW_STORED_EVENT } from './dev-board-preview-sync';
+import { boardPicture } from './board-picture';
+import { PREVIEW_STORED_EVENT } from './board-preview-sync';
 
 export interface HomeNav {
   open: (id: string, opts?: { template?: string; imported?: ImportedBoard; teamId?: string }) => void;
@@ -250,7 +250,7 @@ function welcomeSection(v: AccountView, display: { previews: boolean }, onHide: 
 function liveFor(b: Pick<ServerBoard, 'id' | 'updatedAt' | 'lastEditedAt'>): LiveBoard {
   const id = b.id;
   const unread = chatAvailable() ? boardUnread(id) : { unread: 0, mentions: 0 };
-  return { presence: boardsPresence.get(id), unread: unread.unread, mention: unread.mentions > 0, image: devBoardImage(id, b.lastEditedAt ?? b.updatedAt) };
+  return { presence: boardsPresence.get(id), unread: unread.unread, mention: unread.mentions > 0, image: boardPicture(id, b.lastEditedAt ?? b.updatedAt) };
 }
 
 const controlKey = (el: Element) => el.getAttribute('href') ?? el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '';
@@ -466,17 +466,15 @@ export function accountPage(v: AccountView, data: AccountData | null): HTMLEleme
     liveRepaint(groups, ids, paintGroups);
   };
   paintGroups();
-  // DEV ONLY: a picture stored from this page (the board just left) draws the cards again, at its new address (ui/dev-board-preview-sync.ts)
-  if (import.meta.env.DEV) {
-    const onStored = () => {
-      if (!groups.isConnected) {
-        window.removeEventListener(PREVIEW_STORED_EVENT, onStored);
-        return;
-      }
-      keepFocus(groups, paintGroups);
-    };
-    window.addEventListener(PREVIEW_STORED_EVENT, onStored);
-  }
+  // a picture stored from this page (the board just left) draws the cards again, at its new address (ui/board-preview-sync.ts)
+  const onStored = () => {
+    if (!groups.isConnected) {
+      window.removeEventListener(PREVIEW_STORED_EVENT, onStored);
+      return;
+    }
+    keepFocus(groups, paintGroups);
+  };
+  window.addEventListener(PREVIEW_STORED_EVENT, onStored);
 
   return h('div', { class: 'home-page' },
     createTopbar('boards', me),

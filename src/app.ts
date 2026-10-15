@@ -647,6 +647,8 @@ export class BoardApp {
 
   /** Opens or closes the board's chat (the M key); null where chat is not available. Set by the board UI. */
   toggleChat: (() => void) | null = null;
+  /** The board's id, set when it is opened: the board menu asks the server about the board's picture with it. */
+  boardId: string | null = null;
   /** The user's role on this board in accounts mode; null in open mode. Set by the router. */
   role: BoardRole | null = null;
   /** A deleted board that a workspace admin opened: read-only until it is restored. Set by the router. */

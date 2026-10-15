@@ -10,7 +10,7 @@ import { mountNewerBanner } from './ui/newer-banner';
 import { cardContentHeight } from './markup';
 import { watchFeatureGate } from './feature-gate';
 import { renderHome, type HomeNav } from './ui/home';
-import { watchBoardPreview } from './ui/dev-board-preview-sync';
+import { watchBoardPreview } from './ui/board-preview-sync';
 import { renderTemplates } from './ui/templates-page';
 import { renderChatPage } from './ui/chat-page';
 import { mountMentionNotices } from './ui/mention-notice';
@@ -37,7 +37,7 @@ import { commentNoticeText } from './comments';
 import { noticeText } from './tracker/ui/guard-notice';
 import { applyTheme, getStoredTheme } from './themes';
 import { ApiError, api, onRestoring, type Me, type ServerBoard } from './api';
-import { authState, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
+import { authState, boardPreviewsAvailable, cacheServerBoards, chatAvailable, cachedServerBoards, initAuth, isHostedWorkspace, joinCodesAvailable, onAuth, refreshMeSoon, setDemoMode, startMeRefresh, type AuthState } from './auth';
 import { boardUser } from './board-user';
 import { boardAccess, createUnlockWatcher, workspaceOf } from './cloud-logic';
 import { applyConnectionAccess, denialForGuestSession, GUEST_ENDED_BANNER, guestAccessEnded, watchGuestAccess } from './guest-access';
@@ -567,13 +567,14 @@ async function route() {
   root.replaceChildren();
   const app = new BoardApp(conn, user, root, isHostedWorkspace(auth));
   app.role = role ?? null;
+  app.boardId = id;
   app.deleted = deleted;
   current = app;
   currentBoardId = id;
-  // DEV ONLY: the picture of the board on its Boards card is kept up to date while an editor works on it, and drawn when the board is left
-  // (ui/dev-board-preview-sync.ts). The picture comes from the server's preview-source, not from this store.
-  if (import.meta.env.DEV && auth.mode === 'signed-in' && !deleted && (role === 'owner' || role === 'editor')) {
-    const preview = watchBoardPreview(id);
+  // The picture of the board on its Boards card is kept up to date while an owner or editor works on it, and drawn when the board is left
+  // (ui/board-preview-sync.ts). The picture comes from the server's preview-source, not from this store. Anyone else gets no watch.
+  if (auth.mode === 'signed-in' && !deleted) {
+    const preview = watchBoardPreview(id, { enabled: boardPreviewsAvailable(), role: role ?? null });
     const offChange = conn.store.onChange(() => preview.touch());
     app.onDestroy(() => {
       offChange();

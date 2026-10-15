@@ -8,7 +8,7 @@
 // The script refuses to start when either port is taken. It never kills whatever holds a port.
 // Sign-in links are single use. Stop and run the script again to get fresh ones.
 //
-// The relay runs with TABULA_PREVIEW_DEV=1: the Boards cards show a picture of each board (the server's preview routes, docs/board-previews.md).
+// The relay serves the board previews of the production routes (docs/board-previews.md): the Boards cards show a picture of each board.
 // A second copy for testing: DEV_BOARDS_RELAY_PORT, DEV_BOARDS_VITE_PORT and DEV_BOARDS_DATA_DIR (a directory inside .dev-data).
 // Its sign-in links go into that directory, and its Vite cache beside it, so the copy never touches the demo's files.
 import { spawn } from 'node:child_process';
@@ -71,8 +71,6 @@ const relayEnv = {
   TABULA_OWNER_EMAIL: OWNER_EMAIL,
   TABULA_MAIL: 'log',
   TABULA_BASE_URL: ORIGIN,
-  // DEV ONLY: the preview routes of the demo (docs/board-previews.md). Off by default on every other server.
-  TABULA_PREVIEW_DEV: '1',
 };
 // A copy with its own data dir gets its own Vite cache too: two dev servers on one cache can delete each other's dependencies.
 const viteEnv = {
