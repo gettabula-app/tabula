@@ -261,9 +261,14 @@ export function previewSourceOf(objects, revealed) {
     const keys = [...PREVIEW_GEOMETRY, ...PREVIEW_LOOK];
     if (o.type === 'connector') keys.push(...PREVIEW_CONNECTOR, 'label');
     if (PREVIEW_TEXT_TYPES.has(o.type)) keys.push('text', 'name');
-    if (PREVIEW_ASSET_TYPES.has(o.type)) keys.push('asset', 'mime', 'nw', 'nh');
     const copy = {};
     for (const key of keys) if (o[key] !== undefined) copy[key] = o[key];
+    // An image reference is data the client turns into a URL: only a content hash, a known image type and sane sizes pass.
+    if (PREVIEW_ASSET_TYPES.has(o.type)) {
+      if (typeof o.asset === 'string' && /^[0-9a-f]{64}$/.test(o.asset)) copy.asset = o.asset;
+      if (typeof o.mime === 'string' && /^image\/(png|jpeg|webp|gif)$/.test(o.mime)) copy.mime = o.mime;
+      for (const key of ['nw', 'nh']) if (Number.isFinite(o[key]) && o[key] > 0 && o[key] <= 20000) copy[key] = o[key];
+    }
     return copy;
   });
 }

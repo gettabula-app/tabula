@@ -19,3 +19,7 @@ Rate limits: `GET preview-source` allows 30 per minute per user and 1 per 2 seco
 Before the flag is ever turned on outside the demo: the stored image needs cascade delete with the board, a stale flag, restore and duplicate invalidation, the owner remove action, and `Clear-Site-Data` on logout (the preview route does not send it yet). A restore from backup does not bring previews back: `previews-dev/` is not part of any backup. Keep `TABULA_PREVIEW_DEV` out of every `fly.toml`, Dockerfile and CI environment; a test checks that `loadConfig` leaves it false by default.
 
 Freshness: a stored image older than 24 hours is no longer served (404, the card shows the schematic) until a new upload. Marking an image stale when a text-bearing object is deleted needs a hook in the relay; the demo does not have it, and the production design must (with the per-board "sensitive: no preview" option and deleting the file with the board).
+
+## Empty boards and image references (demo path)
+
+`GET /api/boards/:id/preview-source` deletes the stored picture (audit `board.preview.remove`, reason `empty`) when the everyone's-view source has no objects, so an emptied board does not keep an old picture. An image object passes only a 64-hex content hash as `asset`, a png/jpeg/webp/gif `mime` and positive `nw`/`nh`; anything else is dropped. Still not covered: a board that keeps objects but loses its only text-bearing ones (needs the relay hook with the production table), and a tab closed within 3 s of an edit (no final write).
