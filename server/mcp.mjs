@@ -1594,7 +1594,6 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
           else if (input.link !== undefined) sets.link = input.link;
           if (input.checklist === null || input.checklist?.length === 0) unsets.add('checklist');
           else if (input.checklist !== undefined) sets.checklist = input.checklist;
-          if (input.checklist !== undefined && JSON.stringify(input.checklist ?? []) !== JSON.stringify(card.checklist ?? [])) assertLinkedCardEdit(card, 'checklist', 'checklist');
           const owner = ownerChanges(actor, card, input);
           if (input.title !== undefined && input.title !== card.text) assertLinkedCardEdit(card, 'title', 'title');
           if ((input.due === null && card.due !== undefined) || (input.due !== undefined && input.due !== null && input.due !== card.due)) {

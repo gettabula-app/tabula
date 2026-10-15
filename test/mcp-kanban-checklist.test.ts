@@ -89,8 +89,10 @@ describe('kanban card checklist over MCP', () => {
     expect(titles).not.toContain('B3');
   });
 
-  it('does not let an AI change the checklist of a ticket-linked card', async () => {
-    const refused = await h.tool(token, 'update_kanban_card', { boardId: board, kanbanId, cardId: linkedId, checklist: [{ text: 'x' }] });
-    expect(refused.error).toBe('invalid_input');
+  it('lets an AI change the checklist of a ticket-linked card (it stays on the board) but not its title or labels', async () => {
+    const changed = await h.tool(token, 'update_kanban_card', { boardId: board, kanbanId, cardId: linkedId, checklist: [{ id: 'l1', text: 'x' }] });
+    expect(changed.error).toBeUndefined();
+    expect(changed.data.card.checklist).toEqual([{ id: 'l1', text: 'x', done: false }]);
+    expect((await h.tool(token, 'update_kanban_card', { boardId: board, kanbanId, cardId: linkedId, title: 'Renamed' })).error).toBe('invalid_input');
   });
 });
