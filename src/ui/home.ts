@@ -36,27 +36,42 @@ const ACCESS: Partial<Record<BoardRole, string>> = { commenter: 'Can comment', v
 const emptyLine = (text: string) => h('p', { class: 'home-empty' }, text);
 /** `top`: the page's own heading is hidden while there are no boards, so this title is the page's h1. */
 function emptyBoardState(newBoard: HTMLElement, top = false): HTMLElement {
+  // the template strip sits right below this and carries the templates, so the only action here is New board
   return h('section', { class: 'home-empty-state' },
     h(top ? 'h1' : 'h2', null, 'No boards yet'),
     h('p', null, 'Create a board, or start from a template.'),
-    h('div', { class: 'home-empty-actions' },
-      newBoard,
-      h('a', { class: 'btn', href: '#/templates' }, 'Start from a template')));
+    h('div', { class: 'home-empty-actions' }, newBoard));
 }
 
-function newBoardMenu(anchor: HTMLElement, onBlank: () => void, onImport: () => void, disabled: boolean) {
-  const item = (label: string, run: () => void) => h('button', {
+type ActionItem = { label: string; run: () => void };
+
+/** A menu of actions under its button (popover in common.ts): the first item takes focus, and Esc or a click outside closes it. */
+function actionMenu(anchor: HTMLElement, className: string, items: ActionItem[], disabled: boolean) {
+  const menu = h('div', { class: `menu ${className}` }, ...items.map(({ label, run }) => h('button', {
     class: 'menu-item', type: 'button', role: 'menuitem', disabled,
     onclick: () => {
       pop.close();
       run();
     },
-  }, h('span', null, label));
-  const menu = h('div', { class: 'menu home-new-board-menu' },
-    item('Blank board', onBlank),
-    item('From a template…', () => { location.hash = '#/templates'; }),
-    item('Import a file…', onImport));
+  }, h('span', null, label))));
   const pop = popover(anchor, menu, { role: 'menu', side: 'bottom' });
+}
+
+function newBoardMenu(anchor: HTMLElement, onBlank: () => void, onImport: () => void, disabled: boolean) {
+  actionMenu(anchor, 'home-new-board-menu', [
+    { label: 'Blank board', run: onBlank },
+    { label: 'From a template…', run: () => { location.hash = '#/templates'; } },
+    { label: 'Import a file…', run: onImport },
+  ], disabled);
+}
+
+/** Under 480 px the team actions sit behind this one button; home.css shows it instead of the buttons there. */
+function moreActionsButton(items: ActionItem[], disabled: boolean): HTMLElement {
+  const button: HTMLElement = h('button', {
+    class: 'btn home-more', type: 'button', disabled, 'aria-label': 'More actions', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    onclick: () => actionMenu(button, 'home-more-menu', items, disabled),
+  }, '…');
+  return button;
 }
 
 function newBoardButton(fileInput: HTMLElement, onBlank: () => void, disabled: boolean): HTMLElement {
@@ -209,8 +224,16 @@ async function fetchAccount(me: Me): Promise<AccountData | null> {
 export function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
   const { nav, me, down } = v;
   const admin = me.user.role === 'owner' || me.user.role === 'admin';
+  const canNewTeam = me.user.role !== 'guest';
   const fileInput = boardFileInput(nav);
   const groups = h('div', { class: 'home-groups' });
+  const newTeam = () => openCreateTeam(v.refresh);
+  const members = () => openWorkspaceMembers(me, v.refresh);
+  // the same two actions, as a menu for narrow screens; a guest who may neither create a team nor see members gets no menu
+  const overflow: ActionItem[] = [
+    ...(canNewTeam ? [{ label: 'New team', run: newTeam }] : []),
+    ...(admin ? [{ label: 'Members', run: members }] : []),
+  ];
   const toolbar = h('div', { class: 'home-toolbar' },
     searchField('Search boards', v.query.value, (value) => {
       v.query.value = value;
@@ -218,8 +241,9 @@ export function accountPage(v: AccountView, data: AccountData | null): HTMLEleme
     }),
     h('div', { class: 'home-actions' },
       newBoardButton(fileInput, () => nav.open(newId()), down),
-      me.user.role === 'guest' ? null : h('button', { class: 'btn', disabled: down, onclick: () => openCreateTeam(v.refresh) }, 'New team'),
-      admin ? h('button', { class: 'btn', disabled: down, onclick: () => openWorkspaceMembers(me, v.refresh) }, 'Members') : null));
+      canNewTeam ? h('button', { class: 'btn home-action', disabled: down, onclick: newTeam }, 'New team') : null,
+      admin ? h('button', { class: 'btn home-action', disabled: down, onclick: members }, 'Members') : null,
+      overflow.length ? moreActionsButton(overflow, down) : null));
   const templates = templateStrip(nav, down, me.user.id);
   const footer = pageFooter('Boards sync through your workspace server when it is reachable.');
   const main = h('main', { class: 'home' },
@@ -279,17 +303,7 @@ function teamSection(v: AccountView, team: Team, boards: ServerBoard[]) {
   return group(team.name, team.role ? (team.role === 'admin' ? 'Admin' : 'Member') : null, [
     h('button', { class: 'btn sm', disabled: v.down, onclick: () => openTeamManager(team, v.me, v.refresh) }, 'Manage'),
     team.role ? h('button', { class: 'btn sm', disabled: v.down, onclick: () => v.nav.open(newId(), { teamId: team.id }) }, 'New board') : null,
-  ], boards.length ? serverBoardList(v, boards, team.name) : teamEmptyState(v, team));
-}
-
-function teamEmptyState(v: AccountView, team: Team) {
-  return h('div', { class: 'team-empty-state' },
-    emptyLine('No boards yet. Create the first one.'),
-    h('div', { class: 'team-empty-actions' },
-      team.role ? h('button', {
-        class: 'btn primary', disabled: v.down, onclick: () => v.nav.open(newId(), { teamId: team.id }),
-      }, 'New board') : null,
-      h('a', { class: 'btn', href: '#/templates' }, 'Start from a template')));
+  ], serverBoardList(v, boards, team.name));
 }
 
 function personalSection(v: AccountView, boards: ServerBoard[]) {

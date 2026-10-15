@@ -85,9 +85,6 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .group-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
 .badge { display: inline-block; padding: 0 6px; border: 1px solid var(--ink); color: var(--ink); line-height: 18px; white-space: nowrap; }
 .home-empty { margin: 0; padding: 16px 0; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); color: var(--graphite); }
-.team-empty-state { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; }
-.team-empty-state .home-empty { flex: 1 1 240px; }
-.team-empty-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 
 /* Board rows: the columns come from --cols, shared by the labels and every row. The whole row is the link. */
 .board-table { --cols: minmax(0, 1fr) 144px 32px; }
@@ -133,6 +130,8 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
 .tpl-tile .tpl-thumb { width: calc(100% + 32px); margin: -16px -16px 8px; }
 .link-more { display: inline-flex; align-items: center; gap: 6px; height: 32px; color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; }
 .link-more:hover { text-decoration: underline; text-underline-offset: 4px; }
+/* Hide is a button: the same text link, without the browser's frame, with a 44px target and room either side of the word */
+button.link-more { min-height: 44px; padding: 0 12px; border: 0; background: none; }
 
 /* Templates page. */
 .tpl-toolbar { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; margin-top: 32px; }
@@ -233,6 +232,13 @@ button.topbar-link { padding: 0; border-width: 0 0 2px; background: none; font-f
   .tpl-strip { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* Under 480 px New team and Members sit behind the More actions button (the markup has all three); the buttons come back from 480 px. */
+.home-actions .home-more { display: none; }
+@media (max-width: 479px) {
+  .home-actions .home-action { display: none; }
+  .home-actions .home-more { display: inline-flex; }
+}
+
 @media (max-width: 560px) {
   .save-tpl { grid-template-columns: minmax(0, 1fr); }
   .save-tpl-preview { order: -1; }
@@ -284,13 +290,10 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
 .home .btn.ghost:not(:disabled):hover { background: var(--page-hover); }
 .home-actions { gap: 8px; }
 
-.home-empty-state {
-  display: grid; justify-items: center; align-content: center; min-height: min(48vh, 420px); padding: 24px 16px; text-align: center;
-}
+/* No padding or minimum height: the empty state starts on the page's left edge and sits one section gap (the .home gap) below the toolbar, and above the strip. */
 .home-empty-state :is(h1, h2) { margin: 0; color: var(--ink); font: 400 40px/1.1 var(--font-serif); letter-spacing: -0.02em; }
 .home-empty-state p { margin: 8px 0 20px; color: var(--graphite); font-size: 14px; }
-.home-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-.home.empty { min-height: calc(100vh - 56px); align-content: center; }
+.home-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .home.empty .home-head,
 .home.empty .home-foot { display: none; }
 
@@ -351,6 +354,7 @@ button.topbar-link { height: 36px; padding: 0 10px; border: 0; }
   .home .home-search { flex: 1 1 100%; max-width: none; }
   .home-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .home-actions .btn { min-height: 44px; }
+  .home-actions .home-more { justify-self: start; min-width: 44px; }
   .home-empty-state :is(h1, h2) { font-size: 32px; }
   .board-list { border-top: 1px solid var(--page-hairline); }
   .board-row { padding: 8px; }

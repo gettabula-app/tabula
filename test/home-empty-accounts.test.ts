@@ -3,7 +3,7 @@ import { accountPage } from '../src/ui/home';
 import { FakeElement, flush, hasControl, installFakeBrowser, need, textOf, type FakeBrowser } from './fake-dom';
 
 // Slice 4 P3: a signed-in person with no boards still sees the Boards toolbar, so the New board menu and New team stay reachable,
-// and the empty state still offers a template.
+// and the template strip under the empty state still offers templates.
 let browser: FakeBrowser;
 beforeEach(() => {
   browser = installFakeBrowser();
@@ -32,11 +32,15 @@ describe('the Boards page of an account with no boards', () => {
     expect(hasControl(toolbar, 'Import file')).toBe(false);
   });
 
-  it('does not use the empty layout class that hides the heading, and still offers a template', () => {
+  it('does not use the empty layout class that hides the heading, and its empty state has New board only', () => {
     const page = accountPage(view('member'), empty) as unknown as FakeElement;
     expect(need(page, 'main').classList.contains('empty')).toBe(false);
     expect(textOf(need(page, '.home-empty-state h2'))).toBe('No boards yet');
-    expect(hasControl(need(page, '.home-empty-state'), 'Start from a template')).toBe(true);
+    // the template strip right below carries the templates, so the empty state does not repeat them
+    expect(need(page, '.home-empty-state').querySelectorAll('button, a').map(textOf)).toEqual(['New board']);
+    expect(need(page, '.home-templates').hidden).toBe(false);
+    // both are children of the .home grid, so its one section gap separates them
+    expect(need(page, '.home-templates').parentNode).toBe(need(page, '.home-groups').parentNode);
   });
 
   it('keeps Import file in the empty-state New board menu', async () => {
