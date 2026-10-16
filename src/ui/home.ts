@@ -540,7 +540,7 @@ export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'acc
       kind === 'access' ? h('span', null, 'Access') : null,
       h('span')),
     h('ul', { class: 'board-list', 'aria-label': label }, ...rows.map((r) => {
-      const link = h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null);
+      const link = h('a', { href: `#/b/${encodeURIComponent(r.id)}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null);
       return h('li', { class: 'board-row' },
       link,
       h('span', { class: 'board-sub' },
