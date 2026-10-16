@@ -8,3 +8,6 @@
 .rail-tool-list.frame-presets .frame-row .menu-hint { font-variant-numeric: tabular-nums; }
 .frame-glyph-slot { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 26px; height: 16px; color: var(--tray-muted); }
 .frame-glyph { display: block; box-sizing: border-box; height: 14px; border: 1px solid currentColor; border-radius: 2px; }
+.rail-tool-list.frame-presets .frame-custom { display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+.rail-tool-list.frame-presets .frame-custom-input { box-sizing: border-box; min-width: 0; width: 0; flex: 1 1 0; font: inherit; font-size: 13px; padding: 4px 6px; border: 1px solid var(--tray-line); border-radius: 6px; background: transparent; color: inherit; }
+.rail-tool-list.frame-presets .frame-custom-x { color: var(--tray-muted); }

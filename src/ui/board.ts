@@ -81,8 +81,8 @@ import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate 
 import { trackPanelTop } from './panel-top';
 import { mountRailScrollCue, trackMoreY } from './scroll-cue';
 import { choiceForToolKind, rememberToolChoice, restoreToolChoice, type RailToolChoice } from './rail-tool-group-state';
-import { FRAME_PRESETS, presetChoiceId, presetFrameBox, presetFrameName, presetForChoice, presetSize } from './frame-presets';
-import { frameFlyoutBody, frameOrientation } from './frame-flyout';
+import { FRAME_PRESETS, frameOrientation, presetChoiceId, presetFrameBox, presetFrameName, presetForChoice, presetSize } from './frame-presets';
+import { frameFlyoutBody } from './frame-flyout';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
 
@@ -526,16 +526,19 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     onAction: () => {},
   });
   /** Places a frame of a preset's size in the middle of the view and selects it; the group's tool and face stay as they are. */
-  const placeFramePreset = (choiceId: string) => {
-    const preset = presetForChoice(choiceId);
-    if (!preset) return;
+  const placeFrameSize = (size: { w: number; h: number }, name: string) => {
     if (app.readOnly) {
       toast("You can't add frames to a board you can only view.");
       return;
     }
-    const orientation = frameOrientation();
     const vp = app.r.viewport();
-    app.insertFrame(presetFrameBox(presetSize(preset, orientation), { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }), presetFrameName(preset, orientation));
+    app.insertFrame(presetFrameBox(size, { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }), name);
+  };
+  const placeFramePreset = (choiceId: string) => {
+    const preset = presetForChoice(choiceId);
+    if (!preset) return;
+    const orientation = frameOrientation();
+    placeFrameSize(presetSize(preset, orientation), presetFrameName(preset, orientation));
   };
   // The Frame tool: a click or F draws a frame as before; the flyout also places a page or screen size in the middle of the view
   const frameGroup = railToolGroup({
@@ -549,7 +552,10 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     flyout: 'Frame and frame sizes',
     className: 'rail-frame-group',
     onAction: (_button, choiceId) => placeFramePreset(choiceId),
-    renderFlyout: (_close, choose) => frameFlyoutBody(choose),
+    renderFlyout: (close, choose) => frameFlyoutBody(choose, (size) => {
+      close();
+      placeFrameSize(size, 'Custom');
+    }),
   });
   const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates' | 'layers') => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
