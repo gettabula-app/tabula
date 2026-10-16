@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Obj } from '../src/types';
 import {
-  mayKeepPreview, PREVIEW_BACKOFF_MS, PREVIEW_COOLDOWN_MS, PREVIEW_HIDDEN_MS, PREVIEW_QUIET_MS, previewVersionOf, watchBoardPreview, type PreviewAccess,
+  mayKeepPreview, PREVIEW_BACKOFF_MS, PREVIEW_COOLDOWN_MS, PREVIEW_HIDDEN_MS, PREVIEW_QUIET_MS, PREVIEW_RETRY_AFTER_MAX_MS, previewVersionOf, watchBoardPreview, type PreviewAccess,
 } from '../src/ui/board-preview-sync';
 
 // The picture of a board is kept up to date while an owner or editor works (src/ui/board-preview-sync.ts, docs/board-previews.md). A manual
@@ -194,21 +194,47 @@ describe('refusals are quiet, and never a loop', () => {
     expect(net.puts()).toHaveLength(2);
   });
 
-  it('a 404 on the source (off, or no picture) makes one request and is then left alone until the next change', async () => {
+  it('a 404 on the source (off, or no picture) stops the watch for this page load: later changes ask nothing', async () => {
     const { t, net, watch } = harness({ source: () => new Response(null, { status: 404 }) });
     watch.touch();
     await t.run(PREVIEW_QUIET_MS);
     expect(net.calls).toHaveLength(1);
-    await t.run(PREVIEW_BACKOFF_MS);
+    await t.run(PREVIEW_RETRY_AFTER_MAX_MS * 2);
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS + PREVIEW_COOLDOWN_MS);
+    watch.leave();
+    await t.run(PREVIEW_QUIET_MS);
     expect(net.calls).toHaveLength(1);
   });
 
-  it('a 413 on the source, and a 429 with Retry-After, back off for the time asked and no longer', async () => {
-    const big = harness({ source: () => new Response(null, { status: 413 }) });
-    big.watch.touch();
-    await big.t.run(PREVIEW_QUIET_MS);
-    expect(big.net.sources()).toBe(1);
+  it('a 404 on the upload stops the watch for this page load too', async () => {
+    const { t, net, watch } = harness({ put: () => new Response(null, { status: 404 }) });
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS);
+    expect(net.puts()).toHaveLength(1);
+    await t.run(PREVIEW_RETRY_AFTER_MAX_MS * 2);
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS + PREVIEW_COOLDOWN_MS);
+    expect(net.sources()).toBe(1);
+    expect(net.puts()).toHaveLength(1);
+  });
 
+  it('a 413 on the source (the board is too big) waits an hour, then asks again on the next change', async () => {
+    const { t, net, watch } = harness({ source: () => new Response(null, { status: 413 }) });
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS);
+    expect(net.sources()).toBe(1);
+    await t.run(PREVIEW_RETRY_AFTER_MAX_MS - PREVIEW_QUIET_MS - 1000);
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS);
+    expect(net.sources()).toBe(1);
+    await t.run(PREVIEW_RETRY_AFTER_MAX_MS);
+    watch.touch();
+    await t.run(PREVIEW_QUIET_MS);
+    expect(net.sources()).toBe(2);
+  });
+
+  it('a 429 with Retry-After backs off for the time asked and no longer', async () => {
     const busy = harness({ source: () => new Response(null, { status: 429, headers: { 'retry-after': '120' } }) });
     busy.watch.touch();
     await busy.t.run(PREVIEW_QUIET_MS);

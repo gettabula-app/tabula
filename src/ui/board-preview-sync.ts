@@ -3,8 +3,8 @@
 // the live store, and uploaded as WebP or PNG (PUT /api/boards/:id/preview with `x-preview-rev`). It is drawn three seconds after the last
 // change, at most every ten seconds while the edits go on, and when the board is left.
 //
-// Nothing here loops on a refusal. A stale revision (409) is asked again once; every other refusal waits: 404 is a board with no picture or
-// one that is off (the next change or leave asks again), 429, 503, 413 and a network failure back off. The card keeps its drawn schematic
+// Nothing here loops on a refusal. A stale revision (409) is asked again once; every other refusal waits: 404 (a board with no picture or
+// one that is off), 401 and 403 stop the watch for this page load, 413 waits an hour, and 429, 503 and a network failure back off. The card keeps its drawn schematic
 // whenever a picture is missing or cannot be drawn: the server removes pictures itself, so any GET may answer 404.
 import { buildPictureSvg, embedImages } from '../preview-render';
 import { rasterizePicture } from '../preview-raster';
@@ -134,10 +134,14 @@ export function watchBoardPreview(boardId: string, access: PreviewAccess, overri
   /** One pass: ask for the source, draw it, upload it. Every refusal is answered here, quietly. */
   async function attempt(): Promise<Attempt> {
     const source = await deps.fetch(`${base}/preview-source`, { credentials: 'same-origin', cache: 'no-store', headers: { accept: 'application/json' } });
-    // 404: the board is off, or has nothing to draw (the card keeps its schematic); 401 and 403: the role is gone for this page
-    if (source.status === 404) return 'done';
-    if (source.status === 401 || source.status === 403) {
+    // 404: the board is off, or has nothing to draw (the card keeps its schematic); 401 and 403: the role is gone for this page.
+    // All three stop the watch for this page load; a 413 (the board is too big to draw) waits the longest back-off there is.
+    if (source.status === 404 || source.status === 401 || source.status === 403) {
       backoffUntil = Number.POSITIVE_INFINITY;
+      return 'done';
+    }
+    if (source.status === 413) {
+      backoffUntil = Math.max(backoffUntil, deps.now() + PREVIEW_RETRY_AFTER_MAX_MS);
       return 'done';
     }
     if (!source.ok) {
@@ -167,11 +171,12 @@ export function watchBoardPreview(boardId: string, access: PreviewAccess, overri
       return 'stored';
     }
     if (put.status === 409) return 'stale';
-    if (put.status === 401 || put.status === 403) {
+    if (put.status === 404 || put.status === 401 || put.status === 403) {
       backoffUntil = Number.POSITIVE_INFINITY;
       return 'done';
     }
-    if (put.status === 429 || put.status === 503 || put.status === 413) backOff(put);
+    if (put.status === 429 || put.status === 503) backOff(put);
+    if (put.status === 413) backoffUntil = Math.max(backoffUntil, deps.now() + PREVIEW_RETRY_AFTER_MAX_MS);
     return 'done';
   }
 
