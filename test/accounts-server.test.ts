@@ -226,7 +226,7 @@ describe('accounts mode server', () => {
       expect(owner.user.role).toBe('owner');
       expect(owner.user.email).toBe(OWNER);
       const me = await api(owner.cookie, 'GET', '/api/me');
-      expect(me.body).toEqual({ user: owner.user, teams: [], mcpOauth: false, images: true, chat: true, notifications: true });
+      expect(me.body).toEqual({ user: owner.user, teams: [], mcpOauth: false, images: true, boardPreviews: true, chat: true, notifications: true });
 
       const second = await signIn(OWNER);
       expect(second.user.id).toBe(owner.user.id);
@@ -714,7 +714,7 @@ describe('accounts mode server', () => {
       expect((await api(admin.cookie, 'POST', '/api/boards', { id: second })).status).toBe(201);
     });
 
-    it('lets only the board owner rename, move, delete and share', async () => {
+    it('lets board owners rename and share, and applies separate permissions to moves', async () => {
       const team = await newTeam(owner.cookie);
       const other = await newTeam(owner.cookie);
       const admin = await joinTeam(owner.cookie, team.id, 'admin');
@@ -741,8 +741,9 @@ describe('accounts mode server', () => {
       expect((await api(creator.cookie, 'PATCH', `/api/boards/${board}`, { teamId: 5 })).status).toBe(400);
       expect((await api(creator.cookie, 'PATCH', `/api/boards/${board}`, {})).status).toBe(400);
       const personal = await api(creator.cookie, 'PATCH', `/api/boards/${board}`, { teamId: null });
-      expect(personal.body).toMatchObject({ teamId: null, role: 'owner' });
-      expect(await roleOn(editor.cookie, board)).toBeNull();
+      expect(personal.status).toBe(403); // the source team still has enabled admins
+      expect(personal.body.message).toBe('You cannot move this board there');
+      expect(await roleOn(editor.cookie, board)).toBe('editor');
       const back = await api(creator.cookie, 'PATCH', `/api/boards/${board}`, { teamId: team.id });
       expect(back.body.teamId).toBe(team.id);
       expect(await roleOn(editor.cookie, board)).toBe('editor');

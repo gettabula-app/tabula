@@ -86,7 +86,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'auth.login', 'auth.logout', 'auth.logout_all', 'me.update',
   'team.create', 'team.update', 'team.member.role', 'team.leave', 'team.member.remove',
   'invite.create', 'invite.revoke', 'invite.accept',
-  'board.create', 'board.update', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
+  'board.create', 'board.update', 'board.move', 'board.preview.upload', 'board.preview.remove', 'board.preview.off', 'board.preview.on', 'board.delete', 'board.restore', 'board.share', 'board.unshare',
   'board.version.create', 'board.version.rename', 'board.version.delete', 'board.version.restore', 'board.activity.revert',
   'template.create', 'template.update', 'template.delete',
   'member.update', 'member.remove',
@@ -98,6 +98,7 @@ export const KNOWN_AUDIT_ACTIONS = [
   'ai.generate', 'ai.summarise', 'ai.cluster', 'ai.run.accept', 'ai.run.discard',
   'asset.upload', 'assets.gc',
   'linkPreviews.enabled', 'linkPreviews.disabled',
+  'boardPreviews.enabled', 'boardPreviews.disabled',
   'chat.delete', 'chat.settings', 'chat.retention', 'chat.erase', 'chat.export',
   'backup.run', 'backup.failed', 'backup.list', 'backup.preview', 'backup.boards', 'backup.tracker_findings',
   'restore.started', 'restore.done', 'restore.failed', 'restore.old_data_removed',
@@ -266,6 +267,18 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       if (text(d.teamId)) return `${who} moved ${boardLabel} to ${teamLabel}`;
       return `${who} updated ${boardLabel}`;
     }
+    case 'board.move': {
+      const place = (id: unknown) => (text(id) ? teamLabelFor(id) : 'Personal');
+      return `${who} moved ${boardLabel} from ${place(d.from)} to ${place(d.to)}`;
+    }
+    case 'board.preview.upload':
+      return `${who} updated the preview picture of ${boardLabel}`;
+    case 'board.preview.off':
+      return `${who} turned off the preview picture of ${boardLabel}`;
+    case 'board.preview.on':
+      return `${who} turned on the preview picture of ${boardLabel}`;
+    case 'board.preview.remove':
+      return `${who} removed the preview picture of ${boardLabel}`;
     case 'board.delete':
       return `${who} deleted ${boardLabel}`;
     case 'board.restore':
@@ -333,6 +346,10 @@ export function auditSentence(entry: AuditEntry, lookup: Lookup = () => undefine
       return `${who} turned link previews on`;
     case 'linkPreviews.disabled':
       return `${who} turned link previews off`;
+    case 'boardPreviews.enabled':
+      return `${who} turned board preview pictures on`;
+    case 'boardPreviews.disabled':
+      return `${who} turned board preview pictures off`;
     case 'updates.auto':
       return `${who} turned automatic updates ${flag(d.to) === false ? 'off' : 'on'}`;
     case 'telemetry.enabled':

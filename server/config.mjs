@@ -420,6 +420,11 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
   const tracker = loadTracker(env);
   const linkPreviews = loadLinkPreviews(env);
   const telemetry = loadTelemetry(env, Boolean(cloud));
+  const rawPreviewsMaxMb = (env.TABULA_PREVIEWS_MAX_MB ?? '').trim();
+  const parsedPreviewsMaxMb = rawPreviewsMaxMb ? Number(rawPreviewsMaxMb) : 64;
+  const previewsMaxMb = Number.isFinite(parsedPreviewsMaxMb)
+    ? Math.max(1, Math.min(1024, Math.floor(parsedPreviewsMaxMb)))
+    : 64;
   const joinCodeMode = (env.TABULA_JOIN_CODES ?? '').trim() || 'off';
   if (joinCodeMode !== 'on' && joinCodeMode !== 'off') throw new Error(`TABULA_JOIN_CODES must be on or off (got "${joinCodeMode.slice(0, 20)}")`);
   if (joinCodeMode === 'on' && !authEnabled) warn('TABULA_JOIN_CODES=on is ignored without accounts mode (TABULA_AUTH=on)');
@@ -430,6 +435,8 @@ export function loadConfig(rawEnv = process.env, warn = console.warn) {
 
   return {
     version: /^[A-Za-z0-9._-]{1,40}$/.test(versionLabel) ? versionLabel : null,
+    previews: env.TABULA_PREVIEWS !== '0',
+    previewsMaxBytes: previewsMaxMb * 1024 * 1024,
     authEnabled,
     ownerEmail,
     baseUrl,

@@ -12,13 +12,13 @@ Facilitators and small teams who run workshops, retros, planning and everyday co
 
 ## Product Purpose
 
-Tabula is a shared whiteboard: sticky notes, shapes, connectors, frames and groups, kanban boards, workshop sessions (steps, shared timer, private writing, dot voting, polls), comments and chat, with accounts, teams and roles. It is free software (AGPL-3.0-only), works offline first and syncs through a relay when one is available. An issue tracker that lives on the board is being dogfooded on the team's own workspace behind a feature flag; it is not shipped to customers and is not part of the public claims. Success: a team can run a session or keep its work on one board without paying per seat for a hosted whiteboard, and without losing data when the network is bad.
+Tabula is a shared whiteboard: sticky notes, shapes, connectors, frames and groups, kanban boards, workshop sessions (steps, shared timer, private writing, dot voting, polls), comments and chat, with accounts, teams and roles. It is source-available (FSL-1.1-ALv2), works offline first and syncs through a relay when one is available. An issue tracker that lives on the board is being dogfooded on the team's own workspace behind a feature flag; it is not shipped to customers and is not part of the public claims. Success: a team can run a session or keep its work on one board without paying per seat for a hosted whiteboard, and without losing data when the network is bad.
 
 ## Positioning
 
 Wording from the CGO agent (Johan delegated it), to be used as written:
 
-"Tabula is free software you can run yourself: the same AGPL-3.0 app that powers our hosted workspaces runs on your own server, and every board works offline and syncs when it reconnects. Workshop facilitation is part of the board rather than an add-on: steps, a shared timer, private writing, dot voting and polls, with kanban alongside. Agents can read and edit boards through MCP, and people see every change."
+"Tabula is source-available software you can run yourself: the same app that powers our hosted workspaces runs on your own server, free for your own team, and every board works offline and syncs when it reconnects. Workshop facilitation is part of the board rather than an add-on: steps, a shared timer, private writing, dot voting and polls, with kanban alongside. Agents can read and edit boards through MCP, and people see every change."
 
 No prices, numbers or competitor names in positioning copy. Claims about tablets, phones or classrooms, and about the tracker, are not made until they are verified and shipped (see Capabilities and Constraints).
 
@@ -43,7 +43,7 @@ The README, `docs/` (specs, user guide in `docs/guide`), `docs/brand.md`, screen
 
 ## Product Principles
 
-1. Free software first: nothing in the open product is held back from self-hosters.
+1. Source-available first: nothing in the public app is held back from self-hosters.
 2. Local-first: it keeps working with a bad or no connection.
 3. Accessible by default: keyboard operable, phone-sized targets, readable contrast in every theme.
 4. Honest copy: no invented proof, no fake numbers; claims come from what the product does.

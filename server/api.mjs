@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
+import { canMoveBoard } from './board-move.mjs';
 import { InviteExhaustedError, SeatLimitError } from './auth.mjs';
 import { CloudError, addsSeat, validateLimits, validateNotify, validateRestartNotice } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
@@ -22,7 +23,11 @@ import { describeError } from './ai/errors.mjs';
 import { FEATURE_SPECS } from './ai/features.mjs';
 import { createAiRoutes } from './ai/routes.mjs';
 import { RESTORE_STATUS, RestoreError } from './restore.mjs';
-import { AssetError } from './assets.mjs';
+import { AssetError, readBytes } from './assets.mjs';
+import { isRevealed, previewSourceOf, readAll } from './board-ops.mjs';
+import { MAX_PREVIEW_BYTES, validatePreviewImage } from './preview-image.mjs';
+import { createPreviewStore } from './preview-store.mjs';
+import { get as getPreviewRevision } from './preview-rev.mjs';
 import { LinkRouteError, createLinkUnfurl } from './link-routes.mjs';
 import { createChatRoutes } from './chat-routes.mjs';
 import { createChatLimits } from './chat-limits.mjs';
@@ -53,6 +58,8 @@ const MAX_BODY = 64 * 1024;
 const DRAIN_LIMIT = 2 * TEMPLATE_BODY_LIMIT;
 const INVITE_EXHAUSTED = 'This invitation has been used up. Ask the person who invited you for a new link.';
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_PREVIEW_OBJECTS = 5000;
+const MAX_PREVIEW_DAILY_BYTES = 200 * 1024 * 1024;
 const USER_ROLES = ['owner', 'admin', 'member', 'guest'];
 const TEAM_ROLES = ['admin', 'member'];
 const SHARE_ROLES = ['editor', 'commenter', 'viewer'];
@@ -239,7 +246,13 @@ function compile(method, pattern, options, handler) {
 // `restore` is the restore engine (docs/backups.md, Restoring), null while backups are off. `maintenance` says whether a
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
-export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, notificationDigest = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
+export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, notificationDigest = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null, previewStore: suppliedPreviewStore = null }) {
+  const previewStore = config.previews === true
+    ? suppliedPreviewStore ?? createPreviewStore({ dataDir, now, maxBytes: config.previewsMaxBytes, log })
+    : null;
+  // The owner's "no picture for this board" choice (kept in settings, so a cache wipe never undoes it)
+  const boardPreviewOff = (boardId) => directory.getSetting(`boardPreview.off.${boardId}`) === '1';
+  const boardPreviewsEnabled = () => config.previews === true && directory.getSetting('boardPreviews.enabled') !== '0';
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest
    * `minReader` it declares (what a rollback is measured against), and what the files on disk are on. Chat is null where it is off.
@@ -572,6 +585,31 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const clientIp = (req) => clientRateKeyOf(req, config);
   const oauthDecisionLimiter = createWindowLimiter(10, now);
+  const boardMoveHourlyLimiter = createWindowLimiter(100, now, 60 * 60_000);
+  const boardMoveBoardLimiter = createWindowLimiter(1, now, 10_000);
+  const boardMovePreviewLimiter = createWindowLimiter(60, now);
+  const previewSourceUserLimiter = createWindowLimiter(30, now, 60_000);
+  const previewSourceBoardLimiter = createWindowLimiter(1, now, 2_000);
+  const previewUploadBoardLimiter = createWindowLimiter(1, now, 10_000);
+  const previewUploadUserLimiter = createWindowLimiter(60, now, 60 * 60_000);
+  let previewDailyUploads = [];
+
+  // Every attempt is charged on entry, before the body is read, in one synchronous step: invalid bodies and two concurrent
+  // PUTs cannot get past the limit. The daily byte pool is one pool for the whole server (a demo).
+  function chargePreviewAttempt(limiters, res) {
+    const wait = Math.max(...limiters.map(([limiter, key]) => limiter.wait(key)));
+    if (wait) {
+      res.setHeader('retry-after', String(wait));
+      throw new HttpError(429, 'rate_limited', 'Too many preview requests. Try again later.');
+    }
+    for (const [limiter, key] of limiters) limiter.hit(key);
+  }
+
+  function previewDailyFull(bytes) {
+    const current = now();
+    previewDailyUploads = previewDailyUploads.filter((upload) => upload.at > current - DAY_MS);
+    return previewDailyUploads.reduce((total, upload) => total + upload.bytes, 0) + bytes > MAX_PREVIEW_DAILY_BYTES;
+  }
   // refused control-token attempts on the internal routes, per address (the control plane's own calls are never counted: only a refusal is)
   const internalAuthFailures = createWindowLimiter(30, now);
   const internalAuthLogged = createWindowLimiter(1, now);
@@ -711,6 +749,11 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   function requireAssetWriter(user, boardId) {
     const { role } = boardFor(user, boardId);
     if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can add images');
+  }
+
+  function requirePreviewWriter(user, boardId) {
+    const { role } = boardFor(user, boardId);
+    if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can add board previews');
   }
 
   // The asset handlers refuse with AssetError; the dispatcher answers HttpError.
@@ -969,6 +1012,185 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   // ------------------------------------------------------------ handlers
 
+  const MOVE_FORBIDDEN_MESSAGE = 'You cannot move this board there';
+  const MOVE_TOKEN_HEADERS = ['authorization', 'x-api-key', 'x-mcp-token', 'x-oauth-token', 'x-agent-token', 'x-tabula-token', 'mcp-session-id'];
+  const hasTokenAuth = (req) => MOVE_TOKEN_HEADERS.some((name) => {
+    const value = req.headers[name];
+    return typeof value === 'string' ? value.trim() !== '' : Array.isArray(value) && value.some((part) => String(part).trim() !== '');
+  });
+
+  function requireBoardMoveCapacity(user, boardId, res) {
+    // The shared 100-hit window also enforces members' 20-hit ceiling: 81 more hits cannot fit once
+    // the member has used 20. Role changes therefore keep one per-user bucket instead of resetting it.
+    const userWait = boardMoveHourlyLimiter.wait(user.id, isAdmin(user) ? 1 : 81);
+    const boardWait = boardMoveBoardLimiter.wait(boardId);
+    const wait = Math.max(userWait, boardWait);
+    if (wait) {
+      res.setHeader('retry-after', String(wait));
+      throw new HttpError(429, 'rate_limited', 'Board moves are limited. Try again later.');
+    }
+    boardMoveHourlyLimiter.hit(user.id);
+    boardMoveBoardLimiter.hit(boardId);
+  }
+
+  function requireBoardMovePreviewCapacity(user, res) {
+    const wait = boardMovePreviewLimiter.hit(user.id);
+    if (wait) {
+      res.setHeader('retry-after', String(wait));
+      throw new HttpError(429, 'rate_limited', 'Board move previews are limited. Try again later.');
+    }
+  }
+
+  function moveInputs(user, board, to) {
+    const sourceId = board.teamId ?? null;
+    const sourceTeam = sourceId === null ? null : directory.getTeam(sourceId);
+    const enabledAdmins = sourceTeam
+      ? directory.listTeamMembers(sourceId).filter((member) => member.role === 'admin' && !directory.getUser(member.userId)?.disabled)
+      : [];
+    const destinationTeam = to === null ? null : directory.getTeam(to);
+    return {
+      source: {
+        id: sourceId,
+        exists: sourceId === null || sourceTeam !== null,
+        role: sourceId === null ? null : directory.getTeamRole(sourceId, user.id),
+        // another enabled admin: an admin who is also the creator may take their own board to Personal
+        hasOtherEnabledAdmin: enabledAdmins.some((member) => member.userId !== user.id),
+      },
+      dest: {
+        id: to,
+        exists: to === null || destinationTeam !== null,
+        role: to === null || !destinationTeam ? null : directory.getTeamRole(to, user.id),
+      },
+      enabledAdmins,
+    };
+  }
+
+  function moveState(userId, boardId) {
+    const currentUser = directory.getUser(userId);
+    const board = directory.getBoard(boardId);
+    if (!currentUser || !board || board.deletedAt != null || directory.boardRole(boardId, userId) === null) {
+      throw notFound('Board not found');
+    }
+    return { currentUser, board };
+  }
+
+  function recordBoardMoveNotices({ mover, board, from, to, enabledAdmins }) {
+    if (!notificationStore) return;
+    const recipients = new Set();
+    if (board.ownerId && board.ownerId !== mover.id) {
+      const result = notificationStore.record({
+        userId: board.ownerId,
+        kind: 'board_moved',
+        actorId: mover.id,
+        boardId: board.id,
+        teamId: to,
+        ref: null,
+      }, { notify: false });
+      if (result?.created) recipients.add(board.ownerId);
+    }
+    if (mover.id === board.ownerId && from !== null && enabledAdmins.length) {
+      for (const admin of enabledAdmins) {
+        if (admin.userId === mover.id) continue;
+        const result = notificationStore.record({
+          userId: admin.userId,
+          kind: 'board_moved_out',
+          actorId: mover.id,
+          boardId: board.id,
+          teamId: from,
+          ref: null,
+        }, { notify: false });
+        if (result?.created) recipients.add(admin.userId);
+      }
+    }
+    if (recipients.size) directory.afterCommit(() => recipients.forEach((userId) => notificationStore.ping(userId)));
+  }
+
+  function moveBoardWithinTransaction({ userId, boardId, to, expectedTeamId, res, title }) {
+    const { currentUser, board } = moveState(userId, boardId);
+    if (currentUser.disabled || currentUser.role === 'guest') throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+    if (board.teamId !== expectedTeamId) throw conflict('board_moved', 'This board has moved. Refresh and try again.');
+    const role = directory.boardRole(board.id, currentUser.id);
+    if (title !== undefined && role !== 'owner') throw forbidden('Only the board owner can do that');
+    if (board.teamId === to) {
+      if (title === undefined) return { board, moved: false };
+      const renamed = directory.updateBoard(board.id, { title });
+      audit(currentUser, 'board.update', { boardId: board.id, title });
+      return { board: renamed, moved: false };
+    }
+
+    const { source, dest, enabledAdmins } = moveInputs(currentUser, board, to);
+    const permission = canMoveBoard({ user: currentUser, board, source, dest });
+    if (!permission.ok) throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+    requireBoardMoveCapacity(currentUser, board.id, res);
+    const updated = directory.updateBoard(board.id, { teamId: to, ...(title === undefined ? {} : { title }) });
+    audit(currentUser, 'board.move', { boardId: board.id, from: source.id, to, by: currentUser.id, override: permission.override });
+    if (title !== undefined) audit(currentUser, 'board.update', { boardId: board.id, title });
+    recordBoardMoveNotices({ mover: currentUser, board, from: source.id, to, enabledAdmins });
+    return { board: updated, moved: true };
+  }
+
+  function previewBoardMove({ userId, boardId, to }) {
+    const rollback = new Error('preview rollback');
+    try {
+      directory.transaction(() => {
+        const { currentUser, board } = moveState(userId, boardId);
+        const { source, dest } = moveInputs(currentUser, board, to);
+        const permission = canMoveBoard({ user: currentUser, board, source, dest });
+        if (!permission.ok) throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+
+        const shares = directory.listShares(board.id);
+        const candidateIds = new Set();
+        const candidateTeams = new Set([source.id, dest.id]);
+        for (const share of shares) {
+          if (share.principalType === 'user') candidateIds.add(share.principalId);
+          else if (share.principalType === 'team') candidateTeams.add(share.principalId);
+        }
+        for (const teamId of candidateTeams) {
+          if (teamId === null) continue;
+          for (const member of directory.listTeamMembers(teamId)) candidateIds.add(member.userId);
+        }
+
+        const before = new Map([...candidateIds].map((id) => [id, directory.boardRole(board.id, id)]));
+        const names = new Map([...candidateIds].map((id) => [id, directory.getUser(id)?.name ?? '']));
+        directory.updateBoard(board.id, { teamId: to });
+        const losing = [];
+        const gaining = [];
+        for (const id of candidateIds) {
+          const previous = before.get(id) ?? null;
+          const next = directory.boardRole(board.id, id);
+          if (previous !== null && next === null) losing.push(id);
+          if (previous === null && next !== null) gaining.push(id);
+        }
+
+        const canSeeEveryone = isAdmin(currentUser);
+        const visibleIds = canSeeEveryone
+          ? null
+          : new Set(directory.listTeamsFor(currentUser.id).flatMap((team) => directory.listTeamMembers(team.id).map((member) => member.userId)));
+        const cleanName = (id) => String(names.get(id) ?? '')
+          .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+          .replace(/\s+/gu, ' ')
+          .trim()
+          .slice(0, 80);
+        const visibleNames = (ids) => ids
+          .filter((id) => canSeeEveryone || visibleIds.has(id))
+          .map(cleanName)
+          .filter(Boolean)
+          .slice(0, 5);
+        rollback.result = {
+          losing: losing.length,
+          gaining: gaining.length,
+          sharesKept: shares.length,
+          losingNames: visibleNames(losing),
+          gainingNames: visibleNames(gaining),
+        };
+        throw rollback;
+      });
+    } catch (error) {
+      if (error !== rollback) throw error;
+    }
+    return rollback.result;
+  }
+
   const routes = [
     ...notificationRoutes,
 
@@ -1054,6 +1276,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         mcpOauth: config.mcp?.oauth === true,
         ...(assets ? { images: true } : {}),
         ...(linkUnfurl.enabled() ? { linkPreviews: true } : {}),
+        ...(boardPreviewsEnabled() ? { boardPreviews: true } : {}),
         ...(chatOn ? { chat: true } : {}),
         ...(notificationStore ? { notifications: true } : {}),
         ...(config.joinCodes ? { joinCodes: true } : {}),
@@ -1106,6 +1329,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       auth.logout(sessionId);
       audit(user, 'auth.logout', {});
       res.setHeader('set-cookie', auth.clearCookie());
+      res.setHeader('clear-site-data', '"cache"');
       emit('session-revoked', { userId: user.id, sessionId });
       return [204];
     }),
@@ -1118,6 +1342,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, 'auth.logout_all', {});
       });
       res.setHeader('set-cookie', auth.clearCookie());
+      res.setHeader('clear-site-data', '"cache"');
       emit('session-revoked', { userId: user.id });
       return [204];
     }),
@@ -1262,6 +1487,35 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     compile('GET', 'boards/presence', {}, ({ user }) => [200, { presence: presenceFor(user) }]),
     compile('GET', 'boards', {}, ({ user }) => [200, directory.listBoardsFor(user).map((b) => boardView(b, b.role))]),
+    compile('POST', 'boards/:id/move', { body: true, cookieOnly: true }, ({ user, params, body, res }) => {
+      if (user.guest === true || user.role === 'guest') throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+      boardFor(user, params.id);
+      if (!body || typeof body !== 'object' || Array.isArray(body)
+        || !Object.prototype.hasOwnProperty.call(body, 'to') || !Object.prototype.hasOwnProperty.call(body, 'expectedTeamId')) {
+        throw badRequest('to and expectedTeamId are required');
+      }
+      const to = body.to === null ? null : idField(body.to, 'to');
+      const expectedTeamId = body.expectedTeamId === null ? null : idField(body.expectedTeamId, 'expectedTeamId');
+      const result = directory.transaction(() => moveBoardWithinTransaction({
+        userId: user.id,
+        boardId: params.id,
+        to,
+        expectedTeamId,
+        res,
+      }));
+      if (result.moved) emit('access-changed', { boardId: result.board.id });
+      return [200, boardView(result.board, directory.boardRole(result.board.id, user.id))];
+    }),
+    compile('GET', 'boards/:id/move-preview', { cookieOnly: true }, ({ user, params, query, res }) => {
+      if (user.guest === true || user.role === 'guest') throw forbidden(MOVE_FORBIDDEN_MESSAGE);
+      boardFor(user, params.id);
+      const requested = query.get('to');
+      if (requested === null) throw badRequest('to is required');
+      const to = requested === 'personal' ? null : idField(requested, 'to');
+      requireBoardMovePreviewCapacity(user, res);
+      const preview = directory.transaction(() => previewBoardMove({ userId: user.id, boardId: params.id, to }));
+      return [200, preview];
+    }),
     compile('POST', 'boards', { body: true }, ({ user, body }) => {
       if (typeof body.id !== 'string' || !BOARD_ID_RE.test(body.id)) throw badRequest('id must be 1 to 64 letters, digits, - or _');
       const title = body.title == null ? undefined : cleanText(body.title, 'title', 0, 200);
@@ -1280,25 +1534,43 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       });
       return [201, boardView(board, directory.boardRole(board.id, user.id))];
     }),
-    compile('PATCH', 'boards/:id', { body: true }, ({ user, params, body }) => {
-      const { board } = boardFor(user, params.id, { own: true });
+    compile('PATCH', 'boards/:id', { body: true }, ({ req, user, params, body, res }) => {
+      const { board, role } = boardFor(user, params.id);
+      if (body.teamId === undefined && role !== 'owner') throw forbidden('Only the board owner can do that');
       const patch = {};
       if (body.title !== undefined) patch.title = cleanText(body.title, 'title', 0, 200);
       if (body.teamId !== undefined) {
         patch.teamId = body.teamId === null ? null : idField(body.teamId, 'teamId');
-        if (patch.teamId !== null && directory.getTeamRole(patch.teamId, user.id) === null) {
-          throw forbidden('You are not a member of that team');
-        }
+        if (hasTokenAuth(req)) throw forbidden('This route requires a cookie session');
       }
       if (Object.keys(patch).length === 0) throw badRequest('Nothing to change');
+
+      if (patch.teamId === undefined) {
+        const updated = directory.transaction(() => {
+          const next = directory.updateBoard(board.id, patch);
+          audit(user, 'board.update', { boardId: board.id, ...patch });
+          return next;
+        });
+        if (patch.title !== undefined) emit('board-renamed', { boardId: board.id, title: updated.title });
+        return [200, boardView(updated, directory.boardRole(board.id, user.id))];
+      }
+
+      const expectedTeamId = body.expectedTeamId === undefined
+        ? board.teamId
+        : body.expectedTeamId === null ? null : idField(body.expectedTeamId, 'expectedTeamId');
       const updated = directory.transaction(() => {
-        const next = directory.updateBoard(board.id, patch);
-        audit(user, 'board.update', { boardId: board.id, ...patch });
-        return next;
+        return moveBoardWithinTransaction({
+          userId: user.id,
+          boardId: board.id,
+          to: patch.teamId,
+          expectedTeamId,
+          res,
+          title: patch.title,
+        });
       });
-      if (patch.teamId !== undefined && patch.teamId !== board.teamId) emit('access-changed', { boardId: board.id });
-      if (patch.title !== undefined) emit('board-renamed', { boardId: board.id, title: updated.title });
-      return [200, boardView(updated, directory.boardRole(board.id, user.id))];
+      if (updated.moved) emit('access-changed', { boardId: board.id });
+      if (patch.title !== undefined && updated.board.title !== board.title) emit('board-renamed', { boardId: board.id, title: updated.board.title });
+      return [200, boardView(updated.board, directory.boardRole(updated.board.id, user.id))];
     }),
     compile('DELETE', 'boards/:id', {}, ({ user, params }) => {
       const { board } = boardFor(user, params.id, { own: true });
@@ -1306,6 +1578,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         directory.deleteBoard(board.id);
         audit(user, 'board.delete', { boardId: board.id });
       });
+      previewStore?.remove(board.id);
       emit('access-changed', { boardId: board.id });
       return [204];
     }),
@@ -1630,6 +1903,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, 'board.restore', { boardId: board.id });
         return directory.getBoardAdmin(board.id);
       });
+      previewStore?.remove(board.id);
       // admins who had it open while it was deleted may write again
       emit('access-changed', { boardId: board.id });
       return [200, { ...restored, role: directory.boardRole(board.id, user.id) }];
@@ -1987,6 +2261,131 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
     // ---------------------------------------------------------- images (docs/images.md)
 
+    ...(previewStore
+      ? [
+          compile('GET', 'boards/:id/preview-source', { cookieOnly: true }, ({ params, res, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            res.setHeader('cache-control', 'private, no-store');
+            res.setHeader('x-content-type-options', 'nosniff');
+            const { role } = boardFor(user, params.id);
+            if (role !== 'owner' && role !== 'editor') throw forbidden('Only editors can read a board preview source');
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
+            chargePreviewAttempt([[previewSourceUserLimiter, user.id], [previewSourceBoardLimiter, params.id]], res);
+            const source = roomAccess.read(params.id, (doc) => {
+              const { boxes, connectors } = readAll(doc);
+              const revealed = isRevealed(doc);
+              return { objects: previewSourceOf([...boxes, ...connectors], revealed), revealed };
+            });
+            if (source.objects.length > MAX_PREVIEW_OBJECTS) throw new HttpError(413, 'too_large', 'This board has too many objects for a preview');
+            return [200, { ...source, rev: getPreviewRevision(params.id) }];
+          }),
+          compile('PUT', 'boards/:id/preview', { cookieOnly: true }, ({ req, res, params, user }) => assetReply(async () => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            requirePreviewWriter(user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
+            chargePreviewAttempt([[previewUploadBoardLimiter, params.id], [previewUploadUserLimiter, user.id]], res);
+            const rawRevision = req.headers['x-preview-rev'];
+            const validRevision = typeof rawRevision === 'string' && /^\d{1,12}$/.test(rawRevision);
+            if (!validRevision || Number(rawRevision) !== getPreviewRevision(params.id)) {
+              throw new HttpError(409, 'preview_stale', 'The board changed while its preview was being prepared');
+            }
+            const rawLength = req.headers['content-length'];
+            if (typeof rawLength !== 'string' || !/^\d+$/.test(rawLength)) {
+              throw new AssetError(411, 'length_required', 'Content-Length is required');
+            }
+            const declaredLength = Number(rawLength);
+            if (!Number.isSafeInteger(declaredLength)) throw new AssetError(400, 'bad_request', 'Content-Length is invalid');
+            if (declaredLength > MAX_PREVIEW_BYTES) throw new AssetError(413, 'payload_too_large', 'The image is too large');
+            const contentType = req.headers['content-type'];
+            const declaredType = typeof contentType === 'string' ? contentType.trim().toLowerCase() : '';
+            if (declaredType !== 'image/png' && declaredType !== 'image/webp') {
+              throw new AssetError(415, 'unsupported_media_type', 'Only PNG and WebP previews are accepted');
+            }
+            const bytes = await readBytes(req, MAX_PREVIEW_BYTES);
+            if (bytes.length !== declaredLength) throw new AssetError(400, 'bad_request', 'Content-Length does not match the request body');
+
+            const current = auth.authenticate(req.headers.cookie);
+            if (!current) throw new HttpError(401, 'unauthenticated', 'Sign in required');
+            if (current.setCookie) res.setHeader('set-cookie', current.setCookie);
+            if (current.user.id !== user.id) throw new HttpError(401, 'unauthenticated', 'Sign in required');
+            requirePreviewWriter(current.user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
+
+            const image = validatePreviewImage(bytes, declaredType);
+            if (!image.ok) throw new AssetError(400, 'invalid_image', 'The preview image is invalid');
+            if (Number(rawRevision) !== getPreviewRevision(params.id)) {
+              throw new HttpError(409, 'preview_stale', 'The board changed while its preview was being prepared');
+            }
+            if (previewDailyFull(bytes.length)) throw new AssetError(429, 'rate_limited', 'Preview uploads are limited. Try again later.');
+            try {
+              previewStore.put({ boardId: params.id, bytes, image, uploadedBy: current.user.id });
+            } catch {
+              throw new HttpError(503, 'preview_unavailable', 'The preview could not be saved');
+            }
+            previewDailyUploads.push({ at: now(), bytes: bytes.length });
+            audit(current.user, 'board.preview.upload', { boardId: params.id, by: current.user.id, bytes: bytes.length });
+            return [204];
+          })),
+          compile('GET', 'boards/:id/preview', { cookieOnly: true }, ({ req, params, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            boardFor(user, params.id);
+            if (boardPreviewOff(params.id)) throw notFound('Board not found');
+            const preview = previewStore.read(params.id);
+            // older than 24 h without a fresh upload falls back to the schematic (cybersec's staleness rule)
+            if (!preview || now() - preview.at > DAY_MS) throw notFound('Board not found');
+            const headers = {
+              'content-type': preview.type,
+              'x-content-type-options': 'nosniff',
+              'content-security-policy': "default-src 'none'",
+              'cross-origin-resource-policy': 'same-origin',
+              'cache-control': 'private, no-cache',
+              etag: preview.etag,
+            };
+            const validators = (req.headers['if-none-match'] ?? '').split(',').map((part) => part.trim());
+            const matches = validators.includes('*') || validators.some((value) => (value.startsWith('W/') ? value.slice(2) : value) === preview.etag);
+            if (matches) return [304, undefined, headers];
+            return [200, preview.bytes, headers];
+          }),
+          compile('DELETE', 'boards/:id/preview', { cookieOnly: true }, ({ params, res, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            const board = directory.getBoard(params.id);
+            if (!board || board.deletedAt != null) throw notFound('Board not found');
+            const role = boardRoleFor(user, board.id);
+            if (user.guest === true || (!isAdmin(user) && role !== 'owner')) throw forbidden('Only the board owner or a workspace admin can remove a board preview');
+            previewStore.remove(board.id);
+            audit(user, 'board.preview.remove', { boardId: board.id, by: user.id, reason: 'manual' });
+            res.setHeader('clear-site-data', '"cache"');
+            return [204];
+          }),
+          compile('GET', 'boards/:id/preview-off', { cookieOnly: true }, ({ params, user }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            const board = directory.getBoard(params.id);
+            if (!board || board.deletedAt != null) throw notFound('Board not found');
+            const role = boardRoleFor(user, board.id);
+            if (user.guest === true || (!isAdmin(user) && role !== 'owner')) throw forbidden('Only the board owner or a workspace admin can change board previews');
+            return [200, { off: boardPreviewOff(board.id) }];
+          }),
+          compile('PUT', 'boards/:id/preview-off', { cookieOnly: true, body: true }, ({ params, user, body, res }) => {
+            if (!boardPreviewsEnabled()) throw notFound('No such endpoint');
+            const board = directory.getBoard(params.id);
+            if (!board || board.deletedAt != null) throw notFound('Board not found');
+            const role = boardRoleFor(user, board.id);
+            if (user.guest === true || (!isAdmin(user) && role !== 'owner')) throw forbidden('Only the board owner or a workspace admin can change board previews');
+            for (const key of Object.keys(body)) if (key !== 'off') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+            if (typeof body.off !== 'boolean') throw badRequest('off must be a boolean');
+            directory.transaction(() => {
+              directory.setSetting(`boardPreview.off.${board.id}`, body.off ? '1' : '0');
+              audit(user, body.off ? 'board.preview.off' : 'board.preview.on', { boardId: board.id, by: user.id });
+            });
+            if (body.off) {
+              previewStore.remove(board.id);
+              res.setHeader('clear-site-data', '"cache"');
+            }
+            return [200, { off: body.off }];
+          }),
+        ]
+      : []),
+
     ...(assets
       ? [
           compile('POST', 'boards/:id/assets', {}, ({ req, params, user, sessionId }) => assetReply(() => assets.handlers.upload({
@@ -2070,6 +2469,29 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, body.enabled ? 'linkPreviews.enabled' : 'linkPreviews.disabled', {});
       });
       return [200, linkUnfurl.state()];
+    }),
+    compile('GET', 'admin/board-previews', {}, ({ user }) => {
+      requireAdmin(user);
+      const setting = directory.getSetting('boardPreviews.enabled');
+      return [200, {
+        enabled: boardPreviewsEnabled(),
+        locked: config.previews !== true,
+        setting: setting === null ? null : setting === '1',
+      }];
+    }),
+    compile('PUT', 'admin/board-previews', { body: true }, ({ user, body }) => {
+      requireAdmin(user);
+      for (const key of Object.keys(body)) {
+        if (key !== 'enabled') throw badRequest(`Unknown field: ${key.slice(0, 40)}`);
+      }
+      if (typeof body.enabled !== 'boolean') throw badRequest('enabled must be a boolean');
+      if (config.previews !== true) throw conflict('board_previews_locked', 'TABULA_PREVIEWS=0 turns board previews off for this server');
+      directory.transaction(() => {
+        directory.setSetting('boardPreviews.enabled', body.enabled ? '1' : '0');
+        audit(user, body.enabled ? 'boardPreviews.enabled' : 'boardPreviews.disabled', {});
+      });
+      const setting = directory.getSetting('boardPreviews.enabled');
+      return [200, { enabled: boardPreviewsEnabled(), locked: false, setting: setting === '1' }];
     }),
 
     // ---------------------------------------------------------- AI settings and keys (docs/ai.md)
@@ -2246,6 +2668,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }
     if (guest && !guestApiAllows(method, segments, guest)) throw forbidden('This guest session is limited to one board');
     const { route, params } = resolve(method, segments);
+    if (route.cookieOnly && hasTokenAuth(req)) throw forbidden('This route requires a cookie session');
 
     if (route.internal) {
       // Bearer token only: no cookie, no CSRF header (a browser cannot send this one).
