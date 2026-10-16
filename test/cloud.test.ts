@@ -1200,10 +1200,10 @@ describe('API in cloud mode', () => {
       const owner = person(OWNER, 'owner');
       person('m@example.com', 'member');
       person('g@example.com', 'guest');
-      expect((await call('/api/me', { cookie: owner.cookie })).body.workspace).toEqual({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 2, billing: true, aiCredits: false, trialEndsAt: null, state: null });
+      expect((await call('/api/me', { cookie: owner.cookie })).body.workspace).toEqual({ readOnly: false, banner: null, seatLimit: null, seatsUsed: 2, billing: true, aiCredits: false, trialEndsAt: null, state: null, restart: null });
       await call('/api/internal/limits', { method: 'PUT', token: TOKEN, body: { seatLimit: 4, readOnly: true, banner: 'Pay up', aiCredits: true } });
       const me = await call('/api/me', { cookie: owner.cookie });
-      expect(me.body.workspace).toEqual({ readOnly: true, banner: 'Pay up', seatLimit: 4, seatsUsed: 2, billing: true, aiCredits: true, trialEndsAt: null, state: null });
+      expect(me.body.workspace).toEqual({ readOnly: true, banner: 'Pay up', seatLimit: 4, seatsUsed: 2, billing: true, aiCredits: true, trialEndsAt: null, state: null, restart: null });
       expect(me.body.user.email).toBe(OWNER);
       expect((await call('/api/ai/config', { cookie: owner.cookie })).body.credits).toBe(true);
     });

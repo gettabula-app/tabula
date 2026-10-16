@@ -240,8 +240,8 @@ describe('createMeRefresher', () => {
   }
 
   it('asks every five minutes', () => {
-    expect(harness().intervals).toEqual([5 * 60 * 1000]);
-    expect(ME_REFRESH_MS).toBe(300_000);
+    expect(harness().intervals).toEqual([60 * 1000]);
+    expect(ME_REFRESH_MS).toBe(60_000);
   });
 
   it('fetches /api/me on each tick and hands the answer on', async () => {
@@ -593,4 +593,17 @@ describe('billing portal request', () => {
     await expect(createApi(reply(502, 'bad_gateway')).billingPortal()).rejects.toMatchObject({ status: 502, code: 'bad_gateway' });
     await expect(createApi(reply(403, 'forbidden')).billingPortal()).rejects.toMatchObject({ status: 403, code: 'forbidden' });
   });
+
+describe('meChanged and a pending restart notice', () => {
+  const me = (restart: { secondsLeft: number; id: string } | null): Me => ({ user: { id: 'u', name: 'U', email: 'u@x.test', role: 'member' }, workspace: { readOnly: false, banner: null, seatLimit: null, seatsUsed: 1, restart } }) as Me;
+  it('ignores seconds ticking down for the same notice', () => {
+    expect(meChanged(me({ secondsLeft: 300, id: 'a' }), me({ secondsLeft: 240, id: 'a' }))).toBe(false);
+  });
+  it('sees a new, replaced or cleared notice', () => {
+    expect(meChanged(me(null), me({ secondsLeft: 300, id: 'a' }))).toBe(true);
+    expect(meChanged(me({ secondsLeft: 300, id: 'a' }), me({ secondsLeft: 300, id: 'b' }))).toBe(true);
+    expect(meChanged(me({ secondsLeft: 300, id: 'a' }), me(null))).toBe(true);
+  });
+});
+
 });
