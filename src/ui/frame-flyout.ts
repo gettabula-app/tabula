@@ -34,7 +34,7 @@ export function frameFlyoutBody(choose: (choiceId: string) => void, placeCustom:
     const size = h('span', { class: 'menu-hint' });
     rows.push({ preset, glyph, size });
     return h('button', {
-      class: 'menu-item frame-row', type: 'button', role: 'menuitem', title: preset.hint,
+      class: 'menu-item frame-row', type: 'button', role: 'menuitem', 'data-tip': preset.hint,
       onclick: () => choose(presetChoiceId(preset)),
     }, h('span', { class: 'frame-glyph-slot', 'aria-hidden': 'true' }, glyph), h('span', null, preset.label), size);
   };

@@ -28,8 +28,8 @@
   background:
     linear-gradient(var(--tray) 30%, transparent) top / 100% 28px no-repeat local,
     linear-gradient(transparent, var(--tray) 70%) bottom / 100% 28px no-repeat local,
-    linear-gradient(color-mix(in srgb, var(--shade, #000) 14%, transparent), transparent) top / 100% 10px no-repeat scroll,
-    linear-gradient(transparent, color-mix(in srgb, var(--shade, #000) 14%, transparent)) bottom / 100% 10px no-repeat scroll,
+    linear-gradient(color-mix(in srgb, var(--shade) 14%, transparent), transparent) top / 100% 10px no-repeat scroll,
+    linear-gradient(transparent, color-mix(in srgb, var(--shade) 14%, transparent)) bottom / 100% 10px no-repeat scroll,
     var(--tray);
   font-size: 14px;
 }
