@@ -1,6 +1,6 @@
 # Tabula
 
-Tabula is free software under AGPL-3.0-only. It is a self-hostable alternative to hosted whiteboards for workshops and teams. Boards work offline first and sync through a relay when it is available.
+Tabula is source-available under the Functional Source License 1.1 (FSL-1.1-ALv2): free to self-host for your own team, and Apache-2.0 two years after each release. It is a self-hostable alternative to hosted whiteboards for workshops and teams. Boards work offline first and sync through a relay when it is available.
 
 ![A Tabula kanban board with four lanes (To do, Doing, Review, Shipped) and labelled cards with owners and due dates](docs/images/readme-hero.png)
 
@@ -356,7 +356,7 @@ public/sw.js         offline cache for the app, the icon sets, Fontshare and Ico
 
 ## Licence
 
-Tabula is free software under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only). You may use, change and self-host it. If you run a changed version as a service for other people, you must offer them its source code. Third-party icon sets and fonts keep their own licences (see above).
+Tabula is source-available under the Functional Source License 1.1 with an Apache 2.0 future licence (FSL-1.1-ALv2, see LICENSE). You may read, change and self-host it for your own team, school or research, free. You may not offer Tabula, or something built on it, to others as a commercial product or service that competes with ours. Each release becomes available under the Apache License 2.0 two years after it is published. Releases up to v5.4.1 were published under the AGPL-3.0 and stay available under it. Third-party icon sets and fonts keep their own licences (see above).
 
 Copyright © 2026 Saldes Technology Group AB. Contributions are accepted under the [contributor licence agreement](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
 

@@ -12,7 +12,7 @@ Files:
 
 Tabula looks like an art magazine about working together. Real things (photographed hands, scissors, tape, a marker circle) are pasted onto cream paper next to the real board UI, on a strict grid, in ink, cobalt and one red.
 
-The idea is the headline: **paste your thinking together.** The collage is what a team does on a board. The editorial frame says it is considered, open and made by people: local-first, open source, a tool for teams, not a gadget.
+The idea is the headline: **paste your thinking together.** The collage is what a team does on a board. The editorial frame says it is considered, open and made by people: local-first, source-available, a tool for teams, not a gadget.
 
 ## App UI
 
@@ -332,7 +332,7 @@ AVOID: <SPECIFIC AVOIDS: colour, other objects, borders, frames, shadows on the 
 
 Recorded 2026-10-15 for the licence audit.
 
-Favicon and install icons (public/favicon.svg, icon-192.png, icon-512.png): the Tabula monogram, the letter T outlined from Bodoni Moda ExtraBold (SIL Open Font License 1.1, which allows outlining glyphs in a logo) with the red square. No font binary is included. The files are in the repository under AGPL-3.0-only; the monogram itself is a reserved Tabula mark (see design/brand/assets/LICENSE.md): others may show it unchanged to refer to Tabula, not as their own mark. Tauri desktop icons (desktop/src-tauri/icons): generated from the earlier hand-written favicon, our own work, AGPL-3.0-only; to be redrawn from the monogram before the next desktop build (desktop frozen).
+Favicon and install icons (public/favicon.svg, icon-192.png, icon-512.png): the Tabula monogram, the letter T outlined from Bodoni Moda ExtraBold (SIL Open Font License 1.1, which allows outlining glyphs in a logo) with the red square. No font binary is included. The files are in the repository under FSL-1.1-ALv2, the repository licence; the monogram itself is a reserved Tabula mark (see design/brand/assets/LICENSE.md): others may show it unchanged to refer to Tabula, not as their own mark. Tauri desktop icons (desktop/src-tauri/icons): generated from the earlier hand-written favicon, our own work, FSL-1.1-ALv2, the repository licence; to be redrawn from the monogram before the next desktop build (desktop frozen).
 
 ## Voice
 
