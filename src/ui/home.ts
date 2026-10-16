@@ -153,7 +153,7 @@ interface AccountView {
   refresh: () => void;
   /** The search text outlives repaints, so a refresh does not clear it. */
   query: { value: string };
-  /** The Cards | List choice and the Show previews switch: the page is rebuilt on each repaint, so they live here. */
+  /** The Cards | List choice and the Show pictures switch: the page is rebuilt on each repaint, so they live here. */
   display?: { view: BoardView; previews: boolean };
 }
 

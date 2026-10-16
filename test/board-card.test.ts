@@ -56,7 +56,7 @@ describe('editedLine', () => {
 
   it('says no content yet for an empty drawing while previews are on, and the date when they are off', () => {
     const empty = base({ preview: { shapes: [] } });
-    expect(editedLine(empty, NOW)).toBe('No content yet');
+    expect(editedLine(empty, NOW)).toBe('Empty board');
     expect(editedLine(empty, NOW, false)).toMatch(/^Edited /);
   });
 
@@ -120,7 +120,7 @@ describe('boardCard', () => {
 
   it('shows a role badge only for a viewer or a commenter', () => {
     const viewer = asEl(boardCard(base({ role: 'viewer' }), { tile: 'tint', previews: true }));
-    expect(textOf(asEl(viewer.querySelector('.badge')))).toBe('Viewer');
+    expect(textOf(asEl(viewer.querySelector('.badge')))).toBe('View only');
     const owner = asEl(boardCard(base({ role: 'owner' }), { tile: 'tint', previews: true }));
     expect(owner.querySelector('.badge')).toBeNull();
   });

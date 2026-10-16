@@ -118,7 +118,7 @@ describe('the account Boards page as cards', () => {
     const { page } = account();
     expect(textOf(need(cardNamed(page, 'Q4 roadmap'), '.bc-sub'))).toBe('Maja · 12 min ago');
     expect(textOf(need(cardNamed(page, 'Sprint retro'), '.bc-sub'))).toBe('Claude (agent) · 5 min ago');
-    expect(textOf(need(cardNamed(page, 'Sprint retro'), '.badge'))).toBe('Viewer');
+    expect(textOf(need(cardNamed(page, 'Sprint retro'), '.badge'))).toBe('View only');
     expect(cardNamed(page, 'Q4 roadmap').querySelector('.badge')).toBeNull();
   });
 
@@ -275,14 +275,14 @@ describe('focus across a repaint', () => {
 });
 
 describe('the Boards page toolbar', () => {
-  it('keeps the search, New board, New team and Members, and adds Cards | List and Show previews', () => {
+  it('keeps the search, New board, New team and Members, and adds Cards | List and Show pictures', () => {
     const { page } = account({ role: 'admin' });
     const toolbar = need(page, '.home-toolbar');
     for (const label of ['New board', 'New team', 'Members']) expect(hasControl(toolbar, label)).toBe(true);
     const bar = need(page, '.bc-toolbar');
     expect(textOf(bar)).toContain('Cards');
     expect(textOf(bar)).toContain('List');
-    expect(textOf(bar)).toContain('Show previews');
+    expect(textOf(bar)).toContain('Show pictures');
   });
 
   it('offline: the New board buttons, the team tiles and Manage are disabled', () => {

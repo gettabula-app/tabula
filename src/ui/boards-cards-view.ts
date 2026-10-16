@@ -1,6 +1,6 @@
 // TAB-375 slice 2: the sections of the Boards home (spec 14, sections 3 and 7): one section per team, Personal and Shared with you, each
 // a grid of cards or the list rows, a dashed New board tile at the end of a team grid, and an empty state. The toolbar holds the
-// Cards | List switch and the Show previews switch; both are remembered per device (try/catch: blocked storage keeps the default).
+// Cards | List switch and the Show pictures switch; both are remembered per device (try/catch: blocked storage keeps the default).
 import { segmented } from './common';
 import { h, icon } from './dom';
 import { switchRow } from './controls';
@@ -51,14 +51,14 @@ export interface BoardsToolbarOpts {
   onPreviews: (on: boolean) => void;
 }
 
-/** The Cards | List switch and the Show previews switch, in one row. Each choice is saved as it is made. */
+/** The Cards | List switch and the Show pictures switch, in one row. Each choice is saved as it is made. */
 export function boardsToolbar(opts: BoardsToolbarOpts): HTMLElement {
   return h('div', { class: 'bc-toolbar' },
     segmented<BoardView>([{ value: 'cards', label: 'Cards' }, { value: 'list', label: 'List' }], opts.view, (view) => {
       saveView(view);
       opts.onView(view);
     }, 'View'),
-    switchRow('Show previews', opts.previews, (on) => {
+    switchRow('Show pictures', opts.previews, (on) => {
       savePreviews(on);
       opts.onPreviews(on);
     }));
@@ -132,7 +132,7 @@ function listHead(): HTMLElement {
     h('span', null),
     h('span', null, 'Name'),
     h('span', { class: 'bc-col-hide' }, 'Here now'),
-    h('span', { class: 'bc-col-hide' }, 'Last edited'),
+    h('span', { class: 'bc-col-hide' }, 'Edited'),
     h('span', { class: 'bc-col-hide' }, 'Access'),
     h('span', null));
 }

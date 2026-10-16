@@ -82,13 +82,13 @@ function shortDate(t: number, now: number): string {
 }
 
 /**
- * The line under a board's name. In order: on this device (open mode); No content yet (previews on, and the drawing has no shapes and
+ * The line under a board's name. In order: on this device (open mode); Empty board (previews on, and the drawing has no shapes and
  * no real picture: a picture means the board has content, whatever its shapes say); "Name · 12 min ago" (or "Name (agent) · ...");
  * otherwise "Edited 3 Oct". `now` decides whether the year is shown. fmtAgo reads the clock itself, so a test fixes it with Date.now.
  */
 export function editedLine(data: BoardCardData, now: number, previews = true): string {
   if (data.onDevice) return 'On this device';
-  if (previews && !data.image && data.preview && sanitizeShapes(data.preview).length === 0) return 'No content yet';
+  if (previews && !data.image && data.preview && sanitizeShapes(data.preview).length === 0) return 'Empty board';
   const who = (data.editedBy?.name ?? '').trim();
   if (who !== '') return `${who}${data.editedBy?.agent ? ' (agent)' : ''} · ${fmtAgo(data.updatedAt)}`;
   return `Edited ${shortDate(data.updatedAt, now)}`;
@@ -134,15 +134,15 @@ function hereNode(list: HereUser[], more: number): HTMLElement | null {
   const extra = more + (list.length - shown.length);
   if (shown.length === 0 && extra <= 0) return null;
   const parts = shown.map((p) => p.initials.slice(0, 3));
-  if (extra > 0) parts.push(`${extra} more`);
+  if (extra > 0) parts.push(`and ${extra} more`);
   return h('span', { class: 'bc-here', role: 'img', 'aria-label': `Here now: ${parts.join(', ')}` },
     ...shown.map(hereSquare),
     extra > 0 ? h('span', { class: 'here-more' }, `+${extra}`) : null);
 }
 
 function roleBadge(role: BoardRole | undefined): HTMLElement | null {
-  if (role === 'viewer') return h('span', { class: 'badge tag tag-yellow' }, 'Viewer');
-  if (role === 'commenter') return h('span', { class: 'badge tag tag-blue' }, 'Commenter');
+  if (role === 'viewer') return h('span', { class: 'badge tag tag-yellow' }, 'View only');
+  if (role === 'commenter') return h('span', { class: 'badge tag tag-blue' }, 'Can comment');
   return null;
 }
 
