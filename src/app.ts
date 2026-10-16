@@ -43,6 +43,7 @@ import { CANVAS_INK, STICKY_COLORS, customStickyColors, normalizeHex, parseHex, 
 import { safeColor } from '../shared/colors';
 import { TOOL_KEYS } from './shortcuts';
 import { boardOwnsZoomKey, devicePixelRatioNow, pageIsZoomed, wheelZoomFactor } from './zoom-keys';
+import { controlTakesSpace, keyTarget } from './key-targets';
 import { bindBoardGestures } from './zoom-gestures';
 import { LINE_HIT_PX, LINE_HIT_PX_COARSE, LINE_MIN_SCREEN_PX, axisLock, isLine, lineFlag, lineLabel, snapAngle } from './line-geometry';
 import { guestMark } from './ui/guest-mark';
@@ -2812,6 +2813,8 @@ export class BoardApp {
         }
       }
       if (e.code === 'Space' && !typing) {
+        // a focused control (a rail button, a link, a focused region) gets Space for its own click: no pan, and no preventDefault
+        if (controlTakesSpace(keyTarget(e))) return;
         if (!this.spaceDown) {
           this.spaceDown = true;
           this.r.root.classList.add('space');
@@ -2820,6 +2823,8 @@ export class BoardApp {
         return;
       }
       if (typing) return;
+      // a focused control presses on Enter: the selected table cells and the selected object must not take it first
+      if (k === 'enter' && controlTakesSpace(keyTarget(e))) return;
       // cells selected on a table: Enter edits, the arrows and Tab move, Delete empties, Esc lets go of them
       if (this.tables.key(e, k)) { e.preventDefault(); return; }
       const mod = e.metaKey || e.ctrlKey;
