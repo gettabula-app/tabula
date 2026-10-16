@@ -30,6 +30,9 @@ Tabula was called Mira before. The old `MIRA_<X>` variable names are deprecated 
 | `TABULA_AUTH_EMAIL_LIMIT` | `30` | Sign-in link requests per hour for one email address from all clients together (whole number, 1 to 100000). `TABULA_AUTH_IP_LIMIT` (default `300`) is the same per client address. See Sign-in |
 | `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy (Caddy on Cloud): the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. (Whether the cookie is `Secure` follows `TABULA_BASE_URL`, not request headers.) Off by default, because anyone can forge those headers when there is no proxy |
 | `TABULA_CLIENT_IP_HEADER` | `x-forwarded-for` | With `TABULA_TRUST_PROXY=1`, the header that holds the client address: `x-forwarded-for` (rightmost entry) or `fly-client-ip` (Fly; `docs/cloud.md`, Client addresses). Any other value refuses startup |
+| `TABULA_CHAT` | `on` in accounts mode | Board, team and workspace chat. Set to `off` to turn it off; open mode never has chat |
+| `TABULA_LINK_PREVIEWS` | `on` on hosted workspaces; `off` on self-hosted servers and in open mode unless you set it | Link cards fetch a title, description and image from the address, on the server. `off` turns previews off everywhere and nobody can turn them on from the admin; `on` lets admins turn them on or off for the workspace |
+| `TABULA_TELEMETRY` | on for hosted, off for self-hosted | Force the owner privacy switch to on or off; otherwise the owner setting applies |
 
 The directory lives in `<DATA_DIR>/directory.sqlite` (Node's built-in `node:sqlite`, no native dependency; requires Node 22.13 or newer). Version history is kept as files under `<DATA_DIR>/history/<boardId>/` in both modes (`docs/history.md`).
 

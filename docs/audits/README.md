@@ -17,10 +17,10 @@ Reports written by review agents (Codex workers) and the team on 10 to 11 Octobe
 
 | Report | Task | What it covers |
 |---|---|---|
-| [../test-coverage-gaps.md](../test-coverage-gaps.md) | CDX-34 | Fifteen risk-ranked modules with weak or no tests. |
-| [../chat-security-review.md](../chat-security-review.md) | CDX-35 | Security review of team chat. |
-| [../chat-privacy-recheck.md](../chat-privacy-recheck.md) | CDX-49, CDX-50 | Second and third re-reviews of the chat privacy fix. |
-| [../touch-audit.md](../touch-audit.md) | CDX-39 | Canvas touch audit with emulated phones. |
+| [../archive/test-coverage-gaps.md](../archive/test-coverage-gaps.md) | CDX-34 | Fifteen risk-ranked modules with weak or no tests. |
+| [../archive/chat-security-review.md](../archive/chat-security-review.md) | CDX-35 | Security review of team chat. |
+| [../archive/chat-privacy-recheck.md](../archive/chat-privacy-recheck.md) | CDX-49, CDX-50 | Second and third re-reviews of the chat privacy fix. |
+| [../archive/touch-audit.md](../archive/touch-audit.md) | CDX-39 | Canvas touch audit with emulated phones. |
 | [../accessibility-audit.md](../accessibility-audit.md) | | App-wide accessibility audit. |
-| [../filter-grammar-bb.md](../filter-grammar-bb.md) | CDX-47, CDX-48 | Real-HTTP black-box run of the tracker filter grammar. |
+| [../archive/filter-grammar-bb.md](../archive/filter-grammar-bb.md) | CDX-47, CDX-48 | Real-HTTP black-box run of the tracker filter grammar. |
 | [../chat-api-flake.md](../chat-api-flake.md) | CDX-51 | The Windows connection-reset flake in the chat API test. |
