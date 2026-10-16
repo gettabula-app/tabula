@@ -84,41 +84,15 @@ A Node program that starts the relay with an IPC channel (`stdio: [..., 'ipc']`)
 
 ### Accounts and teams
 
-> **Open mode is for localhost and trusted networks only, never the internet.** Without `TABULA_AUTH=on` there are no accounts, no `Origin` check on connections and no limit on the number of rooms (boards): anyone who can reach the port can create boards, fill the disk and edit any board whose link they know. Run it on your own computer or a LAN you trust (set `HOST=127.0.0.1` to bind to this computer only). For anything reachable from the internet, run accounts mode: `TABULA_AUTH=on TABULA_OWNER_EMAIL=you@example.com npm start` (details below and in [docs/accounts.md](docs/accounts.md)). The relay logs a warning at startup when open mode listens on a non-loopback `HOST`.
+> **Open mode is for localhost and trusted networks only, never the internet.** Without `TABULA_AUTH=on` there are no accounts and no limit on the number of boards. For anything reachable from the internet, run accounts mode: `TABULA_AUTH=on TABULA_OWNER_EMAIL=you@example.com npm start`.
 
-By default Tabula is open: anyone who can reach the relay and knows a board link can edit it. Set `TABULA_AUTH=on` to switch to **accounts mode**: people sign in with an emailed link, the server keeps members, teams, boards and sharing in a SQLite directory (`<DATA_DIR>/directory.sqlite`), and the relay checks the signed-in person's role on every connection and every update (viewers cannot write). Accounts mode needs Node 22.13 or newer.
+Accounts mode gives people sign-in by emailed link, teams, board roles and sharing; the relay checks the role on every connection and every update. Needs Node 22.13 or newer. Every variable (mail delivery, proxy and rate-limit settings, chat, link previews, telemetry) is in [docs/accounts.md](docs/accounts.md#configuration).
 
-Tabula was called Mira before: the old `MIRA_*` names of these variables still work, with a deprecation warning at startup, and the `TABULA_` name wins when both are set.
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TABULA_AUTH` | `off` | `on` turns accounts mode on |
-| `TABULA_OWNER_EMAIL` | none | The first person to sign in with this address becomes the workspace owner. Required when `TABULA_AUTH=on` |
-| `TABULA_BASE_URL` | `http://localhost:<PORT>` | Public URL, used in emailed links and as the only allowed WebSocket `Origin`. An `https://` URL makes the session cookie `Secure` and `__Host-` prefixed |
-| `TABULA_MAIL` | `log` | `log` prints each email to the console instead of delivering it; a chat mention email includes its message text (up to 140 characters) in that output. `file` appends JSON lines to `<DATA_DIR>/outbox.jsonl`, `smtp` sends through your own SMTP server (`TABULA_SMTP_URL`), and `webhook` POSTs `{to, subject, text, from, template, params}` as JSON to `TABULA_MAIL_WEBHOOK_URL`. Choose `smtp` or `webhook` when email should be delivered |
-| `TABULA_MAIL_WEBHOOK_URL` | none | Target for `TABULA_MAIL=webhook` |
-| `TABULA_MAIL_WEBHOOK_TOKEN` | none | Sent as `Authorization: Bearer <token>` with each webhook request |
-| `TABULA_MAIL_FROM` | `Tabula <no-reply@localhost>` | Sender address; required with `smtp`, included in webhook payloads as `from` |
-| `TABULA_SMTP_URL` | none | SMTP connection for `TABULA_MAIL=smtp`, for example `smtps://user:password@smtp.example.com:465` (any provider's SMTP credentials work, including Mailgun's) |
-| `TABULA_SESSION_DAYS` | `30` | Session lifetime |
-| `TABULA_TRUST_PROXY` | `0` | Set to `1` behind a reverse proxy: the client IP for rate limiting is the rightmost `X-Forwarded-For` entry. Leave it off without a proxy, because anyone can forge that header |
-| `TABULA_CLIENT_IP_HEADER` | `x-forwarded-for` | With `TABULA_TRUST_PROXY=1`: which header holds the client address, `x-forwarded-for` (its rightmost entry) or `fly-client-ip` (on Fly, see `docs/cloud.md`, Client addresses) |
-| `TABULA_CHAT` | `on` in accounts mode | Board, team and workspace chat. Set to `off` to turn it off; open mode never has chat |
-| `TABULA_LINK_PREVIEWS` | `on` on hosted workspaces; `off` on self-hosted servers and in open mode unless you set it | Link cards fetch a title, description and image from the address, on the server. `off` turns previews off everywhere and nobody can turn them on from the admin; `on` lets admins turn them on or off for the workspace |
-| `TABULA_TELEMETRY` | on for hosted, off for self-hosted | Force the owner privacy switch to on or off; otherwise the owner setting applies |
-| `TABULA_JOIN_CODES` | `off` | Set to `on` to allow board-scoped guest join codes in accounts mode |
+With the default `TABULA_MAIL=log`, email is printed to the console instead of delivered, and a chat mention email includes its message text (up to 140 characters) in that output. Choose `smtp` or `webhook` when email should be delivered.
 
 ### Hosted workspaces
 
-The hosted-workspace integration is active only with accounts mode and all three cloud variables set. Set all three together or leave them unset; a partial set prevents startup. The control plane supplies these values; self-hosted instances can leave them unset. See [docs/cloud.md](docs/cloud.md).
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TABULA_CLOUD_TOKEN` | none | Shared control-plane credential; at least 32 characters with no spaces |
-| `TABULA_CLOUD_URL` | none | Control-plane base URL; HTTPS, or HTTP on loopback for local development |
-| `TABULA_CLOUD_WORKSPACE_ID` | none | Workspace identifier at the control plane |
-| `TABULA_FLY_VOLUME_ID` | none | Optional Fly volume identifier set by the control plane; a changed identifier marks a restored or replaced volume |
-| `TABULA_ADOPT_VOLUME` | none | One-start confirmation to adopt a volume from another hosted workspace; set it to this workspace's id, then remove it. Adoption ends sessions and revokes join codes, invite links and MCP tokens |
+The hosted-workspace integration runs only with accounts mode and the three `TABULA_CLOUD_*` variables, which the control plane supplies. Self-hosted instances leave them unset; a partial set prevents startup. Variables and the rules for volumes and adoption are in [docs/cloud.md](docs/cloud.md#turning-it-on).
 
 ### Source policy
 
@@ -153,74 +127,19 @@ The full design (roles, the HTTP API, the relay rules and the SQLite schema) is 
 
 ### AI tools (MCP)
 
-Tabula can let an AI tool such as Claude Code read and edit boards while people are working on them. It is off by default; set `TABULA_MCP=on` to serve `POST /mcp`. Tokens are bearer secrets that can change boards, so the relay refuses to start with MCP on unless `TABULA_BASE_URL` is an `https://` address (`http://localhost` is fine for trying it).
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TABULA_MCP` | `off` | `on` serves `/mcp` |
-| `TABULA_MCP_TOKEN` | none | Open mode only: the shared secret, at least 32 characters with no spaces. Required when `TABULA_MCP=on` without accounts |
-| `TABULA_MCP_SCOPE` | `read` | Open mode only: what the shared token may do, `read`, `comment` or `write` |
-| `TABULA_MCP_DAILY_WRITES` | `2000` | Board writes per token or OAuth grant per UTC day; counts items. Set to `0` for no cap |
-
-In accounts mode, open **AI tool access** in the board menu, name a token, pick the lowest level it needs and copy the command it shows once, for example `claude mcp add --transport http board https://your.host/mcp --header "Authorization: Bearer <token>"`. Tools that only speak stdio or OAuth need a bridge such as `mcp-remote`. The full design (tools, roles, limits, how board text is kept apart from instructions) is in [docs/mcp.md](docs/mcp.md).
+Tabula can serve MCP at `POST /mcp` so an AI tool such as Claude Code can read and edit boards. It is off by default: set `TABULA_MCP=on`. The relay refuses to start with MCP on unless `TABULA_BASE_URL` is `https://` (`http://localhost` is fine for trying it). In accounts mode, open **AI tool access** in the board menu to create a token and copy its command. Variables, tool list, roles and limits are in [docs/mcp.md](docs/mcp.md#configuration).
 
 ### Images
 
-The browser accepts PNG, JPEG, GIF, WebP and SVG pictures; SVG is converted to PNG before upload. The relay stores the resulting PNG, JPEG, GIF and WebP files under `DATA_DIR/assets/`, named by the SHA-256 of their content, and only serves a file through a board that owns it (see [docs/images.md](docs/images.md)). Metadata such as GPS position is removed on the server. It is on by default; the limits are set with these variables, in bytes or with a `K`, `M` or `G` suffix.
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TABULA_ASSETS` | `on` | `off` turns images off: the routes answer `404` |
-| `TABULA_ASSET_MAX_BYTES` | `10M` | Largest file after the browser has scaled it down |
-| `TABULA_ASSET_BOARD_QUOTA` | `100M` with accounts, `50M` without | Image storage per board |
-| `TABULA_ASSET_TOTAL_QUOTA` | none | Optional cap for the whole instance |
+The browser sends PNG, JPEG, GIF, WebP and SVG pictures (SVG is converted to PNG first); the relay stores them under `DATA_DIR/assets/` and serves each only through the board that owns it. Images are on by default; `TABULA_ASSETS=off` turns them off. Size and quota variables and the storage rules are in [docs/images.md](docs/images.md).
 
 ### Backups
 
-Tabula can back up `DATA_DIR` on a schedule, encrypted on the instance first. The default target is an S3-compatible bucket (Tigris, Cloudflare R2, Backblaze B2, MinIO, AWS S3); target `dir` writes the same sealed objects and manifests to a local export directory for another process to pull. S3 needs its five destination and key variables; `dir` needs only the key. **Lose the key and the backups cannot be read by anyone.** What is backed up, how it is encrypted, the status endpoint and the limits are in [docs/backups.md](docs/backups.md). **Restore** is built as owner-only routes (`GET /api/admin/backups`, `GET /api/admin/backups/:name`, `POST /api/admin/backups/restore-board` for one board as a copy, `POST /api/admin/backups/restore` for the whole workspace, which restarts the server with exit code 75 and keeps the previous data aside); see [Restoring](docs/backups.md#restoring). The owner restores from **Admin, Backups** (status, the list of backups, one board as a copy, the whole workspace after typing `RESTORE`, and a **Restoring…** screen that waits for the server and reloads); see [In the app](docs/backups.md#in-the-app).
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TABULA_BACKUP_TARGET` | `s3` | `s3` writes to a bucket; `dir` writes a local export for a separate puller |
-| `TABULA_BACKUP_DIR` | `<DATA_DIR>/backup-export` | Absolute export path for target `dir` |
-| `TABULA_BACKUP_S3_ENDPOINT` | none | Required for `s3`. The endpoint, `https://` (`http://` for localhost only) |
-| `TABULA_BACKUP_BUCKET` | none | Required for `s3`. The bucket |
-| `TABULA_BACKUP_ACCESS_KEY` | none | Required for `s3`. Access key id |
-| `TABULA_BACKUP_SECRET_KEY` | none | Required for `s3`. Secret access key |
-| `TABULA_BACKUP_KEY` | none | Required for both targets. Encryption key: 32 bytes as 64 hex characters or base64 (`openssl rand -hex 32`). Never logged |
-| `TABULA_BACKUP_KEY_PREVIOUS` | none | Older keys, comma separated, to read backups made before a key change |
-| `TABULA_BACKUP_PREFIX` | `tabula` | Key prefix under the selected target |
-| `TABULA_BACKUP_REGION` | `auto` | Signing region for target `s3` |
-| `TABULA_BACKUP_PATH_STYLE` | `on` | For target `s3`, `off` selects virtual hosted style (`bucket.endpoint`) |
-| `TABULA_BACKUP_INTERVAL_MINUTES` | `60` | Time between backups, 5 to 10080 |
-| `TABULA_BACKUP_SETTLE_SECONDS` | `120` | Also back up this long after the last change (1 to 3600; `0`: only on the interval) |
-| `TABULA_BACKUP_SHUTDOWN_SECONDS` | `4` | Time a graceful shutdown may spend on a final backup (1 to 25; `0`: none). Keep it under the platform's stop timeout (Fly: 5 seconds) |
-| `TABULA_BACKUP_VERIFY_HOURS` | `24` | How often a slice of the newest backup is read back and decrypted to check it (1 to 720; `0`: never). The listing of the bucket is checked at every run either way |
-| `TABULA_BACKUP_VERIFY_MAX_MB` | `64` | The most encrypted megabytes one such check reads (1 to 4096) |
-| `TABULA_BACKUP_KEEP_HOURLY_HOURS` | `48` | Keep one backup per hour for this long (`0`: none) |
-| `TABULA_BACKUP_KEEP_DAILY_DAYS` | `30` | Keep one backup per day for this long (`0`: none) |
+Tabula can back up `DATA_DIR` on a schedule, encrypted on the instance first, to an S3-compatible bucket or a local export directory (`TABULA_BACKUP_TARGET=dir`). Set `TABULA_BACKUP_KEY` (`openssl rand -hex 32`) and **keep a copy of it outside the server: without the key nobody can read the backups.** Settings are in [docs/backups.md](docs/backups.md#turning-it-on), restore (owner only, **Admin, Backups**) in [Restoring](docs/backups.md#restoring).
 
 ### AI features (bring your own key)
 
-AI features run on the relay with an API key that the workspace or the person brings; Tabula does not resell AI. Board content is sent to the chosen provider and processed under its API terms. Anthropic and OpenAI-compatible providers are supported. The AI bar can generate stickies from a prompt, summarise a board, frame or selection with action items, and cluster selected stickies into themes. Each run returns a proposal for review before it is applied. The bar appears for editors when AI is enabled and a usable workspace or personal key, or hosted plan credits, are available (see [docs/ai.md](docs/ai.md) and [docs/ai-toolbar.md](docs/ai-toolbar.md)).
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `TABULA_AI_SECRET` | none | Accounts mode: 32 random bytes as base64 (`openssl rand -base64 32`) that encrypts stored API keys. Without it keys cannot be saved. The relay refuses to start if it is set but malformed |
-| `TABULA_AI_SECRET_PREVIOUS` | none | The secret you are rotating away from, so keys written under it still open and are sealed again under the new one on next use. See "Rotating TABULA_AI_SECRET" in [docs/ai.md](docs/ai.md) |
-| `TABULA_AI_API_KEY` | none | Open mode: the operator's provider key |
-| `TABULA_AI_OPEN` | unset | Open mode: `1` lets the AI features use `TABULA_AI_API_KEY`. A key alone never turns AI on |
-| `TABULA_AI_PROVIDER` | `anthropic` | The provider: `anthropic` or `openai-compatible` in open mode; in accounts mode each saved key carries its provider |
-| `TABULA_AI_BASE_URL` | none | Open mode with `openai-compatible`: the API address, for example `https://integrate.api.nvidia.com/v1`; operator-supplied addresses may use `http://`, including a local model server |
-| `TABULA_AI_MODEL` | `claude-opus-5-5` | Default Anthropic model (`claude-opus-5-5`, `claude-sonnet-5-5` or `claude-haiku-5-5`). With `openai-compatible` in open mode, set a model id the provider knows; in accounts mode each key carries its model |
-| `TABULA_AI_PROXY_URL` | none | Hosted accounts mode: base URL for the workspace's Anthropic Messages proxy; HTTPS is required (HTTP is allowed for loopback tests); not used until hosted AI credits are built |
-| `TABULA_AI_PROXY_TOKEN` | none | Hosted accounts mode: credential sent to the AI proxy as `x-api-key`; needed with `TABULA_AI_PROXY_URL` for plan credits; not used until hosted AI credits are built |
-
-In accounts mode a workspace owner or admin turns AI on, picks the features and the model, and enters the workspace key under **Admin, AI**; with personal keys allowed, each person can add their own under **Your AI key** in the board menu. Keys are checked with the provider when saved, encrypted at rest, shown afterwards only as their last four characters, and never logged. `TABULA_AI_API_KEY` and `TABULA_AI_OPEN` are ignored in accounts mode.
-
-A run needs the right to edit the board, reads it without private notes, comments or author names, caps what it sends (400 objects, 60,000 characters), stops after 120 seconds or when the request is closed, and writes one audit row (`ai.generate`, `ai.summarise`, `ai.cluster`) with counts and tokens but no text. Each person can have one run at a time and 20 an hour, the workspace 200 an hour (the admin changes both), and a shared key (the workspace key, or the operator's in open mode) runs three at once, a personal key one; these counts are kept in memory and start again when the relay restarts. Saving a key is limited to 10 times an hour per person.
-
-**Open mode warning:** with `TABULA_AI_API_KEY` and `TABULA_AI_OPEN=1` set, anyone who has a board link spends your key, because open mode has no accounts. Only do this on a private instance, and set a spending limit with the provider.
+AI features run on the relay with an API key that the workspace or the person brings, and board content is sent to the chosen provider. In accounts mode set `TABULA_AI_SECRET` (`openssl rand -base64 32`), which encrypts saved keys. In open mode, `TABULA_AI_API_KEY` with `TABULA_AI_OPEN=1` lets anyone with a board link spend your key, so use that only on a private instance with a spending limit. Key ownership, providers, run limits and the audit row are in [docs/ai.md](docs/ai.md#keys-byok); the bar is in [docs/ai-toolbar.md](docs/ai-toolbar.md).
 
 ## Screenshots
 
@@ -283,18 +202,7 @@ Native and desktop development (Mac, Windows, Linux, iPhone, Android) is frozen 
 
 ## Fonts and icons
 
-Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Tabula therefore loads those fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves Fontshare fonts. The one font Tabula bundles is Newsreader, the serif used for titles (SIL Open Font License 1.1, a variable Latin subset served from the app itself, see [the third-party notices](docs/third-party-notices.md)). PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
-
-Icon sets come from [Iconify's open data](https://github.com/iconify/icon-sets) (`@iconify/json`, a build-time dependency) and carry their own licences. The build hosts only sets under CC0, Unlicense, 0BSD, MIT, ISC, Apache-2.0, BSD, OFL-1.1 and CC BY 3.0/4.0; sets Iconify marks hidden, the unmaintained Font Awesome 6 sets and every other licence (NonCommercial, ShareAlike, GPL and the like) are left out. The picker shows each set's licence, flags sets that require attribution and notes that logos are trademarks of their owners. The credits dialog lists every set, and `dist/icons/LICENSES.txt` is the same list as text.
-
-`npm run build` writes the sets to `dist/icons/` after the app, and the relay and the Docker image serve them from there. Two sizes:
-
-| Build | Sets | Icons | Files | Image |
-| --- | --- | --- | --- | --- |
-| default (`npm run build`) | 188, every allowed, maintained set | 344,033 | 77.5 MB gzip | about 141 MB |
-| `ICON_SETS=curated npm run build` | 19, the popular, sticker and a few UI sets (`CURATED_SETS` in `scripts/build-icons.mjs`) | 74,686 | 18.5 MB gzip | about 86 MB |
-
-`docker build --build-arg ICON_SETS=curated -t tabula .` builds the small image. The build reads the installed `@iconify/json` (a pinned devDependency of about 104 MB), takes about 10 seconds the first time and is cached in `node_modules/.cache/tabula-icons`, so an unchanged rebuild is a copy. `npm test` does not build the sets. See [docs/icons-selfhost.md](docs/icons-selfhost.md).
+Fontshare fonts load only from Fontshare's servers, and the relay never serves them; the one bundled font is Newsreader, for titles. Icon sets come from Iconify's open data, and only sets under permissive licences are built in. `npm run build` writes the default sets to `dist/icons/`; `ICON_SETS=curated npm run build` builds a shorter list for a smaller image. The licence rules, sizes and the Docker build are in [docs/icons-selfhost.md](docs/icons-selfhost.md).
 
 ## Tests and checks
 

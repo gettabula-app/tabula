@@ -318,24 +318,9 @@ Everything comes from tokens already defined for the five themes (`src/themes.ts
 | Ghost column headers, arrows, ghost frame hairline | `--canvas-ink`, `--canvas-rule` via `color-mix` |
 | Sticky colours | The existing palette at full strength; ghosts are marked by a dashed `--canvas-ink` 55% edge, not by opacity |
 
-### Contrast (computed from the values in `src/themes.ts`)
+### Contrast
 
-Ratios against `--tray` unless noted. `--tray-muted` on the input fill (`--tray-text` at 6% over `--tray`) is the tightest case, so it is listed.
-
-| Theme | Prompt and label text on tray | `--tray-muted` on tray | `--tray-muted` on input fill | Error red on tray | `--on-signal` on `--signal` (Run, Add) | `--signal` on tray (focus ring) |
-| --- | --- | --- | --- | --- | --- | --- |
-| Default | 13.83 | 6.41 | 5.48 | 5.70 | 11.26 | 11.26 |
-| Ayu | 10.50 | 5.41 | **4.79** | 8.29 | 10.41 | 11.55 |
-| Kanagawa | 12.41 | 6.35 | 5.61 | 8.20 | 9.73 | 10.72 |
-| Matrix | 15.38 | 8.01 | 7.10 | 7.91 | 14.26 | 13.93 |
-| Evergreen | 13.31 | 7.18 | 6.11 | 5.99 | **7.10** | 7.63 |
-
-All text meets 4.5:1 in all five themes, so **`--tray-muted` needs no `color-mix` correction** and none was applied. The two nearest misses are Ayu muted-on-input (4.79) and Evergreen primary (7.10, still well above). Disabled controls at 40% opacity are exempt, as everywhere in the app.
-
-Two things the numbers show that need a decision, not a fix:
-
-- **The tray barely separates from the canvas in Ayu, Kanagawa and Matrix** (tray against canvas 1.05 to 1.11). The existing trays have the same property and rely on the 1px `--tray-line` outline. The bar does the same.
-- **The preview outline uses `--canvas-ink`, not `--signal`.** `--signal` against `--canvas` is only 1.27 on Default and 1.79 on Evergreen, so the dashed edge is `--canvas-ink` at 55% (3.3 to 4.9:1 in every theme) and `--signal` carries the "Preview" label and an 8% wash.
+The WCAG rule, the palette ratios and the toolbar theme table are in [docs/brand.md](brand.md#contrast).
 
 ## Phone and narrow screens
 
