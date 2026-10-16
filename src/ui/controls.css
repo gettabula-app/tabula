@@ -23,7 +23,14 @@
 
 .combo-list {
   position: fixed; z-index: 80; margin: 0; padding: 4px 0; list-style: none; max-height: min(360px, 60vh, calc(100vh - 16px - var(--safe-top) - var(--safe-bottom))); max-height: min(360px, 60dvh, calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom))); overflow-y: auto;
-  border-radius: var(--radius-md); background: var(--tray); color: var(--tray-text);
+  border-radius: var(--radius-md); color: var(--tray-text);
+  /* a long list shows it scrolls: a soft shade at the edge that still has rows beyond it (covered by the tray colour when the list is at that end) */
+  background:
+    linear-gradient(var(--tray) 30%, transparent) top / 100% 28px no-repeat local,
+    linear-gradient(transparent, var(--tray) 70%) bottom / 100% 28px no-repeat local,
+    linear-gradient(color-mix(in srgb, var(--shade, #000) 14%, transparent), transparent) top / 100% 10px no-repeat scroll,
+    linear-gradient(transparent, color-mix(in srgb, var(--shade, #000) 14%, transparent)) bottom / 100% 10px no-repeat scroll,
+    var(--tray);
   font-size: 14px;
 }
 .combo-opt { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
