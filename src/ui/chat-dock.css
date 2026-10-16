@@ -6,8 +6,9 @@
 .chat-dock {
   right: calc(12px + var(--safe-right)); top: calc(72px + var(--safe-top)); bottom: calc(12px + var(--safe-bottom));
   width: min(360px, calc(100vw - 24px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--tray-line); border-radius: var(--radius-md);
+  animation: dock-in 200ms var(--ease-out) backwards;
 }
-.chat-dock-host[data-mode='compact'] .chat-dock { top: auto; width: min(300px, calc(100vw - 24px)); height: min(440px, calc(100dvh - 96px)); }
+.chat-dock-host[data-mode='compact'] .chat-dock { top: auto; width: min(300px, calc(100vw - 24px)); height: min(440px, calc(100dvh - 96px)); animation: dock-rise 200ms var(--ease-out) backwards; }
 .chat-dock-head { display: flex; flex: none; align-items: center; gap: 4px; min-height: 48px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--tray-line); }
 .chat-dock-title { flex: 1 1 auto; min-width: 0; margin: 0; overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .chat-dock-head .chat-dock-btn { flex: none; width: 32px; height: 32px; }
@@ -35,6 +36,7 @@
 .chat-bubble {
   right: calc(12px + var(--safe-right)); bottom: calc(76px + var(--safe-bottom)); display: grid; place-items: center;
   width: 52px; height: 52px; padding: 0; border: 0; border-radius: 50%; color: var(--tray-text);
+  transform-origin: bottom right; animation: bubble-in 160ms var(--ease-out) backwards;
 }
 .chat-dock-context { display: none; font-weight: 400; color: var(--tray-muted); }
 .chat-dock-host[data-mode='compact'] .chat-dock-context { display: inline; }
@@ -53,6 +55,7 @@
   .chat-dock, .chat-dock-host[data-mode='compact'] .chat-dock {
     inset: auto 0 var(--dock-kb, 0px) 0; width: auto; height: min(80dvh, calc(var(--dock-vh, 100dvh) - 56px - var(--safe-top)));
     border-radius: var(--radius-md) var(--radius-md) 0 0; padding-bottom: var(--safe-bottom); transition: none;
+    animation: dock-sheet-in 280ms var(--ease-drawer) backwards;
   }
   .chat-dock-handle { display: grid; place-items: center; flex: none; width: 100%; height: 24px; padding: 0; border: 0; background: transparent; color: var(--tray-muted); cursor: grab; touch-action: none; }
   .chat-dock-handle > span { width: 36px; height: 4px; border-radius: 999px; background: currentColor; opacity: 0.6; }
@@ -67,3 +70,16 @@
   .chat-dock button, .chat-dock [role='button'], .chat-dock [role='menuitem'],
   .chat-dock input, .chat-dock select, .chat-dock textarea { min-width: 44px; min-height: 44px; }
 }
+/* Entrance motion: the dock and bubble ease in each time they are shown (hidden to shown restarts the animation). The phone sheet
+   slides up instead, with `backwards` fill so the finished animation does not hold the handle's inline drag transform. */
+@keyframes dock-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes dock-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes dock-sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes bubble-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: none; } }
+@keyframes dock-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .chat-dock, .chat-dock-host[data-mode='compact'] .chat-dock, .chat-bubble { animation: dock-fade 120ms var(--ease-out) backwards; transform: none; }
+}
+/* A keyboard opening (the M key) is instant: the dock and bubble appear without the entrance. Last, with the host prefix, so it wins
+   over the compact rule and the reduced-motion fade. */
+.chat-dock-host .chat-dock[data-instant], .chat-dock-host .chat-bubble[data-instant] { animation: none; }

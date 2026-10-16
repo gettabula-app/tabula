@@ -646,8 +646,8 @@ export class BoardApp {
 
   // ---------------------------------------------------------------- comments (see docs/comments.md)
 
-  /** Opens or closes the board's chat (the M key); null where chat is not available. Set by the board UI. */
-  toggleChat: (() => void) | null = null;
+  /** Opens or closes the board's chat (the M key passes `keyboard`); null where chat is not available. Set by the board UI. */
+  toggleChat: ((keyboard?: boolean) => void) | null = null;
   /** The user's role on this board in accounts mode; null in open mode. Set by the router. */
   role: BoardRole | null = null;
   /** A deleted board that a workspace admin opened: read-only until it is restored. Set by the router. */
@@ -2918,7 +2918,7 @@ export class BoardApp {
       // stickies to cards and back (docs/kanban.md, Sticky to card and back)
       if (k === 'k' && !e.altKey) { if (!ro) this.toggleCards(); return; }
       // board chat (docs/chat.md): set by the board UI only where chat is available, for every role
-      if (k === 'm' && !e.altKey && this.toggleChat) { e.preventDefault(); this.toggleChat(); return; }
+      if (k === 'm' && !e.altKey && this.toggleChat) { e.preventDefault(); this.toggleChat(true); return; }
       // commenters have a read-only board but may still use the comment tool; setTool checks the comments document
       // Shift+L is the Line tool; the plain L key is the Connector
       const toolKey = e.shiftKey && k === 'l' ? 'shift+l' : k;

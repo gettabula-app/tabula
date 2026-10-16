@@ -63,6 +63,7 @@
   border: 1px solid var(--tray-line);
 }
 .side-tray.show { display: flex; }
+.side-tray.show { animation: tray-in 200ms var(--ease-out) both; }
 .side-tray[data-tab='chat'] { height: calc(100% - var(--panel-top) - 84px - var(--safe-bottom)); }
 .side-tray-head {
   position: relative; flex: none; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 4px 0 16px;
@@ -104,4 +105,12 @@
   }
   .side-tray-head { min-height: 64px; padding: 24px 8px 4px 16px; }
   .side-tray-head .panel-grabber { position: absolute; top: 8px; left: calc(50% - 16px); display: block; width: 32px; height: 4px; border-radius: 2px; background: var(--tray-muted); opacity: 0.45; }
+  .side-tray.show { animation: tray-sheet-in 280ms var(--ease-drawer) backwards; }
+}
+/* The comments and chat panel eases in each time it is shown (it is display: none until then, so each opening replays the entrance). */
+@keyframes tray-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes tray-sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes tray-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .side-tray.show { animation: tray-fade 120ms var(--ease-out) both; transform: none; }
 }

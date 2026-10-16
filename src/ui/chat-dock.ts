@@ -62,8 +62,8 @@ export interface ChatDock {
   conversationHost: HTMLElement;
   mode(): DockMode;
   prefs(): DockPrefs;
-  /** Applies an event; the new state is remembered and shown. Returns the mode. */
-  dispatch(event: DockEvent): DockMode;
+  /** Applies an event; the new state is remembered and shown. `keyboard` (the M key) shows the dock and bubble without their entrance. Returns the mode. */
+  dispatch(event: DockEvent, keyboard?: boolean): DockMode;
   /** Show this channel (`kind/ref`) and remember it. */
   select(channel: string): void;
   /** The channel the dock is showing, or null before there is one. */
@@ -387,7 +387,7 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     paintBubble();
   }
 
-  function dispatch(event: DockEvent): DockMode {
+  function dispatch(event: DockEvent, keyboard = false): DockMode {
     const before = prefs.mode;
     // focus inside the dock must not be lost when the dock goes away: it goes to what opened it, or to the bubble
     const hadFocus = isShown() && !!document.activeElement && panel.contains(document.activeElement);
@@ -395,6 +395,11 @@ export function mountChatDock(overlay: HTMLElement, opts: {
     if (prefs.mode === 'closed') openKey = null; // the next opening chooses again
     if (!isShown()) focusWanted = false;
     saveDock(userId, prefs, opts.storage);
+    // a keyboard (M key) change is instant; any pointer change clears it before paint shows the dock or bubble, so it eases in
+    for (const el of [panel, bubble]) {
+      if (keyboard) el.setAttribute('data-instant', '');
+      else el.removeAttribute('data-instant');
+    }
     paint();
     syncWatch();
     render();
