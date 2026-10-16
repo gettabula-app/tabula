@@ -88,6 +88,8 @@ A Node program that starts the relay with an IPC channel (`stdio: [..., 'ipc']`)
 
 Accounts mode gives people sign-in by emailed link, teams, board roles and sharing; the relay checks the role on every connection and every update. Needs Node 22.13 or newer. Every variable (mail delivery, proxy and rate-limit settings, chat, link previews, telemetry) is in [docs/accounts.md](docs/accounts.md#configuration).
 
+With the default `TABULA_MAIL=log`, email is printed to the console instead of delivered, and a chat mention email includes its message text (up to 140 characters) in that output. Choose `smtp` or `webhook` when email should be delivered.
+
 ### Hosted workspaces
 
 The hosted-workspace integration runs only with accounts mode and the three `TABULA_CLOUD_*` variables, which the control plane supplies. Self-hosted instances leave them unset; a partial set prevents startup. Variables and the rules for volumes and adoption are in [docs/cloud.md](docs/cloud.md#turning-it-on).
