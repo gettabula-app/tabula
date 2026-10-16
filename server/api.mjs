@@ -96,6 +96,8 @@ const conflict = (code, message) => new HttpError(409, code, message);
 const isAdmin = (user) => user.role === 'owner' || user.role === 'admin';
 const userView = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role });
 const EDITOR_FALLBACK = 'A former member';
+/** A name shown on a card as the last editor: control and format characters become spaces, whitespace collapses, at most 40 code points; empty gives null. */
+const cleanEditorName = (text) => [...String(text ?? '').replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()].slice(0, 40).join('') || null;
 const boardView = (b, role, editor = null) => ({
   id: b.id,
   title: b.title,
@@ -246,11 +248,11 @@ function compile(method, pattern, options, handler) {
 export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, notificationDigest = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null }) {
   /** Who last edited a board, as the card shows it: a person's current name (looked up now), "A former member" once they are gone or disabled, or an agent's token name. */
   const editorLabel = (b) => {
-    if (b?.lastEditedKind === 'agent') return typeof b.lastEditedBy === 'string' ? b.lastEditedBy : null;
+    if (b?.lastEditedKind === 'agent') return typeof b.lastEditedBy === 'string' ? cleanEditorName(b.lastEditedBy) : null;
     if (b?.lastEditedKind !== 'person' || typeof b.lastEditedBy !== 'string') return null;
     const person = directory.getUser(b.lastEditedBy);
     if (!person || person.disabled) return EDITOR_FALLBACK;
-    return [...String(person.name ?? '').replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()].slice(0, 40).join('') || EDITOR_FALLBACK;
+    return cleanEditorName(person.name) ?? EDITOR_FALLBACK;
   };
   /**
    * What GET /api/internal/version answers (docs/migrations.md): this build's label, the schema generations it knows and the highest

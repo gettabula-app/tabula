@@ -668,6 +668,20 @@ describe('accounts mode server', () => {
       expect((adminList.body as Body[]).find((board) => board.id === id)).toMatchObject(expected);
     });
 
+    it('cleans a token name that was stored with control or format characters before it is shown as the last editor: marks out, 40 code points', async () => {
+      const id = await newBoard(owner.cookie);
+      const db = new DatabaseSync(path.join(dataDir, 'directory.sqlite'));
+      try {
+        const dirty = `Bot\u202E\u0007 ${'x'.repeat(60)}`;
+        expect(db.prepare('UPDATE boards SET last_edited_by = ?, last_edited_kind = ?, last_edited_at = ? WHERE id = ?').run(dirty, 'agent', 1_700_000_000_125, id).changes).toBe(1);
+      } finally {
+        db.close();
+      }
+      const listed = ((await api(owner.cookie, 'GET', '/api/boards')).body as Body[]).find((board) => board.id === id)!;
+      expect(listed.lastEditedBy).toBe(`Bot ${'x'.repeat(36)}`);
+      expect([...(listed.lastEditedBy as string)]).toHaveLength(40);
+    });
+
     it('names a person who last edited a board by their current name, "A former member" once disabled or removed, and an agent by its token name', async () => {
       const team = await newTeam(owner.cookie);
       const person = await joinTeam(owner.cookie, team.id);
