@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { createServer, type ViteDevServer } from 'vite';
 import { budget } from './wait-budget';
 import { openRailTool } from './rail-tool-helper';
+import { settledBox } from './settled-box';
 
 // The code block in the real app (docs/code-blocks.md): made with the rail tool, typed in place (Tab, Enter, Esc), its properties, Copy and Wrap, the keyboard,
 // a read-only board, the export, and the textarea sitting exactly on the drawn code at three zoom levels.
@@ -289,6 +290,7 @@ describe.skipIf(!available)('properties, Copy and Wrap', { timeout: 200_000 }, (
     const labels = await pop.locator('[role="menuitemradio"]').evaluateAll((els) => els.map((e) => e.textContent));
     expect(labels.slice(0, 13)).toEqual(['Plain text', 'TypeScript', 'JavaScript', 'JSON', 'HTML', 'CSS', 'Python', 'Shell', 'SQL', 'YAML', 'Go', 'Rust', 'Java']);
     expect(await pop.locator('[role="menuitemradio"][aria-checked="true"]').textContent()).toBe('TypeScript');
+    await settledBox(pop);
     const box = await pop.boundingBox();
     expect(box!.width).toBeLessThanOrEqual(281);
     expect(box!.height).toBeLessThanOrEqual(321);
@@ -560,6 +562,7 @@ describe.skipIf(!available)('the keyboard, read-only and export', { timeout: 200
     await select(page, ['c1']);
     await page.getByRole('button', { name: 'More properties' }).click();
     await page.getByRole('button', { name: /^Language:/ }).click();
+    await settledBox(page.locator('.code-lang-pop'));
     const box = await page.locator('.code-lang-pop').boundingBox();
     expect(Math.round(box!.height)).toBeGreaterThanOrEqual(790);
     expect(Math.round(box!.width)).toBeGreaterThanOrEqual(389);

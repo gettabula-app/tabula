@@ -698,7 +698,7 @@ select.input {
 }
 
 /* popovers, menus, dialogs, toast */
-.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-md); }
+.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-md); animation: popover-in 160ms var(--ease-out) backwards; transform-origin: var(--pop-origin, 50% 0); }
 /* a popover opened from inside a dialog (the font pickers in Board settings) sits above that dialog (TAB-405) */
 .modal-back ~ .popover { z-index: 61; }
 .popover.wide { width: min(720px, calc(100vw - 16px)); }
@@ -709,6 +709,9 @@ select.input {
 .steps-pop .steps-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tray-line); }
 .menu { display: flex; flex-direction: column; padding: 6px; min-width: 280px; border-radius: var(--radius-md); }
 .popover, .combo-list { box-shadow: var(--popover-shadow); }
+@keyframes popover-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes popover-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .popover { animation: popover-fade 120ms var(--ease-out) both; transform: none; } }
 .menu .list-label { padding: 0 10px; }
 .menu-item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; text-align: left; }
 .menu-item:hover { background: var(--tray-hover); }
@@ -805,7 +808,7 @@ select.input {
 .pop-foot { padding-top: 6px; border-top: 1px solid var(--tray-line); }
 
 .modal-back { position: fixed; inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-height, 100dvh); z-index: 60; display: grid; place-items: safe center; overflow: hidden; padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left)); background: var(--scrim); animation: modal-back-in 160ms var(--ease-out) both; }
-.modal { width: min(560px, 100%); max-height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md); animation: modal-in 200ms var(--ease-out) both; }
+.modal { width: min(560px, 100%); max-height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md); animation: modal-in 200ms var(--ease-out) backwards; }
 :root .modal { box-shadow: var(--dialog-shadow); }
 @keyframes modal-back-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
