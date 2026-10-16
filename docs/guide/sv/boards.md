@@ -10,7 +10,7 @@ Under det övre fältet:
 
 - **New board** (Ny tavla) öppnar en meny. **Blank board** (Tom tavla) skapar en tom tavla och öppnar den, **From a template…** (Från en mall…) öppnar sidan Mallar och **Import a file…** (Importera en fil…) skapar en tavla från en `.drift`- eller `.json`-fil. Se [Exportera och importera](export-import.md).
 - **Search boards** (Sök bland tavlor) filtrerar listan efter titel medan du skriver.
-- Så länge du inte har några tavlor visas en rad med **Start from a template** (Börja med en mall) och upp till fyra mallar, med dina egna sparade mallar först och länken **All templates** (Alla mallar). Välj **Hide** (Dölj) för att dölja raden på den här enheten. Se [Mallar](templates.md).
+- I en arbetsyta med inloggning visas tavlorna som kort, med en omkopplare för **Cards | List** (Kort | Lista) och en omkopplare för **Show previews** (Visa förhandsvisningar). Se [Arbetsytor med inloggning](#arbetsytor-med-inloggning). Så länge du inte har några tavlor hjälper mallkort dig att komma igång: se [Första gången](#första-gången).
 
 ![Sidan Boards för en inloggad medlem: ett avsnitt för teamet Design, Personal (Personligt) och Shared with you (Delat med dig) med en tavla som bara går att visa](images/teams-home.png)
 
@@ -31,21 +31,50 @@ När din arbetsyta använder inloggning grupperas tavlorna:
 - **Shared with you** innehåller tavlor som andra har delat med dig. För ägare och administratörer heter avsnittet **Other boards** (Andra tavlor).
 - **On this device** (På den här enheten) visar tavlor som bara lagras i den här webbläsaren. **Add to workspace** (Lägg till i arbetsytan) flyttar en tavla till Personligt eller till ett team, så att andra kommer åt den.
 
-Tabellen har kolumnen **Access** (Åtkomst). En bricka visas bara när din åtkomst är begränsad: **View only** (Endast visning) eller **Can comment** (Kan kommentera). Utan bricka kan du redigera.
-
-Tabellen har också en kolumn **Here now** (Här nu). Den visar vem som har tavlan öppen just nu, för tavlor du kan öppna:
-
-- Varje annan person är en liten ruta med sin initial och markörfärg. De tre första personerna visas, sedan **+N** för resten. Personerna visas i den ordning de kom.
-- Om du också har tavlan öppen i en annan flik följer en ruta **You** (Du) efter de andra. När ingen annan är där är cellen tom: din egen närvaro ensam visar ingenting, och inte heller en nolla.
-- Peka på rutorna för att se allas namn. Personer som anslöt med en anslutningskod är markerade med **(guest)**.
-- På en telefon följs rutorna av en kort text, till exempel ”Lin and 5 more”. När raden inte har plats för ett namn utelämnas texten.
-- När någon lämnar finns rutan kvar i ungefär tre sekunder, så att en kort återanslutning inte får den att flimra.
-- Du ser bara personer på tavlor du kan öppna. AI-verktyg visas aldrig. Personer som anslöt med en anslutningskod ser inte kolumnen.
-- Den uppdateras direkt via chattanslutningen. Om chatten är avstängd på din server kontrollerar sidan igen var 15:e sekund.
-
 Ägare och administratörer ser också knapparna **Members** (Medlemmar) och **New team** (Nytt team). Andra personer, förutom gäster, ser **New team**. På en smal skärm ligger **New team** och **Members** bakom knappen **More actions** (Fler åtgärder), som visas som tre punkter. Information om team och roller finns i [Dela, roller och team](sharing.md).
 
 Om din arbetsyta har ett banderollmeddelande visas det allra högst upp. Om det inte går att nå servern visas meddelandet **You are offline. Showing the last list from this device.** (Du är offline. Visar den senaste listan från den här enheten.) och knappar som behöver servern inaktiveras.
+
+### Kort och lista
+
+Varje tavla är ett kort. Överst växlar **Cards | List** mellan ett rutnät med kort och en lista med en rad per tavla. **Show previews** slår på eller av bilderna på korten. Båda valen sparas på den här enheten.
+
+Ett kort visar:
+
+- En bild av tavlan, eller en enkel ruta när det inte finns någon. En tavla som ännu saknar innehåll visar **No content yet** (Inget innehåll än) under namnet.
+- Tavlans namn, som öppnar den, och en rad under: vem som redigerade den sist och när (”Lin · 12 min ago”; ett AI-verktyg märks med ”(agent)”), eller ”Edited 3 Oct” när servern inte anger vem, eller ”On this device”.
+- Vilka som är här nu (se nedan).
+- En bricka när din åtkomst är begränsad: **Viewer** (Läsare) eller **Commenter** (Kommenterare). Utan bricka kan du redigera.
+- På bilden ett litet tal för de olästa chattmeddelandena i tavlan, markerat när någon har nämnt dig. Det visas bara när chatten är på.
+- En meny med **More actions** (tre punkter). Alla kan välja **Open** (Öppna). De som kan redigera kan också välja **Rename** (Byt namn) och **Duplicate** (Duplicera), och ägaren kan också välja **Delete** (Ta bort). En tavla som bara finns på den här enheten erbjuder **Open**, **Add to workspace** och **Delete**.
+
+I listvyn är varje tavla en rad med sitt namn och kolumnerna **Here now** (Här nu), **Last edited** (Senast ändrad) och **Access** (Åtkomst). På en smal skärm utelämnas de extra kolumnerna.
+
+**Here now** visar vem som har tavlan öppen just nu, för tavlor du kan öppna:
+
+- Varje annan person är en liten ruta med sin initial och markörfärg. De tre första personerna visas, sedan **+N** för resten. Personerna visas i den ordning de kom.
+- Om du också har tavlan öppen i en annan flik följer en ruta **You** (Du) efter de andra. När ingen annan är där syns inget: din egen närvaro ensam visar ingenting, och inte heller en nolla.
+- Peka på rutorna för att se allas namn. Personer som anslöt med en anslutningskod är markerade med **(guest)**.
+- På en telefon följs rutorna av en kort text, till exempel ”Lin and 5 more”. När det inte finns plats för ett namn utelämnas texten.
+- När någon lämnar finns rutan kvar i ungefär tre sekunder, så att en kort återanslutning inte får den att flimra.
+- Du ser bara personer på tavlor du kan öppna. AI-verktyg visas aldrig. Personer som anslöt med en anslutningskod ser inte detta.
+- Den uppdateras direkt via chattanslutningen. Om chatten är avstängd på din server kontrollerar sidan igen var 15:e sekund.
+
+### Bilder på kort
+
+Bilden är en liten kopia av det som finns på tavlan, och den görs av webbläsaren hos någon som kan redigera tavlan. När en ägare eller någon som kan redigera har tavlan öppen och ändrar den, ritar webbläsaren bilden och skickar den till servern, efter att varje bild på tavlan har krympts till högst 480 pixlar. Personer som bara kan visa eller kommentera skapar aldrig någon bild. Tills en tavla har en bild visar kortet en ritad kontur av tavlan, eller en enkel ruta när tavlan är tom.
+
+Alla som kan se en tavlas kort ser dess bild. Den visar det som finns på tavlan, så en tavla vars innehåll ska hållas dolt bör inte visa någon bild:
+
+- **Show previews** överst på sidan döljer alla bilder för dig, på den här enheten.
+- Tavlans ägare och en administratör för arbetsytan kan öppna tavlans meny och stänga av **Show a picture on the card** (Visa en bild på kortet). Då visar kortet en enkel ruta, och den bild som sparats för tavlan tas bort. Ingen annan ser omkopplaren.
+- En administratör för arbetsytan kan stänga av tavlornas bilder för hela arbetsytan i **Admin**, under **Privacy** (Integritet). Den som kör din Tabula-server kan också stänga av dem för hela servern; serverns egen dokumentation beskriver hur.
+
+### Första gången
+
+När du inte har några tavlor visar sidan **No boards yet** (Inga tavlor än) och erbjuder **New board**. I en arbetsyta med inloggning visas också **Start your first board** (Starta din första tavla): kort för de inbyggda mallarna och ett kort för **Blank board**. Välj ett kort för att öppna en ny tavla utifrån det. **Skip, start with a blank board** (Hoppa över, börja med en tom tavla) öppnar en tom tavla, och **Hide** (Dölj) tar bort förslagen på den här enheten. De försvinner av sig själva när du har en tavla.
+
+Ett team utan tavlor visar **No boards in** teamets namn **yet** (Inga tavlor i teamets namn än), med **New board** för dem som får lägga till tavlor där, och i avsnittet **Shared with you** visas **No boards shared with you yet** (Inga tavlor delade med dig än).
 
 ## Aviseringar
 
@@ -74,10 +103,10 @@ Klicka på tavlans namn längst upp till vänster på en öppen tavla, skriv det
 
 ## Ta bort en tavla
 
-Välj papperskorgsikonen i slutet av tavlans rad och bekräfta sedan med **Delete board** (Ta bort tavla).
+I en arbetsyta med inloggning öppnar du menyn **More actions** (tre punkter) på tavlans kort eller rad och väljer **Delete**. I öppet läge väljer du papperskorgsikonen i slutet av tavlans rad. Bekräfta sedan med **Delete board** (Ta bort tavla).
 
 - I öppet läge och för tavlor under **On this device** tas tavlan bara bort från den här enheten. Kopior på en synkroniseringsserver eller på andras enheter finns kvar.
-- I en arbetsyta med inloggning ser bara tavlans ägare knappen för att ta bort den. När du tar bort tavlan försvinner den för alla som har åtkomst. En administratör för arbetsytan kan återställa den. Se [Administrationspanelen](admin.md).
+- I en arbetsyta med inloggning erbjuds bara tavlans ägare **Delete**. När du tar bort tavlan försvinner den för alla som har åtkomst. En administratör för arbetsytan kan återställa den. Se [Administrationspanelen](admin.md).
 
 ## Inställningar för tavlan
 
