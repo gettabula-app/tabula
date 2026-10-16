@@ -117,7 +117,15 @@ export function openFontPicker(anchor: HTMLElement, current: string | undefined,
   render();
   requestAnimationFrame(() => search.focus());
   loadCatalogue().then(() => {
+    // the category chips and the list are built again when the catalogue arrives; whatever had focus is replaced, so focus goes to the
+    // same chip or font's new element (or the search field) instead of falling to the page, which would leave the picker for a keyboard user
+    const active = document.activeElement as HTMLElement | null;
+    const inList = !!active && list.contains(active);
+    const inCats = !!active && cats.contains(active);
+    const key = inList ? active.dataset.slug : inCats ? active.textContent : undefined;
     render();
+    if (inList) (rowsOf().find((r) => r.dataset.slug === key) ?? search).focus({ preventScroll: true });
+    else if (inCats) ([...cats.querySelectorAll<HTMLElement>('.chip')].find((c) => c.textContent === key) ?? search).focus({ preventScroll: true });
     pop.place();
   });
 }

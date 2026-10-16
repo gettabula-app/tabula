@@ -173,7 +173,7 @@ describe('guests', () => {
 describe('the workspace setting and the operator switch', () => {
   it('answers 402 when the workspace is read-only, without fetching', async () => {
     const web = await startWeb();
-    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, cloud: { limits: () => ({ readOnly: true }), workspaceView: () => ({}) } });
+    const w = await setup({ web, env: { TABULA_LINK_PREVIEWS: 'on' }, cloud: { limits: () => ({ readOnly: true }), workspaceView: () => ({}), restartView: () => null } });
     const owner = w.signIn('owner');
     const board = w.boardWith(owner, null);
     const res = await w.unfurl(owner, board, w.target());
@@ -210,7 +210,7 @@ describe('the workspace setting and the operator switch', () => {
 
   it('is on by default for a hosted workspace', async () => {
     const web = await startWeb();
-    const w = await setup({ web, cloud: { limits: () => ({ readOnly: false }), workspaceView: () => ({}) } });
+    const w = await setup({ web, cloud: { limits: () => ({ readOnly: false }), workspaceView: () => ({}), restartView: () => null } });
     const owner = w.signIn('owner');
     const board = w.boardWith(owner, null);
     expect((await w.unfurl(owner, board, w.target())).status).toBe(200);

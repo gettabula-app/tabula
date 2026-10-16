@@ -36,7 +36,7 @@ Select a block and open **More properties**:
 
 - **Language**: a list with a search field. Plain text is first, then the common languages, then the rest by name.
 - **Title**: shows in a header on the card. Empty means no header.
-- **Line numbers** and **Wrap lines**.
+- **Line numbers** and **Wrap lines**: two switches that look like the switches elsewhere in Tabula.
 - **Width**, like other objects. A block's height always fits its code.
 
 The colours of the code follow the board's theme; there is nothing to set.

@@ -109,7 +109,7 @@
 
 @media (max-width: 860px) {
   .modal-back.k-card-dialog { align-items: end; padding: 0; }
-  .k-card-dialog .modal { width: 100%; max-height: 85vh; max-height: 85dvh; border-top: 1px solid var(--tray-line); animation: modal-sheet-in 280ms var(--ease-drawer) both; }
+  .k-card-dialog .modal { width: 100%; max-height: 85vh; max-height: 85dvh; border-top: 1px solid var(--tray-line); animation: modal-sheet-in 280ms var(--ease-drawer) backwards; }
   /* the head stays, the body scrolls, and the actions stay at the sheet's foot, clear of the home indicator */
   .k-card-dialog .modal-body { padding-bottom: 0; }
   .k-card-dialog .k-actions {

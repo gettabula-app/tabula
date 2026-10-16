@@ -18,6 +18,19 @@ const USER_KEY = 'driftboard:user';
 const ADJ = ['Teal', 'Amber', 'Quiet', 'Swift', 'Bright', 'Calm', 'Bold', 'Lucky', 'Clever', 'Brave'];
 const NOUN = ['Otter', 'Heron', 'Fox', 'Lynx', 'Wren', 'Moth', 'Badger', 'Finch', 'Hare', 'Owl'];
 
+/**
+ * A random id for this person. crypto.randomUUID exists only in secure contexts (https, localhost): a self-hosted install or the LAN demo
+ * opened over plain http on another address has no such method, so the id is built from getRandomValues, which every context has.
+ */
+function newUserId(): string {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const b = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40;
+  b[8] = (b[8]! & 0x3f) | 0x80;
+  const hex = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export function getUser(): User {
   try {
     const raw = localStorage.getItem(USER_KEY);
@@ -31,7 +44,7 @@ export function getUser(): User {
   } catch { /* ignore */ }
   const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
   const u: User = {
-    id: crypto.randomUUID(),
+    id: newUserId(),
     name: `${pick(ADJ)} ${pick(NOUN)}`,
     color: pick(USER_COLORS),
   };

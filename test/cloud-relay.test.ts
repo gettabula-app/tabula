@@ -283,7 +283,7 @@ describe('without the cloud variables', () => {
     expect((await c.internal('GET', '/api/internal/usage')).status).toBe(404);
     expect((await c.internal('PUT', '/api/internal/limits', { readOnly: true })).status).toBe(404);
     expect((await c.api(owner.cookie, 'POST', '/api/billing/portal')).status).toBe(404);
-    expect((await c.api(owner.cookie, 'GET', '/api/me')).body).toEqual({ user: owner.user, teams: [], mcpOauth: false, images: true, chat: true, notifications: true });
+    expect((await c.api(owner.cookie, 'GET', '/api/me')).body).toEqual({ user: owner.user, teams: [], mcpOauth: false, images: true, boardPreviews: true, chat: true, notifications: true });
     expect(seen).toEqual([]);
   });
 
@@ -340,7 +340,7 @@ describe('a hosted workspace', () => {
       expect(set).toMatchObject({ status: 200, body: { seatLimit: 50, readOnly: false, banner: 'Welcome', aiCredits: true } });
 
       const me = await c.api(owner.cookie, 'GET', '/api/me');
-      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true, aiCredits: true, trialEndsAt: null, state: null });
+      expect(me.body.workspace).toEqual({ readOnly: false, banner: 'Welcome', seatLimit: 50, seatsUsed: 1, billing: true, aiCredits: true, trialEndsAt: null, state: null, restart: null });
       expect((await c.api(owner.cookie, 'GET', '/api/ai/config')).body.credits).toBe(true);
 
       const audit = await c.api(owner.cookie, 'GET', '/api/admin/audit?action=cloud.');
@@ -594,6 +594,26 @@ describe('a hosted workspace', () => {
     });
   });
 
+  describe('restart notice hint', () => {
+    it('tells every open socket when a notice is set and when it is cleared, and nothing else', async () => {
+      const team = await c.newTeam(owner.cookie);
+      const editor = await c.joinTeam(owner.cookie, team.id);
+      const board = await c.newBoard(editor.cookie, { teamId: team.id });
+      const heard = c.listen(board, editor.cookie);
+      const through = c.connect(board, editor.cookie);
+      await c.synced(through);
+      await until(() => heard.ws.readyState === WebSocket.OPEN);
+
+      const set = await c.internal('PUT', '/api/internal/restart-notice', { seconds: 60 });
+      expect(set.status).toBe(200);
+      expect(set.body.restart).toMatchObject({ id: expect.any(String) });
+      expect((await c.internal('PUT', '/api/internal/restart-notice', { seconds: 0 })).body).toEqual({ restart: null });
+      await c.afterHints(through, [heard]);
+      // the payload is the read-only value the hint has always carried; the app ignores it and asks /api/me
+      expect(heard.hints).toEqual([{ readOnly: false }, { readOnly: false }]);
+    });
+  });
+
   describe('seat limit', () => {
     it('refuses new invites and sign-ins through them, without using up the invite or the link, until a seat is free', async () => {
       const team = await c.newTeam(owner.cookie);
@@ -724,7 +744,7 @@ describe('a hosted workspace', () => {
       const b = client(second);
       const again = await b.signIn(OWNER);
       expect(again.user.id).toBe(who.user.id);
-      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true, aiCredits: true, trialEndsAt: null, state: null });
+      expect((await b.api(again.cookie, 'GET', '/api/me')).body.workspace).toEqual({ readOnly: true, banner: 'Kept', seatLimit: 7, seatsUsed: 1, billing: true, aiCredits: true, trialEndsAt: null, state: null, restart: null });
       expect((await b.api(again.cookie, 'POST', '/api/teams', { name: 'x' })).status).toBe(402);
     });
   });

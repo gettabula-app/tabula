@@ -8,7 +8,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { BOARD_ID_RE, ftsAvailable } from './directory.mjs';
 import { canMoveBoard } from './board-move.mjs';
 import { InviteExhaustedError, SeatLimitError } from './auth.mjs';
-import { CloudError, addsSeat, validateLimits, validateNotify } from './cloud.mjs';
+import { CloudError, addsSeat, validateLimits, validateNotify, validateRestartNotice } from './cloud.mjs';
 import { createMailer } from './mailer.mjs';
 import { authMailUnavailable } from './mail-health.mjs';
 import { createTelemetryCollector } from './telemetry/collector.mjs';
@@ -625,6 +625,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   // refused control-token attempts on the internal routes, per address (the control plane's own calls are never counted: only a refusal is)
   const internalAuthFailures = createWindowLimiter(30, now);
   const internalAuthLogged = createWindowLimiter(1, now);
+  // restart notices (docs/cloud.md, "Restart notice"): 20 non-zero signals an hour for the whole process; clearing (0) is never counted
+  const restartSignals = createWindowLimiter(20, now, 60 * 60_000);
   const oauthScopeRank = (scope) => OAUTH_SCOPES.indexOf(scope) + 1;
   const oauthLowerScope = (a, b) => oauthScopeRank(a) <= oauthScopeRank(b) ? a : b;
   // What a role on a board allows a connected app to do there: editors and owners write, commenters comment, the rest read.
@@ -1267,7 +1269,6 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,
       ...(assets ? { images: true } : {}),
-      ...(boardPreviewsEnabled() ? { boardPreviews: true } : {}),
       ...(config.joinCodes ? { joinCodes: true } : {}),
     }]),
 
@@ -1280,6 +1281,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           workspace: {
             ...cloud.workspaceView(),
             ...(isAdmin(user) ? { trialEndsAt: cloud.limits().trialEndsAt, state: cloud.limits().state } : {}),
+            restart: cloud.restartView(),
           },
         } : {}),
         ...(config.mcp ? { mcp: true } : {}),
@@ -2563,6 +2565,21 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
             if (checked.error) throw badRequest(checked.error);
             for (const warning of checked.warnings ?? []) console.warn(`api: ${warning}`);
             return [200, cloud.setLimits(checked.patch)];
+          }),
+          // The control plane's heads-up before a restart (docs/cloud.md, "Restart notice"): the app shows its own fixed text with a countdown.
+          // The bearer check ran before this handler; the limiter counts only a valid non-zero signal, and 0 clears without a count.
+          compile('PUT', 'internal/restart-notice', { internal: true, body: true, readOnlyOk: true }, ({ res, body }) => {
+            const checked = validateRestartNotice(body);
+            if (checked.error) throw badRequest(checked.error);
+            if (checked.seconds > 0) {
+              const wait = restartSignals.hit('process');
+              if (wait) {
+                res.setHeader('retry-after', String(wait));
+                throw new HttpError(429, 'rate_limited', 'Too many restart notices. Try again later.');
+              }
+            }
+            cloud.setRestartNotice(checked.seconds);
+            return [200, { restart: cloud.restartView() }];
           }),
           // Mails the workspace owners (a retried call is answered without mailing again); open while read-only like the limits.
           compile('POST', 'internal/notify', { internal: true, body: true, readOnlyOk: true }, async ({ body }) => {

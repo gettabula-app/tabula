@@ -29,6 +29,11 @@ export interface Workspace {
   trialEndsAt?: string | null;
   /** Present only for owners and admins on cloud instances. Unknown lifecycle values are allowed. */
   state?: string | null;
+  /**
+   * A server restart is planned (docs/cloud.md, Restart). `secondsLeft` is counted by the server when it answers: the page
+   * counts down from the moment the answer arrives and never compares server times. Absent or null when none is planned.
+   */
+  restart?: { secondsLeft: number; id: string } | null;
 }
 
 export interface Me {

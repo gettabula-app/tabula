@@ -342,7 +342,7 @@ export function refreshMeSoon() {
 }
 
 /**
- * Hosted workspaces (docs/cloud.md): while the tab is open, asks for /api/me every few minutes so a new banner or a
+ * Hosted workspaces (docs/cloud.md): while the tab is open, asks for /api/me every minute so a new banner or a
  * read-only switch shows up. Does nothing for anyone who is signed out or on a server without a control plane.
  */
 export function startMeRefresh(overrides: Partial<MeRefreshDeps> = {}): () => void {

@@ -1,0 +1,29 @@
+/* The notice before a server restart (docs/cloud.md, Restart). It is not a dialog: it takes no focus, blocks nothing and changes no
+   layout (position: fixed). It sits above the popovers (50) and under a dialog's scrim (.modal-back, 60), so a dialog covers it.
+   The text wraps; nothing scrolls sideways. Nothing moves: it appears and goes away at once. The border is a real border, not a
+   box-shadow, because forced-colors mode drops shadows. */
+.restart-note {
+  position: fixed; z-index: 55; top: calc(64px + var(--safe-top)); left: calc((100% - var(--dock-inset, 0px)) / 2); transform: translateX(-50%);
+  box-sizing: border-box; display: flex; align-items: center; gap: 8px;
+  width: min(360px, calc(100% - 24px)); max-width: calc(100% - 24px); padding: 8px 8px 8px 16px;
+  border: 1px solid var(--field-edge-strong); border-radius: var(--radius-md);
+  background: var(--tray); color: var(--tray-text); font-size: 13px; line-height: 18px;
+}
+.restart-note[hidden] { display: none; }
+.restart-note-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.restart-note-dismiss {
+  flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-text);
+  font-size: 20px; line-height: 1; cursor: pointer;
+}
+.restart-note-dismiss:hover { background: var(--tray-hover); }
+.restart-note-dismiss:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
+@media (pointer: coarse) {
+  .restart-note-dismiss { width: 44px; height: 44px; }
+}
+
+/* on a phone the tool rail runs down the left edge and the top bar can be one or two rows: the notice sits to the right of the rail and
+   under the first row, so it covers neither (the top bar's second row, when there is one, may be under it for the minutes it is up) */
+@media (max-width: 860px) {
+  .restart-note { top: calc(64px + var(--safe-top)); left: calc(80px + var(--safe-left)); right: calc(12px + var(--safe-right)); transform: none; width: auto; max-width: none; }
+}

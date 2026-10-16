@@ -28,6 +28,10 @@ const NOTIFY_DATE_RE = /^\d{1,2} [A-Z][a-z]{2} \d{4}$/;
 const ADDRESS_RE = /\S+@\S+/g;
 const KEY_FLOOR_NAME_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
 const KEY_FLOOR_MAX_COUNTERS = 100;
+const RESTART_MIN_SECONDS = 30;
+const RESTART_MAX_SECONDS = 900;
+// A restart notice stays readable for two minutes after the restart time, then it is gone (docs/cloud.md, "Restart notice").
+const RESTART_GRACE_MS = 120_000;
 
 // What the control plane may ask the instance to mail the owners. `setting` remembers the last date notified, so a
 // retried job never mails twice. `text` is for the log, file and smtp mail modes; a hosted relay renders its own
@@ -144,6 +148,16 @@ export function validateNotify(body) {
   return { notice: { template, date } };
 }
 
+/** Check of a PUT /api/internal/restart-notice body: `{ seconds }` (a safe whole number from 0 up; setRestartNotice clamps it) or `{ error }`. */
+export function validateRestartNotice(body) {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return { error: 'The request body must be a JSON object' };
+  const keys = Object.keys(body);
+  if (keys.length !== 1 || keys[0] !== 'seconds') return { error: 'The request body must be exactly { "seconds": <whole number> }' };
+  const { seconds } = body;
+  if (!Number.isSafeInteger(seconds) || seconds < 0) return { error: 'seconds must be a whole number of 0 or more' };
+  return { seconds };
+}
+
 const usesSeat = (user) => SEAT_ROLES.includes(user.role) && !user.disabled;
 
 /** Whether applying `patch` ({role?, disabled?}) to `user` takes a seat they do not hold now. */
@@ -167,9 +181,9 @@ function validAutoUpgradeReply(data, value) {
 }
 
 /**
- * `config` is `config.cloud`. `fetch`, the timer functions and `log` are injectable for tests.
+ * `config` is `config.cloud`. `fetch`, the timer functions, `now` (ms epoch) and `log` are injectable for tests.
  * Emits `limits-changed` on `events` after the limits change (the relay re-evaluates open sockets on it) and
- * listens for `usage-changed`.
+ * listens for `usage-changed`. Emits `restart-notice-changed` (no payload) after a restart notice is set or cleared.
  */
 export function createCloud({
   config,
@@ -178,6 +192,7 @@ export function createCloud({
   fetch: fetchFn = (...args) => globalThis.fetch(...args),
   setTimeout: setTimer = (...args) => globalThis.setTimeout(...args),
   clearTimeout: clearTimer = (...args) => globalThis.clearTimeout(...args),
+  now = () => Date.now(),
   log = (...args) => console.error(...args),
   telemetryAnalytics = () => false,
 }) {
@@ -238,6 +253,31 @@ export function createCloud({
       log(`cloud: a listener for limits-changed failed: ${describe(err)}`);
     }
     return { ...next };
+  }
+
+  // In memory only (docs/cloud.md, "Restart notice"): a restart forgets it, and nothing but the audit row is written.
+  // A new notice replaces the old one, so an older id can never come back.
+  let restart = null;
+  const liveRestart = () => (restart !== null && now() <= restart.at + RESTART_GRACE_MS ? restart : null);
+
+  /** `seconds` is what validateRestartNotice passed: 0 clears the notice; anything else is clamped to 30 to 900 seconds from now. */
+  function setRestartNotice(seconds) {
+    const effective = seconds === 0 ? 0 : Math.min(RESTART_MAX_SECONDS, Math.max(RESTART_MIN_SECONDS, seconds));
+    const next = effective === 0 ? null : { at: now() + effective * 1000, id: crypto.randomBytes(6).toString('hex') };
+    directory.audit(null, 'cloud.restart_notice', { seconds: effective });
+    restart = next;
+    try {
+      events.emit('restart-notice-changed');
+    } catch (err) {
+      log(`cloud: a listener for restart-notice-changed failed: ${describe(err)}`);
+    }
+  }
+
+  /** `{ secondsLeft, id }` while a notice is live (secondsLeft counts down to the restart and stays 0 for two minutes after it), else null. */
+  function restartView() {
+    const live = liveRestart();
+    if (live === null) return null;
+    return { secondsLeft: Math.max(0, Math.ceil((live.at - now()) / 1000)), id: live.id };
   }
 
   const seatUsage = () => directory.seatUsage();
@@ -489,6 +529,8 @@ export function createCloud({
     seatUsage,
     seatsAvailable,
     workspaceView,
+    setRestartNotice,
+    restartView,
     autoUpgrade,
     updates,
     setAutoUpgrade,

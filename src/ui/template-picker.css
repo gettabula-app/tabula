@@ -329,7 +329,7 @@
 }
 
 @media (max-width: 480px) and (prefers-reduced-motion: no-preference) {
-  .template-picker-dialog { animation: modal-sheet-in 280ms var(--ease-drawer) both; }
+  .template-picker-dialog { animation: modal-sheet-in 280ms var(--ease-drawer) backwards; }
 }
 
 @media (prefers-reduced-motion: reduce) {

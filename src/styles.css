@@ -344,9 +344,10 @@ select.input {
 
 .top-left { position: absolute; top: calc(12px + var(--safe-top)); left: calc(12px + var(--safe-left)); display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; padding: 4px; max-width: calc(100% - 380px - var(--safe-left) - var(--safe-right)); }
 .board-name {
-  min-width: 80px; width: 22ch; max-width: 40ch; height: 36px; padding: 0 8px; border: 0; border-radius: var(--radius-sm);
+  min-width: 80px; width: var(--name-w, 22ch); max-width: 40ch; height: 36px; padding: 0 4px 0 8px; border: 0; box-sizing: border-box; flex: 0 1 auto; border-radius: var(--radius-sm);
   background: transparent; font: 600 15px var(--ui); text-overflow: ellipsis;
 }
+.board-name-twin { position: absolute; visibility: hidden; white-space: pre; pointer-events: none; left: 0; top: 0; }
 .board-name:hover { background: var(--tray-hover); }
 .board-name:focus { background: color-mix(in srgb, var(--tray-text) 10%, transparent); }
 .sync-status {
@@ -697,7 +698,9 @@ select.input {
 }
 
 /* popovers, menus, dialogs, toast */
-.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-md); }
+.popover { position: fixed; z-index: 50; max-width: calc(100vw - 16px - var(--safe-left) - var(--safe-right)); max-height: calc(100vh - 16px - var(--safe-top) - var(--safe-bottom)); max-height: calc(100dvh - 16px - var(--safe-top) - var(--safe-bottom)); overflow: auto; border-radius: var(--radius-md); animation: popover-in 160ms var(--ease-out) backwards; transform-origin: var(--pop-origin, 50% 0); }
+/* a popover opened from inside a dialog (the font pickers in Board settings) sits above that dialog (TAB-405) */
+.modal-back ~ .popover { z-index: 61; }
 .popover.wide { width: min(720px, calc(100vw - 16px)); }
 .popover.tray, :root:not([data-theme='default']) .popover.tray { border-radius: var(--radius-md); }
 .popover .dot-presets button { border-radius: var(--radius-sm); }
@@ -706,6 +709,9 @@ select.input {
 .steps-pop .steps-foot { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tray-line); }
 .menu { display: flex; flex-direction: column; padding: 6px; min-width: 280px; border-radius: var(--radius-md); }
 .popover, .combo-list { box-shadow: var(--popover-shadow); }
+@keyframes popover-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes popover-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .popover { animation: popover-fade 120ms var(--ease-out) both; transform: none; } }
 .menu .list-label { padding: 0 10px; }
 .menu-item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; text-align: left; }
 .menu-item:hover { background: var(--tray-hover); }
@@ -806,7 +812,7 @@ select.input {
 .pop-foot { padding-top: 6px; border-top: 1px solid var(--tray-line); }
 
 .modal-back { position: fixed; inset: var(--vv-top, 0px) 0 auto 0; height: var(--vv-height, 100dvh); z-index: 60; display: grid; place-items: safe center; overflow: hidden; padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left)); background: var(--scrim); animation: modal-back-in 160ms var(--ease-out) both; }
-.modal { width: min(560px, 100%); max-height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md); animation: modal-in 200ms var(--ease-out) both; }
+.modal { width: min(560px, 100%); max-height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-md); animation: modal-in 200ms var(--ease-out) backwards; }
 :root .modal { box-shadow: var(--dialog-shadow); }
 @keyframes modal-back-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes modal-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
@@ -946,7 +952,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   /* max(): a notch or a rotation moves the bars by the safe inset without resizing them, so the measured --panel-top can lag; the rail never starts above the inset floor */
   .chrome > .rail { top: max(var(--panel-top), calc(72px + var(--safe-top))); max-height: calc(100% - max(var(--panel-top), calc(72px + var(--safe-top))) - 24px - var(--safe-bottom)); }
   .demo-board > .chrome .rail { top: var(--panel-top); max-height: calc(100% - var(--panel-top) - 24px - var(--safe-bottom)); }
-  .board-name { width: 14ch; }
+  .board-name { width: var(--name-w, 14ch); }
   .props { top: auto; bottom: calc(64px + var(--safe-bottom)); max-height: 45vh; width: calc(100% - 92px - var(--safe-left) - var(--safe-right)); }
   /* folded to its title row, so the board shows above the selection while it stays selected */
   .props.folded { overflow: hidden; padding-bottom: 0; }
@@ -971,7 +977,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   :root { --panel-top: calc(72px + var(--safe-top)); }
   .top-left {
     top: calc(12px + var(--safe-top)); max-width: calc(100% - 24px - var(--safe-left) - var(--safe-right));
-    flex: 1 1 0; min-width: 0; gap: 2px; padding: 4px 2px;
+    flex: 0 1 auto; min-width: 0; gap: 2px; padding: 4px 2px;
   }
   .demo-board > .chrome .top-left { top: calc(100px + var(--safe-top)); }
   .top-right {
@@ -980,7 +986,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
   .demo-board > .chrome .top-right { top: calc(100px + var(--safe-top)); }
   .top-left > .icon-btn, .top-left > .sync-status { width: 44px; height: 44px; flex: 0 0 44px; }
   .top-left .board-name {
-    flex: 1 1 0; min-width: 0; width: auto; max-width: none; height: 44px; padding: 0 2px;
+    flex: 0 1 auto; min-width: 0; width: var(--name-w, 14ch); max-width: none; height: 44px; padding: 0 2px;
     box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .sync-status:hover { background: var(--tray-hover); }
@@ -1245,7 +1251,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 .chrome > .rail .rail-btn[data-tool='sticky']::after { display: none; }
 .chrome > .rail .rail-btn:focus-visible { outline-offset: 2px; }
 .chrome > .top-left .board-name { font: 500 16px var(--font-serif); }
-.chrome > .top-left .sync-status { width: 36px; min-width: 36px; height: 36px; padding: 0; justify-content: center; gap: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font-size: 12px; }
+.chrome > .top-left .sync-status { width: 28px; min-width: 28px; height: 36px; padding: 0; justify-content: center; gap: 0; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--tray-muted); font-size: 12px; }
 .chrome > .top-left .sync-status:hover { background: var(--tray-hover); }
 .chrome > .top-left .sync-status[data-state='live'],
 .chrome > .top-left .sync-status[data-state='denied'] { color: var(--tray-muted); }
@@ -1259,7 +1265,7 @@ body:has(.popover.wide) .toast.show { transform: translate(-50%, 0); }
 .chrome > .top-left .sync-status[data-shape='bar'] .sync-status-dot { width: 12px; height: 3px; border-radius: 1px; background: currentColor; }
 .chrome > .top-left .sync-status[data-shape='tri'] .sync-status-dot { width: 12px; height: 11px; clip-path: polygon(50% 0, 100% 100%, 0 100%); background: color-mix(in srgb, var(--danger) 70%, var(--tray-text)); }
 .chrome > .top-left .sync-status:focus-visible { outline: 2px solid var(--tray-text); outline-offset: 2px; }
-@media (pointer: coarse) { .chrome > .top-left .sync-status { width: 44px; min-width: 44px; height: 44px; } }
+@media (pointer: coarse) { .chrome > .top-left .sync-status { width: 44px; min-width: 44px; height: 44px; margin-left: -2px; } }
 @media (forced-colors: active) {
   .chrome > .top-left .sync-status .sync-status-dot { forced-color-adjust: none; }
   .chrome > .top-left .sync-status[data-shape='dot'] .sync-status-dot,

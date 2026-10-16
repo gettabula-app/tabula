@@ -207,6 +207,25 @@ A workspace that turns read-only (or writable again) does not wait for the app's
 
 What remains: edits typed in the moments between the relay flipping the switch and the hint reaching the browser are dropped by the relay. They stay in the browser and are sent by the reconnect once the workspace is writable. Until that reconnect the relay cannot apply later edits from that client either, because they build on the dropped ones, so a client that is not told about the unlock (an old client, or a lock and unlock that both fall between two refreshes of a tab that missed the hint) stays stuck until it reconnects or reloads.
 
+## Restart notice
+
+Before a planned restart the control plane can tell the open editors how long is left, so they can save and wait.
+
+```
+PUT /api/internal/restart-notice  { seconds: integer }
+  -> { restart: { secondsLeft, id } | null }      (what is stored now)
+```
+
+- The body is exactly one key, `seconds`, a whole number. Floats, strings, `null`, `NaN`, arrays, extra keys and negative numbers are `400`, and so is a number outside the safe integer range. `0` clears the notice. Other values are clamped to 30 to 900 seconds from now (`10` becomes 30, `5000` becomes 900).
+- The text the app shows is fixed in the app. The request never supplies any text.
+- At most 20 non-zero signals an hour for the whole instance, counted in memory. A `0` is never limited. A refused signal is `429 rate_limited`. The bearer check runs first, so a caller without the token never reaches the limiter. This route stays open while the workspace is read-only.
+- Nothing is stored except in memory: no settings row, and a restart of the instance forgets the notice. Each signal writes the audit row `cloud.restart_notice` with no actor and `{seconds}` only (the clamped value, or `0` for a clear).
+- A new signal replaces the old one, with a new `id`, so an older notice can never come back. A notice ends two minutes after its restart time; from then on `/api/me` answers `workspace.restart: null`.
+- `GET /api/me` carries `workspace.restart` for signed-in users in cloud mode: `{ secondsLeft, id }`, where `secondsLeft` counts down to `0` at the restart time, or `null`. The app shows its fixed countdown from it.
+- Every open sync socket gets the workspace hint (binary type 4, the same message as the read-only switch) when a signal arrives or clears, so the app asks `/api/me` again at once. The hint's payload is the current `readOnly` value, which the app ignores.
+
+Tests: `test/restart-notice.test.ts` (the route, the limiter, the countdown) and the hint in `test/cloud-relay.test.ts`.
+
 ## Seats
 
 A seat is an account with the role `owner`, `admin` or `member` that is not disabled. Guests are free. When `seatLimit` is set and the seats in use have reached it:
@@ -227,7 +246,7 @@ Everything else keeps working: people who already have an account sign in, roles
 - Read-only boards and the badge described above. A viewer stays a viewer when the workspace becomes writable again.
 - Toasts with the server's message when a seat limit or the read-only lock stops an invite, a role change, an enable or a sign-in link.
 - **Manage billing** on the admin dashboard's Overview, for the workspace owner only. It asks the instance for the portal address and opens it in the same tab.
-- A refresh of `/api/me` every five minutes while the tab is open (skipped while the tab is hidden and run when it is seen again; nothing at all in open mode and on servers without cloud mode), and at once when the relay sends the read-only hint. The five minute refresh is the fallback if the hint is missed.
+- A refresh of `/api/me` every minute while the tab is open (skipped while the tab is hidden and run when it is seen again; nothing at all in open mode and on servers without cloud mode), and at once when the relay sends the read-only hint. The one-minute refresh is how the home page, which has no board socket, learns of a restart notice, and the fallback if the hint is missed.
 
 ## Calls to the control plane
 

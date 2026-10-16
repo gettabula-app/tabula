@@ -10,7 +10,7 @@ A **workspace with sign-in** is a shared space with members, teams and permissio
 
 ## The Share dialog
 
-Select **Share** at the top right of a board (or the sync status next to the board name). The dialog **Share this board** shows the board link with a **Copy link** button.
+Select **Share** at the top right of a board. The dialog **Share this board** shows the board link with a **Copy link** button.
 
 - In open mode, the dialog says whether the board is syncing. If the server is not reachable, or sync is turned off, the board is only on your device until sync is back.
 - With sign-in, the dialog tells you that only people with access can open the link. Send the link to people who already have access.
@@ -146,7 +146,7 @@ The server checks access while you work, so a change applies to a board that is 
 - **Signed out**: "Your session has ended. Sign in again to keep syncing this board." Select **Sign in**.
 - **No access or board not found**: the banner offers **Back to boards**.
 
-In every case, nothing is deleted from your device. The sync status shows **Sign in needed** or **No access**, and your changes stay saved locally.
+In every case, nothing is deleted from your device. The sync status dot becomes a triangle and its words say **Sign in needed** or **No access**, and your changes stay saved locally.
 
 ## Read-only workspaces
 

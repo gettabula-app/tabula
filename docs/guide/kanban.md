@@ -23,7 +23,7 @@ A card shows its title (up to three lines) and, once they are set, label chips, 
 Double-click a card, select it and press `Enter`, or choose **Open** in the quick-action bar. The card dialog has:
 
 - **Title** and **Description**.
-- **Owner**: you, the people on the board now, anyone already named on it, or a name you type. A card has one owner.
+- **Owner**: you, the people on the board now, anyone already named on it (without sign-in only), or a name you type. A card has one owner.
 - **Owner type**: person or agent. Old cards without an owner type are people. An agent owner is an AI tool that you have connected (see below); its badge has a distinct octagonal shape.
 - **Link**: one web address that goes with the card, for example the ticket it came from. Once saved, **Open link** opens it in a new tab.
 - **Due date**, with the date picker of your browser.
@@ -40,7 +40,7 @@ Put the address of a page on a card, for example the issue it came from, a docum
 
 ## Owners
 
-Choose **Owner** in the card dialog, or **Owner** in the quick-action bar. You can pick yourself or a person who is on the board now or was named on it before, or type a name for someone who has no account; the name is kept even if the person later leaves. A card has one owner, and **Mine** in the filter shows the cards you own.
+Choose **Owner** in the card dialog, or **Owner** in the quick-action bar. You can pick yourself or a person who is on the board now, or type a name for someone who has no account; in a workspace without sign-in the list also offers people already named on the board. On a signed-in board the list offers only you and the signed-in people who are on the board now, and a card owned by an old identity that is no longer known shows **Unknown**; the name is kept even if the person later leaves. A card has one owner, and **Mine** in the filter shows the cards you own.
 
 A card owned by an AI tool has an eight-sided badge instead of a round one, in the card, the dialog and the list. The card dialog cannot make a card agent-owned or rename that owner: it is tied to the access token that took the card. Opening and saving such a card in the dialog keeps the agent as its owner; it is never turned into a person by saving. The same goes for a typed name with no account: saving the card does not replace it with you. See [Access tokens and AI tools](ai-tools.md#kanban-cards-from-an-ai-tool).
 

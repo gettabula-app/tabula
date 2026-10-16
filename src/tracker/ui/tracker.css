@@ -387,6 +387,7 @@
 /* Global overlays are siblings of the full-screen route root, so lift them above its stacking context. */
 .trk-route-root ~ .popover { z-index: 20001; }
 .trk-route-root ~ .modal-back { z-index: 20002; }
+.trk-route-root ~ .modal-back ~ .popover { z-index: 20003; }
 
 .trk-modal.modal-back { background: var(--scrim); }
 .trk-modal .modal {
