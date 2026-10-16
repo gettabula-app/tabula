@@ -1,35 +1,20 @@
-/** Frame size presets, in board units (1 unit = 1 CSS pixel; paper sizes at 96 dpi). */
-export interface FramePreset {
-  id: string;
-  group: 'Screen' | 'Tablet' | 'Phone' | 'Paper' | 'Other';
-  label: string;
-  w: number;
-  h: number;
-}
+import { FRAME_PRESETS, type FramePreset } from './frame-presets';
 
-const paper = (name: string, w: number, h: number): FramePreset[] => [
-  { id: `${name.toLowerCase()}-portrait`, group: 'Paper', label: `${name} portrait`, w, h },
-  { id: `${name.toLowerCase()}-landscape`, group: 'Paper', label: `${name} landscape`, w: h, h: w },
-];
-
-export const FRAME_PRESETS: FramePreset[] = [
-  { id: 'screen-1920', group: 'Screen', label: '1920 × 1080', w: 1920, h: 1080 },
-  { id: 'screen-1440', group: 'Screen', label: '1440 × 900', w: 1440, h: 900 },
-  { id: 'screen-1280', group: 'Screen', label: '1280 × 800', w: 1280, h: 800 },
-  { id: 'tablet-landscape', group: 'Tablet', label: '1024 × 768', w: 1024, h: 768 },
-  { id: 'tablet-portrait', group: 'Tablet', label: '768 × 1024', w: 768, h: 1024 },
-  { id: 'phone', group: 'Phone', label: '390 × 844', w: 390, h: 844 },
-  ...paper('A3', 1123, 1587),
-  ...paper('A4', 794, 1123),
-  ...paper('Letter', 816, 1056),
-  { id: 'square', group: 'Other', label: 'Square 1000 × 1000', w: 1000, h: 1000 },
-];
+/** The inspector's Frame size helpers. The list itself is FRAME_PRESETS in frame-presets.ts, the same one the Frame menu reads. */
+export { FRAME_PRESETS };
+export type { FramePreset };
 
 export const CUSTOM_SIZE = 'custom';
 export const FRAME_MIN = 40;
 export const FRAME_MAX = 8000;
 
-/** The preset a frame of this size matches (within half a unit), or 'custom'. */
+/**
+ * The preset a frame of this size matches in either orientation (within half a unit), or 'custom'. A frame turned by the toggle
+ * (1080 x 1920 or 1920 x 1080 for Story and Full HD) is still that preset.
+ */
 export function presetFor(w: number, h: number): string {
-  return FRAME_PRESETS.find((p) => Math.abs(p.w - w) < 0.5 && Math.abs(p.h - h) < 0.5)?.id ?? CUSTOM_SIZE;
+  const natural = (p: FramePreset) => Math.abs(p.w - w) < 0.5 && Math.abs(p.h - h) < 0.5;
+  const turned = (p: FramePreset) => Math.abs(p.h - w) < 0.5 && Math.abs(p.w - h) < 0.5;
+  // 1080 x 1920 is Story as listed and Full HD turned: the row that has it as listed wins
+  return (FRAME_PRESETS.find(natural) ?? FRAME_PRESETS.find(turned))?.id ?? CUSTOM_SIZE;
 }

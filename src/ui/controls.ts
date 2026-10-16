@@ -212,16 +212,32 @@ export function combo<T>(o: ComboOptions<T>): HTMLButtonElement {
     if (e.type === 'resize' || (list && !list.contains(e.target as Node) && !button.contains(e.target as Node))) close(null);
   };
 
+  /** The top of the area a list may use: under the top bars (--panel-top), never above the safe inset. */
+  const topLimit = (safeTop: number) => {
+    const probe = h('div', { style: 'position:fixed;left:0;top:var(--panel-top, 0px);width:0;height:0;visibility:hidden;pointer-events:none' });
+    document.body.appendChild(probe);
+    const y = probe.getBoundingClientRect().top;
+    probe.remove();
+    return Math.max(8 + safeTop, Number.isFinite(y) ? y + 4 : 0);
+  };
+
   const place = () => {
     if (!list) return;
     const a = button.getBoundingClientRect();
-    const r = list.getBoundingClientRect();
     const safe = safeInsets();
     const left = 8 + safe.left;
     const right = 8 + safe.right;
-    const top = 8 + safe.top;
+    const top = topLimit(safe.top);
     const bottom = window.innerHeight - 8 - safe.bottom;
-    const below = a.bottom + 4 + r.height <= bottom || a.top - 4 - r.height < top;
+    list.style.maxHeight = '';
+    const natural = list.getBoundingClientRect().height;
+    const spaceBelow = bottom - (a.bottom + 4);
+    const spaceAbove = a.top - 4 - top;
+    // open downward when the whole list fits there, or there is room for about seven rows, or more room below than above; the list is never taller than the room it is given (it scrolls)
+    const below = natural <= spaceBelow || spaceBelow >= 240 || spaceBelow >= spaceAbove;
+    const room = Math.max(96, below ? spaceBelow : spaceAbove);
+    if (natural > room) list.style.maxHeight = `${Math.floor(room)}px`;
+    const r = list.getBoundingClientRect();
     list.style.minWidth = `${a.width}px`;
     list.style.left = `${Math.max(left, Math.min(window.innerWidth - r.width - right, a.left))}px`;
     const y = below ? a.bottom + 4 : a.top - 4 - r.height;

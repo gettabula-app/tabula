@@ -1,3 +1,3 @@
 section: Added
 
-- Frames have a Size menu in the inspector: Screen (1920×1080, 1440×900, 1280×800), Tablet (1024×768, 768×1024), Phone (390×844), Paper (A3, A4 and Letter, portrait and landscape) and Square. Width and Height fields set any other size, and the menu then reads Custom.
+- The Frame tool has a menu (arrow or long press) with Paper (A5, A4, A3, US Letter), Screens (Full HD, HD, Tablet, Phone), Social (Square post, Story) and Custom W x H sizes that insert a frame of that size in the middle of the view. A Portrait | Landscape toggle turns every non-square size, and the choice is remembered. The inspector's Frame size control reads the same list and has the same toggle.

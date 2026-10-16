@@ -851,6 +851,19 @@ export class BoardApp {
     return o;
   }
 
+  /**
+   * Inserts a frame at a box (a size preset placed in the view): named, z-ordered as a drawn frame is, with the objects it covers as its children, and
+   * selected. The tool goes back to select, so the frame is ready to resize or move. One undo step, as drawing a frame is.
+   */
+  insertFrame(box: Rect, name: string): BaseObj {
+    const o = this.makeObj('frame', box, { name });
+    o.z = this.store.frameZFor(box);
+    this.createObject(o);
+    this.adoptInto(o);
+    this.setTool({ kind: 'select' });
+    return o;
+  }
+
   placeAt(type: ObjType, p: Point, w: number, h: number, extra: Partial<BaseObj> = {}) {
     let x = p.x - w / 2, y = p.y - h / 2;
     if (this.snapOn()) {
