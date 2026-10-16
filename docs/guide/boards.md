@@ -10,7 +10,7 @@ Below the top bar:
 
 - **New board** opens a menu. **Blank board** creates an empty board and opens it, **From a template…** opens the Templates page, and **Import a file…** creates a board from a `.drift` or `.json` file. See [Export and import](export-import.md).
 - **Search boards** filters the list by title as you type.
-- In a workspace with sign-in, boards are cards, with a **Cards | List** switch and a **Show previews** switch. See [Workspaces with sign-in](#workspaces-with-sign-in). While you have no boards, template cards help you start: see [First run](#first-run).
+- In a workspace with sign-in, boards are cards, with a **Cards | List** switch and a **Show pictures** switch. See [Workspaces with sign-in](#workspaces-with-sign-in). While you have no boards, template cards help you start: see [First run](#first-run).
 
 ![The Boards page of a signed-in member: a Design team section, Personal, and Shared with you with one View only board](images/teams-home.png)
 
@@ -37,25 +37,25 @@ If your workspace has a banner message, it appears at the very top. If the serve
 
 ### Cards and list
 
-Each board is a card. At the top, **Cards | List** switches between a grid of cards and a list with one row per board. **Show previews** turns the pictures on the cards on or off. Both choices are remembered on this device.
+Each board is a card. At the top, **Cards | List** switches between a grid of cards and a list with one row per board. **Show pictures** turns the pictures on the cards on or off. Both choices are remembered on this device.
 
 A card shows:
 
-- A picture of the board, or a plain tile when there is none. A board with nothing on it yet says **No content yet** under its name.
+- A picture of the board, or a plain tile when there is none. A board with nothing on it yet says **Empty board** under its name.
 - The board's name, which opens it, and a line under it: who edited it last and when ("Lin · 12 min ago"; an AI tool is marked "(agent)"), or "Edited 3 Oct" when the server does not name the person, or "On this device".
 - Who is here now (see below).
-- A badge when your access is limited: **Viewer** or **Commenter**. No badge means you can edit.
+- A badge when your access is limited: **View only** or **Can comment**. No badge means you can edit.
 - On the picture, a small number for the unread chat messages of that board, highlighted when someone mentioned you. It shows only when chat is on.
 - A **More actions** menu (three dots). Everyone can choose **Open**. Editors can also **Rename** and **Duplicate**, and the owner can also **Delete**. A board that is only on this device offers **Open**, **Add to workspace** and **Delete**.
 
-In the list view each board is a row with its name, **Here now**, **Last edited** and **Access** columns. On a narrow screen the extra columns are left out.
+In the list view each board is a row with its name, **Here now**, **Edited** and **Access** columns. On a narrow screen the extra columns are left out.
 
 **Here now** shows who has the board open right now, for boards you can open:
 
 - Each other person is a small square with their initial and cursor colour. The first three people are shown, then **+N** for the rest. People appear in the order they joined.
 - If you also have the board open in another tab, a **You** square follows the others. When nobody else is there, nothing shows: your own presence alone shows nothing, and there is no "0".
 - Point at the squares to see everyone's name. People who joined with a join code are marked **(guest)**.
-- On a phone the squares are followed by a short text such as "Lin and 5 more". When there is no room for a name, the text is left out.
+- Screen readers hear it as "Here now: AB, CD, and 3 more": the initials of the first three people, then how many more there are.
 - When someone leaves, their square stays for about three seconds, so a brief reconnect does not make it flicker.
 - You only see people on boards you can open. AI tools never appear. People who joined with a join code do not see this.
 - It updates live through the chat connection. If chat is off on your server, the page checks again every 15 seconds.
@@ -66,7 +66,7 @@ The picture is a small copy of what is on the board, made by the browser of a pe
 
 Everyone who can see a board's card sees its picture. That includes what is on the board, so a board whose content should stay out of sight should not show one:
 
-- **Show previews** at the top of the page hides all pictures for you, on this device.
+- **Show pictures** at the top of the page hides all pictures for you, on this device.
 - The owner of a board, and a workspace admin, can open the board menu and turn **Show a picture on the card** off. Then the card shows a plain tile, and the picture saved for that board is deleted. Nobody else sees this switch.
 - A workspace admin can turn board pictures off for the whole workspace in **Admin**, under **Privacy**. Whoever runs your Tabula server can also switch them off for the whole server; the server's own documentation says how.
 

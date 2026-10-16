@@ -10,7 +10,7 @@ Under det övre fältet:
 
 - **New board** (Ny tavla) öppnar en meny. **Blank board** (Tom tavla) skapar en tom tavla och öppnar den, **From a template…** (Från en mall…) öppnar sidan Mallar och **Import a file…** (Importera en fil…) skapar en tavla från en `.drift`- eller `.json`-fil. Se [Exportera och importera](export-import.md).
 - **Search boards** (Sök bland tavlor) filtrerar listan efter titel medan du skriver.
-- I en arbetsyta med inloggning visas tavlorna som kort, med en omkopplare för **Cards | List** (Kort | Lista) och en omkopplare för **Show previews** (Visa förhandsvisningar). Se [Arbetsytor med inloggning](#arbetsytor-med-inloggning). Så länge du inte har några tavlor hjälper mallkort dig att komma igång: se [Första gången](#första-gången).
+- I en arbetsyta med inloggning visas tavlorna som kort, med en omkopplare för **Cards | List** (Kort | Lista) och en omkopplare för **Show pictures** (Visa bilder). Se [Arbetsytor med inloggning](#arbetsytor-med-inloggning). Så länge du inte har några tavlor hjälper mallkort dig att komma igång: se [Första gången](#första-gången).
 
 ![Sidan Boards för en inloggad medlem: ett avsnitt för teamet Design, Personal (Personligt) och Shared with you (Delat med dig) med en tavla som bara går att visa](images/teams-home.png)
 
@@ -37,25 +37,25 @@ Om din arbetsyta har ett banderollmeddelande visas det allra högst upp. Om det 
 
 ### Kort och lista
 
-Varje tavla är ett kort. Överst växlar **Cards | List** mellan ett rutnät med kort och en lista med en rad per tavla. **Show previews** slår på eller av bilderna på korten. Båda valen sparas på den här enheten.
+Varje tavla är ett kort. Överst växlar **Cards | List** mellan ett rutnät med kort och en lista med en rad per tavla. **Show pictures** slår på eller av bilderna på korten. Båda valen sparas på den här enheten.
 
 Ett kort visar:
 
-- En bild av tavlan, eller en enkel ruta när det inte finns någon. En tavla som ännu saknar innehåll visar **No content yet** (Inget innehåll än) under namnet.
+- En bild av tavlan, eller en enkel ruta när det inte finns någon. En tavla som ännu saknar innehåll visar **Empty board** (Tom tavla) under namnet.
 - Tavlans namn, som öppnar den, och en rad under: vem som redigerade den sist och när (”Lin · 12 min ago”; ett AI-verktyg märks med ”(agent)”), eller ”Edited 3 Oct” när servern inte anger vem, eller ”On this device”.
 - Vilka som är här nu (se nedan).
-- En bricka när din åtkomst är begränsad: **Viewer** (Läsare) eller **Commenter** (Kommenterare). Utan bricka kan du redigera.
+- En bricka när din åtkomst är begränsad: **View only** (Endast visning) eller **Can comment** (Kan kommentera). Utan bricka kan du redigera.
 - På bilden ett litet tal för de olästa chattmeddelandena i tavlan, markerat när någon har nämnt dig. Det visas bara när chatten är på.
 - En meny med **More actions** (tre punkter). Alla kan välja **Open** (Öppna). De som kan redigera kan också välja **Rename** (Byt namn) och **Duplicate** (Duplicera), och ägaren kan också välja **Delete** (Ta bort). En tavla som bara finns på den här enheten erbjuder **Open**, **Add to workspace** och **Delete**.
 
-I listvyn är varje tavla en rad med sitt namn och kolumnerna **Here now** (Här nu), **Last edited** (Senast ändrad) och **Access** (Åtkomst). På en smal skärm utelämnas de extra kolumnerna.
+I listvyn är varje tavla en rad med sitt namn och kolumnerna **Here now** (Här nu), **Edited** (Ändrad) och **Access** (Åtkomst). På en smal skärm utelämnas de extra kolumnerna.
 
 **Here now** visar vem som har tavlan öppen just nu, för tavlor du kan öppna:
 
 - Varje annan person är en liten ruta med sin initial och markörfärg. De tre första personerna visas, sedan **+N** för resten. Personerna visas i den ordning de kom.
 - Om du också har tavlan öppen i en annan flik följer en ruta **You** (Du) efter de andra. När ingen annan är där syns inget: din egen närvaro ensam visar ingenting, och inte heller en nolla.
 - Peka på rutorna för att se allas namn. Personer som anslöt med en anslutningskod är markerade med **(guest)**.
-- På en telefon följs rutorna av en kort text, till exempel ”Lin and 5 more”. När det inte finns plats för ett namn utelämnas texten.
+- Skärmläsare läser upp det som ”Here now: AB, CD, and 3 more”: initialerna för de tre första personerna och sedan hur många fler det är.
 - När någon lämnar finns rutan kvar i ungefär tre sekunder, så att en kort återanslutning inte får den att flimra.
 - Du ser bara personer på tavlor du kan öppna. AI-verktyg visas aldrig. Personer som anslöt med en anslutningskod ser inte detta.
 - Den uppdateras direkt via chattanslutningen. Om chatten är avstängd på din server kontrollerar sidan igen var 15:e sekund.
@@ -66,7 +66,7 @@ Bilden är en liten kopia av det som finns på tavlan, och den görs av webbläs
 
 Alla som kan se en tavlas kort ser dess bild. Den visar det som finns på tavlan, så en tavla vars innehåll ska hållas dolt bör inte visa någon bild:
 
-- **Show previews** överst på sidan döljer alla bilder för dig, på den här enheten.
+- **Show pictures** överst på sidan döljer alla bilder för dig, på den här enheten.
 - Tavlans ägare och en administratör för arbetsytan kan öppna tavlans meny och stänga av **Show a picture on the card** (Visa en bild på kortet). Då visar kortet en enkel ruta, och den bild som sparats för tavlan tas bort. Ingen annan ser omkopplaren.
 - En administratör för arbetsytan kan stänga av tavlornas bilder för hela arbetsytan i **Admin**, under **Privacy** (Integritet). Den som kör din Tabula-server kan också stänga av dem för hela servern; serverns egen dokumentation beskriver hur.
 
