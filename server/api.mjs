@@ -1257,7 +1257,6 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     compile('GET', 'config', { public: true }, () => [200, {
       authEnabled: config.authEnabled,
       ...(assets ? { images: true } : {}),
-      ...(boardPreviewsEnabled() ? { boardPreviews: true } : {}),
       ...(config.joinCodes ? { joinCodes: true } : {}),
     }]),
 
