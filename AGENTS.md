@@ -62,7 +62,7 @@ Johan's rule (2026-10-11): we only deploy when pushing. Production must never ru
 - `tabula-cloud` deploys go through `scripts/deploy-guard.sh` (it refuses when the rules above do not hold). Image builds and site deploys follow the same checks by hand until they have a guard.
 
 ## Customer-facing text
-Anything a customer can read (site, app strings, emails, docs, press, changelog, store listings) follows the positioning brief and `business/positioning-brief.md`'s claims rules:
+Anything a customer can read (site, app strings, emails, docs, press, changelog, store listings) follows the positioning brief and `business/positioning/positioning-brief.md`'s claims rules:
 - Every claim has a source line (a test, a doc page, a measured number). No claim about a feature that is behind a flag, in a spec or "not built yet". Current holds: AI credits, backups add-on, SSO, presentation mode, join codes, native apps.
 - Never name a competitor, anywhere. No "cheapest", no uptime figures, no "EU-only", no numbers as promises (write what the user will see happen, for example "we email you a sign-in link when it is ready").
 - Plain words, short sentences, Swedish in du-form. No "CRDT", "local-first" or "MCP" in headlines.
