@@ -86,6 +86,8 @@ När en synkroniseringsserver går att nå visas ändringarna direkt för de and
 
 Välj **Share** (Dela) för att visa och kopiera tavlans länk. Synkstatusen öppnar den inte. I öppet läge kan alla med länken redigera tillsammans med dig utan att behöva ett konto. Om din arbetsyta kräver inloggning kan bara personer med åtkomst till tavlan öppna länken. Se [Dela, roller och team](sharing.md).
 
+Några minuter innan servern startar om visas en notis som säger hur lång tid som är kvar, att ditt arbete är sparat och att sidan återansluter av sig själv. Du kan stänga notisen.
+
 Om du rensar webbläsardata tas tavlor som aldrig har synkroniserats bort. Exportera viktiga tavlor från tavlans meny. Se [Exportera och importera](export-import.md).
 
 ## Ditt namn och din färg

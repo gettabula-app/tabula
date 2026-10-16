@@ -86,6 +86,8 @@ When a sync server is reachable, changes reach the other people on the board liv
 
 Choose **Share** to see and copy the board link. The sync status does not open it. In open mode, anyone with the link can edit with you and does not need an account. If your workspace uses sign-in, only people with access to the board can open the link. See [Sharing, roles and teams](sharing.md).
 
+A few minutes before the server restarts, a notice says how long is left, that your work is saved, and that the page reconnects by itself. You can dismiss it.
+
 Clearing your browser data removes boards that were never synced. Export important boards from the board menu. See [Export and import](export-import.md).
 
 ## Your name and colour

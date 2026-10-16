@@ -6,6 +6,7 @@ Du kan använda det mesta i Tabula utan mus, och en skärmläsare läser upp än
 
 - `Tab` och `Shift+Tab` flyttar mellan verktygsfält, paneler och menyer. En ram visar var du är.
 - Dialogrutor håller kvar `Tab` i rutan tills du stänger den, och du kan inte nå tavlan bakom den. `Esc` stänger en dialogruta eller meny och flyttar tillbaka fokus till knappen som öppnade den.
+- På en fokuserad verktygsknapp, till exempel **Frame** (Ram), trycker `Space` (mellanslag) eller `Enter` på den. På själva arbetsytan panorerar `Space` fortfarande.
 - Menyer och paneler som öppnas från en knapp börjar med fokus på det första objektet.
 - I en grupp med val, till exempel färgerna i en färgrad, justering eller teman i tavlans meny, stannar `Tab` en gång på det valda alternativet. Piltangenterna, `Home` och `End` flyttar mellan alternativen och väljer ett. För förinställningarna för antal prickar per person och klisterlappsfärgerna flyttar piltangenterna mellan alternativen, och `Space` eller `Enter` väljer.
 - Kryssrutor, alternativknappar och reglage ser likadana ut och fungerar likadant i varje dialogruta och inställningssida. Ett reglage bredvid en etikett (till exempel i aviseringsinställningar eller chattinställningar) slås på eller av när du klickar var som helst på dess rad, och `Space` (mellanslag) växlar det med tangentbordet. Ett reglage är ett 28 gånger 24 pixlar stort mål, och 44 gånger 44 på en pekskärm.
