@@ -356,7 +356,7 @@ public/sw.js         offline cache for the app, the icon sets, Fontshare and Ico
 
 ## Licence
 
-Tabula is source-available under the Functional Source License 1.1 with an Apache 2.0 future licence (FSL-1.1-ALv2, see LICENSE). You may read, change and self-host it for your own team, school or research, free. You may not offer Tabula, or something built on it, to others as a commercial product or service that competes with ours. Each release becomes available under the Apache License 2.0 two years after it is published. Releases up to v5.4.1 were published under the AGPL-3.0 and stay available under it. Third-party icon sets and fonts keep their own licences (see above).
+Tabula is source-available under the Functional Source License 1.1 with an Apache 2.0 future licence (FSL-1.1-ALv2, see LICENSE). You may read, change and self-host it for your own team, school or research, free. You may not offer Tabula, or something built on it, to others as a commercial product or service that competes with ours. Each release becomes available under the Apache License 2.0 two years after it is published. Releases up to v5.4.2 were published under the AGPL-3.0 and stay available under it. Third-party icon sets and fonts keep their own licences (see above).
 
 Copyright © 2026 Saldes Technology Group AB. Contributions are accepted under the [contributor licence agreement](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md).
 
