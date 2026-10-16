@@ -74,22 +74,23 @@ Tryck på `Ctrl+Z` (`Cmd+Z` på Mac) för att ångra och `Shift+Ctrl+Z` eller `C
 
 Tabula sparar varje ändring på din enhet medan du arbetar. Du behöver inte trycka på Spara, och tavlan fungerar även utan nätverksanslutning.
 
-När en synkroniseringsserver går att nå visas ändringarna direkt för de andra på tavlan. Statusen bredvid tavlans namn visar läget:
+När en synkroniseringsserver går att nå visas ändringarna direkt för de andra på tavlan. Synkstatusen bredvid tavlans namn är en punkt. Dess form visar läget, och orden visas när du håller pekaren över den eller ger den tangentbordsfokus; skärmläsare läser upp orden när läget ändras.
 
-| Status | Betydelse |
+| Form och status | Betydelse |
 |---|---|
-| **Ansluten** / **Ansluten med 2** | Ansluten. Ändringar synkroniseras i realtid, och siffran visar hur många andra som är här. |
-| **Sparad på den här enheten** | Allt är sparat lokalt. Tabula väntar på en anslutning och synkroniserar så snart det går. |
-| **Endast lokalt** | Synkronisering är av. Tavlan finns bara i den här webbläsaren. |
-| **Inloggning krävs** / **Ingen åtkomst** | Servern avvisade anslutningen. Dina ändringar finns kvar på enheten. |
+| Punkt: **Ansluten** / **Ansluten med 2** | Ansluten. Ändringar synkroniseras i realtid, och siffran visar hur många andra som är här. |
+| Ring: **Sparad på den här enheten** | Allt är sparat lokalt. Tabula väntar på en anslutning och synkroniserar så snart det går. |
+| Ring med en punkt i mitten: **Återställer…** | Arbetsytan återställs från en säkerhetskopia. Dina ändringar är sparade på den här enheten. |
+| Stapel: **Endast lokalt** | Synkronisering är av. Tavlan finns bara i den här webbläsaren. |
+| Triangel: **Inloggning krävs** / **Ingen åtkomst** | Servern avvisade anslutningen. Dina ändringar finns kvar på enheten. |
 
-Klicka på statusen eller **Share** för att visa och kopiera tavlans länk. I öppet läge kan alla med länken redigera tillsammans med dig utan att behöva ett konto. Om din arbetsyta kräver inloggning kan bara personer med åtkomst till tavlan öppna länken. Se [Dela, roller och team](sharing.md).
+Välj **Share** (Dela) för att visa och kopiera tavlans länk. Synkstatusen öppnar den inte. I öppet läge kan alla med länken redigera tillsammans med dig utan att behöva ett konto. Om din arbetsyta kräver inloggning kan bara personer med åtkomst till tavlan öppna länken. Se [Dela, roller och team](sharing.md).
 
 Om du rensar webbläsardata tas tavlor som aldrig har synkroniserats bort. Exportera viktiga tavlor från tavlans meny. Se [Exportera och importera](export-import.md).
 
 ## Ditt namn och din färg
 
-Ditt namn och din färg visas bredvid markören och på lapparna du skriver. Klicka på din egen avatar eller välj **Your name and colour** i tavlans meny, välj sedan ett namn och en färg och välj **Save** (Spara). Om din arbetsyta kräver inloggning är namnet ditt kontonamn och sparas på servern. Färgen sparas på den här enheten.
+Ditt namn och din färg visas bredvid markören och på lapparna du skriver. Klicka på din egen avatar eller välj **Your name and colour** i tavlans meny, välj sedan ett namn och en färg och välj **Save** (Spara). Om din arbetsyta kräver inloggning är namnet ditt kontonamn och sparas på servern. Färgen sparas på den här enheten. Din avatar visar första bokstaven i ditt namn; om ditt namn börjar med en emoji är hela emojin initialen, likadant för alla som ser den.
 
 ## Kortkommandon
 

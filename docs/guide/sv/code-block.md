@@ -36,7 +36,7 @@ Markera ett block och öppna **More properties** (Fler egenskaper):
 
 - **Language** (Språk): en lista med ett sökfält. **Plain text** står först, sedan de vanliga språken och sedan resten efter namn.
 - **Title** (Titel): visas i ett huvud på kortet. Om fältet är tomt finns inget huvud.
-- **Line numbers** (Radnummer) och **Wrap lines**.
+- **Line numbers** (Radnummer) och **Wrap lines**: två reglage som ser ut som reglagen på andra ställen i Tabula.
 - **Width** (Bredd), som för andra objekt. Blockets höjd anpassas alltid efter koden.
 
 Kodens färger följer tavlans tema; du behöver inte ställa in något.
