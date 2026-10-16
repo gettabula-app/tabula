@@ -1470,6 +1470,25 @@ async function privacyPanel(page, base, mode, { preview = true } = {}) {
   }
 }
 
+async function fillChecklist(env) {
+  await openKanbanBoard(env);
+  const { page } = env;
+  await page.evaluate(() => {
+    window.__board.setSelection(['k-c2']);
+    window.__board.openCardDialog('k-c2');
+  });
+  await page.getByRole('dialog', { name: 'Card in To do' }).waitFor();
+  // the seeded board is shared by every capture of a run: a list made by an earlier capture stays
+  if (await page.getByRole('checkbox', { name: 'Draft the release notes' }).count()) return;
+  const add = page.getByLabel('Add a checklist item');
+  for (const text of ['Draft the release notes', 'Check the migration on a copy', 'Tell the support team', 'Update the status page', 'Close the old tickets']) {
+    await add.fill(text);
+    await add.press('Enter');
+  }
+  await page.getByRole('checkbox', { name: 'Draft the release notes' }).click();
+  await page.getByRole('checkbox', { name: 'Check the migration on a copy' }).click();
+}
+
 const STATES = {
   async 'tracker-fullscreen'({ page, base }) {
     await page.goto(`${base}/?debug&trackerMock=1#/t/all`);
@@ -4547,6 +4566,20 @@ const STATES = {
       app.openCardDialog('k-c2');
     });
     await env.page.getByRole('dialog', { name: 'Card in To do' }).waitFor();
+    await env.page.evaluate(() => document.activeElement?.blur());
+    await settle(env.page);
+  },
+  // TAB-372: a card with a checklist, on the board (progress under the details) and in its dialog. The list is filled the way a person fills it
+  // (typing into the dialog, then ticking), so the card grows through the app's own write path.
+  async 'kanban-checklist-face'(env) {
+    await fillChecklist(env);
+    await env.page.keyboard.press('Escape');
+    await env.page.getByRole('dialog', { name: 'Card in To do' }).waitFor({ state: 'hidden' });
+    await env.page.evaluate(() => window.__board.setSelection(['k-c2']));
+    await settle(env.page);
+  },
+  async 'kanban-checklist-dialog'(env) {
+    await fillChecklist(env);
     await env.page.evaluate(() => document.activeElement?.blur());
     await settle(env.page);
   },
