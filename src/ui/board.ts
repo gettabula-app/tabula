@@ -131,8 +131,21 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   name.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') name.blur();
   });
+  // The name's box is as wide as its text (TAB-404), so the pill takes only what it needs. Measured on a hidden twin that copies the
+  // input's font; the CSS min and max still clamp it (a name past the max shows an ellipsis), and focus never changes the width.
+  const nameTwin = h('span', { class: 'board-name-twin', 'aria-hidden': 'true' });
+  const fitName = () => {
+    const cs = getComputedStyle(name);
+    nameTwin.style.font = cs.font;
+    nameTwin.textContent = name.value || name.placeholder || 'Untitled board';
+    const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    name.style.setProperty('--name-w', `${Math.ceil(nameTwin.getBoundingClientRect().width + pad + 2)}px`);
+  };
+  name.addEventListener('input', fitName);
+  void document.fonts?.ready.then(fitName);
   app.on('meta', () => {
     if (document.activeElement !== name) name.value = app.store.getMeta().name;
+    fitName();
     document.title = `${app.store.getMeta().name} - Tabula`;
     heading.textContent = app.store.getMeta().name;
   });
@@ -189,6 +202,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     demo ? null : h('button', { class: 'icon-btn', 'aria-label': homeLabel, onclick: nav.home }, icon('home', 18)),
     scratch ? null : name, scratch || demo ? null : status, badge,
   );
+  if (!scratch) { topLeft.append(nameTwin); queueMicrotask(fitName); requestAnimationFrame(fitName); }
 
   // ---------------------------------------------------------------- top right
   const people = h('div', { class: 'people', 'aria-label': 'People on this board' });
@@ -734,11 +748,15 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
         ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-right')) || 0
         : 0;
       const rightWidth = topRight.getBoundingClientRect().width;
-      topLeft.style.right = `${Math.ceil(rightWidth + 16 + safeRight)}px`;
+      // the pill hugs its text (TAB-404) and may grow only up to the room left of the right-hand tray
+      const safeLeft = typeof getComputedStyle === 'function' ? Number.parseFloat(getComputedStyle(chrome).getPropertyValue('--safe-left')) || 0 : 0;
+      topLeft.style.removeProperty('right');
+      topLeft.style.maxWidth = `${Math.max(0, Math.floor(window.innerWidth - 12 - safeLeft - rightWidth - 16 - safeRight))}px`;
       updatePanelTop();
       return;
     }
     topLeft.style.removeProperty('right');
+    topLeft.style.removeProperty('max-width');
     if (window.innerWidth > 860) {
       topRight.style.removeProperty('top');
       updatePanelTop();

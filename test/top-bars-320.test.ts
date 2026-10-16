@@ -9,8 +9,9 @@ describe('phone top chrome', () => {
   it('uses one compact row with 44px controls and measures panels below it', () => {
     expect(css).toMatch(/\.top-right \{[^}]*display: flex; flex-wrap: nowrap;/);
     expect(css).toContain(':root { --panel-top: calc(72px + var(--safe-top)); }');
-    expect(css).toMatch(/\.top-left \{[^}]*flex: 1 1 0; min-width: 0;/);
-    expect(css).toMatch(/\.top-left \.board-name \{[^}]*flex: 1 1 0; min-width: 0;[^}]*text-overflow: ellipsis;/);
+    expect(css).toMatch(/\.top-left \{[^}]*flex: 0 1 auto; min-width: 0;/);
+    expect(css).toMatch(/\.top-left \.board-name \{[^}]*flex: 0 1 auto; min-width: 0;[^}]*text-overflow: ellipsis;/);
+    expect(css).toMatch(/\.top-left \.board-name \{[^}]*width: var\(--name-w, 14ch\);/);
     expect(css).toMatch(/\.top-right \{\s+top: calc\(12px \+ var\(--safe-top\)\); gap: 0; padding: 4px 2px;/);
     expect(css).toMatch(/\.top-right > button \{[^}]*width: 44px; min-width: 44px; height: 44px;/);
     expect(css).toMatch(/\.top-right > \.phone-people \{ width: 52px; min-width: 52px; flex-basis: 52px; \}/);

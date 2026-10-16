@@ -398,6 +398,8 @@ export function installFakeBrowser(): FakeBrowser {
   vi.stubGlobal('document', document);
   vi.stubGlobal('HTMLElement', FakeElement);
   vi.stubGlobal('window', window);
+  // no layout here: every computed value is empty, so the board name's width fit (TAB-404) measures zero text and zero padding
+  vi.stubGlobal('getComputedStyle', () => ({ font: '', paddingLeft: '0px', paddingRight: '0px', getPropertyValue: () => '' }));
   vi.stubGlobal('location', location);
   vi.stubGlobal('sessionStorage', {
     getItem: (k: string) => session.get(k) ?? null,
