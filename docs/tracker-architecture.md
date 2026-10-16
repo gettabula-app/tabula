@@ -35,6 +35,7 @@ Johan: "go with your picks". These override any RECOMMENDED or OPEN text elsewhe
 - **DECIDED:** The server allocates human keys such as `TAB-123`. Every card on a linked kanban represents a ticket. One ticket may appear on more than one board.
 - **DECIDED:** The tracker owns ticket state. Each linked kanban maps its lanes to tracker states. Moves in either place synchronize.
 - **DECIDED:** The tracker ships in the AGPL open-source app. Hosted adds operational services such as backups and ticks. It does not gate tracker features.
+- Note, 16 October 2026: the public app is relicensed from AGPL-3.0 to FSL-1.1-ALv2 (TAB-410). 'AGPL app' and 'AGPL open-source app' in the decided text here and at the hosted-differences decision below mean the public, source-available app; the decisions are unchanged.
 - **RECOMMENDED:** Put tracker tables in `directory.sqlite`. This gives ticket creation, counters, aliases, users, and audit one SQLite transaction. It also places tracker records inside the existing directory database backup and restore path. A separate `tracker.sqlite` would create a cross-database consistency problem and require explicit backup/restore allow-list changes.
 - **RECOMMENDED:** Treat the database as canonical. Yjs cards hold a projection and board-local layout only. A relay coordinator validates linked-card edits and updates the SQL ticket before publishing the matching card projection.
 - **OPEN:** Hosted tick and webhook wake behavior needs an operational decision. A stopped machine cannot run its own timer.

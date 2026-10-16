@@ -42,7 +42,7 @@ Apart from these promises, you give your Contribution "as is", without warrantie
 
 ## 8. Tabula's promise
 
-Every version of a Tabula project that Tabula publishes under the GNU Affero General Public License stays available under that licence. This agreement does not let Tabula withdraw the open-source licence from code it has already published.
+Every version of a Tabula project that Tabula has published stays available under the licence it was published with: versions published under the GNU Affero General Public License stay under that licence, and versions published under the Functional Source License become available under the Apache License 2.0 two years after publication, as that licence provides. This agreement does not let Tabula withdraw a licence from code it has already published.
 
 Tabula does not have to use your Contribution.
 
