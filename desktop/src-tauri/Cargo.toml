@@ -2,7 +2,7 @@
 name = "tabula-desktop"
 version = "0.1.0"
 description = "Tabula desktop shell: a Tauri 2 window around the built web app"
-license = "AGPL-3.0-only"
+license = "FSL-1.1-ALv2"
 edition = "2021"
 rust-version = "1.90"
 publish = false

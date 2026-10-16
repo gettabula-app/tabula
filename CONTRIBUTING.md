@@ -1,6 +1,6 @@
 # Contributing to Tabula
 
-Thank you for wanting to help. Tabula is open source under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only).
+Thank you for wanting to help. Tabula is source-available under the Functional Source License 1.1 with an Apache 2.0 future licence ([LICENSE](LICENSE), FSL-1.1-ALv2): free to read, change and self-host for your own team, and each release becomes Apache-2.0 two years after it is published.
 
 ## Before your first pull request: sign the contributor agreement
 
@@ -10,9 +10,9 @@ Before we can merge your first pull request, we ask you to accept the [Tabula Co
 
 A check on the pull request shows whether you have signed. It also covers anything you contributed before you signed.
 
-**What it means, in short.** You keep the copyright in what you write. You give Tabula the right to use it and to license it under any terms, including the AGPL and commercial licences, and that right stays with the project if it changes owner. In return, every version published under the AGPL stays available under the AGPL. The full text in [CLA.md](CLA.md) is what counts.
+**What it means, in short.** You keep the copyright in what you write. You give Tabula the right to use it and to license it under any terms, including the Functional Source License, the Apache License 2.0 it turns into, and commercial licences, and that right stays with the project if it changes owner. In return, every release Tabula has published stays available under the licence it was published with, and each FSL release becomes Apache-2.0 two years after publication; Tabula cannot take that back. The full text in [CLA.md](CLA.md) is what counts.
 
-**Why we ask.** It lets one company answer for the whole codebase: offer the AGPL version, sell commercial licences to organisations that cannot use the AGPL, and keep the project in one piece if it is ever sold.
+**Why we ask.** It lets one company answer for the whole codebase: publish the source-available version, sell commercial licences to organisations that need other terms, and keep the project in one piece if it is ever sold.
 
 ## How to contribute
 

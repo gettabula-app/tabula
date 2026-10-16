@@ -235,6 +235,44 @@ export function objectVisibility(objects, revealed) {
   return { hidden, isVisible };
 }
 
+// Drawing fields a preview may carry (geometry, look, structure). Anything else, including a field added later (author, vote,
+// assignee, ticket, owner, permission), stays out by default. Text only for the plain visible types; cards, tracker blocks,
+// tables, code, links and images are drawn as blocks (an image sends its asset reference, which the client fetches with the
+// normal asset auth).
+const PREVIEW_GEOMETRY = ['id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'flipX', 'flipY', 'z', 'parent', 'points', 'kind', 'sticker'];
+const PREVIEW_LOOK = ['fill', 'stroke', 'strokeWidth', 'dash', 'opacity', 'color', 'textColor', 'font', 'fontWeight', 'fontSize', 'lineHeight', 'align', 'valign'];
+const PREVIEW_CONNECTOR = ['from', 'to', 'route', 'startHead', 'endHead', 'relation', 'line'];
+const PREVIEW_TEXT_TYPES = new Set(['sticky', 'text', 'shape', 'frame']);
+const PREVIEW_ASSET_TYPES = new Set(['image']);
+
+/**
+ * The "everyone's view" of a board for its preview image (slice 3, .manager/tl-board-previews-spec.md): plain objects in
+ * (feed it readAll's boxes and connectors, so containers have their layout), plain objects out. Private notes and private
+ * cards stay out until the board is revealed (whoever wrote them), hidden objects, children of hidden frames and connectors
+ * bound to anything that is out stay out. Nothing about the caller is an input, so the same list is right for every reader.
+ */
+export function previewSourceOf(objects, revealed) {
+  const list = Array.isArray(objects) ? objects.filter((o) => o && typeof o === 'object' && typeof o.id === 'string') : [];
+  const open = revealed === true;
+  const { isVisible } = objectVisibility(list, open);
+  const out = new Set(list.filter((o) => !isVisible(o) || isWithheld(o, open)).map((o) => o.id));
+  const boundToOut = (o) => o.type === 'connector' && [o.from, o.to].some((e) => e?.kind === 'bound' && out.has(e.id));
+  return list.filter((o) => !out.has(o.id) && !boundToOut(o)).map((o) => {
+    const keys = [...PREVIEW_GEOMETRY, ...PREVIEW_LOOK];
+    if (o.type === 'connector') keys.push(...PREVIEW_CONNECTOR, 'label');
+    if (PREVIEW_TEXT_TYPES.has(o.type)) keys.push('text', 'name');
+    const copy = {};
+    for (const key of keys) if (o[key] !== undefined) copy[key] = o[key];
+    // An image reference is data the client turns into a URL: only a content hash, a known image type and sane sizes pass.
+    if (PREVIEW_ASSET_TYPES.has(o.type)) {
+      if (typeof o.asset === 'string' && /^[0-9a-f]{64}$/.test(o.asset)) copy.asset = o.asset;
+      if (typeof o.mime === 'string' && /^image\/(png|jpeg|webp|gif)$/.test(o.mime)) copy.mime = o.mime;
+      for (const key of ['nw', 'nh']) if (Number.isFinite(o[key]) && o[key] > 0 && o[key] <= 20000) copy[key] = o[key];
+    }
+    return copy;
+  });
+}
+
 export function readAll(doc) {
   const revealed = isRevealed(doc);
   const boxes = [];

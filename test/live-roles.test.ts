@@ -427,7 +427,7 @@ describe('open sockets follow role changes', { timeout: 30_000 }, () => {
     expect(stillOpen(watcher)).toEqual([true, true]);
   });
 
-  it('downgrades team members when the board leaves the team, and upgrades them when it comes back', async () => {
+  it('downgrades team members when a workspace admin moves the board out of the team', async () => {
     const team = await newTeam(owner.cookie);
     const creator = await joinTeam(owner.cookie, team.id);
     const member = await joinTeam(owner.cookie, team.id);
@@ -439,11 +439,25 @@ describe('open sockets follow role changes', { timeout: 30_000 }, () => {
     await Promise.all([pairSynced(watcher), pairSynced(mine)]);
     expect(await lands(mine, watcher, 'inTeam')).toEqual([true, true]);
 
-    expect((await api(creator.cookie, 'PATCH', `/api/boards/${board}`, { teamId: null })).status).toBe(200);
+    expect((await api(owner.cookie, 'POST', `/api/boards/${board}/move`, { to: null, expectedTeamId: team.id })).status).toBe(200);
     expect(await lands(mine, watcher, 'outOfTeam')).toEqual([false, true]);
-    expect((await api(creator.cookie, 'PATCH', `/api/boards/${board}`, { teamId: team.id })).status).toBe(200);
-    expect(await lands(mine, watcher, 'backInTeam')).toEqual([true, true]);
     expect(stillOpen(mine)).toEqual([true, true]);
+  });
+
+  it('closes board and comments sockets with 4410 when a move removes team access', async () => {
+    const team = await newTeam(owner.cookie);
+    const creator = await joinTeam(owner.cookie, team.id);
+    const member = await joinTeam(owner.cookie, team.id);
+    const board = await newBoard(creator.cookie, { teamId: team.id });
+    const watcher = pair(board, creator.cookie);
+    const mine = pair(board, member.cookie);
+    await Promise.all([pairSynced(watcher), pairSynced(mine)]);
+
+    const moved = await api(owner.cookie, 'POST', `/api/boards/${board}/move`, { to: null, expectedTeamId: team.id });
+    expect(moved.status).toBe(200);
+    await until(() => mine.board.closes.at(-1) === 4410 && mine.comments.closes.at(-1) === 4410);
+    expect([mine.board.closes.at(-1), mine.comments.closes.at(-1)]).toEqual([4410, 4410]);
+    expect(stillOpen(watcher)).toEqual([true, true]);
   });
 
   it('follows a change of workspace role: guests lose what their team gave them, admins gain every board', async () => {

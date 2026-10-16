@@ -16,10 +16,10 @@ afterEach(async () => {
   await h?.close();
 });
 
-async function scenario() {
+async function scenario(restoreOverrides: Record<string, unknown> = {}) {
   h = await harness({ accounts: true });
   const world = seedA(h);
-  const r = rig(h);
+  const r = rig(h, restoreOverrides);
   const a = await backupNow(r.backup);
   const stateA = await backedUp(h, r.backup, a.manifest as string);
   const database = await databaseOf(h);
@@ -50,6 +50,14 @@ const readDoc = (file: string) => {
 };
 
 describe('a board as a copy', () => {
+  it('clears the preview cache after a board restore completes', async () => {
+    let clears = 0;
+    const s = await scenario({ hooks: { clearPreviews: () => { clears++; } } });
+    const result = await copy(s);
+    expect(result.ok).toBe(true);
+    expect(clears).toBe(1);
+  });
+
   it('becomes a new board in the same team, owned by the person who restored it, and the live board is not touched', async () => {
     const s = await scenario();
     const before = snapshot(h.dir);

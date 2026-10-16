@@ -13,7 +13,7 @@ const TEXT = {
   team: { title: 'Join a team on Tabula' },
   root: {
     title: 'Tabula',
-    description: 'An infinite whiteboard for teams: sticky notes, diagrams and workshop templates. Open source.',
+    description: 'An infinite whiteboard for teams: sticky notes, diagrams and workshop templates. Free to self-host for your own team.',
   },
 };
 
