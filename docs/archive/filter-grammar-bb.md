@@ -3,7 +3,7 @@
 - **Task:** CDX-47, revision 1; follow-up CDX-48
 - **Repository base:** `a408f08b97e2dfdc21d5d876e186e415cdcab096`
 - **Branch:** `codex/filter-bb`
-- **Worktree:** `/Volumes/External/tabula/wt/codex-filter-bb`
+- **Worktree:** a task worktree
 - **Implementation scope:** HTTP regression tests and this report only; no product source changes.
 
 ## Coverage

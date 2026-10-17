@@ -1,0 +1,18 @@
+# Secret scan (.github/workflows/gitleaks.yml). The default rules plus the allowlists below, which cover only what the
+# first full-history scan (2026-10-17, 2,059 commits) found: dummy values in tests that assert a secret is scrubbed or
+# rejected, and one false positive in the shortcut table. A real key in src/, scripts/ or deploy/ is still reported, and so
+# is a real-format key of any other kind in test/. Add an entry only after reading the hit, and name the file.
+title = "Tabula gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Dummy credentials in tests that check a secret is scrubbed, rejected or masked"
+targetRules = ["generic-api-key", "jwt", "stripe-access-token"]
+paths = ['''^test/''']
+
+[[allowlists]]
+description = "Keyboard shortcut table: `keys: 'Ctrl+...'` is not a key"
+targetRules = ["generic-api-key"]
+paths = ['''^src/shortcuts\.ts$''']

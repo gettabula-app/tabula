@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createAuth } from '../server/auth.mjs';
 import { loadConfig } from '../server/config.mjs';
 
-// A class behind one school address must not lock itself out (jensen, October 2026).
+// A class behind one school address must not lock itself out.
 
 const fakeDirectory = { getUserByEmail: () => null, findInvite: () => null, countOwners: () => 0 };
 const mailer = { send: async () => {} };
