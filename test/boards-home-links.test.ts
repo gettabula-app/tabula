@@ -8,7 +8,7 @@ describe('Boards home hash links', () => {
     for (const file of ['src/ui/home.ts', 'src/ui/board-card.ts', 'src/ui/boards-cards-view.ts', 'src/ui/boards-home-data.ts']) {
       fs.readFileSync(file, 'utf8').split('\n').forEach((line, i) => {
         for (const m of line.matchAll(/#\/(?:b|new)\/\$\{([^}]*)\}/g)) {
-          if (!/^encodeURIComponent\(/.test(m[1])) offenders.push(`${file}:${i + 1}`);
+          if (!m[1].startsWith('encodeURIComponent(')) offenders.push(`${file}:${i + 1}`);
         }
       });
     }
