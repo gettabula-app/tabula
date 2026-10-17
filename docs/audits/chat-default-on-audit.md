@@ -1,8 +1,8 @@
 # Chat enabled defaults audit (CDX-31)
 
-Repository: `/Volumes/External/tabula/tabula`  
+Repository: the tabula repository  
 Base: `0028c5b420525552967b8d905b6338f212d61f79`  
-Audit worktree: `/Volumes/External/tabula/wt/codex-chat-audit`, branch `codex/chat-audit`  
+Audit worktree: a task worktree, branch `codex/chat-audit`  
 Scope: report only; no source or configuration changes.
 
 ## Findings
@@ -56,7 +56,7 @@ The documented 10-minute delay is the fallback (`server/chat-notify.mjs:13-14`),
 
 Ran all existing chat visual-check states in accounts mode with `TABULA_CHAT=on`, Default and Ayu themes, and widths 390 and 1280: 16 states × 2 themes × 2 widths = 64 screenshots. The harness reported **0 cases with problems** and **64 screenshots** at:
 
-`/Volumes/External/tabula/wt/codex-chat-audit/tabula-review/CDX-31/`
+`tabula-review/CDX-31/`
 
 Index: `tabula-review/CDX-31/index.html`. The visual seed includes messages, so the empty first-run prompt was checked in source rather than claimed from a screenshot. The screenshots show the unread badge on the board shell and the Chat page, and the checked-on mention-email preference.
 
