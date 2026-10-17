@@ -25,7 +25,7 @@ export const PRIVACY_COPY = {
   analyticsNoticeDismiss: 'OK',
   hourlyNote: 'Nothing has been sent yet: sending starts in a later version. Turning this off stops it at once.',
   // Hosted workspaces send the report to Tabula once an hour (CGO-approved wording); a server you run still sends nothing yet.
-  hourlyNoteHosted: 'Once an hour, the report shown below goes to Tabula. Turning this off stops product analytics at once, and the report of the current hour does not go. Operating data stays on either way. Usage counts are kept for 12 months and hourly operating figures for 13 months, then deleted.',
+  hourlyNoteHosted: 'Once an hour, the report shown below goes to Tabula. Turning this off stops product analytics at once, and the report for the hour in progress is not sent. Operating data stays on either way. Usage counts are kept for 12 months and hourly operating figures for 13 months, then deleted.',
   workspaceIdInvalid: "This workspace's id is not valid for telemetry, so no report can be built. Ask whoever runs this server to check TABULA_CLOUD_WORKSPACE_ID.",
   noSentHosted: 'This is the report for the current hour. When the hour ends, it goes to Tabula as shown here.',
   previewButtonHosted: "Show this hour's report",
