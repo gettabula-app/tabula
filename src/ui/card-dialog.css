@@ -150,6 +150,8 @@
   position: relative; display: grid; grid-template-columns: 16px 28px minmax(0, 1fr) auto; align-items: center;
   padding: 3px 4px 3px 0; border-radius: var(--radius-sm);
 }
+/* TAB-454: a read-only row has no grip and no tools, so its checkbox and text take the first two columns */
+.k-cl-row.k-cl-ro { grid-template-columns: 28px minmax(0, 1fr); }
 .k-cl-row:hover, .k-cl-row:focus-within { background: var(--tray-hover); }
 .k-cl-row.dragging { z-index: 1; background: var(--tray); box-shadow: var(--object-shadow); }
 .k-cl-grip {
@@ -192,6 +194,7 @@
 .k-cl-menu { display: grid; min-width: 180px; }
 @media (max-width: 860px) {
   .k-cl-row { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .k-cl-row.k-cl-ro { grid-template-columns: 44px minmax(0, 1fr); }
   .k-cl-grip, .k-cl-tools { display: none; }
   .k-cl-box { width: 44px; height: 44px; }
   .k-cl-text { padding: 12px 0; }
