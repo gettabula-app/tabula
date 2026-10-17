@@ -37,13 +37,26 @@ export interface LoaderDeps {
   revokeUrl?: (url: string) => void;
 }
 
-const RETRY_OFFLINE_MS = 15_000;
+/** How long a cache read may take before the network answers instead: a read that never returns must not hold the picture on "Loading". */
+export const CACHE_READ_MS = 5_000;
+/** How long one download may take, headers and body together, before it counts as offline. */
+export const FETCH_MS = 15_000;
+
+/** `p` when it settles within `ms`, otherwise undefined. */
+function within<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
 
 export class ImageLoader {
   private states = new Map<string, ImageState>();
   private waiting = new Map<string, Set<Id>>();
   private urls = new Set<string>();
-  private retry = new Map<string, number>();
+  private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private attempts = new Map<string, number>();
   private destroyed = false;
   private fetchFn: FetchFn;
   private createUrl: (blob: Blob) => string;
@@ -59,14 +72,12 @@ export class ImageLoader {
   state(o: BaseObj): ImageState {
     const f = imageFields(o);
     if (!f) return { kind: 'failed', why: 'invalid' };
-    const known = this.states.get(f.asset);
-    if (known) {
-      if (known.kind === 'failed' && known.why === 'offline') this.maybeRetry(f.asset);
-      return known;
-    }
+    // every object that asks is registered, not only the first: a second object with the same picture must be redrawn too
     let set = this.waiting.get(f.asset);
     if (!set) this.waiting.set(f.asset, (set = new Set()));
     set.add(o.id);
+    const known = this.states.get(f.asset);
+    if (known) return known;
     const loading: ImageState = { kind: 'loading' };
     this.states.set(f.asset, loading);
     void this.load(f.asset);
@@ -76,7 +87,10 @@ export class ImageLoader {
   /** Forget retryable failures so the next draw asks for the current queue state again. */
   retryFailed() {
     for (const [asset, s] of this.states) {
-      if (s.kind === 'failed' && (s.why === 'offline' || s.why === 'denied' || s.why === 'not_uploaded' || s.why === 'lost' || s.why === 'toobig')) this.set(asset, undefined, true);
+      if (s.kind === 'failed' && (s.why === 'offline' || s.why === 'denied' || s.why === 'not_uploaded' || s.why === 'lost' || s.why === 'toobig' || s.why === 'missing')) {
+        this.cancelRetry(asset);
+        this.set(asset, undefined, true);
+      }
     }
   }
 
@@ -88,52 +102,85 @@ export class ImageLoader {
 
   destroy() {
     this.destroyed = true;
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+    this.attempts.clear();
     for (const u of this.urls) this.revokeUrl(u);
     this.urls.clear();
     this.states.clear();
     this.waiting.clear();
   }
 
-  private maybeRetry(asset: string) {
-    const last = this.retry.get(asset) ?? 0;
-    if (Date.now() - last < RETRY_OFFLINE_MS) return;
-    this.retry.set(asset, Date.now());
-    this.set(asset, undefined, true);
+  /** An offline answer asks again by itself: after 15 s, then 30 s, then every 60 s, so a picture that stays offline does not poll. */
+  private scheduleRetry(asset: string) {
+    clearTimeout(this.timers.get(asset));
+    const n = this.attempts.get(asset) ?? 0;
+    this.attempts.set(asset, n + 1);
+    this.timers.set(asset, setTimeout(() => {
+      this.timers.delete(asset);
+      const s = this.states.get(asset);
+      if (s?.kind === 'failed' && s.why === 'offline') this.set(asset, undefined, true);
+    }, Math.min(15_000 * 2 ** n, 60_000)));
+  }
+
+  /** Drops a pending retry and starts the backoff over. */
+  private cancelRetry(asset: string) {
+    clearTimeout(this.timers.get(asset));
+    this.timers.delete(asset);
+    this.attempts.delete(asset);
   }
 
   private set(asset: string, state: ImageState | undefined, redraw = false) {
     if (this.destroyed) return;
     if (state) this.states.set(asset, state);
     else this.states.delete(asset);
+    if (state?.kind === 'ok') this.attempts.delete(asset);
+    if (state?.kind === 'failed' && state.why === 'offline') this.scheduleRetry(asset);
     const ids = this.waiting.get(asset);
     if (ids?.size && (state || redraw)) this.deps.changed([...ids]);
   }
 
   private async load(asset: string): Promise<void> {
     try {
-      const local = await this.deps.cache.get(asset);
+      // a cache read that never answers is a miss: the network path below still answers
+      const local = await within(this.deps.cache.get(asset), CACHE_READ_MS).catch(() => undefined);
+      if (this.destroyed) return;
       if (local) return this.ready(asset, local.blob);
       if (isPending(asset)) {
         let state: Awaited<ReturnType<NonNullable<LoaderDeps['uploadState']>>>;
         try {
-          state = await this.deps.uploadState?.(asset);
+          state = await within(Promise.resolve(this.deps.uploadState?.(asset)), CACHE_READ_MS);
         } catch {
           state = undefined;
         }
+        if (this.destroyed) return;
         return this.set(asset, { kind: 'failed', why: state === 'toobig' ? 'toobig' : state === 'lost' || state === 'refused' ? 'lost' : 'not_uploaded' });
       }
       if (!isHash(asset)) return this.set(asset, { kind: 'failed', why: 'invalid' });
-      let res: Awaited<ReturnType<FetchFn>>;
+      // one deadline for the whole download, headers and body: a stalled answer must not leave the picture on "Loading"
+      const abort = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          abort.abort();
+          reject(new Error('timeout'));
+        }, FETCH_MS);
+      });
+      let blob: Blob;
       try {
-        res = await this.fetchFn(assetUrl(this.deps.boardId, asset), { credentials: 'same-origin' });
+        const res = await Promise.race([deadline, this.fetchFn(assetUrl(this.deps.boardId, asset), { credentials: 'same-origin', signal: abort.signal })]);
+        if (!res.ok) {
+          const why = res.status === 401 || res.status === 403 ? 'denied' : res.status === 404 ? 'missing' : 'offline';
+          return this.set(asset, { kind: 'failed', why });
+        }
+        // raced too: a body that ignores the abort signal must still meet the deadline
+        blob = await Promise.race([deadline, res.blob()]);
       } catch {
         return this.set(asset, { kind: 'failed', why: 'offline' });
+      } finally {
+        clearTimeout(timer);
       }
-      if (!res.ok) {
-        const why = res.status === 401 || res.status === 403 ? 'denied' : res.status === 404 ? 'missing' : 'offline';
-        return this.set(asset, { kind: 'failed', why });
-      }
-      const blob = await res.blob();
+      if (this.destroyed) return;
       // keeping a copy is a courtesy: the picture is shown from the bytes in hand even when the store refuses them
       await this.deps.cache.put({ key: asset, blob, mime: blob.type, width: 0, height: 0, boardId: this.deps.boardId, pending: false }).catch(() => undefined);
       this.ready(asset, blob);
