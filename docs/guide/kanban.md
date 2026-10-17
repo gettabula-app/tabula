@@ -16,13 +16,14 @@ If you can only view a board, you cannot add one. Copying and pasting a kanban, 
 - Select **+ Add card** at the bottom of a lane, or double-click empty space in a lane.
 - Type a title. `Enter` adds the card and starts the next one. `Esc` stops.
 
-A card shows its title (up to three lines) and, once they are set, label chips, a due date, a comment count and its owner. People have a square initials badge; agents have an octagonal one. A link icon opens the card's HTTP or HTTPS link in a new tab. Deleting a card works like deleting any other object.
+A card shows its title (up to three lines) and, once they are set, label chips, a due date, a comment count and its owner. A card with checklist items also shows how many are done, such as `2/5` (see [Checklists](#checklists)). People have a square initials badge; agents have an octagonal one. A link icon opens the card's HTTP or HTTPS link in a new tab. Deleting a card works like deleting any other object.
 
 ## Open a card
 
 Double-click a card, select it and press `Enter`, or choose **Open** in the quick-action bar. The card dialog has:
 
 - **Title** and **Description**.
+- **Checklist**: the steps of the card, which you can tick off. See [Checklists](#checklists).
 - **Owner**: you, the people on the board now, anyone already named on it (without sign-in only), or a name you type. A card has one owner.
 - **Owner type**: person or agent. Old cards without an owner type are people. An agent owner is an AI tool that you have connected (see below); its badge has a distinct octagonal shape.
 - **Link**: one web address that goes with the card, for example the ticket it came from. Once saved, **Open link** opens it in a new tab.
@@ -51,6 +52,27 @@ Set a **Due date** and the card shows it as "Today", "Tomorrow", a weekday and d
 ## Labels
 
 Choose **Labels** in the card dialog, or in the quick-action bar or properties panel of a kanban, to manage the board's labels. You can create, rename, reorder and delete labels, and give each one of eight named colours. Only editors can change labels. A label on a card shows as a chip, with a check mark in the picker.
+
+## Checklists
+
+A card can hold a checklist of small steps, in the card dialog under **Description**, with the heading **Checklist**. A list holds up to 50 items, and each item is one line of up to 200 characters. Each change to the list is one step in Undo.
+
+- **Add an item**: type in the **Add an item** field and press `Enter`. The item is added, the field is emptied and keeps the focus for the next one. On a phone, the **Add** button does the same.
+- **Paste a list**: paste several lines into the field to add one item per line, in one step. A list mark such as `-`, `*` or `1.` at the start of a line is taken off, and `[x]` adds an item that is already ticked. Text pasted as one line is typed in as it is. If the list has no room for all of them, a note says how many were not added.
+- **Tick an item**: click its box, or press `Space` on it. The item stays where it is, and a ticked item is crossed out.
+- **Edit an item**: click its text, or press `Enter` on it. `Enter` saves the change, and so does clicking somewhere else. `Tab` saves and moves on to the row's next button, and `Shift+Tab` saves and moves back to the item's box. `Esc` cancels the edit and keeps the old text; the dialog stays open. An empty text is not saved, so the item keeps its old text. To remove an item, use **Delete item**.
+- **Move an item**: press `Alt` with the up or down arrow key on its text to move it one place. Nothing happens at the top or the bottom of the list. On a wide screen you can also drag the grip at the left of the row. The grip shows when the pointer is over the row or the row has focus.
+- **Delete an item**: click its **Delete item** button, or press `Tab` until it has focus and then `Enter`. Focus moves to the next item, or to the previous one when the last item goes, or to the add field when none is left.
+- **Turn into card**: on a card in a lane, each item has **Turn into card**. It becomes a new card directly below this card, in the same lane, with the item's text as its title, and it leaves the checklist. It is one step in Undo. A card outside a lane has no such button.
+- **Hide done**: when some items are ticked and some are not, **Hide done** hides the ticked ones in this dialog, and the button says **Show 2 done** (with the number). Hiding is not saved, so other people still see every item.
+
+The heading shows the count, for example `1 of 2`, with a bar under it. When every item is ticked it shows **All done** instead, and **Hide done** is not shown.
+
+On a phone, each row has a **⋯** button instead of the buttons on the row. Its menu holds **Delete item**, and **Turn into card** too on a card in a lane.
+
+On a locked card, and for people who can only comment, the list shows its ticks, but nothing can be added, changed, ticked or removed.
+
+On the card itself, a checklist shows as a progress row under the card's details: a small box, the count such as `2/5`, and a bar. The box shows a tick once an item is done. When every item is ticked, the box is filled and the count is bold. Zoomed far out, only the bar shows.
 
 ## Turn stickies into cards
 
