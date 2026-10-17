@@ -108,7 +108,7 @@ describe('Admin Privacy', () => {
     renderAdmin(root as unknown as HTMLElement, 'privacy', selfOwner);
     await flush();
     expect(textOf(panel())).toContain(PRIVACY_COPY.hourlyNote);
-    expect(textOf(panel())).not.toContain('collects the report');
+    expect(textOf(panel())).not.toContain(PRIVACY_COPY.hourlyNoteHosted);
     expect(textOf(previewButton())).toBe(PRIVACY_COPY.previewButton);
   });
 
@@ -141,6 +141,24 @@ describe('Admin Privacy', () => {
     await flush();
     expect(textOf(panel())).not.toContain('device_class');
     expect(textOf(panel())).not.toContain('something_new');
+    expect(textOf(panel())).toContain(PRIVACY_COPY.categories.feature_counts);
+  });
+
+  it('lists only operating categories on a server you run, and keeps feature_counts off that list', async () => {
+    state = settings({ mode: 'self', categories: ['feature_counts'], operational: ['performance', 'backup state', 'workspace_scale'] });
+    renderAdmin(root as unknown as HTMLElement, 'privacy', selfOwner);
+    await flush();
+    expect(textOf(panel())).toContain(PRIVACY_COPY.categories.performance);
+    expect(textOf(panel())).toContain(PRIVACY_COPY.categories['backup state']);
+    expect(textOf(panel())).toContain(PRIVACY_COPY.categories.workspace_scale);
+    expect(textOf(panel())).not.toContain(PRIVACY_COPY.categories.feature_counts);
+    expect(textOf(panel())).not.toContain('Also sent when this is on');
+    expect(panel().querySelectorAll('.privacy-subhead').map((el) => textOf(el))).toEqual(['Sent when this is on']);
+
+    state = settings();
+    renderAdmin(root as unknown as HTMLElement, 'privacy', owner);
+    await flush();
+    expect(panel().querySelectorAll('.privacy-subhead').map((el) => textOf(el))).toEqual(['What this switch covers', 'Stays on either way']);
     expect(textOf(panel())).toContain(PRIVACY_COPY.categories.feature_counts);
   });
 
@@ -215,7 +233,7 @@ describe('Admin Privacy', () => {
     expect(calls.filter((call) => call.method === 'PUT')).toHaveLength(0);
     const modal = browser.document.body.querySelector('.modal') as FakeElement;
     expect(textOf(modal)).toContain('Send telemetry to Tabula?');
-    expect(textOf(modal)).toContain('This instance will prepare the items listed on this page once an hour for Tabula and send nothing else. You can turn it off at any time.');
+    expect(textOf(modal)).toContain('This server will prepare the operating data listed on this page once an hour, and nothing else. Nothing is sent yet; sending starts in a later version. You can turn it off at any time.');
     const buttons = modal.querySelectorAll('.modal-actions button');
     expect(buttons.map(textOf)).toEqual(['Cancel', 'Turn on']);
     buttons[0].click();

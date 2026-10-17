@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createTelemetryCollector } from '../server/telemetry/collector.mjs';
+import { createTelemetryCollector, PRODUCT_ANALYTICS_METRICS } from '../server/telemetry/collector.mjs';
 import { getMetricDefinition } from '../server/telemetry/schema.mjs';
 
 type LabelDescriptor = { values: string[] } | string[];
@@ -96,6 +96,26 @@ describe('hourly telemetry collector', () => {
     analytics = true;
     expect((collector.snapshot().clean as unknown as { metrics: { name: string }[] }).metrics.map((metric) => metric.name)).not.toContain('chat_messages_total');
     expect((collector.snapshot().clean as unknown as { metrics: { name: string }[] }).metrics.map((metric) => metric.name)).toContain('backup_runs_total');
+  });
+
+  it('leaves feature-use series out of a server you run, whatever the switch says', () => {
+    const now = 1_800_000_000_100;
+    const reportedNames = (collector: { snapshot: () => unknown }) => {
+      const { clean } = collector.snapshot() as { clean: { metrics: { name: string }[] } };
+      return clean.metrics.map((metric) => metric.name);
+    };
+    // a server you run: the analytics switch is off, the collector itself is on
+    const selfRun = createTelemetryCollector({ enabled: () => true, analyticsEnabled: () => false, now: () => now, envelope });
+    expect(selfRun.count('chat_messages_total', labelsFor('chat_messages_total'), 3)).toBe(false);
+    expect(selfRun.count('http_requests_total', labelsFor('http_requests_total'), 2)).toBe(true);
+    const names = reportedNames(selfRun);
+    expect(names).toContain('http_requests_total');
+    for (const name of [...PRODUCT_ANALYTICS_METRICS] as string[]) expect(names).not.toContain(name);
+
+    // the same recording with the switch on keeps the feature series, so the switch alone decides
+    const hosted = createTelemetryCollector({ enabled: () => true, analyticsEnabled: () => true, now: () => now, envelope });
+    expect(hosted.count('chat_messages_total', labelsFor('chat_messages_total'), 3)).toBe(true);
+    expect(reportedNames(hosted)).toContain('chat_messages_total');
   });
 
   it('maps invalid metric label values to the closed other label without retaining submitted text', () => {

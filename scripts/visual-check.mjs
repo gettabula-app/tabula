@@ -1474,7 +1474,7 @@ async function privacyPanel(page, base, mode, { preview = true } = {}) {
   }));
   await page.route('**/api/admin/privacy', (route) => json(route, {
     enabled: hosted, locked: null, mode, lastBuiltAt: Date.UTC(2026, 9, 12, 9, 0), lastChangedBy: { name: 'Visual QA', at: Date.UTC(2026, 9, 11, 16, 30) },
-    categories: ['feature_counts'], operational: ['performance', 'error_codes', 'seats and guests', 'version', 'disk', 'backup state', 'health', 'workspace_scale', 'last activity'],
+    categories: hosted ? ['feature_counts'] : [], operational: ['performance', 'error_codes', 'seats and guests', 'version', 'disk', 'backup state', 'health', 'workspace_scale', 'last activity'],
   }));
   await page.goto(`${base}/#/admin/privacy`);
   await page.locator('.privacy-admin .privacy-toggle').waitFor();
