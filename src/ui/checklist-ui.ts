@@ -326,7 +326,7 @@ export function checklistSection(hooks: ChecklistHooks): { el: HTMLElement; rend
         'data-item-id': id, 'data-part': 'more', onclick: (e: Event) => openMenu(id, e.currentTarget as HTMLElement),
       }, icon('dots', 18)),
     ] : [];
-    return h('li', { class: item.done ? 'k-cl-row done' : 'k-cl-row', 'data-item-id': id }, grip, box, text, ...tools);
+    return h('li', { class: `${item.done ? 'k-cl-row done' : 'k-cl-row'}${editable ? '' : ' k-cl-ro'}`, 'data-item-id': id }, grip, box, text, ...tools);
   }
 
   /** Rebuilds the rows, then puts the focus back on the part that had it (or the one a key press asked for). */
