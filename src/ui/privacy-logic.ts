@@ -13,17 +13,21 @@ export const PRIVACY_COPY = {
   switchLabel: 'Product analytics',
   selfSwitchLabel: 'Send telemetry to Tabula',
   hostedIntro: 'Product analytics is on by default for hosted workspaces. The owner can turn it off. Operating data stays on either way.',
-  selfIntro: 'Off by default. When on, this instance prepares the items below once an hour for Tabula and nothing else. Sending starts in a later version.',
+  selfIntro: 'Off by default. When on, this server prepares operating data for Tabula once an hour: how the software runs, never how it is used. Nothing else. Sending starts in a later version.',
   ownerOnly: 'Only the owner can change this setting.',
   envLocked: 'This setting is locked by the operator environment setting TABULA_TELEMETRY.',
   enabled: 'On',
   disabled: 'Off',
-  analyticsText: 'Sends counts and durations of feature use for this workspace to Tabula so we can see what is used and improve it. Never includes anything from your boards, comments or chat, and no names, email addresses or identifiers of people.',
-  hourlyNote: 'Nothing has been sent yet: sending starts in a later version. Turning this off stops collection at once, and data that was already sent can be deleted on request.',
-  // Hosted workspaces: the hosting service collects the report once an hour (CGO-approved wording). Self-hosted servers still send nothing.
-  hourlyNoteHosted: 'Once an hour, Tabula collects the report shown below from this workspace and keeps it. Turning this off stops product analytics at once, and the report of the current hour is not collected. Operating data stays on either way. Data that was already collected can be deleted on request.',
+  analyticsText: 'Sends counts and durations of feature use for this workspace to Tabula, which keeps them in PostHog (EU) for 12 months, so we can see what is used and improve it. Never includes anything from your boards, comments or chat, and no names, email addresses or identifiers of people.',
+  analyticsNoticeTitle: 'Product analytics',
+  analyticsNoticeText: 'Tabula now collects product analytics for hosted workspaces: counts of how features are used, per workspace, with no names and nothing from your boards. You can turn it off under Admin → Privacy.',
+  analyticsNoticeReview: 'Review',
+  analyticsNoticeDismiss: 'OK',
+  hourlyNote: 'Nothing has been sent yet: sending starts in a later version. Turning this off stops it at once.',
+  // Hosted workspaces send the report to Tabula once an hour (CGO-approved wording); a server you run still sends nothing yet.
+  hourlyNoteHosted: 'Once an hour, the report shown below goes to Tabula. Turning this off stops product analytics at once, and the report of the current hour does not go. Operating data stays on either way. Usage counts are kept for 12 months and hourly operating figures for 13 months, then deleted.',
   workspaceIdInvalid: "This workspace's id is not valid for telemetry, so no report can be built. Ask whoever runs this server to check TABULA_CLOUD_WORKSPACE_ID.",
-  noSentHosted: 'This is the report for the current hour. Each hour that ends is collected by Tabula as shown here.',
+  noSentHosted: 'This is the report for the current hour. When the hour ends, it goes to Tabula as shown here.',
   previewButtonHosted: "Show this hour's report",
   categories: {
     feature_counts: 'Feature-use counts and durations: boards opened, polls run, timers, AI runs, and chat message counts. Counts of device types (phone, tablet, computer), browser families and operating systems, never the browser string itself. The raw User-Agent and browser strings are read on this instance and discarded.',
@@ -36,8 +40,6 @@ export const PRIVACY_COPY = {
   selfCoversHeading: 'Sent when this is on',
   stayOnHeading: 'Stays on either way',
   operationalLead: 'We need these to run, back up and fix your workspace.',
-  selfAlsoHeading: 'Also sent when this is on',
-  selfAlsoLead: 'Operating data goes with it, so we can see how the software runs on your server.',
   neverHeading: 'What is never sent',
   neverSent: [
     'Anything you write or upload: board, card and ticket titles and text, comments, chat, file names and contents, search text, AI prompts and answers.',
@@ -61,7 +63,7 @@ export const PRIVACY_COPY = {
   catalogue: 'Read the telemetry data catalogue',
   catalogueHref: '/docs/telemetry',
   confirmSelfOnTitle: 'Send telemetry to Tabula?',
-  confirmSelfOnText: 'This instance will prepare the items listed on this page once an hour for Tabula and send nothing else. You can turn it off at any time.',
+  confirmSelfOnText: 'This server will prepare the operating data listed on this page once an hour, and nothing else. Nothing is sent yet; sending starts in a later version. You can turn it off at any time.',
   cancel: 'Cancel',
   turnOn: 'Turn on',
 } as const;
@@ -83,7 +85,7 @@ export function privacyModeIntro(mode: 'hosted' | 'self'): string {
   return mode === 'hosted' ? PRIVACY_COPY.hostedIntro : PRIVACY_COPY.selfIntro;
 }
 
-/** The note under the switch: hosted workspaces say what Tabula collects; a server you run says nothing is sent yet. */
+/** The note under the switch: hosted workspaces say what they send to Tabula; a server you run says nothing is sent yet. */
 export function privacyHourlyNote(mode: 'hosted' | 'self'): string {
   return mode === 'hosted' ? PRIVACY_COPY.hourlyNoteHosted : PRIVACY_COPY.hourlyNote;
 }
@@ -100,12 +102,12 @@ export function privacySwitchLabel(mode: 'hosted' | 'self'): string {
   return mode === 'hosted' ? PRIVACY_COPY.switchLabel : PRIVACY_COPY.selfSwitchLabel;
 }
 
-export function privacyStayOnHeading(mode: 'hosted' | 'self'): string {
-  return mode === 'hosted' ? PRIVACY_COPY.stayOnHeading : PRIVACY_COPY.selfAlsoHeading;
+export function privacyStayOnHeading(): string {
+  return PRIVACY_COPY.stayOnHeading;
 }
 
-export function privacyStayOnLead(mode: 'hosted' | 'self'): string {
-  return mode === 'hosted' ? PRIVACY_COPY.operationalLead : PRIVACY_COPY.selfAlsoLead;
+export function privacyStayOnLead(): string {
+  return PRIVACY_COPY.operationalLead;
 }
 
 export function privacySharingState(enabled: boolean): string {

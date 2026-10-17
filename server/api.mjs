@@ -304,6 +304,8 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
   const telemetryConfig = config.telemetry ?? { defaultEnabled: Boolean(cloud), forced: null };
   const getTelemetrySetting = (key) => (typeof directory.getSetting === 'function' ? directory.getSetting(key) : null);
   const telemetryEnabled = () => analyticsChoice(config.telemetry, getTelemetrySetting, Boolean(cloud));
+  // A server you run sends operating data only, never feature use, whatever the owner's switch says.
+  const productAnalyticsEnabled = () => Boolean(cloud) && telemetryEnabled();
   const TELEMETRY_CATEGORIES = ['feature_counts'];
   const TELEMETRY_OPERATIONAL = [
     'performance', 'error_codes', 'seats and guests', 'version', 'disk', 'backup state', 'health',
@@ -385,7 +387,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
 
   const telemetryCollector = createTelemetryCollector({
     enabled: telemetryCollectionEnabled,
-    analyticsEnabled: telemetryEnabled,
+    analyticsEnabled: productAnalyticsEnabled,
     now,
     envelope: telemetryEnvelope,
   });
@@ -463,7 +465,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       collectTelemetryGauges();
       const clean = telemetryCollector.snapshot().clean;
       if (!clean || clean.hour !== pinned || telemetryHourOf(now()) !== pinned) return;
-      keepStored(telemetryEnabled() ? clean : dropFeatureSeries(clean));
+      keepStored(productAnalyticsEnabled() ? clean : dropFeatureSeries(clean));
     } catch (err) {
       log(`api: could not flush the telemetry report: ${String(err?.message ?? err).slice(0, 120)}`);
     }
@@ -480,7 +482,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     collectTelemetryGauges();
     const clean = telemetryCollector.snapshot().clean;
     if (!clean || clean.hour !== pinned || telemetryHourOf(now()) !== pinned) return;
-    pendingTelemetry = telemetryEnabled() ? clean : dropFeatureSeries(clean);
+    pendingTelemetry = productAnalyticsEnabled() ? clean : dropFeatureSeries(clean);
   }
 
   /** Called every few seconds: in the last minute of an hour it builds the report again every ten seconds. */
@@ -513,7 +515,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     const best = finished.reduce((a, b) => (b.hour > a.hour ? b : a), finished[0]);
     if (!best) return { none: 'no_report_yet' };
     if (current - best.hour > TELEMETRY_RETAIN_MS) return { none: 'stale_report' };
-    return { report: telemetryEnabled() ? best : dropFeatureSeries(best) };
+    return { report: productAnalyticsEnabled() ? best : dropFeatureSeries(best) };
   }
   // only a hosted workspace has a control plane to pull the report (the internal route below), so only it builds one
   if (cloud) setInterval(telemetryTick, 5_000).unref?.();
@@ -540,7 +542,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       locked: telemetryConfig.forced ? 'env' : null,
       mode: cloud ? 'hosted' : 'self',
       operational: TELEMETRY_OPERATIONAL,
-      categories: TELEMETRY_CATEGORIES,
+      categories: cloud ? TELEMETRY_CATEGORIES : [],
       lastBuiltAt: telemetryCollector.lastBuiltAt,
       lastChangedBy: changedBy && Number.isSafeInteger(lastChange?.ts) ? { name: changedBy, at: lastChange.ts } : null,
     };

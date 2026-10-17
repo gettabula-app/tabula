@@ -167,6 +167,8 @@ export function privacyAdminPanel(me: Me): HTMLElement {
       const text = privacyCategoryText(key);
       return text === null ? [] : [h('li', null, text)];
     });
+    // self mode lists only the operating categories; feature_counts never shows there, even when a server sends it
+    const covers = saved.mode === 'self' ? saved.operational.filter((key) => key !== 'feature_counts') : saved.categories;
     const previewText = previewReply?.preview ? JSON.stringify(previewReply.preview, null, 2) : '';
     const previewBuilt = previewReply ? privacyTimestamp(previewReply.builtAt) : null;
     const lastChangedBy = privacyLastChangedBy(saved.lastChangedBy);
@@ -198,11 +200,14 @@ export function privacyAdminPanel(me: Me): HTMLElement {
       ...(lastChangedBy ? [h('p', { class: 'privacy-last-changed' }, lastChangedBy)] : []),
       h('section', { class: 'privacy-section', 'aria-labelledby': 'privacy-covers-heading' },
         h('h3', { class: 'privacy-subhead', id: 'privacy-covers-heading' }, privacyCoversHeading(saved.mode)),
-        h('ul', { class: 'privacy-list' }, categoryLines(saved.categories))),
-      h('section', { class: 'privacy-section', 'aria-labelledby': 'privacy-operational-heading' },
-        h('h3', { class: 'privacy-subhead', id: 'privacy-operational-heading' }, privacyStayOnHeading(saved.mode)),
-        h('p', { class: 'privacy-lead' }, privacyStayOnLead(saved.mode)),
-        h('ul', { class: 'privacy-list' }, categoryLines(saved.operational))),
+        h('ul', { class: 'privacy-list' }, categoryLines(covers))),
+      // a server you run has no second section: its operating categories are all listed above
+      ...(saved.mode === 'hosted'
+        ? [h('section', { class: 'privacy-section', 'aria-labelledby': 'privacy-operational-heading' },
+          h('h3', { class: 'privacy-subhead', id: 'privacy-operational-heading' }, privacyStayOnHeading()),
+          h('p', { class: 'privacy-lead' }, privacyStayOnLead()),
+          h('ul', { class: 'privacy-list' }, categoryLines(saved.operational)))]
+        : []),
       h('details', { class: 'privacy-section' },
         h('summary', null, PRIVACY_COPY.neverHeading),
         h('ul', { class: 'privacy-list' }, PRIVACY_COPY.neverSent.map((item) => h('li', null, item)))),
