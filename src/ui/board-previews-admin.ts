@@ -4,17 +4,17 @@ import { setSignedOut } from '../auth';
 import { h } from './dom';
 
 const COPY = {
-  heading: 'Förhandsbilder för tavlor',
-  description: 'Du ser en liten bild av tavlorna på startsidan när den här inställningen är på.',
-  locked: 'Avstängt i serverns inställningar.',
-  loadFailed: 'Det gick inte att läsa inställningen.',
-  retry: 'Försök igen',
-  saved: 'Sparat.',
-  saveFailed: 'Det gick inte att spara. Försök igen.',
-  loading: 'Läser in…',
+  heading: 'Board pictures',
+  description: "When this is on, each board card on the Boards page shows a small picture of the board. A board's owner can still turn it off for that board.",
+  locked: 'Turned off in the server settings.',
+  loadFailed: 'Could not load this setting.',
+  retry: 'Try again',
+  saved: 'Saved.',
+  saveFailed: 'Could not save. Try again.',
+  loading: 'Loading…',
 } as const;
 
-/** Arbetsytans standardinställning för förhandsbilder av tavlor. */
+/** The workspace default for board pictures. */
 export function boardPreviewsAdminPanel(): HTMLElement {
   const root = h('section', { class: 'lp-admin', 'aria-labelledby': 'board-previews-heading' });
   let saved: AdminBoardPreviews | null = null;

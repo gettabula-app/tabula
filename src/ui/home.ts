@@ -227,7 +227,7 @@ async function fetchAccount(me: Me): Promise<AccountData | null> {
 
 /** The first-run welcome for an account with no boards: the built-in templates as cards, and a blank board. Hide is remembered. */
 const WELCOME_SIZE = 5;
-const BLANK_CARD: TemplateCardData = { id: 'blank', name: 'Blank board', description: 'Start from an empty canvas.', category: 'Blank', blank: true };
+const BLANK_CARD: TemplateCardData = { id: 'blank', name: 'Blank board', description: 'Start from an empty board.', category: 'Blank', blank: true };
 const welcomeCard = (def: TemplateDef): TemplateCardData => ({
   id: def.id, name: def.name, description: def.description, category: def.category, tone: templateTagTone(def.category),
   // the picture the template strip has always shown (built in, from our own code)
