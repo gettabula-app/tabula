@@ -82,6 +82,7 @@ import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate 
 import { trackPanelTop } from './panel-top';
 import { mountRailScrollCue, trackMoreY } from './scroll-cue';
 import { choiceForToolKind, rememberToolChoice, restoreToolChoice, type RailToolChoice } from './rail-tool-group-state';
+import { mountRailCollapse } from './rail-collapse';
 import { FRAME_PRESETS, frameOrientation, presetChoiceId, presetFrameBox, presetFrameName, presetForChoice, presetSize } from './frame-presets';
 import { frameFlyoutBody } from './frame-flyout';
 import { DEMO } from '../demo';
@@ -774,6 +775,9 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   );
 
   chrome.append(topLeft, topRight, rail, penTray, stickyTray, mini.el, zoomTray);
+  // TAB-403: the rail folds into a small stub in its own corner. The demo keeps its own rail (it hides most tools), so it has no toggle.
+  const railCollapse = demo ? null : mountRailCollapse(chrome, rail);
+  if (railCollapse) app.onDestroy(() => railCollapse.destroy());
   // the canvas is one tab stop, after the tool rail and before what acts on a selection (docs/canvas-keyboard.md)
   const canvasFocus = mountCanvasFocus(app, rail);
   app.onDestroy(() => canvasFocus.destroy());
@@ -871,7 +875,8 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const syncReadOnly = () => {
     const ro = app.readOnly;
     rail.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
-      if (b === commentBtn || b === layersBtn) return;
+      // the rail's own toggle (TAB-403) stays usable on a read-only board: it only shows or hides the tools
+      if (b === commentBtn || b === layersBtn || b === railCollapse?.toggleButton) return;
       b.disabled = ro && b.dataset.tool !== 'select' && b.dataset.tool !== 'hand';
     });
     // Commenters have a read-only board but may still comment, so the tool follows the comments document.

@@ -1,0 +1,118 @@
+/* TAB-403: the left tool rail folds into a 22 x 64 tab on the window's left edge (src/ui/rail-collapse.ts). The toggle is the rail's
+ * first row, "Hide toolbar", in the rail's normal flow; the tab is the same control while folded, a sibling before the rail, placed
+ * inline by measure().
+ * The motion moves the rail to the window's edge (transform) and closes its clip onto the tab's footprint (clip-path). Keyframe
+ * animations fill `backwards` only: a finished animation leaves no transform or clip behind, so the rail never becomes a containing
+ * block for position: fixed children. The end state comes from data-rail-phase on the chrome. The tools fade with transitions, which
+ * hold their end value.
+ * Collapse 240 ms ease-in-out, expand 200 ms ease-out; reduced motion is a 120 ms opacity crossfade and nothing else. */
+
+/* ---------- the toggle: the rail's first row, a full-width 28 px row above the tools (they scroll below it) */
+.rail:has(> .rail-toggle) { padding-top: 4px; }
+.chrome > .rail > .rail-toggle {
+  display: grid; place-items: center; box-sizing: border-box; flex: none; align-self: stretch; min-width: 0; min-height: 0;
+  height: 28px; margin: 0 0 4px 0; padding: 0;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--tray-text);
+  box-shadow: inset 0 -1px 0 var(--tray-line); cursor: pointer;
+}
+.chrome > .rail > .rail-toggle:hover { background: var(--tray-hover); }
+.chrome > .rail > .rail-toggle .ico { display: grid; transform: rotate(90deg); } /* the app's chevron points down; this one points left: "hide" */
+/* a window 820 px tall or less: the toggle row and the rail's top padding take 2 px less each, so the tools fit (styles.css) */
+@media (max-height: 820px) {
+  .rail:has(> .rail-toggle) { padding-top: 2px; }
+  .chrome > .rail > .rail-toggle { margin-bottom: 2px; }
+}
+
+/* ---------- the tab: the rail's own surface, flat on the window's left edge and rounded on the right, centred on the rail by measure() */
+.chrome > .rail-pill {
+  display: none; position: absolute; left: 0; top: 0; z-index: 1; box-sizing: border-box; min-width: 0; min-height: 0;
+  width: calc(22px + var(--safe-left)); height: 64px; margin: 0; padding: 0 0 0 var(--safe-left);
+  flex-direction: column; align-items: center; justify-content: center;
+  border: 0; border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--tray); color: var(--tray-text); box-shadow: var(--shadow); cursor: pointer;
+}
+.chrome > .rail-pill:hover { background: var(--tray-2); }
+/* flush with the window's edge: the global 2 px outline offset would push the ring off-screen */
+.chrome > .rail-pill:focus-visible { outline-offset: -2px; }
+/* a hit area a little wider than the 22 px tab (WCAG 2.5.8 asks for 24) */
+.chrome > .rail-pill::before { content: ''; position: absolute; inset: 0 -2px; }
+.rail-pill-chev { display: grid; transform: rotate(-90deg); } /* folded: points right, into the board: "show" */
+.rail-pill-chev .ico svg { width: 12px; height: 12px; }
+
+/* the concave joins: 8 x 8 squares above and below the tab, filled with the tab's surface outside a quarter circle, so the tab grows out of
+ * the window's edge with a curved corner instead of a hard join. They are painted in the same colour as the tab (and as its hover). The joins
+ * carry the same 1 px hairline as the tab (var(--tray-line)) along the curve, so the outline follows the fillet instead of cutting across it. */
+.chrome > .rail-pill > .rail-pill-join { position: absolute; left: 0; width: 8px; height: 8px; pointer-events: none; }
+.chrome > .rail-pill > .rail-pill-join.top { top: -8px; background: radial-gradient(circle at 100% 0, transparent 6.6px, var(--tray-line) 7px, var(--tray-line) 7.6px, var(--tray) 8px); }
+.chrome > .rail-pill > .rail-pill-join.bottom { bottom: -8px; background: radial-gradient(circle at 100% 100%, transparent 6.6px, var(--tray-line) 7px, var(--tray-line) 7.6px, var(--tray) 8px); }
+.chrome > .rail-pill:hover > .rail-pill-join.top { background: radial-gradient(circle at 100% 0, transparent 6.6px, var(--tray-line) 7px, var(--tray-line) 7.6px, var(--tray-2) 8px); }
+.chrome > .rail-pill:hover > .rail-pill-join.bottom { background: radial-gradient(circle at 100% 100%, transparent 6.6px, var(--tray-line) 7px, var(--tray-line) 7.6px, var(--tray-2) 8px); }
+
+/* ---------- phases: the tab is shown while the rail folds, is folded, and while it opens */
+.chrome[data-rail-phase='collapsing'] > .rail-pill,
+.chrome[data-rail-phase='collapsed'] > .rail-pill,
+.chrome[data-rail-phase='expanding'] > .rail-pill { display: flex; }
+
+/* the tray that belongs to a rail tool (pen colours, sticky colour) hides with the rail: it is anchored to a button that is gone */
+.chrome[data-rail-phase='collapsing'] > .tool-tray,
+.chrome[data-rail-phase='collapsed'] > .tool-tray { visibility: hidden; }
+
+/* ---------- collapse, 240 ms ease-in-out: the body closes to the tab's footprint and slides to the edge */
+.chrome[data-rail-phase='collapsing'] > .rail {
+  transform-origin: 0 50%; box-shadow: inset 0 0 0 1px var(--tray-line); pointer-events: none;
+  animation: rc-rail-collapse 240ms var(--ease-in-out, cubic-bezier(0.77, 0, 0.175, 1)) backwards;
+}
+.chrome[data-rail-phase='collapsed'] > .rail { visibility: hidden; pointer-events: none; }
+.chrome[data-rail-phase='collapsing'] > .rail > *,
+.chrome[data-rail-phase='collapsed'] > .rail > * { opacity: 0; }
+.chrome[data-rail-phase='collapsing'] > .rail > * { transition: opacity 100ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)); }
+.chrome[data-rail-phase='collapsing'] > .rail-pill { animation: rc-pill-in 100ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) 140ms backwards; }
+.chrome[data-rail-phase='collapsing'] > .rail-pill .rail-pill-chev {
+  animation: rc-chev-collapse 240ms var(--ease-in-out, cubic-bezier(0.77, 0, 0.175, 1)) backwards;
+}
+
+/* ---------- expand, 200 ms ease-out: the reverse; the tools fade in over the last 120 ms */
+.chrome[data-rail-phase='expanding'] > .rail {
+  transform-origin: 0 50%; box-shadow: inset 0 0 0 1px var(--tray-line);
+  animation: rc-rail-expand 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) backwards;
+}
+.chrome[data-rail-phase='expanding'] > .rail > * { opacity: 1; transition: opacity 120ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) 80ms; }
+.chrome[data-rail-phase='expanding'] > .rail-pill { opacity: 0; transition: opacity 80ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)); }
+.chrome[data-rail-phase='expanding'] > .rail-pill .rail-pill-chev {
+  animation: rc-chev-expand 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) backwards;
+}
+
+/* the body: inset() with the same function in each keyframe, so Chromium interpolates the rounding with the edges.
+ * --rc-x moves the rail's left edge to the window's edge; --rc-t, --rc-r and --rc-b are the tab's footprint inside the rail. */
+@keyframes rc-rail-collapse {
+  from { clip-path: inset(0px 0px 0px 0px round var(--radius-md) var(--radius-md) var(--radius-md) var(--radius-md)); transform: translateX(0px); }
+  to { clip-path: inset(var(--rc-t) var(--rc-r) var(--rc-b) 0px round 0px var(--radius-md) var(--radius-md) 0px); transform: translateX(var(--rc-x)); }
+}
+@keyframes rc-rail-expand {
+  from { clip-path: inset(var(--rc-t) var(--rc-r) var(--rc-b) 0px round 0px var(--radius-md) var(--radius-md) 0px); transform: translateX(var(--rc-x)); }
+  to { clip-path: inset(0px 0px 0px 0px round var(--radius-md) var(--radius-md) var(--radius-md) var(--radius-md)); transform: translateX(0px); }
+}
+@keyframes rc-pill-in { from { opacity: 0; } }
+@keyframes rc-chev-collapse { from { transform: rotate(90deg); } to { transform: rotate(-90deg); } }
+@keyframes rc-chev-expand { from { transform: rotate(-90deg); } to { transform: rotate(90deg); } }
+@keyframes rc-rail-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes rc-rail-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- reduced motion: a 120 ms opacity crossfade between the rail and the tab, no clip, no slide, no rotation */
+@media (prefers-reduced-motion: reduce) {
+  .chrome[data-rail-phase='collapsing'] > .rail { animation: rc-rail-fade-out 120ms ease-out backwards; }
+  .chrome[data-rail-phase='expanding'] > .rail { animation: rc-rail-fade-in 120ms ease-out backwards; }
+  .chrome[data-rail-phase='collapsing'] > .rail > *,
+  .chrome[data-rail-phase='expanding'] > .rail > * { opacity: 1; transition: none; }
+  .chrome[data-rail-phase='collapsing'] > .rail-pill { animation: rc-pill-in 120ms ease-out backwards; }
+  .chrome[data-rail-phase='expanding'] > .rail-pill { transition: opacity 120ms ease-out; }
+  .chrome[data-rail-phase] > .rail-pill .rail-pill-chev { animation: none; }
+}
+
+/* ---------- touch: the global touch rule forces buttons in the chrome to 44 px. The toggle row is 44 px to a finger; the tab keeps its
+ * size, and its hit area is 44 px wide. */
+@media (pointer: coarse) {
+  .chrome > .rail > .rail-toggle { height: 44px; min-width: 0 !important; min-height: 0 !important; }
+  .chrome > .rail-pill { min-width: 0 !important; min-height: 0 !important; }
+  .chrome > .rail-pill::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 44px; }
+}

@@ -1011,6 +1011,20 @@ async function assertTouchTargets(page, stage) {
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none' && rect.width > 0 && rect.height > 0;
     };
+    // the element's box plus any absolutely positioned ::before/::after that extends its hit area (rail tab, pill)
+    const hitRect = (el) => {
+      const r = el.getBoundingClientRect();
+      let left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+      for (const pseudo of ['::before', '::after']) {
+        const cs = getComputedStyle(el, pseudo);
+        if (cs.content === 'none' || cs.position !== 'absolute' || cs.pointerEvents === 'none') continue;
+        const x = Number.parseFloat(cs.left), y = Number.parseFloat(cs.top), w = Number.parseFloat(cs.width), h = Number.parseFloat(cs.height);
+        if (![x, y, w, h].every(Number.isFinite)) continue;
+        left = Math.min(left, r.left + x); top = Math.min(top, r.top + y);
+        right = Math.max(right, r.left + x + w); bottom = Math.max(bottom, r.top + y + h);
+      }
+      return { width: right - left, height: bottom - top };
+    };
     const label = (el) => el.getAttribute('aria-label') || el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 36) || el.className?.toString() || el.tagName.toLowerCase();
     const smallFonts = [...document.querySelectorAll(textSelector)]
       .filter((el) => visible(el))
@@ -1027,7 +1041,7 @@ async function assertTouchTargets(page, stage) {
         misses.push(`${label(el)} has no associated label hit area`);
         continue;
       }
-      const rect = target.getBoundingClientRect();
+      const rect = hitRect(target);
       measured++;
       if (rect.width < 43.5 || rect.height < 43.5) misses.push(`${label(el)} ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}px`);
     }
