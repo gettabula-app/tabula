@@ -16,13 +16,14 @@ Om du bara kan visa en tavla kan du inte lägga till en kanban. Kopierade och in
 - Välj **+ Add card** längst ned i en kolumn eller dubbelklicka på ett tomt område i kolumnen.
 - Skriv en titel. `Enter` lägger till kortet och börjar på nästa. `Esc` avbryter.
 
-På ett kort visas titeln (högst tre rader) och, när de har angetts, etikettbrickor, ett förfallodatum, antalet kommentarer och den ansvariga. Personer har en fyrkantig bricka med initialer. AI-verktyg har en åttkantig bricka. En länkikon öppnar kortets HTTP- eller HTTPS-länk i en ny flik. Att ta bort ett kort fungerar som när du tar bort ett annat objekt.
+På ett kort visas titeln (högst tre rader) och, när de har angetts, etikettbrickor, ett förfallodatum, antalet kommentarer och den ansvariga. Ett kort med checklistpunkter visar också hur många som är klara, till exempel `2/5` (se [Checklistor](#checklistor)). Personer har en fyrkantig bricka med initialer. AI-verktyg har en åttkantig bricka. En länkikon öppnar kortets HTTP- eller HTTPS-länk i en ny flik. Att ta bort ett kort fungerar som när du tar bort ett annat objekt.
 
 ## Öppna ett kort
 
 Dubbelklicka på ett kort, markera det och tryck på `Enter`, eller välj **Open** (Öppna) i snabbåtgärdsfältet. Kortdialogrutan innehåller:
 
 - **Title** (Titel) och **Description** (Beskrivning).
+- **Checklist** (Checklista): kortets steg, som du kan bocka av. Se [Checklistor](#checklistor).
 - **Owner** (Ansvarig): du, personerna som är på tavlan nu, någon som redan har namngivits på kortet (bara utan inloggning) eller ett namn som du skriver. Ett kort har en ansvarig.
 - **Owner type** (Typ av ansvarig): person eller AI-verktyg. Äldre kort utan ansvarigtyp tillhör personer. En ansvarig som är ett AI-verktyg är ett AI-verktyg som du har anslutit (se nedan). Brickan har en särskild åttkantig form.
 - **Link** (Länk): en webbadress som hör till kortet, till exempel ärendet som kortet kommer från. När den har sparats öppnar **Open link** (Öppna länk) adressen i en ny flik.
@@ -52,9 +53,30 @@ Ange ett **Due date** och kortet visar datumet som ”I dag”, ”I morgon”, 
 
 Välj **Labels** i kortdialogrutan, snabbåtgärdsfältet eller en kanbans egenskapspanel för att hantera tavlans etiketter. Du kan skapa, byta namn på, ändra ordning på och ta bort etiketter. Du kan ge varje etikett en av åtta namngivna färger. Bara redigerare kan ändra etiketter. En etikett på ett kort visas som en bricka med en bock i väljaren.
 
+## Checklistor
+
+Ett kort kan ha en checklista med små steg. Den finns i kortdialogrutan, under **Description**, med rubriken **Checklist**. En lista har högst 50 punkter, och varje punkt är en rad med högst 200 tecken. Varje ändring i listan är ett steg i ångra.
+
+- **Add an item** (Lägg till en punkt): skriv i fältet och tryck på `Enter`. Punkten läggs till, fältet töms och behåller fokus för nästa punkt. På en telefon gör knappen **Add** (Lägg till) samma sak.
+- **Klistra in en lista**: klistra in flera rader i fältet, så läggs en punkt till för varje rad, i ett enda steg. En listmarkering som `-`, `*` eller `1.` i början av en rad tas bort, och `[x]` lägger till en punkt som redan är bockad. Text som klistras in på en enda rad skrivs in som den är. Om listan inte har plats för alla visas en notis som säger hur många som inte lades till.
+- **Bocka av en punkt**: klicka på dess ruta, eller tryck på `Space` (mellanslag) när den har fokus. Punkten står kvar på sin plats, och en bockad punkt är överstruken.
+- **Redigera en punkt**: klicka på dess text, eller tryck på `Enter` på den. `Enter` sparar ändringen, och det gör även ett klick någon annanstans. `Tab` sparar och går vidare till nästa knapp på raden, och `Shift+Tab` sparar och går tillbaka till punktens ruta. `Esc` avbryter redigeringen och behåller den gamla texten, och dialogrutan förblir öppen. En tom text sparas inte, så punkten behåller sin gamla text. Använd **Delete item** (Ta bort punkt) för att ta bort en punkt.
+- **Flytta en punkt**: tryck på `Alt` och piltangenten upp eller ned när punktens text har fokus, så flyttas den ett steg. Ingenting händer överst eller nederst i listan. På en bred skärm kan du också dra handtaget till vänster om raden. Handtaget syns när pekaren är över raden eller raden har fokus.
+- **Ta bort en punkt**: klicka på knappen **Delete item**, eller tryck på `Tab` tills den har fokus och tryck sedan på `Enter`. Fokus flyttas till nästa punkt, eller till den föregående om det var den sista, eller till fältet när inga punkter finns kvar.
+- **Turn into card** (Gör om till kort): på ett kort i en kolumn har varje punkt knappen **Turn into card**. Punkten blir ett nytt kort direkt under det här kortet, i samma kolumn, med punktens text som titel, och lämnar checklistan. Det är ett steg i ångra. Ett kort som inte ligger i en kolumn har ingen sådan knapp.
+- **Hide done** (Dölj klara): när några punkter är bockade och andra inte är det döljer **Hide done** de bockade punkterna i den här dialogrutan, och knappen säger i stället **Show 2 done** (Visa 2 klara). Döljandet sparas inte, så andra ser fortfarande alla punkter.
+
+Rubriken visar antalet, till exempel `1 of 2`, med en stapel under sig. När alla punkter är bockade står det i stället **All done** (Allt klart), och **Hide done** visas inte.
+
+På en telefon har varje rad en knapp **⋯** i stället för knapparna på raden. Menyn innehåller **Delete item** och även **Turn into card** på ett kort i en kolumn.
+
+På ett låst kort, och för personer som bara kan kommentera, visar listan sina bockar, men det går inte att lägga till, ändra, bocka av eller ta bort något.
+
+På kortet visas checklistan som en förloppsrad under kortets detaljer: en liten ruta, antalet som `2/5` och en stapel. Rutan visar en bock när en punkt är klar. När alla punkter är bockade är rutan ifylld och antalet fetstilt. När du zoomar långt ut visas bara stapeln.
+
 ## Göra om lappar till kort
 
-- Markera lappar eller kort och tryck på `K`, eller välj **Turn into card** (Gör om till kort) eller **Turn into sticky**. Det är samma objekt, så kommentarer, kopplingslinjer, röster och historik finns kvar. Den första raden blir titeln och resten blir beskrivningen.
+- Markera lappar eller kort och tryck på `K`, eller välj **Turn into card** eller **Turn into sticky**. Det är samma objekt, så kommentarer, kopplingslinjer, röster och historik finns kvar. Den första raden blir titeln och resten blir beskrivningen.
 - En lapp som ligger över en kolumn läggs till i den kolumnen. Ett kort som görs om till en lapp stannar där det ritades.
 - Dra en lapp till en kolumn för att göra den till ett kort där. En linje visar var kortet hamnar.
 - **Make kanban from selection** (Skapa kanban från markering) lägger de markerade lapparna i den första kolumnen på en ny kanban, i läsordning.

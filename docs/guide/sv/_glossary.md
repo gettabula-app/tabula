@@ -20,6 +20,11 @@
 | lane (kanban) | kolumn | ? alternativ: "bana", "fil" |
 | kanban | kanban | kanbantavla |
 | card (kanban) | kort | |
+| checklist | checklista | listan med små steg på ett kort |
+| item (checklist) | punkt | en rad i checklistan, inte ett objekt på tavlan |
+| tick / ticked | bocka av / bockad | bock är bockmärket i rutan |
+| drag grip | handtag | handtaget till vänster om en rad, för att flytta en punkt |
+| progress row | förloppsrad | raden under kortets detaljer med antalet klara punkter |
 | connector | kopplingslinje | ? alternativ: "koppling", "pil" |
 | template | mall | |
 | workspace | arbetsyta | ? alternativ: "arbetsmiljö" |
@@ -45,6 +50,8 @@
 | WIP limit | WIP-gräns | gräns för pågående arbete |
 | layer | lager | |
 | undo / redo | ångra / gör om | |
+| Hide toolbar | Dölj verktygsfältet | knappen överst i det vänstra verktygsfältet |
+| Show toolbar | Visa verktygsfältet | fliken längs fönstrets vänstra kant när verktygsfältet är dolt |
 | share | dela | |
 | export / import | exportera / importera | |
 | version history | versionshistorik | |

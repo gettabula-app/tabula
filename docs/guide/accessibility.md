@@ -6,8 +6,10 @@ You can use most of Tabula without a mouse, and a screen reader hears what chang
 
 - `Tab` and `Shift+Tab` move through the toolbars, panels and menus. A ring shows where you are.
 - Dialogs keep `Tab` inside until you close them, and the board behind them is not reachable. `Esc` closes a dialog or a menu and puts you back on the button that opened it.
+- On a focused toolbar button, such as **Frame**, `Space` or `Enter` presses it. On the canvas itself, `Space` still pans.
 - Menus and panels that open from a button start on their first item.
 - In a group of choices, such as the colours in a swatch row, alignment, or the themes in the board menu, `Tab` stops once on the chosen option. The arrow keys, `Home` and `End` move between options and choose one. For the dots-per-person presets and the sticky note colours, the arrow keys move and `Space` or `Enter` chooses.
+- In a card's checklist, `Space` ticks an item, `Enter` on its text starts an edit, and `Alt` with the up or down arrow key moves it. `Tab` walks each row's box, text and buttons in order.
 - Check boxes, radio buttons and switches look and work the same in every dialog and settings page. A switch next to a label (for example in notification settings or chat settings) turns on or off when you click anywhere on its row, and `Space` toggles it from the keyboard. A switch is a 28 by 24 pixel target, and 44 by 44 on a touch screen.
 - Every tool has a shortcut. See [Shapes, text and sticky notes](shapes-text-notes.md#the-tool-rail) and [Getting started](getting-started.md).
 
