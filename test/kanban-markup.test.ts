@@ -168,9 +168,9 @@ describe('a card', () => {
 
   it('draws the owner badge with initials, ringed in the person colour when known and with a hairline when not', () => {
     const { store, ids } = board();
-    store.transact(() => store.update(ids[0], { ownerName: 'Johan Saldes', ownerId: 'u1' }));
+    store.transact(() => store.update(ids[0], { ownerName: 'Alex Berg', ownerId: 'u1' }));
     const known = draw(store, ids[0], { ownerColor: () => USER_COLORS[2] });
-    expect(known).toContain('>JS</text>');
+    expect(known).toContain('>AB</text>');
     expect(known).toContain(`stroke:${USER_COLORS[2]}`);
     // the person colour is the only colour that is not a theme variable: it is an identity, the same in every theme
     expect(outsideVars(known).replace(USER_COLORS[2], '')).not.toMatch(HEX);
@@ -271,7 +271,7 @@ describe('in an export', () => {
     const { store, container, lanes, ids } = board();
     store.transact(() => {
       store.update(lanes[1], { fill: 'blue', wip: 1 });
-      store.update(ids[0], { labels: ['bug', 'ui'], due: '2026-10-01', ownerName: 'Johan Saldes', ownerId: 'u1', fill: '#FFA3C4' });
+      store.update(ids[0], { labels: ['bug', 'ui'], due: '2026-10-01', ownerName: 'Alex Berg', ownerId: 'u1', fill: '#FFA3C4' });
       store.update(ids[1], { parent: lanes[1], rank: `a0@${lanes[1]}` });
     });
     const ctx = { ownerColor: () => USER_COLORS[0], commentCount: () => 2, zoom: 1, editable: false };

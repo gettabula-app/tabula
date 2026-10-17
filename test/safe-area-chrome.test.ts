@@ -115,7 +115,7 @@ describe.skipIf(!available)('the full-screen tracker stays inside the safe area'
           import { createTrackerVisualSeed } from '/src/tracker/ui/visual-seed.ts';
           const api = createMockTrackerApi(createTrackerVisualSeed());
           const store = createTrackerStore(api, { isVisible: () => false });
-          const me = { user: { id: 'u1', name: 'Johan Saldes', email: 'johan@example.test', role: 'member' }, teams: [], mcp: false, mcpOauth: false, tracker: true };
+          const me = { user: { id: 'u1', name: 'Alex Berg', email: 'alex@example.test', role: 'member' }, teams: [], mcp: false, mcpOauth: false, tracker: true };
           mountTrackerShell(document.querySelector('#app'), {
             store, api, viewerId: 'safe', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true,
             routeMode: true, boardName: 'Tracker', account: me, layoutWidth: window.innerWidth, onBoards: () => {},

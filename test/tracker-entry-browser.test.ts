@@ -90,7 +90,7 @@ async function tryOpenShell({ routeMode = true, role = 'member', mcp = false, ac
       const api = createMockTrackerApi(createTrackerVisualSeed());
       const store = createTrackerStore(api, { isVisible: () => false });
       window.__boards = 0;
-      const me = { user: { id: 'u1', name: 'Johan Saldes', email: 'johan@example.test', role: ${JSON.stringify(role)} }, teams: [], mcp: ${mcp}, mcpOauth: false, tracker: true };
+      const me = { user: { id: 'u1', name: 'Alex Berg', email: 'alex@example.test', role: ${JSON.stringify(role)} }, teams: [], mcp: ${mcp}, mcpOauth: false, tracker: true };
       window.__trackerShell = mountTrackerShell(document.querySelector('#app'), {
         store, api, viewerId: 'entry', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true,
         routeMode: ${routeMode}, boardName: 'Tracker', account: ${account ? 'me' : 'null'}, layoutWidth: window.innerWidth,
@@ -151,7 +151,7 @@ describe.skipIf(!available)('the tracker strip and menu in a browser', { timeout
     await page.locator('.trk-menu-button').click();
     const all = await items(page);
     const rows = all.filter((text) => !['Default', 'Ayu', 'Kanagawa', 'Matrix', 'Evergreen'].includes(text.trim()));
-    expect(rows.map((t) => t.trim())).toEqual([...expected.slice(0, -1), 'Johan Saldes', 'Sign out']);
+    expect(rows.map((t) => t.trim())).toEqual([...expected.slice(0, -1), 'Alex Berg', 'Sign out']);
     expect(await page.locator('.trk-account-menu [role="radio"]').count()).toBe(5);
     await page.close();
   });
@@ -213,7 +213,7 @@ describe.skipIf(!available)('the account menu of the Boards top bar in a browser
         content: `
           import '/src/ui/home.css'; // the top bar's own styles come with the home page, which this blank page does not load
           import { createTopbar } from '/src/ui/topbar.ts';
-          const me = { user: { id: 'u1', name: 'Johan Saldes', email: 'johan@example.test', role: 'member' }, teams: [], mcp: ${mcp}, mcpOauth: false };
+          const me = { user: { id: 'u1', name: 'Alex Berg', email: 'alex@example.test', role: 'member' }, teams: [], mcp: ${mcp}, mcpOauth: false };
           const host = document.createElement('div'); host.id = 'entry-bar'; document.body.append(host); host.append(createTopbar('boards', me));
         `,
       });

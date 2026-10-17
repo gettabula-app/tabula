@@ -736,7 +736,7 @@ if (trackerMockVisual) {
     const mockTicketNavigator = createTicketRouteNavigator(() => ({ kind: 'view', view: mockTab }));
     const shell = mountTrackerShell(root, {
       store, api, viewerId: 'visual-user', trackerId: 'tracker-demo', initialTab: 'all', fullScreen: true, routeMode: true,
-      account: { user: { id: 'visual-user', name: 'Johan Saldes', email: 'johan@example.test', role: 'owner' }, teams: [], mcp: true, mcpOauth: false, tracker: true } as never,
+      account: { user: { id: 'visual-user', name: 'Alex Berg', email: 'alex@example.test', role: 'owner' }, teams: [], mcp: true, mcpOauth: false, tracker: true } as never,
       onBoards: () => undefined,
       onTabChange: (tab) => { mockTab = tab; navigateTrackerPath({ kind: 'view', view: tab }, 'replace'); },
       onTicketChange: mockTicketNavigator,
