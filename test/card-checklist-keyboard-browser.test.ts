@@ -298,8 +298,9 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
     await expect.poll(() => page.locator(DIALOG).count(), POLL).toBe(0);
   }));
 
-  // This pins the current behaviour, not the intent: pending the designer's answer on where focus should go after a Tab out of an edit.
-  it('observed: Tab out of an edit saves the new text and focus returns to that item\'s text, it does not advance', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
+  // Designer's ruling 2026-10-17 (WCAG 2.4.3): Tab out of an edit saves and moves on to the next control of the row. The test card sits in a
+  // lane, so that control is Convert; on a card without a lane it would be Delete. Shift+Tab goes to the checkbox.
+  it('Tab out of an edit saves the new text and moves focus on to the item\'s next control', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
     const [a] = card.ids;
     await startEditWithKeyboard(page, a);
     await page.keyboard.press('Shift+Home');
@@ -309,11 +310,19 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
     expect((await savedItems(page, card.cardId))[0].text).toBe('Saved by Tab');
     expect(await rowTexts(page)).toEqual(['Saved by Tab', 'Book taxi']);
     const f = await focused(page);
-    expect(f.body, `focus after Tab out of the edit: ${JSON.stringify(f)}`).toBe(false);
-    expect(f.inDialog, `focus after Tab out of the edit: ${JSON.stringify(f)}`).toBe(true);
-    expect(f.inChecklist, `focus after Tab out of the edit: ${JSON.stringify(f)}`).toBe(true);
-    // Observed: the save rebuilds the list and focus lands on the edited item's own text button, not on the next stop (its Delete button).
-    expect({ itemId: f.itemId, part: f.part }, `focus after Tab out of the edit: ${JSON.stringify(f)}`).toEqual({ itemId: a, part: 'text' });
+    expect({ itemId: f.itemId, part: f.part }, `focus after Tab out of the edit: ${JSON.stringify(f)}`).toEqual({ itemId: a, part: 'convert' });
+  }));
+
+  it('Shift+Tab out of an edit saves the new text and moves focus back to the item\'s checkbox', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
+    const [a] = card.ids;
+    await startEditWithKeyboard(page, a);
+    await page.keyboard.press('Shift+Home');
+    await page.keyboard.type('Saved by Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect.poll(() => page.locator(EDIT_FIELD).count(), POLL).toBe(0);
+    expect((await savedItems(page, card.cardId))[0].text).toBe('Saved by Shift+Tab');
+    const f = await focused(page);
+    expect({ itemId: f.itemId, part: f.part }, `focus after Shift+Tab out of the edit: ${JSON.stringify(f)}`).toEqual({ itemId: a, part: 'box' });
   }));
 
   it('Enter on an item\'s Delete button removes the item, and focus lands on a neighbouring item or the add field, never on the body', () => withCard(['Pack bags', 'Book taxi', 'Buy tickets'], async (page, card) => {
