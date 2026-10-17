@@ -201,6 +201,21 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
     await expect.poll(() => page.locator(DIALOG).count(), POLL).toBe(0);
   }));
 
+  // designer's ruling 2026-10-17. The field has no Escape handler today, so the key reaches the dialog and closes it: this fails until the fix in checklist-ui.ts lands.
+  it('FINDING: Escape in the add field with text clears the text, keeps the card dialog open and keeps focus in the field', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
+    const reached = await tabUntil(page, onAdd);
+    expect(reached.reached, `Tab did not reach the add field: ${trailText(reached.trail)}`).toBe(true);
+    const before = await savedItems(page, card.cardId);
+
+    await page.keyboard.type('Pack the car');
+    await page.keyboard.press('Escape');
+    await settle(page);
+    await expect.poll(() => page.locator(DIALOG).count(), POLL).toBe(1);
+    await expect.poll(() => page.locator(ADD_FIELD).inputValue(), POLL).toBe('');
+    expect((await focused(page)).label, 'Escape moved the focus out of the add field').toBe(ADD_LABEL);
+    expect(await savedItems(page, card.cardId), 'Escape in the add field wrote the list').toEqual(before);
+  }));
+
   it('Space on an item\'s checkbox ticks it in place, the focus stays on that checkbox, and a second Space unticks it', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
     const [first] = card.ids;
     const reached = await tabUntil(page, (f) => f.part === 'box' && f.itemId === first);
@@ -327,6 +342,18 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
     const f = await focused(page);
     expect(f.body, `focus after Delete: ${JSON.stringify(f)}`).toBe(false);
     expect({ itemId: f.itemId, part: f.part }, `focus after Delete: ${JSON.stringify(f)}`).toEqual({ itemId: b, part: 'text' });
+  }));
+
+  // The only item has no next and no previous one, so neighbourFocus falls back to the add field (designer's ruling 2026-10-17).
+  it('Enter on the Delete button of the only item removes it and focus lands on the add field', () => withCard(['Pack bags'], async (page, card) => {
+    const [a] = card.ids;
+    const reached = await tabUntil(page, onPart('delete', a));
+    expect(reached.reached, `Tab did not reach the Delete button: ${trailText(reached.trail)}`).toBe(true);
+    await page.keyboard.press('Enter');
+    await expect.poll(() => rowTexts(page), POLL).toEqual([]);
+    expect(await savedItems(page, card.cardId)).toEqual([]);
+    const f = await focused(page);
+    expect(f.label, `focus after Delete: ${JSON.stringify(f)}`).toBe(ADD_LABEL);
   }));
 
   it('Alt+ArrowDown moves an item down one place and Alt+ArrowUp moves it back, with focus on its text each time', () => withCard(['Pack bags', 'Book taxi', 'Buy tickets'], async (page, card) => {
