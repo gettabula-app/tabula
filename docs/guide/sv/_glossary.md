@@ -25,6 +25,12 @@
 | tick / ticked | bocka av / bockad | bock är bockmärket i rutan |
 | drag grip | handtag | handtaget till vänster om en rad, för att flytta en punkt |
 | progress row | förloppsrad | raden under kortets detaljer med antalet klara punkter |
+| Add an item | Lägg till en punkt | |
+| Add | Lägg till | knappen på en telefon |
+| Delete item | Ta bort punkt | |
+| Hide done | Dölj klara | döljer de bockade punkterna i dialogrutan |
+| Show 2 done | Visa 2 klara | siffran är antalet bockade punkter |
+| All done | Allt klart | visas när alla punkter är bockade |
 | connector | kopplingslinje | ? alternativ: "koppling", "pil" |
 | template | mall | |
 | workspace | arbetsyta | ? alternativ: "arbetsmiljö" |
