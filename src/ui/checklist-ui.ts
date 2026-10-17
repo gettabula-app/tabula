@@ -109,6 +109,11 @@ export function checklistSection(hooks: ChecklistHooks): { el: HTMLElement; rend
       if (e.key === 'Enter' && !e.isComposing) {
         e.preventDefault();
         add();
+      } else if (e.key === 'Escape' && input.value) {
+        // typed text goes first and the dialog stays open; Escape in an empty field closes the dialog as everywhere else
+        e.preventDefault();
+        e.stopPropagation();
+        input.value = '';
       }
     });
     input.addEventListener('paste', (e: ClipboardEvent) => paste(e));
@@ -172,7 +177,7 @@ export function checklistSection(hooks: ChecklistHooks): { el: HTMLElement; rend
     hooks.announce(`Turned into a card: ${item.text}`);
   }
 
-  /** Inline edit: the text becomes a field; Enter and leaving the field save, Escape cancels. */
+  /** Inline edit: the text becomes a field; Enter, Tab and leaving the field save, Escape cancels. */
   function startEdit(id: Id) {
     if (!editable || editing || drag) return;
     const item = hooks.items().find((i) => i.id === id);
@@ -196,6 +201,10 @@ export function checklistSection(hooks: ChecklistHooks): { el: HTMLElement; rend
         e.preventDefault();
         e.stopPropagation();
         finishEdit(false);
+      } else if (e.key === 'Tab' && !e.isComposing && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        // Tab saves and moves on: to the next control of this row (the rows are rebuilt, so the browser's own move would be lost)
+        e.preventDefault();
+        finishEdit(true, e.shiftKey ? 'box' : hooks.canConvert() ? 'convert' : 'delete');
       }
     });
     field.addEventListener('blur', () => {
@@ -208,13 +217,13 @@ export function checklistSection(hooks: ChecklistHooks): { el: HTMLElement; rend
     field.setSelectionRange?.(end, end);
   }
 
-  function finishEdit(save: boolean) {
+  function finishEdit(save: boolean, part: Part = 'text') {
     const st = editing;
     if (!st) return;
     editing = null;
     const items = hooks.items();
     const next = save ? editItem(items, st.id, st.input.value) : null;
-    pendingFocus = { id: st.id, part: 'text' };
+    pendingFocus = { id: st.id, part };
     // an empty text cancels the edit: an item is removed with Delete, not by clearing it
     if (next && next !== items) hooks.save(next);
     else paint();
