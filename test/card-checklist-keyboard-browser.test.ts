@@ -184,6 +184,23 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
     expect((await savedItems(page, card.cardId)).map((i) => i.text)).toEqual(['Pack bags', 'Book taxi']);
   }));
 
+  // An empty add field: add() returns before any write, so Enter changes nothing and the field keeps the focus. Escape is not handled by
+  // the field (it only handles Enter, and keepKeys lets Escape through), so it reaches the dialog's own key handler: the dialog closes.
+  it('Enter in the empty add field adds no item and keeps the focus there; Escape in the empty add field closes the dialog', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
+    const reached = await tabUntil(page, onAdd);
+    expect(reached.reached, `Tab did not reach the add field: ${trailText(reached.trail)}`).toBe(true);
+    const before = await savedItems(page, card.cardId);
+
+    await page.keyboard.press('Enter');
+    await settle(page);
+    expect(await rowTexts(page)).toEqual(['Pack bags', 'Book taxi']);
+    expect(await savedItems(page, card.cardId), 'Enter in the empty add field wrote the list').toEqual(before);
+    expect((await focused(page)).label, 'the add field lost the focus after Enter').toBe(ADD_LABEL);
+
+    await page.keyboard.press('Escape');
+    await expect.poll(() => page.locator(DIALOG).count(), POLL).toBe(0);
+  }));
+
   it('Space on an item\'s checkbox ticks it in place, the focus stays on that checkbox, and a second Space unticks it', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
     const [first] = card.ids;
     const reached = await tabUntil(page, (f) => f.part === 'box' && f.itemId === first);
@@ -266,7 +283,8 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
     await expect.poll(() => page.locator(DIALOG).count(), POLL).toBe(0);
   }));
 
-  it('Tab out of an edit saves the new text, and focus stays inside the checklist rather than on the body', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
+  // This pins the current behaviour, not the intent: pending the designer's answer on where focus should go after a Tab out of an edit.
+  it('observed: Tab out of an edit saves the new text and focus returns to that item\'s text, it does not advance', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
     const [a] = card.ids;
     await startEditWithKeyboard(page, a);
     await page.keyboard.press('Shift+Home');
@@ -297,6 +315,20 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
     expect({ itemId: f.itemId, part: f.part }, `focus after Delete: ${JSON.stringify(f)}`).toEqual({ itemId: card.ids[2], part: 'text' });
   }));
 
+  // The neighbour rule (neighbourFocus in checklist-ui.ts): after a delete, focus goes to the next shown item, else to the one before it,
+  // else to the add field. The last item has no next one, so focus lands on the PREVIOUS item's text (b), not on the add field.
+  it('Enter on the Delete button of the last item removes it, and focus lands on the previous item\'s text, not the add field', () => withCard(['Pack bags', 'Book taxi', 'Buy tickets'], async (page, card) => {
+    const [, b, c] = card.ids;
+    const reached = await tabUntil(page, onPart('delete', c));
+    expect(reached.reached, `Tab did not reach the last item's Delete button: ${trailText(reached.trail)}`).toBe(true);
+    await page.keyboard.press('Enter');
+    await expect.poll(() => rowTexts(page), POLL).toEqual(['Pack bags', 'Book taxi']);
+    expect((await savedItems(page, card.cardId)).map((i) => i.text)).toEqual(['Pack bags', 'Book taxi']);
+    const f = await focused(page);
+    expect(f.body, `focus after Delete: ${JSON.stringify(f)}`).toBe(false);
+    expect({ itemId: f.itemId, part: f.part }, `focus after Delete: ${JSON.stringify(f)}`).toEqual({ itemId: b, part: 'text' });
+  }));
+
   it('Alt+ArrowDown moves an item down one place and Alt+ArrowUp moves it back, with focus on its text each time', () => withCard(['Pack bags', 'Book taxi', 'Buy tickets'], async (page, card) => {
     const [a, b, c] = card.ids;
     const reached = await tabUntil(page, onPart('text', a));
@@ -315,5 +347,35 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
     expect(up.part, `focus after Alt+ArrowUp: ${JSON.stringify(up)}`).toBe('text');
     expect(up.itemId, `focus after Alt+ArrowUp: ${JSON.stringify(up)}`).toBe(a);
     expect((await savedItems(page, card.cardId)).map((i) => i.id)).toEqual([a, b, c]);
+  }));
+
+  // At an edge, moveItem returns the same list, and attempt returns before any save or focus change: a key press that moves nothing
+  // writes nothing and leaves the focus where it was.
+  it('Alt+ArrowUp on the first item changes nothing: the order stays, nothing is saved, and focus stays on its text', () => withCard(['Pack bags', 'Book taxi', 'Buy tickets'], async (page, card) => {
+    const [a, b, c] = card.ids;
+    const reached = await tabUntil(page, onPart('text', a));
+    expect(reached.reached, `Tab did not reach the first item's text: ${trailText(reached.trail)}`).toBe(true);
+    const before = await savedItems(page, card.cardId);
+
+    await page.keyboard.press('Alt+ArrowUp');
+    await settle(page);
+    expect(await rowIds(page)).toEqual([a, b, c]);
+    expect(await savedItems(page, card.cardId), 'Alt+ArrowUp on the first item wrote the list').toEqual(before);
+    const f = await focused(page);
+    expect({ itemId: f.itemId, part: f.part }, `focus after Alt+ArrowUp: ${JSON.stringify(f)}`).toEqual({ itemId: a, part: 'text' });
+  }));
+
+  it('Alt+ArrowDown on the last item changes nothing: the order stays, nothing is saved, and focus stays on its text', () => withCard(['Pack bags', 'Book taxi', 'Buy tickets'], async (page, card) => {
+    const [a, b, c] = card.ids;
+    const reached = await tabUntil(page, onPart('text', c));
+    expect(reached.reached, `Tab did not reach the last item's text: ${trailText(reached.trail)}`).toBe(true);
+    const before = await savedItems(page, card.cardId);
+
+    await page.keyboard.press('Alt+ArrowDown');
+    await settle(page);
+    expect(await rowIds(page)).toEqual([a, b, c]);
+    expect(await savedItems(page, card.cardId), 'Alt+ArrowDown on the last item wrote the list').toEqual(before);
+    const f = await focused(page);
+    expect({ itemId: f.itemId, part: f.part }, `focus after Alt+ArrowDown: ${JSON.stringify(f)}`).toEqual({ itemId: c, part: 'text' });
   }));
 });
