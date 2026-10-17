@@ -41,12 +41,12 @@ Varje tavla är ett kort. Överst växlar **Cards | List** mellan ett rutnät me
 
 Ett kort visar:
 
-- En bild av tavlan, eller en enkel ruta när det inte finns någon. En tavla som ännu saknar innehåll visar **Empty board** (Tom tavla) under namnet.
+- En bild av tavlan, eller en enkel ruta när det inte finns någon.
 - Tavlans namn, som öppnar den, och en rad under: vem som redigerade den sist och när (”Lin · 12 min ago”; ett AI-verktyg märks med ”(agent)”), eller ”Edited 3 Oct” när servern inte anger vem, eller ”On this device”.
 - Vilka som är här nu (se nedan).
 - En bricka när din åtkomst är begränsad: **View only** (Endast visning) eller **Can comment** (Kan kommentera). Utan bricka kan du redigera.
 - På bilden ett litet tal för de olästa chattmeddelandena i tavlan, markerat när någon har nämnt dig. Det visas bara när chatten är på.
-- En meny med **More actions** (tre punkter). Alla kan välja **Open** (Öppna). De som kan redigera kan också välja **Rename** (Byt namn) och **Duplicate** (Duplicera), och ägaren kan också välja **Delete** (Ta bort). En tavla som bara finns på den här enheten erbjuder **Open**, **Add to workspace** och **Delete**.
+- En meny med **More actions** (tre punkter). Alla kan välja **Open** (Öppna), och ägaren kan också välja **Delete** (Ta bort). En tavla som bara finns på den här enheten erbjuder **Open**, **Add to workspace** och **Delete**.
 
 I listvyn är varje tavla en rad med sitt namn och kolumnerna **Here now** (Här nu), **Edited** (Ändrad) och **Access** (Åtkomst). På en smal skärm utelämnas de extra kolumnerna.
 
@@ -62,7 +62,7 @@ I listvyn är varje tavla en rad med sitt namn och kolumnerna **Here now** (Här
 
 ### Bilder på kort
 
-Bilden är en liten kopia av det som finns på tavlan, och den görs av webbläsaren hos någon som kan redigera tavlan. När en ägare eller någon som kan redigera har tavlan öppen och ändrar den, ritar webbläsaren bilden och skickar den till servern, efter att varje bild på tavlan har krympts till högst 480 pixlar. Personer som bara kan visa eller kommentera skapar aldrig någon bild. Tills en tavla har en bild visar kortet en ritad kontur av tavlan, eller en enkel ruta när tavlan är tom.
+Bilden är en liten kopia av det som finns på tavlan, och den görs av webbläsaren hos någon som kan redigera tavlan. När en ägare eller någon som kan redigera har tavlan öppen och ändrar den, ritar webbläsaren bilden och skickar den till servern, efter att varje bild på tavlan har krympts till högst 480 pixlar. Personer som bara kan visa eller kommentera skapar aldrig någon bild. Tills en tavla har en bild visar kortet en enkel ruta.
 
 Alla som kan se en tavlas kort ser dess bild. Den visar det som finns på tavlan, så en tavla vars innehåll ska hållas dolt bör inte visa någon bild:
 

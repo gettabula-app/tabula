@@ -41,12 +41,12 @@ Each board is a card. At the top, **Cards | List** switches between a grid of ca
 
 A card shows:
 
-- A picture of the board, or a plain tile when there is none. A board with nothing on it yet says **Empty board** under its name.
+- A picture of the board, or a plain tile when there is none.
 - The board's name, which opens it, and a line under it: who edited it last and when ("Lin · 12 min ago"; an AI tool is marked "(agent)"), or "Edited 3 Oct" when the server does not name the person, or "On this device".
 - Who is here now (see below).
 - A badge when your access is limited: **View only** or **Can comment**. No badge means you can edit.
 - On the picture, a small number for the unread chat messages of that board, highlighted when someone mentioned you. It shows only when chat is on.
-- A **More actions** menu (three dots). Everyone can choose **Open**. Editors can also **Rename** and **Duplicate**, and the owner can also **Delete**. A board that is only on this device offers **Open**, **Add to workspace** and **Delete**.
+- A **More actions** menu (three dots). Everyone can choose **Open**, and the owner can also **Delete**. A board that is only on this device offers **Open**, **Add to workspace** and **Delete**.
 
 In the list view each board is a row with its name, **Here now**, **Edited** and **Access** columns. On a narrow screen the extra columns are left out.
 
@@ -62,7 +62,7 @@ In the list view each board is a row with its name, **Here now**, **Edited** and
 
 ### Pictures on cards
 
-The picture is a small copy of what is on the board, made by the browser of a person who can edit it. When an owner or editor has the board open and changes it, their browser draws the picture and sends it to the server, with every image on the board shrunk to at most 480 pixels first. People who can only view or comment never make a picture. Until a board has one, its card shows a drawn outline of the board, or a plain tile when the board is empty.
+The picture is a small copy of what is on the board, made by the browser of a person who can edit it. When an owner or editor has the board open and changes it, their browser draws the picture and sends it to the server, with every image on the board shrunk to at most 480 pixels first. People who can only view or comment never make a picture. Until a board has one, its card shows a plain tile.
 
 Everyone who can see a board's card sees its picture. That includes what is on the board, so a board whose content should stay out of sight should not show one:
 
