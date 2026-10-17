@@ -82,6 +82,8 @@ import { canChangeProfile, canManageJoinCodes, canManageShares, canSaveTemplate 
 import { trackPanelTop } from './panel-top';
 import { mountRailScrollCue, trackMoreY } from './scroll-cue';
 import { choiceForToolKind, rememberToolChoice, restoreToolChoice, type RailToolChoice } from './rail-tool-group-state';
+import { FRAME_PRESETS, frameOrientation, presetChoiceId, presetFrameBox, presetFrameName, presetForChoice, presetSize } from './frame-presets';
+import { frameFlyoutBody } from './frame-flyout';
 import { DEMO } from '../demo';
 import { demoWorkspaceItems } from './demo-workspace';
 
@@ -330,13 +332,16 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
    * one picked. The choice is remembered under its own storage key; the flyout is a menu of the group's choices.
    */
   const railToolGroup = (opts: {
-    choices: { id: string; label: string; icon: IconName; key: string; tool: Tool | null }[];
+    /** A transient choice is not remembered: picking it runs onAction and leaves the group's tool, face and stored choice as they were. */
+    choices: { id: string; label: string; icon: IconName; key: string; tool: Tool | null; transient?: boolean }[];
     storageKey: string;
     fallback: string;
     flyout: string;
     className: string;
-    /** What picking an action choice (one with no tool, such as Link) does, given the group's button. */
-    onAction: (button: HTMLButtonElement) => void;
+    /** What picking an action choice (one with no tool, such as Link, or a transient one) does, given the group's button and the choice's id. */
+    onAction: (button: HTMLButtonElement, choiceId: string) => void;
+    /** A custom flyout body in place of the choice list; `choose` picks a choice the way a list row does. */
+    renderFlyout?: (close: () => void, choose: (choiceId: string) => void) => HTMLElement;
   }) => {
     const { choices, storageKey } = opts;
     const state: RailToolChoice[] = choices.map(({ id, tool }) => ({ id, toolKind: tool?.kind }));
@@ -381,21 +386,20 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       const choice = choices.find((item) => item.id === id);
       if (!choice) return;
       closeFlyout();
+      if (choice.transient) {
+        opts.onAction(button, choice.id);
+        return;
+      }
       last = choice.id;
       saveChoice(choice.id);
       paint();
       if (choice.tool) app.setTool(choice.tool);
-      else opts.onAction(button);
+      else opts.onAction(button, choice.id);
     };
-    const openFlyout = () => {
-      if (document.querySelector('.rail-tool-pop')) return;
-      const options = choices.map((choice) => h('button', {
-        class: 'menu-item rail-tool-option', type: 'button', role: 'menuitem', 'aria-label': choice.label,
-        ...(choice.key ? { 'aria-keyshortcuts': choice.key } : {}), onclick: () => select(choice.id),
-      }, icon(choice.icon, 20), h('span', null, choice.label), ...(choice.key ? [h('kbd', null, choice.key)] : [])));
-      const list = h('div', { class: 'rail-tool-list', role: 'presentation' }, ...options);
-      list.addEventListener('keydown', (event: KeyboardEvent) => {
-        const items = [...list.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    /** Arrow keys, Home and End move between a flyout's menu items; Enter and Space press the focused one. */
+    const attachRoving = (el: HTMLElement) => {
+      el.addEventListener('keydown', (event: KeyboardEvent) => {
+        const items = [...el.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
         const active = items.indexOf(event.target as HTMLButtonElement);
         if (active < 0) return;
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
@@ -410,7 +414,16 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
           items[active]?.click();
         }
       });
-      const opened = popover(button, list, {
+    };
+    const choiceList = () => h('div', { class: 'rail-tool-list', role: 'presentation' }, ...choices.map((choice) => h('button', {
+      class: 'menu-item rail-tool-option', type: 'button', role: 'menuitem', 'aria-label': choice.label,
+      ...(choice.key ? { 'aria-keyshortcuts': choice.key } : {}), onclick: () => select(choice.id),
+    }, icon(choice.icon, 20), h('span', null, choice.label), ...(choice.key ? [h('kbd', null, choice.key)] : []))));
+    const openFlyout = () => {
+      if (document.querySelector('.rail-tool-pop')) return;
+      const body = opts.renderFlyout ? opts.renderFlyout(() => closeFlyout(), (id) => select(id)) : choiceList();
+      attachRoving(body);
+      const opened = popover(button, body, {
         side: 'right', className: 'rail-tool-pop', label: opts.flyout, role: 'menu',
         onClose: () => {
           button.setAttribute('aria-expanded', 'false');
@@ -513,6 +526,38 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
     className: 'rail-connector-group',
     onAction: () => {},
   });
+  /** Places a frame of a preset's size in the middle of the view and selects it; the group's tool and face stay as they are. */
+  const placeFrameSize = (size: { w: number; h: number }, name: string) => {
+    if (app.readOnly) {
+      toast("You can't add frames to a board you can only view.");
+      return;
+    }
+    const vp = app.r.viewport();
+    app.insertFrame(presetFrameBox(size, { x: vp.x + vp.w / 2, y: vp.y + vp.h / 2 }), name);
+  };
+  const placeFramePreset = (choiceId: string) => {
+    const preset = presetForChoice(choiceId);
+    if (!preset) return;
+    const orientation = frameOrientation();
+    placeFrameSize(presetSize(preset, orientation), presetFrameName(preset, orientation));
+  };
+  // The Frame tool: a click or F draws a frame as before; the flyout also places a page or screen size in the middle of the view
+  const frameGroup = railToolGroup({
+    choices: [
+      { id: 'frame', label: 'Frame', icon: 'frame', key: 'F', tool: { kind: 'frame' } },
+      // the flyout's size rows: transient, so picking one places a frame and never changes the remembered tool
+      ...FRAME_PRESETS.map((preset) => ({ id: presetChoiceId(preset), label: preset.label, icon: 'frame' as IconName, key: '', tool: null as Tool | null, transient: true })),
+    ],
+    storageKey: 'driftboard:rail-tool-group:frame',
+    fallback: 'frame',
+    flyout: 'Frame and frame sizes',
+    className: 'rail-frame-group',
+    onAction: (_button, choiceId) => placeFramePreset(choiceId),
+    renderFlyout: (close, choose) => frameFlyoutBody(choose, (size) => {
+      close();
+      placeFrameSize(size, 'Custom');
+    }),
+  });
   const drawerBtn = (label: string, ic: IconName, tab: 'uml' | 'icons' | 'stickers' | 'templates' | 'layers') => {
     const b = h('button', { class: 'rail-btn', 'aria-label': label, onclick: () => library.open(tab) }, icon(ic, 22));
     b.dataset.drawer = tab;
@@ -574,7 +619,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
       shapesBtn,
       connectorGroup.button,
       toolBtn('Pen', 'pen', { kind: 'pen' }, 'P'),
-      toolBtn('Frame', 'frame', { kind: 'frame' }, 'F'),
+      frameGroup.button,
       imageBtn,
       commentBtn,
       h('hr'),
@@ -614,6 +659,7 @@ export function mountBoardUi(app: BoardApp, root: HTMLElement, nav: { home: () =
   const syncRail = () => {
     textGroup.sync();
     connectorGroup.sync();
+    frameGroup.sync();
     rail.querySelectorAll<HTMLElement>('[data-tool]').forEach((b) => {
       const t = app.tool;
       const on = b.dataset.tool === t.kind;

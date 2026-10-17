@@ -159,6 +159,8 @@ Collector routing uses `clean.kind === 'fleet'`, requires the control-plane toke
 
 ### 2.5 Never sent
 
+The rule this list mirrors is the telemetry rule in [AGENTS.md](../AGENTS.md#telemetry-rule).
+
 No field of the following kinds exists in the schema, so none can be added without a reviewed schema change:
 
 - Any user content: board titles and text, object text, card and ticket titles, descriptions and comments, chat messages, file names, image and file contents, search queries, AI prompts and outputs, saved view and filter text, label and state names.

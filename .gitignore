@@ -21,3 +21,6 @@ test-results.json
 
 # dev-only seeded workspace (scripts/dev-boards-real.mjs): throwaway directory and sign-in links
 .dev-data/
+
+# internal agent rules live outside the repo (/Volumes/External/tabula/AGENTS.md)
+/AGENTS.md

@@ -14,7 +14,8 @@ import { RELATIONS } from '../uml';
 import { DEFAULTS, styleOf } from '../markup';
 import { fontName, getCatalogue, nearestWeight } from '../fonts';
 import { openFontPicker } from './fontpicker';
-import { CUSTOM_SIZE, FRAME_MAX, FRAME_MIN, FRAME_PRESETS, presetFor } from './frame-sizes';
+import { FRAME_GROUP_LABELS, FRAME_PRESETS, frameOrientation, presetSize, rememberFrameOrientation, type FrameOrientation } from './frame-presets';
+import { CUSTOM_SIZE, FRAME_MAX, FRAME_MIN, presetFor } from './frame-sizes';
 import { closeOpenCombo, combo, numberField, switchRow } from './controls';
 import { CODE } from '../code-layout';
 import { CODE_STRINGS } from '../code-strings';
@@ -396,10 +397,10 @@ function frameSizeFields(app: BoardApp, frame: BaseObj): HTMLElement {
   });
   const preset = (v: string) => {
     const p = FRAME_PRESETS.find((x) => x.id === v);
-    return p ? { w: p.w, h: p.h } : null;
+    return p ? presetSize(p, frameOrientation()) : null;
   };
   const options = [
-    ...FRAME_PRESETS.map((p) => ({ value: p.id, label: p.label, group: p.group })),
+    ...FRAME_PRESETS.map((p) => ({ value: p.id, label: p.label, group: FRAME_GROUP_LABELS[p.group] })),
     { value: CUSTOM_SIZE, label: 'Custom', group: 'Custom' },
   ];
   const dim = (key: 'w' | 'h', label: string) => numberField({
@@ -415,8 +416,20 @@ function frameSizeFields(app: BoardApp, frame: BaseObj): HTMLElement {
       else wrap.querySelector<HTMLInputElement>('.num-field')?.focus();
     },
   });
+  // The same Portrait | Landscape toggle as the Frame menu (one remembered choice). Flipping it turns a frame that is a preset.
+  const orient = segmented<FrameOrientation>(
+    [{ value: 'portrait', label: 'Portrait' }, { value: 'landscape', label: 'Landscape' }],
+    frameOrientation(),
+    (v) => {
+      rememberFrameOrientation(v);
+      const current = FRAME_PRESETS.find((x) => x.id === presetFor(size().w, size().h));
+      if (current) edit.commit(presetSize(current, v), only);
+    },
+    'Frame orientation',
+  );
   wrap.append(
     field('Size', sizeCombo),
+    orient,
     h('div', { class: 'row2' }, field('Width', dim('w', 'Frame width')), field('Height', dim('h', 'Frame height'))),
   );
   return wrap;

@@ -3908,6 +3908,29 @@ const STATES = {
     if (afterEditorEscape.active || afterEditorEscape.text !== before) throw new Error(`emoji-esc: second Escape did not commit unchanged text: ${JSON.stringify(afterEditorEscape)}`);
   },
   // frame size presets: pick one in the inspector, type an exact size, undo
+  // TAB-394: the unified size list in the Frame tool menu and in the inspector (the combo left open)
+  async 'frame-menu'(env) {
+    await openSeedBoard(env);
+    await env.page.locator('.rail-tool-group[aria-label*="Frame"] .rail-group-chevron').first().click();
+    await env.page.getByRole('radiogroup', { name: 'Frame orientation' }).waitFor({ timeout: 5000 });
+    await settle(env.page);
+    return { noPark: true };
+  },
+  async 'frame-size-open'(env) {
+    const page = env.page;
+    await openSeedBoard(env);
+    await page.evaluate(() => {
+      const b = window.__board;
+      b.store.transact(() => b.store.create({ id: 'k-frame', type: 'frame', name: 'Frame 1', x: -300, y: -200, w: 794, h: 1123, rotation: 0, z: 'a0', fill: '#FFFFFF', createdBy: 'seed', createdAt: 1, updatedAt: 1 }));
+      b.setSelection(['k-frame']);
+    });
+    const combo = page.getByRole('combobox', { name: 'Frame size' });
+    if (!await combo.count()) await page.getByRole('button', { name: 'More properties' }).click().catch(() => {});
+    await combo.waitFor({ timeout: 5000 });
+    await combo.click();
+    await settle(page);
+    return { noPark: true };
+  },
   async 'frame-size'(env) {
     const page = env.page;
     await openSeedBoard(env);
@@ -3922,7 +3945,7 @@ const STATES = {
     await combo.waitFor({ timeout: 5000 }).catch(async (e) => { console.log(await page.evaluate(() => JSON.stringify({ sel: window.__board.selected().map((o) => o.type), props: document.querySelector('.props')?.className, text: document.querySelector('.props')?.innerText.slice(0, 200) }))); throw e; });
     const before = await size();
     await combo.click();
-    for (const [label, want] of [['A4 portrait', '794x1123'], ['1920 × 1080', '1920x1080'], ['390 × 844', '390x844'], ['Letter landscape', '1056x816']]) {
+    for (const [label, want] of [['A4', '794x1123'], ['Full HD', '1920x1080'], ['Phone', '390x844'], ['US Letter', '816x1056']]) {
       if (!await combo.getAttribute('aria-expanded').then((v) => v === 'true')) await combo.click();
       const opt = page.getByRole('option', { name: label, exact: true });
       await opt.scrollIntoViewIfNeeded();

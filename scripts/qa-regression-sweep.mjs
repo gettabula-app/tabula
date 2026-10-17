@@ -1,5 +1,5 @@
 import { chromium, devices } from 'playwright'; import { spawn } from 'node:child_process'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
-// Regression sweep (section 5 of docs/v5-acceptance.md) on a LOCAL build: comments, chat, Share, exports and every Admin tab that exists in
+// Regression sweep (section 5 of docs/archive/v5-acceptance.md) on a LOCAL build: comments, chat, Share, exports and every Admin tab that exists in
 // a self-run workspace, at 1280 (mouse) and 390 and 360 (Pixel 7 touch emulation). Build first, then:
 //   npm run build:app && node scripts/qa-regression-sweep.mjs        (own relay on a free port, accounts mode with chat and MCP on; exits 1 on any FAIL)
 // Not covered here, because a local relay cannot show them: the Settings tab and billing text of a hosted workspace, backups against a real bucket.
