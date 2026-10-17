@@ -19,17 +19,18 @@ import { customRef, customThumbnail, featuredTemplates, templateTagTone, useTemp
 import { builtinThumbnail } from '../template-thumb';
 import { listTemplates, onTemplatesChange } from '../template-store';
 import type { CustomTemplate } from '../custom-templates';
-
-// Board lists cached before the API reported owners have no ownerId: there, own boards are the ones with the owner role.
-const isMine = (b: { ownerId?: string | null; role: string }, userId: string) =>
-  b.ownerId === undefined ? b.role === 'owner' : b.ownerId === userId;
+import type { TemplateDef } from '../templates';
+import { templateCard, type BoardAction, type BoardCardData, type MoveTarget, type TemplateCardData } from './board-card';
+import { boardsToolbar, loadPreviews, loadView, renderBoardSections, type BoardSection, type BoardView } from './boards-cards-view';
+import { UNTITLED, deviceCard, deviceTargets, isMine, moveTargetsFor, toBoardCard, type LiveBoard } from './boards-home-data';
+import { boardPicture } from './board-picture';
+import { PREVIEW_STORED_EVENT } from './board-preview-sync';
 
 export interface HomeNav {
   open: (id: string, opts?: { template?: string; imported?: ImportedBoard; teamId?: string }) => void;
 }
 
 const LEDE = 'An infinite whiteboard that lives on your device and works offline.';
-const UNTITLED = 'Untitled board';
 // Only limited access is worth a badge; owning or editing a board is the norm.
 const ACCESS: Partial<Record<BoardRole, string>> = { commenter: 'Can comment', viewer: 'View only' };
 
@@ -152,6 +153,8 @@ interface AccountView {
   refresh: () => void;
   /** The search text outlives repaints, so a refresh does not clear it. */
   query: { value: string };
+  /** The Cards | List choice and the Show pictures switch: the page is rebuilt on each repaint, so they live here. */
+  display?: { view: BoardView; previews: boolean };
 }
 
 function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boolean) {
@@ -160,11 +163,12 @@ function renderAccountHome(root: HTMLElement, nav: HomeNav, me: Me, offline: boo
   let data: AccountData | null = null;
   let page: HTMLElement | null = null;
   const query = { value: '' };
+  const display = { view: loadView(), previews: loadPreviews() };
   const banner = createWorkspaceBanner();
 
   const paint = () => {
     const typing = document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'search' && root.contains(document.activeElement);
-    page = accountPage({ nav, me, down: offline || data?.unreachable === true, refresh, query }, data);
+    page = accountPage({ nav, me, down: offline || data?.unreachable === true, refresh, query, display }, data);
     root.replaceChildren(banner.el, page);
     const input = typing ? page.querySelector<HTMLInputElement>('.home-search .input') : null;
     input?.focus();
@@ -206,7 +210,7 @@ async function fetchAccount(me: Me): Promise<AccountData | null> {
   try {
     const [teams, boards] = await Promise.all([api.teams(), api.boards()]);
     cacheServerBoards(boards);
-    return { teams, boards, unreachable: false };
+    return { teams, boards: applyDevMoves(boards), unreachable: false };
   } catch (e) {
     if (e instanceof ApiError && e.status === 401) {
       setSignedOut();
@@ -215,10 +219,163 @@ async function fetchAccount(me: Me): Promise<AccountData | null> {
     }
     return {
       teams: me.teams.map((t) => ({ id: t.id, name: t.name, role: t.role, memberCount: 0, archived: false })),
-      boards: cachedServerBoards(),
+      boards: applyDevMoves(cachedServerBoards()),
       unreachable: true,
     };
   }
+}
+
+/** The first-run welcome for an account with no boards: the built-in templates as cards, and a blank board. Hide is remembered. */
+const WELCOME_SIZE = 5;
+const BLANK_CARD: TemplateCardData = { id: 'blank', name: 'Blank board', description: 'Start from an empty board.', category: 'Blank', blank: true };
+const welcomeCard = (def: TemplateDef): TemplateCardData => ({
+  id: def.id, name: def.name, description: def.description, category: def.category, tone: templateTagTone(def.category),
+  // the picture the template strip has always shown (built in, from our own code)
+  image: { kind: 'svg', markup: builtinThumbnail(def) },
+});
+
+function welcomeSection(v: AccountView, display: { previews: boolean }, onHide: () => void): HTMLElement {
+  const cards = [...featuredTemplates(WELCOME_SIZE).map(welcomeCard), BLANK_CARD];
+  const create = (d: TemplateCardData) => (d.blank ? v.nav.open(newId()) : useTemplate(v.nav, d.id));
+  return h('section', { class: 'bc-group bc-welcome', 'aria-labelledby': 'bc-welcome-title' },
+    h('div', { class: 'bc-welcome-head' },
+      h('h2', { class: 'home-title', id: 'bc-welcome-title' }, 'Start your first board'),
+      h('button', { class: 'link-more', type: 'button', 'aria-label': 'Hide the template suggestions', onclick: onHide }, 'Hide')),
+    h('p', { class: 'bc-welcome-lede' }, 'Pick a starting point, or begin with a blank board.'),
+    h('ul', { class: 'bc-grid' }, ...cards.map((t) => templateCard(t, { tile: 'tint', previews: display.previews, onCreate: create }))),
+    h('div', { class: 'bc-skip' }, h('button', { class: 'link-more', type: 'button', onclick: () => v.nav.open(newId()) }, 'Skip, start with a blank board')));
+}
+
+/** What the page knows about a board beside the server's record: who is here, its unread messages (when chat is on), a dev picture. */
+function liveFor(b: Pick<ServerBoard, 'id' | 'updatedAt' | 'lastEditedAt'>): LiveBoard {
+  const id = b.id;
+  const unread = chatAvailable() ? boardUnread(id) : { unread: 0, mentions: 0 };
+  return { presence: boardsPresence.get(id), unread: unread.unread, mention: unread.mentions > 0, image: boardPicture(id, b.lastEditedAt ?? b.updatedAt) };
+}
+
+const controlKey = (el: Element) => el.getAttribute('href') ?? el.getAttribute('aria-label') ?? el.textContent?.trim() ?? '';
+/**
+ * Runs repaint and puts the focus back on the control it was on: the same link, label or text, and which one of those it was (the
+ * first New board may be the second after a repaint). Focus on nothing in the groups: repaint alone.
+ */
+export function keepFocus(host: HTMLElement, repaint: () => void): void {
+  const active = document.activeElement as HTMLElement | null;
+  if (!active || !host.contains(active)) {
+    repaint();
+    return;
+  }
+  const key = controlKey(active);
+  const sameKey = () => [...host.querySelectorAll<HTMLElement>('a, button')].filter((el) => controlKey(el) === key);
+  const nth = sameKey().indexOf(active);
+  repaint();
+  const after = sameKey();
+  (after[nth] ?? after[0])?.focus();
+}
+
+/**
+ * Repaints the groups when a listed board's people here or unread count changes: the cards hold a snapshot, and the rows they
+ * replaced updated themselves. One subscription at a time (the last paint's); it stops once its groups have left the page.
+ * The focused control is found again after the repaint, so keyboard use is not lost.
+ */
+let stopLive: (() => void) | null = null;
+function liveRepaint(host: HTMLElement, ids: string[], repaint: () => void): void {
+  stopLive?.();
+  let queued = false;
+  const offs = ids.map((id) => boardsPresence.watch(id, schedule));
+  const offChat = onChatBadge(schedule);
+  const stop = () => {
+    for (const off of offs) off();
+    offChat();
+    if (stopLive === stop) stopLive = null;
+  };
+  stopLive = stop;
+  function schedule() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      if (!host.isConnected) {
+        stop();
+        return;
+      }
+      // a menu is open: its anchor may be redrawn under it, so the repaint waits until it closes
+      if (document.querySelector('.popover')) {
+        setTimeout(schedule, 400);
+        return;
+      }
+      keepFocus(host, repaint);
+    });
+  }
+}
+
+/** DEV STUB, not shipped: the server has no route to move a board yet. The move is kept in this tab (a reload forgets it). */
+const devMoves = new Map<string, string | null>();
+/** Moves a board to a team (or Personal, for null) in this tab only. Does nothing in a production build. */
+export function moveBoardStub(boardId: string, teamId: string | null): void {
+  if (!import.meta.env.DEV) return;
+  devMoves.set(boardId, teamId);
+}
+/** The boards the page loads, with the dev moves applied. The list as the server sent it, in production. */
+export function applyDevMoves(boards: ServerBoard[]): ServerBoard[] {
+  if (!import.meta.env.DEV || devMoves.size === 0) return boards;
+  return boards.map((b) => (devMoves.has(b.id) ? { ...b, teamId: devMoves.get(b.id) ?? null } : b));
+}
+
+/** The card menu's Open, and Delete (owner only: the menu offers it to owners and device boards alone). */
+function cardAction(v: AccountView, action: BoardAction, card: BoardCardData): void {
+  if (action === 'open') location.hash = `#/b/${encodeURIComponent(card.id)}`;
+  else if (action === 'delete') {
+    if (card.onDevice) confirmDeleteLocal(card, v.refresh);
+    else confirmDeleteBoard(v, card.id, card.name);
+  }
+}
+
+/** DEV STUB: Move to… from the menu or a drop. Moves the board in this tab, says so, and Undo puts it back where it was. */
+function moveFromMenu(v: AccountView, data: AccountData, to: MoveTarget, card: BoardCardData): void {
+  const from = data.boards.find((b) => b.id === card.id)?.teamId ?? null;
+  moveBoardStub(card.id, to.id);
+  v.refresh();
+  toast('Moved (dev stub: not saved on the server yet)', 2600, {
+    label: 'Undo',
+    onClick: () => {
+      moveBoardStub(card.id, from);
+      v.refresh();
+    },
+  });
+}
+
+/** The sections of the Boards page for an account: one per team, Personal, Other boards or Shared with you, and this device. */
+function accountSections(v: AccountView, data: AccountData, admin: boolean): BoardSection[] {
+  const me = { id: v.me.user.id, admin };
+  const q = normalise(v.query.value);
+  const boards = data.boards.filter((b) => matches(b.title || UNTITLED, q));
+  const teams = data.teams.filter((t) => !t.archived).sort((a, b) => a.name.localeCompare(b.name));
+  const cardsOf = (list: ServerBoard[]) => list
+    .map((b) => ({ ...toBoardCard(b, liveFor(b)), targets: moveTargetsFor(b, me, teams) }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  const sections: BoardSection[] = [];
+
+  for (const team of teams) {
+    const own = boards.filter((b) => b.teamId === team.id);
+    if (!q || own.length) {
+      sections.push({
+        id: `team-${team.id}`, title: team.name, kind: 'team', teamId: team.id, canAdd: team.role !== null,
+        badge: team.role ? (team.role === 'admin' ? 'Admin' : 'Member') : undefined,
+        actions: [h('button', { class: 'btn sm', disabled: v.down, onclick: () => openTeamManager(team, v.me, v.refresh) }, 'Manage')],
+        boards: cardsOf(own),
+      });
+    }
+  }
+  const personal = boards.filter((b) => b.teamId === null && isMine(b, me.id));
+  if (!q || personal.length) sections.push({ id: 'personal', title: 'Personal', kind: 'personal', teamId: null, canAdd: true, boards: cardsOf(personal) });
+  // Boards of teams not listed here (archived, or not a member) and personal boards of others would otherwise be invisible.
+  const listed = new Set(teams.map((t) => t.id));
+  const others = boards.filter((b) => (b.teamId === null ? !isMine(b, me.id) : !listed.has(b.teamId)));
+  if (others.length) sections.push({ id: 'shared', title: admin ? 'Other boards' : 'Shared with you', kind: 'shared', boards: cardsOf(others) });
+  const serverIds = new Set(data.boards.map((b) => b.id));
+  const local = listBoards().filter((b) => !serverIds.has(b.id) && matches(b.name || UNTITLED, q));
+  if (local.length) sections.push({ id: 'device', title: 'On this device', kind: 'device', boards: local.map((b) => deviceCard(b, deviceTargets(teams))) });
+  return sections;
 }
 
 export function accountPage(v: AccountView, data: AccountData | null): HTMLElement {
@@ -227,6 +384,9 @@ export function accountPage(v: AccountView, data: AccountData | null): HTMLEleme
   const canNewTeam = me.user.role !== 'guest';
   const fileInput = boardFileInput(nav);
   const groups = h('div', { class: 'home-groups' });
+  const welcomeHost = h('div');
+  const display = v.display ?? { view: loadView(), previews: loadPreviews() };
+  const welcomeKey = `${TEMPLATE_SUGGESTIONS_KEY}${me.user.id}`;
   const newTeam = () => openCreateTeam(v.refresh);
   const members = () => openWorkspaceMembers(me, v.refresh);
   // the same two actions, as a menu for narrow screens; a guest who may neither create a team nor see members gets no menu
@@ -234,6 +394,18 @@ export function accountPage(v: AccountView, data: AccountData | null): HTMLEleme
     ...(canNewTeam ? [{ label: 'New team', run: newTeam }] : []),
     ...(admin ? [{ label: 'Members', run: members }] : []),
   ];
+  const boardsBar = boardsToolbar({
+    view: display.view,
+    previews: display.previews,
+    onView: (next) => {
+      display.view = next;
+      paintGroups();
+    },
+    onPreviews: (on) => {
+      display.previews = on;
+      paintGroups();
+    },
+  });
   const toolbar = h('div', { class: 'home-toolbar' },
     searchField('Search boards', v.query.value, (value) => {
       v.query.value = value;
@@ -244,91 +416,69 @@ export function accountPage(v: AccountView, data: AccountData | null): HTMLEleme
       canNewTeam ? h('button', { class: 'btn home-action', disabled: down, onclick: newTeam }, 'New team') : null,
       admin ? h('button', { class: 'btn home-action', disabled: down, onclick: members }, 'Members') : null,
       overflow.length ? moreActionsButton(overflow, down) : null));
-  const templates = templateStrip(nav, down, me.user.id);
   const footer = pageFooter('Boards sync through your workspace server when it is reachable.');
   const main = h('main', { class: 'home' },
     h('header', { class: 'home-head' },
       h('h1', { class: 'home-title' }, 'Boards'),
       down ? h('p', { class: 'home-note', role: 'status' }, 'You are offline. Showing the last list from this device.') : null,
-      toolbar),
-    groups, templates.el, footer, fileInput);
+      toolbar,
+      boardsBar),
+    groups, welcomeHost, footer, fileInput);
   const paintGroups = () => {
     // With no boards the page keeps its title and toolbar; the empty state sits under them.
     const empty = data?.boards.length === 0;
-    templates.update(data ? data.boards.length > 0 : null);
     footer.hidden = empty;
-    groups.replaceChildren(...accountGroups(v, data, fileInput));
+    boardsBar.hidden = !data || empty;
+    // The first-run templates: an account with no boards that has not hidden them (not offline: a board needs the server).
+    // Once the person has had a board, they are not shown again (as the old template strip).
+    if (data && data.boards.length > 0 && !templateSuggestionsDismissed(welcomeKey)) rememberTemplateSuggestionsDismissed(welcomeKey, 'board-exists');
+    const showWelcome = !!data && !down && empty && !templateSuggestionsDismissed(welcomeKey);
+    welcomeHost.replaceChildren(...(showWelcome ? [welcomeSection(v, display, () => {
+      rememberTemplateSuggestionsDismissed(welcomeKey, 'hidden');
+      paintGroups();
+    })] : []));
+    // hidden, not empty: an empty grid item would still take a row gap
+    welcomeHost.hidden = !showWelcome;
+    const ids = data?.boards.map((b) => b.id) ?? [];
+    if (!data) {
+      groups.replaceChildren(h('p', { class: 'home-empty', role: 'status' }, 'Loading…'));
+    } else if (empty) {
+      groups.replaceChildren(emptyBoardState(newBoardButton(fileInput, () => nav.open(newId()), down)));
+    } else {
+      const sections = accountSections(v, data, admin);
+      if (sections.length === 0) {
+        groups.replaceChildren(noMatch(v.query.value));
+      } else {
+        renderBoardSections(groups, sections, {
+          view: display.view,
+          tile: 'tint',
+          previews: display.previews,
+          down,
+          actions: ['open', 'move', 'add', 'delete'],
+          onNew: (section) => (section.teamId ? nav.open(newId(), { teamId: section.teamId }) : nav.open(newId())),
+          onAction: (action, card) => cardAction(v, action, card),
+          // the move is a stub until the server has the route: dev only, so production has no Move to… and no drag between sections
+          onMove: import.meta.env.DEV ? (to, card) => moveFromMenu(v, data, to, card) : undefined,
+          onAdd: (to, card) => void addDeviceBoard(card, to, v),
+        });
+      }
+    }
+    liveRepaint(groups, ids, paintGroups);
   };
   paintGroups();
+  // a picture stored from this page (the board just left) draws the cards again, at its new address (ui/board-preview-sync.ts)
+  const onStored = () => {
+    if (!groups.isConnected) {
+      window.removeEventListener(PREVIEW_STORED_EVENT, onStored);
+      return;
+    }
+    keepFocus(groups, paintGroups);
+  };
+  window.addEventListener(PREVIEW_STORED_EVENT, onStored);
 
   return h('div', { class: 'home-page' },
     createTopbar('boards', me),
     main);
-}
-
-function accountGroups(v: AccountView, data: AccountData | null, fileInput: HTMLElement): HTMLElement[] {
-  if (!data) return [h('p', { class: 'home-empty', role: 'status' }, 'Loading…')];
-  if (!data.boards.length) return [emptyBoardState(newBoardButton(fileInput, () => v.nav.open(newId()), v.down))];
-  const q = normalise(v.query.value);
-  const boards = data.boards.filter((b) => matches(b.title || UNTITLED, q));
-  const groups: HTMLElement[] = [];
-
-  const teams = data.teams.filter((t) => !t.archived).sort((a, b) => a.name.localeCompare(b.name));
-  for (const team of teams) {
-    const own = boards.filter((b) => b.teamId === team.id);
-    if (!q || own.length) groups.push(teamSection(v, team, own));
-  }
-  const personal = boards.filter((b) => b.teamId === null && isMine(b, v.me.user.id));
-  if (!q || personal.length) groups.push(personalSection(v, personal));
-  // Boards of teams not listed here (archived, or not a member) and personal boards of others would otherwise be invisible.
-  const listed = new Set(teams.map((t) => t.id));
-  const others = boards.filter((b) => (b.teamId === null ? !isMine(b, v.me.user.id) : !listed.has(b.teamId)));
-  if (others.length) groups.push(sharedSection(v, others, v.me.user.role === 'owner' || v.me.user.role === 'admin' ? 'Other boards' : 'Shared with you'));
-  const serverIds = new Set(data.boards.map((b) => b.id));
-  const local = listBoards().filter((b) => !serverIds.has(b.id) && matches(b.name || UNTITLED, q));
-  if (local.length) groups.push(deviceSection(v, local, data.teams.filter((t) => t.role !== null && !t.archived)));
-  return groups.length ? groups : [noMatch(v.query.value)];
-}
-
-function group(heading: string, badge: string | null, actions: (HTMLElement | null)[], body: HTMLElement) {
-  return h('section', { class: 'board-group', 'aria-label': heading },
-    h('div', { class: 'group-head' },
-      h('h2', null, heading),
-      badge ? h('span', { class: 'badge tag tag-blue' }, badge) : null,
-      actions.some(Boolean) ? h('div', { class: 'group-actions' }, ...actions) : null),
-    body);
-}
-
-function teamSection(v: AccountView, team: Team, boards: ServerBoard[]) {
-  return group(team.name, team.role ? (team.role === 'admin' ? 'Admin' : 'Member') : null, [
-    h('button', { class: 'btn sm', disabled: v.down, onclick: () => openTeamManager(team, v.me, v.refresh) }, 'Manage'),
-    team.role ? h('button', { class: 'btn sm', disabled: v.down, onclick: () => v.nav.open(newId(), { teamId: team.id }) }, 'New board') : null,
-  ], serverBoardList(v, boards, team.name));
-}
-
-function personalSection(v: AccountView, boards: ServerBoard[]) {
-  return group('Personal', null, [
-    h('button', { class: 'btn sm', disabled: v.down, onclick: () => v.nav.open(newId()) }, 'New board'),
-  ], serverBoardList(v, boards, 'Personal'));
-}
-
-function sharedSection(v: AccountView, boards: ServerBoard[], heading: string) {
-  return group(heading, null, [], serverBoardList(v, boards, heading));
-}
-
-function serverBoardList(v: AccountView, boards: ServerBoard[], label: string) {
-  if (!boards.length) return emptyLine('No boards yet. Create the first one.');
-  return boardTable(label, [...boards].sort((a, b) => b.updatedAt - a.updatedAt).map((b) => {
-    const title = b.title || UNTITLED;
-    return {
-      id: b.id, title, updatedAt: b.updatedAt, role: b.role, chat: true, here: true,
-      actions: [b.role === 'owner' ? deleteButton(`Delete ${title}`, 'Delete board', v.down, () => confirmDeleteBoard(v, b.id, title)) : null],
-    };
-  }), 'access');
-}
-
-function deviceSection(v: AccountView, local: BoardEntry[], teams: Team[]) {
-  return group('On this device', null, [], boardTable('On this device', local.map((b) => localRow(b, v.refresh, (anchor) => addToWorkspace(anchor, b, v, teams), v.down)), 'device'));
 }
 
 export interface BoardRow {
@@ -390,7 +540,7 @@ export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'acc
       kind === 'access' ? h('span', null, 'Access') : null,
       h('span')),
     h('ul', { class: 'board-list', 'aria-label': label }, ...rows.map((r) => {
-      const link = h('a', { href: `#/b/${r.id}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null);
+      const link = h('a', { href: `#/b/${encodeURIComponent(r.id)}`, class: 'board-link' }, h('span', { class: 'board-title' }, r.title), r.chat ? boardChatBadge(r.id) : null);
       return h('li', { class: 'board-row' },
       link,
       h('span', { class: 'board-sub' },
@@ -401,22 +551,15 @@ export function boardTable(label: string, rows: BoardRow[], kind: 'plain' | 'acc
     })));
 }
 
-function addToWorkspace(anchor: HTMLElement, b: BoardEntry, v: AccountView, teams: Team[]) {
-  const pick = async (teamId?: string) => {
-    pop.close();
-    try {
-      await api.createBoard({ id: b.id, title: b.name, teamId });
-      toast('Added to workspace');
-      v.refresh();
-    } catch (e) {
-      toast(e instanceof ApiError && e.code === 'needs_admin' ? 'Ask a workspace admin to add this board.' : (e as Error).message);
-    }
-  };
-  const menu = h('div', { class: 'menu' },
-    h('button', { class: 'menu-item', onclick: () => pick() }, 'Personal'),
-    ...teams.map((t) => h('button', { class: 'menu-item', onclick: () => pick(t.id) }, t.name)),
-  );
-  const pop = popover(anchor, menu);
+/** Adds a board on this device to the workspace (the card menu's Add to workspace…): Personal, or the team picked. */
+async function addDeviceBoard(card: BoardCardData, to: MoveTarget, v: AccountView): Promise<void> {
+  try {
+    await api.createBoard({ id: card.id, title: card.name, teamId: to.id ?? undefined });
+    toast('Added to workspace');
+    v.refresh();
+  } catch (e) {
+    toast(e instanceof ApiError && e.code === 'needs_admin' ? 'Ask a workspace admin to add this board.' : (e as Error).message);
+  }
 }
 
 function confirmDeleteBoard(v: AccountView, id: string, title: string) {
@@ -437,7 +580,7 @@ function confirmDeleteBoard(v: AccountView, id: string, title: string) {
   ]);
 }
 
-function confirmDeleteLocal(b: BoardEntry, done: () => void) {
+function confirmDeleteLocal(b: Pick<BoardEntry, 'id' | 'name'>, done: () => void) {
   dialog('Delete this board?', h('p', null, `“${b.name}” will be removed from this device. Copies on a relay or on collaborators’ devices are not affected.`), [
     { label: 'Cancel' },
     { label: 'Delete board', primary: true, onClick: async () => { await deleteBoard(b.id); done(); } },

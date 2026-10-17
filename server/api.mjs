@@ -102,7 +102,10 @@ const conflict = (code, message) => new HttpError(409, code, message);
 
 const isAdmin = (user) => user.role === 'owner' || user.role === 'admin';
 const userView = (u) => ({ id: u.id, email: u.email, name: u.name, role: u.role });
-const boardView = (b, role) => ({
+const EDITOR_FALLBACK = 'A former member';
+/** A name shown on a card as the last editor: control and format characters become spaces, whitespace collapses, at most 40 code points; empty gives null. */
+const cleanEditorName = (text) => [...String(text ?? '').replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim()].slice(0, 40).join('') || null;
+const boardView = (b, role, editor = null) => ({
   id: b.id,
   title: b.title,
   teamId: b.teamId,
@@ -110,6 +113,9 @@ const boardView = (b, role) => ({
   role,
   createdAt: b.createdAt,
   updatedAt: b.updatedAt,
+  lastEditedBy: typeof editor === 'string' && editor ? editor : null,
+  lastEditedKind: b.lastEditedKind === 'person' || b.lastEditedKind === 'agent' ? b.lastEditedKind : null,
+  lastEditedAt: typeof b.lastEditedAt === 'number' && Number.isFinite(b.lastEditedAt) ? b.lastEditedAt : null,
 });
 
 function cleanText(value, field, min, max) {
@@ -247,6 +253,14 @@ function compile(method, pattern, options, handler) {
 // restore has taken the server over: every call but the backup status then answers 503 {error: 'restoring'}.
 // `chat` is what the relay shares with the chat routes (docs/chat.md): { store, access, hub }, null when chat is off.
 export function createApi({ directory, auth, config, roomExists, events, liveStats = () => ({ rooms: 0, connections: 0 }), cloud = null, history = null, activity = null, backupStatus = () => ({ enabled: false }), volumeStatus = () => null, startedAt = Date.now(), now = Date.now, onChange = () => {}, restore = null, maintenance = () => false, mailer = createMailer(config), ai = {}, assets = null, link = {}, chat = null, boardPresence = () => [], notifications = null, notificationDigest = null, joinCodeService = null, snapshotBarrier = null, backupConfig = null, keyFloorReporter = null, checkTrackerData = null, dataDir = config.dataDir, log = () => {}, roomAccess = null, previewStore: suppliedPreviewStore = null }) {
+  /** Who last edited a board, as the card shows it: a person's current name (looked up now), "A former member" once they are gone or disabled, or an agent's token name. */
+  const editorLabel = (b) => {
+    if (b?.lastEditedKind === 'agent') return typeof b.lastEditedBy === 'string' ? cleanEditorName(b.lastEditedBy) : null;
+    if (b?.lastEditedKind !== 'person' || typeof b.lastEditedBy !== 'string') return null;
+    const person = directory.getUser(b.lastEditedBy);
+    if (!person || person.disabled) return EDITOR_FALLBACK;
+    return cleanEditorName(person.name) ?? EDITOR_FALLBACK;
+  };
   const previewStore = config.previews === true
     ? suppliedPreviewStore ?? createPreviewStore({ dataDir, now, maxBytes: config.previewsMaxBytes, log })
     : null;
@@ -1486,7 +1500,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     }),
 
     compile('GET', 'boards/presence', {}, ({ user }) => [200, { presence: presenceFor(user) }]),
-    compile('GET', 'boards', {}, ({ user }) => [200, directory.listBoardsFor(user).map((b) => boardView(b, b.role))]),
+    compile('GET', 'boards', {}, ({ user }) => [200, directory.listBoardsFor(user).map((b) => boardView(b, b.role, editorLabel(b)))]),
     compile('POST', 'boards/:id/move', { body: true, cookieOnly: true }, ({ user, params, body, res }) => {
       if (user.guest === true || user.role === 'guest') throw forbidden(MOVE_FORBIDDEN_MESSAGE);
       boardFor(user, params.id);
@@ -1504,7 +1518,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         res,
       }));
       if (result.moved) emit('access-changed', { boardId: result.board.id });
-      return [200, boardView(result.board, directory.boardRole(result.board.id, user.id))];
+      return [200, boardView(result.board, directory.boardRole(result.board.id, user.id), editorLabel(result.board))];
     }),
     compile('GET', 'boards/:id/move-preview', { cookieOnly: true }, ({ user, params, query, res }) => {
       if (user.guest === true || user.role === 'guest') throw forbidden(MOVE_FORBIDDEN_MESSAGE);
@@ -1532,7 +1546,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
         audit(user, 'board.create', { boardId: created.id, teamId, adopted: adopting });
         return created;
       });
-      return [201, boardView(board, directory.boardRole(board.id, user.id))];
+      return [201, boardView(board, directory.boardRole(board.id, user.id), editorLabel(board))];
     }),
     compile('PATCH', 'boards/:id', { body: true }, ({ req, user, params, body, res }) => {
       const { board, role } = boardFor(user, params.id);
@@ -1552,7 +1566,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
           return next;
         });
         if (patch.title !== undefined) emit('board-renamed', { boardId: board.id, title: updated.title });
-        return [200, boardView(updated, directory.boardRole(board.id, user.id))];
+        return [200, boardView(updated, directory.boardRole(board.id, user.id), editorLabel(updated))];
       }
 
       const expectedTeamId = body.expectedTeamId === undefined
@@ -1570,7 +1584,7 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
       });
       if (updated.moved) emit('access-changed', { boardId: board.id });
       if (patch.title !== undefined && updated.board.title !== board.title) emit('board-renamed', { boardId: board.id, title: updated.board.title });
-      return [200, boardView(updated.board, directory.boardRole(updated.board.id, user.id))];
+      return [200, boardView(updated.board, directory.boardRole(updated.board.id, user.id), editorLabel(updated.board))];
     }),
     compile('DELETE', 'boards/:id', {}, ({ user, params }) => {
       const { board } = boardFor(user, params.id, { own: true });
@@ -1885,13 +1899,13 @@ export function createApi({ directory, auth, config, roomExists, events, liveSta
     compile('GET', 'admin/boards', {}, ({ user, query }) => {
       requireAdmin(user);
       const deleted = query.get('deleted');
-      return [200, directory.listBoardsAdmin({ includeDeleted: deleted === '1' || deleted === 'true' })];
+      return [200, directory.listBoardsAdmin({ includeDeleted: deleted === '1' || deleted === 'true' }).map((b) => ({ ...b, lastEditedBy: editorLabel(b) }))];
     }),
     compile('GET', 'admin/boards/:id', {}, ({ user, params }) => {
       requireAdmin(user);
       const board = directory.getBoardAdmin(params.id);
       if (!board) throw notFound('Board not found');
-      return [200, board];
+      return [200, { ...board, lastEditedBy: editorLabel(board) }];
     }),
     compile('POST', 'admin/boards/:id/restore', {}, ({ user, params }) => {
       requireAdmin(user);

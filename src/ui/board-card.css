@@ -1,0 +1,114 @@
+/* TAB-375 slice 2: board cards on the Boards home (spec 14, sections 3 and 7). Ported from the approved reference (boards-home-mock.mjs,
+   BH_CSS), on the app's tokens. Theme variables only. No transitions anywhere: the hover and focus states change at once. */
+
+.bc-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+.bc-search { position: relative; flex: 1 1 240px; max-width: 320px; }
+.bc-search .input { padding-left: 34px; }
+.bc-search .ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--graphite); pointer-events: none; }
+
+section.bc-group + section.bc-group { margin-top: 40px; }
+.bc-count { color: var(--graphite); font-size: 13px; }
+.bc-group .group-head h2 { font: 700 20px/1.2 var(--display); }
+
+/* grid of cards: auto-fill from 256px, two columns from 720px, one column under 420px */
+.bc-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(256px, 1fr)); gap: 16px; }
+.bc-grid > li { display: grid; min-width: 0; }
+.bc-grid > li.bc-empty { display: flex; }
+.bc-grid > li > .bc, .bc-grid > li > .bc-new { width: 100%; box-sizing: border-box; }
+
+.bc { position: relative; display: grid; grid-template-rows: auto 1fr auto; min-width: 0; background: var(--paper); border-radius: var(--radius-sm); overflow: hidden; color: var(--ink); }
+/* one 1px outline over the whole card, above the thumbnail; it turns ink on hover and focus */
+.bc::after { content: ''; position: absolute; inset: 0; z-index: 2; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--page-hairline); pointer-events: none; }
+.bc:hover::after, .bc:focus-within::after { box-shadow: inset 0 0 0 1px var(--ink); }
+.bc:has(:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* the home page's focus ring (home.css, specificity 0,3,3) would ring the title and the button as well: the card ring is the one ring */
+.home .bc .bc-name:focus-visible, .home .bc .bc-more:focus-visible, .home .bc-row .bc-name:focus-visible, .home .bc-row .bc-more:focus-visible { outline: 0; }
+
+.bc-thumb { position: relative; aspect-ratio: 16 / 10; margin: 8px 8px 0; border-radius: var(--radius-xs); background: var(--paper); box-shadow: inset 0 0 0 1px var(--page-hairline); overflow: hidden; }
+.bc-thumb svg { display: block; width: 100%; height: 100%; }
+/* a real picture (BoardCardData.image): the whole board, letterboxed on the paper tile and never cropped; the tile keeps its size */
+.bc-real { position: absolute; inset: 0; background: var(--paper); }
+.bc-real img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
+.bc-real svg { display: block; width: 100%; height: 100%; }
+.bc-quiet { position: absolute; inset: 0; display: grid; place-items: center; background-image: radial-gradient(color-mix(in srgb, var(--ink) 22%, transparent) 1px, transparent 1px); background-size: 16px 16px; }
+.bc-quiet-mark { font: 700 28px/1 var(--display); color: var(--graphite); }
+.bc-unread { position: absolute; left: 6px; top: 6px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: var(--radius-xs); background: var(--ink); color: var(--paper); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+
+.bc-body { display: grid; align-content: start; gap: 2px; padding: 12px 12px 8px; min-width: 0; }
+/* the title: two lines at 18px, the whole card is its target (stretched link). min-height 0 beats the 44px link minimum on phones */
+.bc .bc-name, .bc-row .bc-name { min-height: 0; }
+.bc-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; height: 36px; overflow: hidden; overflow-wrap: anywhere; font: 600 15px/18px var(--ui); color: var(--ink); text-decoration: none; }
+.bc-name::after { content: ''; position: absolute; inset: 0; }
+.bc-sub { min-width: 0; color: var(--graphite); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.bc-foot { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 8px 8px 12px; }
+.bc-here { position: relative; z-index: 1; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.bc-here .here-sq, .bc-here .here-more { width: 20px; height: 20px; font-size: 9px; }
+.bc-here .here-more { min-width: 20px; font-size: 10px; }
+.bc-spacer { flex: 1 1 auto; }
+.bc-foot .badge.tag-green { background: var(--tag-green); color: var(--on-tag-green); }
+.bc-foot .badge.tag-red { background: var(--tag-red); color: var(--on-tag-red); }
+.bc-more { position: relative; z-index: 1; display: grid; place-items: center; width: 32px; height: 32px; min-height: 0; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--graphite); opacity: 0; }
+.bc:hover .bc-more, .bc:focus-within .bc-more, .bc-more[aria-expanded='true'] { opacity: 1; }
+.bc-more:hover { background: var(--page-hover); color: var(--ink); }
+@media (hover: none) { .bc-more { opacity: 1; } }
+@media (pointer: coarse) { .bc-more { width: 44px; height: 44px; } }
+
+/* the ⋯ menu: the shipped popover and menu items, at card width */
+.popover.bc-menu { width: 216px; min-width: 216px; padding: 6px; }
+.bc-menu .menu-item { justify-content: space-between; width: 100%; font-size: 13px; font-weight: 500; }
+.bc-menu .menu-hint { color: var(--tray-muted); }
+
+/* the dashed New board tile at the end of a team grid */
+.bc-new { display: grid; place-items: center; align-content: center; gap: 6px; min-height: 120px; padding: 12px; border: 0; border-radius: var(--radius-sm); background: none; color: var(--graphite); font: inherit; font-size: 13px; font-weight: 600; outline: 1px dashed var(--page-hairline); outline-offset: -1px; }
+.bc-new:hover, .bc-new:focus-visible { color: var(--ink); outline-color: var(--ink); }
+
+/* an empty section: a dashed box with a line of text and a primary action */
+.bc-empty { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px; border-radius: var(--radius-sm); outline: 1px dashed var(--page-hairline); outline-offset: -1px; color: var(--graphite); }
+.bc-empty b { color: var(--ink); font-weight: 600; }
+
+/* loading: the geometry of a card, so nothing moves when the data lands */
+.bc-skel .bc-thumb { background: color-mix(in srgb, var(--ink) 6%, var(--paper)); box-shadow: none; }
+.bc-skel-line { display: block; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.bc-skel .bc-body { gap: 8px; padding-top: 16px; }
+.bc-skel .bc-foot { padding-bottom: 12px; }
+@media (prefers-reduced-motion: no-preference) {
+  .bc-skel .bc-thumb, .bc-skel-line { animation: bc-pulse 1.4s ease-in-out infinite; }
+  @keyframes bc-pulse { 50% { opacity: 0.55; } }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bc-skel .bc-thumb, .bc-skel-line { animation: none; }
+}
+
+/* first run: the welcome above the template cards */
+.bc-welcome-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; }
+.bc-welcome-lede { margin: 16px 0 16px; color: var(--graphite); font-size: 14px; }
+.bc-skip { display: flex; justify-content: flex-start; margin-top: 16px; }
+
+/* list view: the same columns as the reference (thumb, name, here now, last edited, access, more) */
+.bc-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--page-hairline); }
+.bc-row { position: relative; display: grid; grid-template-columns: 72px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) 80px 32px; align-items: center; gap: 16px; min-height: 64px; padding: 8px; border-bottom: 1px solid var(--page-hairline); border-radius: var(--radius-sm); }
+.bc-row:hover, .bc-row:focus-within { background: var(--page-hover); }
+.bc-row .bc-thumb { aspect-ratio: 16 / 10; margin: 0; }
+.bc-row .bc-name { font-size: 14px; }
+.bc-row .bc-col { min-width: 0; }
+.bc-row .bc-more { opacity: 0; }
+.bc-row:hover .bc-more, .bc-row:focus-within .bc-more, .bc-row .bc-more[aria-expanded='true'] { opacity: 1; }
+.bc-lhead { display: grid; grid-template-columns: 72px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) 80px 32px; gap: 16px; padding: 0 8px 8px; color: var(--graphite); font-size: 12px; font-weight: 600; }
+
+@media (max-width: 720px) {
+  .bc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .bc-thumb { margin: 6px 6px 0; }
+  .bc-body { padding: 10px 10px 4px; }
+  .bc-name { font-size: 14px; line-height: 18px; }
+  .bc-foot { padding: 0 4px 4px 10px; }
+  .bc-empty { flex-direction: column; align-items: flex-start; }
+  .bc-row { grid-template-columns: 64px minmax(0, 1fr) 40px; gap: 12px; }
+  .bc-row .bc-col-hide, .bc-lhead { display: none; }
+  .bc-row .bc-more { opacity: 1; width: 40px; height: 40px; }
+  .bc-search { flex: 1 1 100%; max-width: none; }
+}
+@media (max-width: 419px) {
+  .bc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.bc-toolbar .segmented button { flex: 1 0 auto; } /* labels are never cut: the row grows; the marker follows each button's own box */

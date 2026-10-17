@@ -114,6 +114,8 @@ export default defineConfig({
   plugins: [docsPages, demoConfigPlugin, demoBuildPlugin(), swVersionPlugin()],
   // Tracker and board deep links are HTML5 paths and must reach the SPA entry in development too.
   appType: 'spa',
+  // DEV ONLY: a second dev server on the same checkout names its own dependency cache (scripts/dev-boards-real.mjs). Unset: Vite's default.
+  cacheDir: process.env.VITE_CACHE_DIR || undefined,
   server: {
     port: vitePort,
     strictPort: true,

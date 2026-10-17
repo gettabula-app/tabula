@@ -315,6 +315,8 @@ Behaviour:
 
 ## Licences and attribution
 
+Fonts. Fontshare fonts are free for personal and commercial use under ITF's Free Font License, which restricts redistributing or serving the font files. Tabula therefore loads those fonts only from Fontshare's own servers, caches them in the user's browser for offline use, and stores boards with font names, never font files. The relay never serves Fontshare fonts. The one font Tabula bundles is Newsreader, the serif used for titles (SIL Open Font License 1.1, a variable Latin subset served from the app itself, see [the third-party notices](third-party-notices.md)). PNG export inlines the fonts temporarily inside the browser to rasterise text; only pixels leave the device.
+
 The build and the client share one rule, keyed on `info.license.spdx` exactly (a value that is not a single id, such as `MIT OR Apache-2.0`, is unknown and blocked):
 
 | Class | SPDX ids | Obligation | What the app does |

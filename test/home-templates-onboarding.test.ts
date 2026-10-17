@@ -5,7 +5,7 @@ import { openCreateTeam, openWorkspaceMembers } from '../src/ui/teams';
 import { resolveRoute } from '../src/route';
 import { renderTemplates } from '../src/ui/templates-page';
 import { createTopbar } from '../src/ui/topbar';
-import { control, FakeElement, FakeEvent, flush, hasControl, installFakeBrowser, need, textOf, type FakeBrowser } from './fake-dom';
+import { control, FakeDOMParser, FakeElement, FakeEvent, flush, hasControl, installFakeBrowser, need, textOf, type FakeBrowser } from './fake-dom';
 
 vi.mock('../src/ui/teams', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/ui/teams')>()),
@@ -32,6 +32,7 @@ beforeEach(() => {
   browser = installFakeBrowser();
   templateStore.rows = [];
   vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) => { fn(0); return 1; });
+  vi.stubGlobal('DOMParser', FakeDOMParser);
 });
 
 afterEach(async () => {
@@ -140,7 +141,7 @@ describe('template suggestions on the Boards page', () => {
     const storage = memoryStorage();
     useStorage(storage);
     const page = accountPage(accountView(openNav(), 'member', 'u1'), emptyAccountData) as unknown as FakeElement;
-    const strip = need(page, '.home-templates');
+    const strip = need(page, '.bc-welcome');
     control(strip, 'Hide the template suggestions').click();
     expect(storage.getItem('driftboard:home-template-suggestions:u1')).toBe('hidden');
     expect(storage.getItem('driftboard:home-template-suggestions:open')).toBeNull();
@@ -373,13 +374,13 @@ describe('template navigation', () => {
     expect(textOf(need(root, '.home-title'))).toBe('Templates');
   });
 
-  it('keeps the template strip hidden while account data is loading', () => {
+  it('shows no template cards while account data is loading', () => {
     useStorage(memoryStorage());
     const page = accountPage(accountView(openNav()), null) as unknown as FakeElement;
-    expect(need(page, '.home-templates').hidden).toBe(true);
+    expect(page.querySelector('.bc-welcome')).toBeNull();
   });
 
-  it('shows an empty team as one line with no buttons, and the team header New board creates its board', () => {
+  it('shows an empty team as its empty line with New board, and the team header New board creates its board', () => {
     useStorage(memoryStorage());
     const nav = openNav();
     const data = {
@@ -388,17 +389,20 @@ describe('template navigation', () => {
     } as never;
     const page = accountPage(accountView(nav), data) as unknown as FakeElement;
     const team = groupLabelled(page, 'Team one');
-    const line = need(team, '.home-empty');
-    expect(textOf(line)).toBe('No boards yet. Create the first one.');
-    expect(line.querySelectorAll('button, a')).toHaveLength(0);
+    const line = need(team, '.bc-empty');
+    expect(textOf(need(line, 'b'))).toBe('No boards in Team one yet.');
+    expect(textOf(need(line, 'span'))).toBe('No boards in Team one yet. Boards you make here are shared with the team.');
+    controlWithin(line, 'New board').click();
+    expect(nav.open).toHaveBeenLastCalledWith(expect.any(String), { teamId: 't1' });
     controlWithin(need(team, '.group-actions'), 'New board').click();
-    expect(nav.open).toHaveBeenCalledWith(expect.any(String), { teamId: 't1' });
+    expect(nav.open).toHaveBeenCalledTimes(2);
+    expect(nav.open).toHaveBeenLastCalledWith(expect.any(String), { teamId: 't1' });
   });
 });
 
-/** The board group whose aria-label is `label`. Found by walking the tree: the fake DOM's selectors cannot read a quoted value with a space in it. */
+/** The board section whose heading is `label`. Found by walking the tree: the fake DOM's selectors cannot read a quoted value with a space in it. */
 function groupLabelled(root: FakeElement, label: string) {
-  const found = root.querySelectorAll('.board-group').find((el) => el.getAttribute('aria-label') === label);
+  const found = root.querySelectorAll('.bc-group').find((el) => textOf(el.querySelector('h2')) === label);
   if (!found) throw new Error(`no board group labelled ${label} in: ${textOf(root).slice(0, 300)}`);
   return found;
 }

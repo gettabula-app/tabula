@@ -750,6 +750,10 @@ select.input {
 .board-menu-group { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; border-top: 1px solid var(--tray-line); }
 .board-menu-group:first-child { border-top: 0; }
 .board-menu-group[hidden], .board-menu-footer[hidden] { display: none; }
+/* the picture-on-the-card switch (ui/board-preview-toggle.ts): hidden until the server answers, and while a menu search leaves it out */
+.board-preview-toggle { display: flex; flex-direction: column; gap: 2px; padding: 4px 10px 6px; }
+.board-preview-toggle[hidden], .board-preview-toggle.is-filtered { display: none; }
+.board-preview-help { margin: 0 0 0 0; padding-left: 2px; color: var(--tray-muted); font-size: 12px; line-height: 1.4; }
 .board-menu-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-menu-account { display: flex; align-items: center; gap: 10px; padding: 8px 10px; color: var(--tray-text); }
 .board-menu-account > .ico { flex: none; }

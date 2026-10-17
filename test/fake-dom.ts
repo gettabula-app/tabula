@@ -485,3 +485,16 @@ export async function flush(times = 12) {
   else await new Promise((resolve) => setImmediate(resolve));
   for (let i = 0; i < times; i++) await Promise.resolve();
 }
+
+/**
+ * The browser's DOMParser is not in node. This stand-in returns an svg root (with its viewBox) for svg markup, and a parser error root
+ * for anything else, which is what a browser does with markup that is not svg. Stub it with vi.stubGlobal where a card has a picture.
+ */
+export class FakeDOMParser {
+  parseFromString(markup: string) {
+    const root = new FakeElement(/^<svg[\s>]/u.test(markup) ? 'svg' : 'parsererror');
+    const view = /viewBox="([^"]*)"/u.exec(markup);
+    if (view) root.setAttribute('viewBox', view[1]);
+    return { documentElement: root };
+  }
+}

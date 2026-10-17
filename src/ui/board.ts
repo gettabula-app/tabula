@@ -54,7 +54,8 @@ import { deviceIdentity } from '../board-user';
 import { getRelaySetting, relayUrl, saveUser, setRelaySetting } from '../sync';
 import { isDesktop } from '../desktop-env';
 import { api } from '../api';
-import { authState, chatAvailable, imagesAvailable, onAuth, setSignedOut, signOut } from '../auth';
+import { authState, boardPreviewsAvailable, chatAvailable, imagesAvailable, onAuth, setSignedOut, signOut } from '../auth';
+import { mayToggleBoardPreview, previewToggle } from './board-preview-toggle';
 import { boardAccess, workspaceOf } from '../cloud-logic';
 import { denialForGuestSession, guestAccessEnded, GUEST_ENDED_SYNC_LABEL, GUEST_ENDED_SYNC_TIP } from '../guest-access';
 import { CANVAS_INK, STICKY_COLORS, colorName } from '../palette';
@@ -1166,12 +1167,23 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   const tracker = !DEMO && !demo && !scratch && trackerAllowed(auth)
     ? item('layers', 'Tracker', () => { navigateTrackerPath({ kind: 'view', view: 'all' }); })
     : null;
+  // the owner's and a workspace admin's switch for the board's picture on its card (ui/board-preview-toggle.ts)
+  const signedIn = auth.mode === 'signed-in';
+  const boardPreview = !DEMO && !demo && !scratch && app.boardId && mayToggleBoardPreview({
+    signedIn,
+    boardRole: app.role,
+    workspaceRole: signedIn ? auth.me?.user.role : undefined,
+    serverOn: boardPreviewsAvailable(),
+  })
+    ? previewToggle(app.boardId, undefined, { readOnly: app.readOnly })
+    : null;
 
   const boardRows = [
     tracker,
     chatNarrow,
     ...account,
     writeItem('grid', 'Board settings', () => openSettings(app, demo)),
+    boardPreview?.el ?? null,
     demo ? writeItem('vote', 'Try dot voting', () => startVote(app, { kind: 'stickies' })) : null,
     scratch || demo || !canSaveTemplate(auth.mode) ? null : writeItem('templates', 'Save board as template', () => openSaveTemplate(app, 'board')),
     demo
@@ -1249,6 +1261,8 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
   const importGroup = section('board-menu-import', ...importRows);
   const exportGroup = section('board-menu-export', exportTrigger, exportPanel);
   const themeGroup = section('board-menu-appearance', themeTrigger, themePanel);
+  // the switch asks the server for the board's setting each time the menu opens
+  void boardPreview?.load();
 
   const search = h('input', {
     class: 'input board-menu-search-input',
@@ -1324,6 +1338,7 @@ function openMenu(app: BoardApp, anchor: HTMLElement, openHistory: (() => void) 
 
   function filterMenu(): void {
     const query = search.value.trim().toLocaleLowerCase();
+    boardPreview?.el.classList.toggle('is-filtered', query !== '' && !boardPreview.matches(query));
     const optionRows = (panel: HTMLElement) => Array.from(panel.querySelectorAll<HTMLButtonElement>('.menu-item[data-menu-label]'));
     const childMatches = (panel: HTMLElement) => optionRows(panel).some((row) => row.dataset.menuLabel?.toLocaleLowerCase().includes(query));
     const exportMatches = query !== '' && childMatches(exportPanel);

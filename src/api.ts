@@ -366,6 +366,10 @@ export interface ServerBoard {
   role: BoardRole;
   createdAt: number;
   updatedAt: number;
+  /** Who last edited the board: a person's current name ("A former member" once they are gone), or an agent's token name. */
+  lastEditedBy?: string | null;
+  lastEditedKind?: 'person' | 'agent' | null;
+  lastEditedAt?: number | null;
 }
 
 export interface BoardPresencePerson {
@@ -855,7 +859,7 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
   };
 
   return {
-    config: () => call<{ authEnabled: boolean; images?: boolean; linkPreviews?: boolean; joinCodes?: boolean }>('GET', '/api/config'),
+    config: () => call<{ authEnabled: boolean; images?: boolean; linkPreviews?: boolean; boardPreviews?: boolean; joinCodes?: boolean }>('GET', '/api/config'),
     me: () => call<Me>('GET', '/api/me'),
     updateMe: (name: string) => call<ApiUser>('PATCH', '/api/me', { name }),
     requestLogin: (email: string, invite?: string, oauthRequest?: string) => {
@@ -901,6 +905,9 @@ export function createApi(fetchFn: typeof fetch = (...a) => fetch(...a), options
     /** Asks for a file another board of the caller's already holds, without sending bytes. */
     claimAsset: (boardId: string, hash: string) => call<AssetInfo>('POST', `/api/boards/${seg(boardId)}/assets/claim`, { hash }),
     /** A link card's preview: the relay reads the page once and stores its image and icon as this board's assets (docs/link-cards.md). */
+    /** GET and PUT /api/boards/:id/preview-off: whether a board keeps no picture on its card. Only its owner or a workspace admin may read or change it. */
+    boardPreviewOff: (id: string) => call<{ off: boolean }>('GET', `/api/boards/${seg(id)}/preview-off`),
+    setBoardPreviewOff: (id: string, off: boolean) => call<{ off: boolean }>('PUT', `/api/boards/${seg(id)}/preview-off`, { off }),
     unfurl: (boardId: string, url: string, refresh = false) => call<unknown>('POST', `/api/boards/${seg(boardId)}/unfurl`, { url, ...(refresh ? { refresh: true } : {}) }, UNFURL_TIMEOUT_MS),
     shares: (boardId: string) => call<Share[]>('GET', `/api/boards/${seg(boardId)}/shares`),
     share: (boardId: string, grant: { principalType: PrincipalType; principalId: string; role: ShareRole }) =>

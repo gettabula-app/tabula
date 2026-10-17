@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { accountPage } from '../src/ui/home';
-import { FakeElement, flush, hasControl, installFakeBrowser, need, textOf, type FakeBrowser } from './fake-dom';
+import { FakeDOMParser, FakeElement, flush, hasControl, installFakeBrowser, need, textOf, type FakeBrowser } from './fake-dom';
 
 // Slice 4 P3: a signed-in person with no boards still sees the Boards toolbar, so the New board menu and New team stay reachable,
-// and the template strip under the empty state still offers templates.
+// and the templates as cards under the empty state still offer a start (TAB-375: the welcome cards replace the template strip).
 let browser: FakeBrowser;
 beforeEach(() => {
   browser = installFakeBrowser();
   vi.stubGlobal('Element', FakeElement);
   vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) => { fn(0); return 1; });
+  vi.stubGlobal('DOMParser', FakeDOMParser);
 });
 afterEach(async () => {
   // a popover arms its outside-click listener on a timer (src/ui/common.ts): let that run while the fake window is still here
@@ -38,9 +39,9 @@ describe('the Boards page of an account with no boards', () => {
     expect(textOf(need(page, '.home-empty-state h2'))).toBe('No boards yet');
     // the template strip right below carries the templates, so the empty state does not repeat them
     expect(need(page, '.home-empty-state').querySelectorAll('button, a').map(textOf)).toEqual(['New board']);
-    expect(need(page, '.home-templates').hidden).toBe(false);
-    // both are children of the .home grid, so its one section gap separates them
-    expect(need(page, '.home-templates').parentNode).toBe(need(page, '.home-groups').parentNode);
+    expect(need(page, '.bc-welcome').hidden).toBeFalsy();
+    // both sit in the .home grid (the welcome in its own wrapper), so its one section gap separates them
+    expect((need(page, '.bc-welcome').parentNode as FakeElement).parentNode).toBe(need(page, '.home-groups').parentNode);
   });
 
   it('keeps Import file in the empty-state New board menu', async () => {

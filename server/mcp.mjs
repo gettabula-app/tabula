@@ -465,7 +465,7 @@ export function createMcp({ config, directory, cloud = null, canWriteRoom, roomA
       writeBoard(fn) {
         authorise(actor, boardId, 'write', 'board');
         const call = currentCall;
-        return roomAccess.write(boardId, origin, fn, { actor: trackerActor(actor), source: 'mcp', ...(call ? { activity: { onDiff: (diff) => call.diffs.push(diff) } } : {}) });
+        return roomAccess.write(boardId, origin, fn, { actor: trackerActor(actor), source: 'mcp', editedBy: { name: agentParts({ tokenName: actor.tokenName, userName: actor.userName }).token }, ...(call ? { activity: { onDiff: (diff) => call.diffs.push(diff) } } : {}) });
       },
       writeComments(fn, { threadId = null } = {}) {
         authorise(actor, boardId, 'comment', 'comments');

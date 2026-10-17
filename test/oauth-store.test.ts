@@ -81,9 +81,9 @@ describe('OAuth grants bound to boards', () => {
 describe('OAuth store migration and persistence', () => {
   it('applies migration 16 with cascading user foreign keys and unique token digests', () => {
     const d = directory();
-    expect(MIGRATIONS).toHaveLength(20);
+    expect(MIGRATIONS).toHaveLength(21);
     expect(MIGRATIONS[15]).toMatchObject({ sql: OAUTH_MIGRATION, minReader: 11 });
-    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 20 });
+    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: MIGRATIONS.length });
 
     const fixture = grant(d);
     const pair = d.oauthInternals!.issueTokens({ grantId: fixture.value.id, scope: 'write', now: T0 });
@@ -577,7 +577,7 @@ describe('OAuth ticket ceiling (TAB-365)', () => {
 
     const d = openDirectory(file, { oauthSecret: SECRET, oauthInternals: true });
     directories.push(d);
-    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 20 });
+    expect(d.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: MIGRATIONS.length });
     expect(d.db.prepare("SELECT id, scope, tracker FROM oauth_grants WHERE id = 'g1'").get()).toEqual({ id: 'g1', scope: 'write', tracker: null });
     expect(d.listGrants('u1', T0 + 1)).toMatchObject([{ id: 'g1', scope: 'write', tracker: null }]);
   });
