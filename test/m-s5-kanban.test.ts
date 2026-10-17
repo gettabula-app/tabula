@@ -26,7 +26,7 @@ const draw = (store: Store, id: Id, ctx: MarkupCtx) => objectMarkup(store.getPla
 describe('M-S5 kanban styling', () => {
   it('draws paper cards with rounded hairlines, sentence-case label dots and calendar due dates', () => {
     const { store, card, ctx } = fixture();
-    store.transact(() => store.update(card, { labels: ['ui'], due: '2026-10-10', ownerName: 'Johan Saldes', ownerId: 'u1' }));
+    store.transact(() => store.update(card, { labels: ['ui'], due: '2026-10-10', ownerName: 'Alex Berg', ownerId: 'u1' }));
 
     const svg = draw(store, card, ctx);
     expect(svg).toContain('rx="8"');

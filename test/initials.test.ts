@@ -54,7 +54,7 @@ describe('wordInitials (first two words)', () => {
 
 describe('firstLastInitials (first and last word)', () => {
   it.each([
-    ['two words', 'Johan Saldes', 'JS'],
+    ['two words', 'Alex Berg', 'AB'],
     ['first and last of three', 'Ana Lima Souza', 'AS'],
     ['one word', 'Lea', 'L'],
     ['blank', '  ', ''],
