@@ -37,6 +37,8 @@ From top to bottom:
 - A dot vote button and a quick poll button.
 - **Undo** and **Redo**.
 
+The first row of the toolbar is a **Hide toolbar** button, with a left-pointing chevron. Clicking it folds the toolbar into a small **Show toolbar** tab on the left edge of the window. Click that tab to show the toolbar again. The board does not move while the toolbar is hidden, and the tools still work with their shortcuts. Your choice is kept on this device.
+
 Hover over a button for half a second, or move keyboard focus onto it, to see a tooltip with its name and, where it has one, its shortcut as a key chip; `Esc` closes it. Tooltips do not appear on touch screens. On a board you can only view, only **Select** and **Hand** stay active (and **Comment**, if you are allowed to comment).
 
 ### Quick-action bar

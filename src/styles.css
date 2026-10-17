@@ -378,9 +378,10 @@ select.input {
 
 .rail { position: absolute; left: calc(12px + var(--safe-left)); top: calc(72px + var(--safe-top)); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; max-height: calc(100% - 96px - var(--safe-top) - var(--safe-bottom)); overflow: hidden; scrollbar-width: none; }
 @media (max-height: 820px) {
-  .rail { gap: 1px; }
+  /* the rail may run to 12 px from the window's bottom (as the zoom tray does), so the tools fit without a scroll */
+  .rail { gap: 0; max-height: calc(100% - 84px - var(--safe-top) - var(--safe-bottom)); }
   .rail .rail-btn { width: 34px; height: 34px; }
-  .rail hr { margin: 2px 0; }
+  .rail hr { margin: 1px 0; }
 }
 .rail-btn { width: 40px; height: 40px; position: relative; }
 /* TAB-272: when constrained, only the tools scroll; Undo and Redo stay in the sibling block below it. */

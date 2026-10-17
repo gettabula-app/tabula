@@ -15,7 +15,7 @@ const labels = [
   { id: 'label-bug', name: 'Bug', color: '#D64545' },
 ];
 const members = [
-  { userId: 'user-me', name: 'Johan', initials: 'JO' },
+  { userId: 'user-me', name: 'Alex Berg', initials: 'AB' },
   { userId: 'user-mara', name: 'Mara', initials: 'MA' },
   { userId: 'user-ana', name: 'Ana', initials: 'AN' },
 ];

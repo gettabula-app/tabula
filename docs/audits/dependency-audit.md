@@ -1,7 +1,7 @@
 # Production dependency and licence audit
 
 **Snapshot:** 2026-10-10
-**Repository/base:** `/Volumes/External/tabula/tabula`, `0028c5b420525552967b8d905b6338f212d61f79` (`origin/main` after fetch)
+**Repository/base:** the tabula repository, `0028c5b420525552967b8d905b6338f212d61f79` (`origin/main` after fetch)
 **Product licence:** `AGPL-3.0-only` (`package.json`, root `LICENSE`)
 
 > **Note, 16 October 2026:** the product licence is now `FSL-1.1-ALv2` from v5.4.3 (`AGPL-3.0-only` up to v5.4.2). This audit is a snapshot of 10 October 2026 and is left as written; the findings below were made when the product licence was `AGPL-3.0-only`.

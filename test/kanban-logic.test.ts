@@ -198,7 +198,7 @@ describe('the Overdue filter', () => {
 
 describe('initials', () => {
   it('takes the first and last word', () => {
-    expect(initials('Johan Saldes')).toBe('JS');
+    expect(initials('Alex Berg')).toBe('AB');
     expect(initials('ana maria novak')).toBe('AN');
     expect(initials('Lea')).toBe('L');
     expect(initials('  ')).toBe('?');

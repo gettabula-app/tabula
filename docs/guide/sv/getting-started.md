@@ -37,6 +37,8 @@ Uppifrån och ned:
 - En knapp för punktröstning och en knapp för snabbomröstning.
 - **Undo** (Ångra) och **Redo** (Gör om).
 
+Den första raden i verktygsfältet är knappen **Hide toolbar** (Dölj verktygsfältet), med en pil åt vänster. När du klickar på den viks verktygsfältet ihop till en liten flik som heter **Show toolbar** (Visa verktygsfältet), längs fönstrets vänstra kant. Klicka på fliken för att visa verktygsfältet igen. Tavlan flyttar sig inte medan verktygsfältet är dolt, och verktygen fungerar fortfarande med sina kortkommandon. Ditt val sparas på den här enheten.
+
 Håll pekaren över en knapp i en halv sekund eller flytta tangentbordsfokus till den för att se ett verktygstips med namnet och, om det finns, kortkommandot som en tangentbricka. `Esc` stänger verktygstipset. Verktygstips visas inte på pekskärmar. På en tavla som du bara får visa är bara **Select** och **Hand** aktiva (och **Comment** om du får kommentera).
 
 ### Snabbåtgärdsfältet

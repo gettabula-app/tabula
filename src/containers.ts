@@ -12,7 +12,7 @@ import type { BaseObj, ChecklistItem, Id, Obj, Point } from './types';
 import { isOwnAuthor, type Who } from './identity';
 import { cardContentHeight } from './markup';
 import { cleanCardLabels, listLabels } from './labels';
-import { checklistForWrite } from './checklist';
+import { checklistForWrite, removeItem } from './checklist';
 import { STICKY_COLORS } from './palette';
 import { cardFillFromSticky, joinCardText, laneMoveIndex, readingOrder, splitStickyText, stickyFillFromCard, wipFullMessage, type Stage } from './ui/kanban-logic';
 
@@ -106,18 +106,16 @@ export function addCardRefusal(store: Store, laneId: Id): string | null {
 }
 
 /**
- * Adds a card with this title at the end of a lane: one transaction, one undo step. Whitespace is collapsed and overlong
- * titles are refused by code-point count; its height is stored so every client lays it out the same.
+ * A new card for a lane and the rank writes that make room for it at `index` among the lane's cards (the end when omitted).
+ * Null when the lane has no place for a card (not a lane, no layout, read-only) or the title is empty. Writes nothing.
  */
-export function addCard(store: Store, laneId: Id, title: string, base: { createdBy: string; font?: string }): Id | null {
+function newCardInLane(store: Store, laneId: Id, index: number | undefined, text: string, base: { createdBy: string; font?: string }) {
   const lane = store.get(laneId);
-  const text = cleanCardTitle(title);
-  if (codePointLength(text) > LIMITS.title) return null;
   if (lane?.type !== 'lane' || !lane.parent || !text || store.readOnly) return null;
   const layout = store.containerLayout(lane.parent);
-  if (!layout || addCardRefusal(store, laneId)) return null;
+  if (!layout) return null;
   const siblings = (layout.cards.get(laneId) ?? []).map((id) => store.get(id)!).filter(Boolean);
-  const { ranks, repairs } = planInsert(siblings, laneId, siblings.length, 1);
+  const { ranks, repairs } = planInsert(siblings, laneId, index ?? siblings.length, 1);
   const r = layout.rects.get(laneId)!;
   const w = r.w - KANBAN.lanePad * 2;
   const card: BaseObj = {
@@ -125,13 +123,54 @@ export function addCard(store: Store, laneId: Id, title: string, base: { created
     rotation: 0, z: lane.z, createdBy: base.createdBy, updatedAt: Date.now(), font: base.font,
   };
   card.h = cardContentHeight(card, w);
+  return { card, repairs };
+}
+
+/**
+ * Adds a card with this title at the end of a lane: one transaction, one undo step. Whitespace is collapsed and overlong
+ * titles are refused by code-point count; its height is stored so every client lays it out the same.
+ */
+export function addCard(store: Store, laneId: Id, title: string, base: { createdBy: string; font?: string }): Id | null {
+  const text = cleanCardTitle(title);
+  if (codePointLength(text) > LIMITS.title) return null;
+  const made = newCardInLane(store, laneId, undefined, text, base);
+  if (!made || addCardRefusal(store, laneId)) return null;
   store.undo.stopCapturing();
   store.transact(() => {
-    for (const p of repairs) store.update(p.id, { parent: p.parent, rank: p.rank });
-    store.create(card);
+    for (const p of made.repairs) store.update(p.id, { parent: p.parent, rank: p.rank });
+    store.create(made.card);
   });
   store.undo.stopCapturing();
-  return store.get(card.id) ? card.id : null;
+  return store.get(made.card.id) ? made.card.id : null;
+}
+
+/**
+ * Turns one checklist item into a card (TAB-372): a new card in the same lane, directly below the card the item is on, titled
+ * with the item's text, and the item leaves the card's checklist. One transaction, one undo step. Nothing is written when it
+ * cannot be done; the refusal says why (a full lane, the board's card limit, a locked card, a read-only board).
+ */
+export function checklistItemToCard(store: Store, cardId: Id, itemId: Id, base: { createdBy: string; font?: string }): { id: Id } | { refusal: string } {
+  const card = store.get(cardId) as BaseObj | undefined;
+  if (card?.type !== 'card' || !card.checklist?.some((i) => i.id === itemId)) return { refusal: 'That item is no longer on this card.' };
+  if (card.locked || store.readOnly) return { refusal: 'This card cannot be changed right now.' };
+  const lane = card.parent ? store.get(card.parent) : undefined;
+  if (lane?.type !== 'lane' || !lane.parent) return { refusal: 'Only a card in a lane can turn an item into a card.' };
+  const item = card.checklist.find((i) => i.id === itemId)!;
+  const at = (store.containerLayout(lane.parent)?.cards.get(lane.id) ?? []).indexOf(cardId);
+  const made = at < 0 ? null : newCardInLane(store, lane.id, at + 1, cleanCardTitle(item.text), base);
+  if (!made) return { refusal: 'There is no place for a new card here.' };
+  const refusal = addCardRefusal(store, lane.id);
+  if (refusal) return { refusal };
+  const fields = cardFields(store, card, { checklist: removeItem(card.checklist, itemId) });
+  if (!fields) return { refusal: 'The checklist could not be saved.' };
+  store.undo.stopCapturing();
+  store.transact(() => {
+    for (const p of made.repairs) store.update(p.id, { parent: p.parent, rank: p.rank });
+    store.create(made.card);
+    store.update(cardId, fields);
+  });
+  store.undo.stopCapturing();
+  return { id: made.card.id };
 }
 
 /**
@@ -319,7 +358,7 @@ const cardWidth = (store: Store, card: Obj) => (store.isLaidOut(card) ? store.ge
  * URL up to 2,000 characters, labels only ones the board has (which also drops ids of deleted labels, docs/kanban.md,
  * Labels), a checklist that passes the checklist rules (src/checklist.ts: refused, not cut) and colours through `kanbanColor`.
  * Owner id, name and kind are one patch. Null when the patch asks for something that is not allowed. The height follows from
- * the result, as the writer stores it; a checklist does not change it.
+ * the result, as the writer stores it: a checklist with items adds its progress row, one with none adds nothing.
  */
 export function cardFields(store: Store, card: BaseObj, patch: CardPatch): Partial<BaseObj> | null {
   const out: Partial<BaseObj> = {};

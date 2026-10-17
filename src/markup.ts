@@ -25,6 +25,7 @@ import { codeMarkup, getCodeTokens } from './code-markup';
 import { codeScroll } from './code-view';
 import { linkedCardHeaderMarkup } from './tracker/ui/linked-card-style';
 import type { TrackerPriority, TrackerStateCategory } from './tracker-types';
+import { checklistProgress, progressLabel, type ChecklistProgress } from './checklist';
 import { CARD, addRow, cardHeight, dueChip, emptyBox, initials, laneCount, laneMenuRect, localToday, lowDetail, wipFullMessage, type FilterChip } from './ui/kanban-logic';
 
 /** A block of cells of one table: its first and last row and column index (either order). */
@@ -387,6 +388,9 @@ const K = {
   canceledBadge: 'color-mix(in srgb, var(--danger, #D41E24) 15%, var(--paper, #FFFFFF))',
   edge: 'var(--rule, #EAEAEA)',
   dash: 'color-mix(in srgb, var(--canvas-ink, #18212B) 40%, transparent)',
+  /** The checklist bar: its track, and its fill (a complete checklist fills in full ink instead). */
+  progressTrack: 'color-mix(in srgb, var(--ink, #18212B) 14%, transparent)',
+  progressFill: 'color-mix(in srgb, var(--ink, #18212B) 72%, transparent)',
 };
 
 /**
@@ -464,10 +468,12 @@ export function cardTitleLines(o: BaseObj, w: number): string[] {
 }
 
 const hasMeta = (o: BaseObj) => !!(o.due || o.ownerName || o.ownerId);
+/** One predicate for the progress row, in the height and in the drawing: a card with at least one item. */
+const hasChecklist = (o: BaseObj) => checklistProgress(o).total > 0;
 
 /** The height a card needs at width `w`, which its writer stores as `h` (docs/kanban.md, Layout: nothing measures on read). */
 export function cardContentHeight(o: BaseObj, w: number): number {
-  return cardHeight({ lines: cardTitleLines(o, w).length, labels: !!o.labels?.length, meta: hasMeta(o) })
+  return cardHeight({ lines: cardTitleLines(o, w).length, labels: !!o.labels?.length, meta: hasMeta(o), checklist: hasChecklist(o) })
     + (o.extProvider === 'tabula' ? CARD.titleLine : 0);
 }
 
@@ -673,6 +679,36 @@ function cardMarkup(o: BaseObj, ctx: MarkupCtx) {
   return wrapG(o, cardBody(o, ctx), ctx.dimmed?.(o) ? 0.35 : 1);
 }
 
+/**
+ * A card's checklist progress (TAB-372), the row under its details: a 14px box (outlined, ticked once an item is done, filled
+ * with a paper tick when all are), the count as `done/total`, and a 3px bar with the share done, out to the right padding.
+ * The bar starts after the count, at 7 a character. Below zoom 0.4 only the bar, across the whole row. `top` is the row's
+ * top, 16 high; the title is the tooltip and the screen-reader name.
+ */
+function checklistRowMarkup(p: ChecklistProgress, top: number, w: number, low: boolean, font: string | undefined): string {
+  const chip = progressLabel(p);
+  if (!chip) return '';
+  const padL = CARD.padX;
+  const text = `${p.done}/${p.total}`;
+  const barX = low ? padL : padL + 19 + text.length * 7 + 8;
+  const barW = Math.max(0, w - CARD.padX - barX);
+  const barY = top + 6.5;
+  const share = Math.min(p.done, p.total) / p.total;
+  const tick = 'M3.8 7.2l2.3 2.3 4.1-4.6';
+  let g = `<title>Checklist: ${p.done} of ${p.total} done</title>`;
+  g += `<rect x="${n(barX)}" y="${n(barY)}" width="${n(barW)}" height="3" rx="1.5" ${fillStyle(K.progressTrack)}/>`;
+  g += `<rect x="${n(barX)}" y="${n(barY)}" width="${n(barW * share)}" height="3" rx="1.5" ${fillStyle(chip.complete ? K.ink : K.progressFill)}/>`;
+  if (!low) {
+    const box = chip.complete
+      ? `<rect width="14" height="14" rx="2.5" ${fillStyle(K.ink)}/><path d="${tick}" ${strokeStyle(K.paper)} stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`
+      : `<rect x="0.6" y="0.6" width="12.8" height="12.8" rx="2.5" ${strokeStyle(K.cardMeta)} stroke-width="1.2"/>`
+        + (p.done > 0 ? `<path d="${tick}" ${strokeStyle(K.cardMeta)} stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>` : '');
+    g += `<g transform="translate(${n(padL)} ${n(top + 1)})">${box}</g>`;
+    g += `<text x="${n(padL + 19)}" y="${n(top + 12)}" font-family="${escapeXml(fontFamily(font))}" font-size="12" font-weight="${chip.complete ? 600 : 400}" style="fill:${escapeXml(chip.complete ? K.ink : K.cardMeta)};font-variant-numeric:tabular-nums">${escapeXml(text)}</text>`;
+  }
+  return `<g class="k-checklist">${g}</g>`;
+}
+
 /** A card's drawing in its own coordinates, without the group that places it: the board draws it, and so does the drag ghost. */
 export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' = 'hairline'): string {
   const w = o.w, h = o.h;
@@ -787,6 +823,12 @@ export function cardBody(o: BaseObj, ctx: MarkupCtx, edge: 'hairline' | 'ghost' 
         inner += `<g><title>${comments} ${comments === 1 ? 'comment' : 'comments'}</title>${kIcon(ICON_COMMENT, right - tw - 16, cy - 7, 14, K.cardMeta)}${label(text, right, cy + 4, K.cardMeta, o.font, 'end')}</g>`;
       }
     }
+    y += CARD.metaRow;
+  }
+  // the checklist's progress row under the details (TAB-372): a card with no items draws nothing and reserves no height
+  if (hasChecklist(o)) {
+    y += CARD.checkGap;
+    inner += checklistRowMarkup(checklistProgress(o), y, w, low, o.font);
   }
   return inner;
 }

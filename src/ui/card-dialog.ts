@@ -2,12 +2,13 @@ import './card-dialog.css';
 import type { BoardApp, CardFocus } from '../app';
 import type { BaseObj, Id } from '../types';
 import { isSafeHttpUrl, LIMITS } from '../../shared/containers';
-import { editCard, knownLabels, OWNER_NAME_MAX, type CardPatch } from '../containers';
+import { checklistItemToCard, editCard, knownLabels, OWNER_NAME_MAX, type CardPatch } from '../containers';
 import { CARD_LINK_MAX } from '../safe-obj';
 import { listLabels, toggleCardLabel } from '../labels';
 import { kanbanSwatch } from '../markup';
 import { navigateTrackerPath } from '../route';
 import { buildTrackerPath } from '../tracker-route';
+import { checklistSection } from './checklist-ui';
 import { dialog } from './common';
 import { h, icon } from './dom';
 import { isDueDate, ownerKey, ownerOptions } from './kanban-logic';
@@ -43,9 +44,11 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const cardOf = () => app.store.get(id) as BaseObj | undefined;
   const projectedTitle = (card: BaseObj) => (card as BaseObj & { tracker?: { title?: string } }).tracker?.title ?? card.text ?? '';
   const save = (patch: CardPatch) => {
-    if (!editable) return;
+    if (!editable) return false;
     // refused or unchanged: the fields show what the card has again
-    if (!editCard(app.store, id, patch)) render(true);
+    const written = editCard(app.store, id, patch);
+    if (!written) render(true);
+    return written;
   };
 
   // ---- fields
@@ -183,11 +186,26 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
   const trackerField = (label: string, value: string) => field(label, h('span', { class: 'k-link-readonly' }, value || 'None'));
 
   const note = editable ? null : h('p', { class: 'k-note' }, card0.locked && !app.readOnly ? 'This card is locked. Unlock it to change it.' : canComment ? 'You can comment on this card. Only editors can change it.' : 'Only editors can change this card.');
+  // TAB-372: the checklist, after the description; a card in a lane can turn an item into a card below itself
+  const checklist = checklistSection({
+    editable,
+    canConvert: () => {
+      const c = cardOf();
+      return !!c?.parent && app.store.get(c.parent)?.type === 'lane';
+    },
+    items: () => cardOf()?.checklist ?? [],
+    save: (list) => save({ checklist: list }),
+    toCard: (itemId) => checklistItemToCard(app.store, id, itemId, { createdBy: app.user.id, font: app.store.getMeta().bodyFont }),
+    notify: (message) => app.notify(message),
+    announce: (message) => app.announce(message),
+    keep: keepKeys,
+  });
   const body = h('div', { class: 'k-card-form' },
     note,
     openTrackerTicket,
     field('Title', title),
     field('Description', desc),
+    checklist.el,
     linked ? trackerValues : h('div', { class: 'k-row2' },
       field('Owner', h('div', { class: 'k-stack' }, owner, ownerName, ownerKinds)),
       field('Due', h('div', { class: 'k-due' }, due, editable ? clearDue : null)),
@@ -297,6 +315,7 @@ export function openCardDialog(app: BoardApp, id: Id, focus?: CardFocus) {
     }) : [h('p', { class: 'k-empty' }, editable ? 'No labels on this board yet.' : 'No labels.')]));
     // the chips are rebuilt: keep the keyboard on the one that was toggled
     if (focusedLabel) [...labels.querySelectorAll<HTMLElement>('button')].find((b) => b.dataset.label === focusedLabel)?.focus();
+    checklist.render();
   }
 
   title.readOnly = !editable || linked;

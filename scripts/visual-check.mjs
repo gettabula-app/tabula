@@ -1011,6 +1011,20 @@ async function assertTouchTargets(page, stage) {
       const rect = el.getBoundingClientRect();
       return style.display !== 'none' && style.visibility !== 'hidden' && style.pointerEvents !== 'none' && rect.width > 0 && rect.height > 0;
     };
+    // the element's box plus any absolutely positioned ::before/::after that extends its hit area (rail tab, pill)
+    const hitRect = (el) => {
+      const r = el.getBoundingClientRect();
+      let left = r.left, top = r.top, right = r.right, bottom = r.bottom;
+      for (const pseudo of ['::before', '::after']) {
+        const cs = getComputedStyle(el, pseudo);
+        if (cs.content === 'none' || cs.position !== 'absolute' || cs.pointerEvents === 'none') continue;
+        const x = Number.parseFloat(cs.left), y = Number.parseFloat(cs.top), w = Number.parseFloat(cs.width), h = Number.parseFloat(cs.height);
+        if (![x, y, w, h].every(Number.isFinite)) continue;
+        left = Math.min(left, r.left + x); top = Math.min(top, r.top + y);
+        right = Math.max(right, r.left + x + w); bottom = Math.max(bottom, r.top + y + h);
+      }
+      return { width: right - left, height: bottom - top };
+    };
     const label = (el) => el.getAttribute('aria-label') || el.textContent?.trim().replace(/\s+/g, ' ').slice(0, 36) || el.className?.toString() || el.tagName.toLowerCase();
     const smallFonts = [...document.querySelectorAll(textSelector)]
       .filter((el) => visible(el))
@@ -1027,7 +1041,7 @@ async function assertTouchTargets(page, stage) {
         misses.push(`${label(el)} has no associated label hit area`);
         continue;
       }
-      const rect = target.getBoundingClientRect();
+      const rect = hitRect(target);
       measured++;
       if (rect.width < 43.5 || rect.height < 43.5) misses.push(`${label(el)} ${rect.width.toFixed(1)}×${rect.height.toFixed(1)}px`);
     }
@@ -1468,6 +1482,25 @@ async function privacyPanel(page, base, mode, { preview = true } = {}) {
     await page.locator('.privacy-actions button[data-focus="preview"]').click();
     await page.locator('.privacy-json').waitFor();
   }
+}
+
+async function fillChecklist(env) {
+  await openKanbanBoard(env);
+  const { page } = env;
+  await page.evaluate(() => {
+    window.__board.setSelection(['k-c2']);
+    window.__board.openCardDialog('k-c2');
+  });
+  await page.getByRole('dialog', { name: 'Card in To do' }).waitFor();
+  // the seeded board is shared by every capture of a run: a list made by an earlier capture stays
+  if (await page.getByRole('checkbox', { name: 'Draft the release notes' }).count()) return;
+  const add = page.getByLabel('Add a checklist item');
+  for (const text of ['Draft the release notes', 'Check the migration on a copy', 'Tell the support team', 'Update the status page', 'Close the old tickets']) {
+    await add.fill(text);
+    await add.press('Enter');
+  }
+  await page.getByRole('checkbox', { name: 'Draft the release notes' }).click();
+  await page.getByRole('checkbox', { name: 'Check the migration on a copy' }).click();
 }
 
 const STATES = {
@@ -4570,6 +4603,20 @@ const STATES = {
       app.openCardDialog('k-c2');
     });
     await env.page.getByRole('dialog', { name: 'Card in To do' }).waitFor();
+    await env.page.evaluate(() => document.activeElement?.blur());
+    await settle(env.page);
+  },
+  // TAB-372: a card with a checklist, on the board (progress under the details) and in its dialog. The list is filled the way a person fills it
+  // (typing into the dialog, then ticking), so the card grows through the app's own write path.
+  async 'kanban-checklist-face'(env) {
+    await fillChecklist(env);
+    await env.page.keyboard.press('Escape');
+    await env.page.getByRole('dialog', { name: 'Card in To do' }).waitFor({ state: 'hidden' });
+    await env.page.evaluate(() => window.__board.setSelection(['k-c2']));
+    await settle(env.page);
+  },
+  async 'kanban-checklist-dialog'(env) {
+    await fillChecklist(env);
     await env.page.evaluate(() => document.activeElement?.blur());
     await settle(env.page);
   },
