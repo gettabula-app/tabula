@@ -52,7 +52,7 @@ describe('Privacy panel copy and rules', () => {
     expect(PRIVACY_COPY.noSent).toBe('Nothing has been sent yet.');
     expect(PRIVACY_COPY.previewButton).toBe('Show what would be sent');
     // hosted workspaces send the hourly report to Tabula (CGO-approved wording); a server you run sends nothing yet
-    expect(PRIVACY_COPY.hourlyNoteHosted).toBe('Once an hour, the report shown below goes to Tabula. Turning this off stops product analytics at once, and the report of the current hour does not go. Operating data stays on either way. Usage counts are kept for 12 months and hourly operating figures for 13 months, then deleted.');
+    expect(PRIVACY_COPY.hourlyNoteHosted).toBe('Once an hour, the report shown below goes to Tabula. Turning this off stops product analytics at once, and the report for the hour in progress is not sent. Operating data stays on either way. Usage counts are kept for 12 months and hourly operating figures for 13 months, then deleted.');
     expect(PRIVACY_COPY.noSentHosted).toBe('This is the report for the current hour. When the hour ends, it goes to Tabula as shown here.');
     expect(PRIVACY_COPY.previewButtonHosted).toBe("Show this hour's report");
     expect([privacyHourlyNote('hosted'), privacyHourlyNote('self')]).toEqual([PRIVACY_COPY.hourlyNoteHosted, PRIVACY_COPY.hourlyNote]);
