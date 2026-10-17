@@ -24,6 +24,9 @@ export const CARD = {
   rowGap: 8,
   labelRow: 20,
   metaRow: 24,
+  /** The checklist progress row under the details: a gap, then the row (only on a card with items, TAB-372). */
+  checkGap: 6,
+  checkRow: 16,
 } as const;
 
 /** The "+ Add card" row after the last card, and the inline input that replaces it. */
@@ -35,6 +38,8 @@ export interface CardContent {
   labels: boolean;
   /** A due date or an owner: the meta row. */
   meta: boolean;
+  /** At least one checklist item: the progress row under the details. */
+  checklist?: boolean;
 }
 
 /** A card's height from what it shows. The writer stores it as `h`, so no reader measures text. */
@@ -42,6 +47,7 @@ export function cardHeight(c: CardContent): number {
   let h = CARD.padY * 2 + Math.min(Math.max(c.lines, 1), CARD.titleLines) * CARD.titleLine;
   if (c.labels) h += CARD.rowGap + CARD.labelRow;
   if (c.meta) h += CARD.rowGap + CARD.metaRow;
+  if (c.checklist) h += CARD.checkGap + CARD.checkRow;
   return h;
 }
 
