@@ -202,7 +202,7 @@ describe.skipIf(!available)('the card checklist, driven by the keyboard, in a re
   }));
 
   // designer's ruling 2026-10-17. The field has no Escape handler today, so the key reaches the dialog and closes it: this fails until the fix in checklist-ui.ts lands.
-  it('FINDING: Escape in the add field with text clears the text, keeps the card dialog open and keeps focus in the field', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
+  it('Escape in the add field with text clears the text, keeps the card dialog open and keeps focus in the field', () => withCard(['Pack bags', 'Book taxi'], async (page, card) => {
     const reached = await tabUntil(page, onAdd);
     expect(reached.reached, `Tab did not reach the add field: ${trailText(reached.trail)}`).toBe(true);
     const before = await savedItems(page, card.cardId);
